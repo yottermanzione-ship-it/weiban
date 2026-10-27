@@ -80,7 +80,7 @@
 }
 .persona-count.on svg,
 .persona-count.on img {
-  animation: plaza-pop var(--wb-motion-duration-base) var(--wb-motion-easing-spring);
+  animation: plaza-pop var(--ui-motion-pop) var(--ui-ease-spring);
 }
 .persona-head-extra {
   display: flex;

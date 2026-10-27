@@ -184,7 +184,8 @@ small,
 button {
   min-height: var(--wb-size-touch-target);
   padding: 0 var(--wb-space-5);
-  border: 0.5px solid var(--wb-color-border-strong);
+  /* U5：去掉普通按钮的灰边框，靠底色分层（不加类名的按钮见 ui-components.css「批 U5」） */
+  border: 0;
   border-radius: var(--wb-radius-md);
   background: var(--wb-color-bg-surface);
   color: var(--wb-color-text-primary);

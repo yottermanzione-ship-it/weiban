@@ -1,3 +1,4 @@
+import { isImeEnter } from './ime.js';
 import { EcologySignatureLine, MurmursRow } from './murmurs.js';
 import { SearchField } from './search-field.js';
 import { WebCharacterSearch } from './web-character-search.js';
@@ -944,7 +945,7 @@ export function CharacterPage({
               disabled={pending}
               onChange={(event) => setGreeting(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.nativeEvent.isComposing && !pending) void add();
+                if (event.key === 'Enter' && !isImeEnter(event) && !pending) void add();
               }}
             />
           </div>

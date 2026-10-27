@@ -18,7 +18,9 @@ import './app/ecology.css';
 import { App } from './app/app.js';
 import { RuntimeErrorBoundary } from './app/runtime-error-boundary.js';
 import { applyDisplayPrefs } from './data/display-prefs.js';
+import { installImeEnterGuard } from './features/ime.js';
 applyDisplayPrefs();
+installImeEnterGuard();
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>

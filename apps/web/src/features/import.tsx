@@ -1,3 +1,4 @@
+import { MiddleEllipsis } from './middle-ellipsis.js';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { BookOpen, CaretLeft, CaretRight, Warning } from './old-icons.js';
@@ -317,7 +318,9 @@ function NewImport({
           />
           {source === 'file' && files[0] && (
             <>
-              <p>{files[0].name}</p>
+              <p className="import-file-name">
+                <MiddleEllipsis text={files[0].name} />
+              </p>
               {preview && <pre className="file-preview">{preview}</pre>}
             </>
           )}

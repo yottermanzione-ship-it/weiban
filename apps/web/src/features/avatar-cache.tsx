@@ -21,7 +21,7 @@
  * - 第一次出现的图（eager + 可缓存）用一次 fetch 换 blob，避免「<img> 一次 + 缓存再一次」。
  * - 原图缺少 mimeType 时先取元信息，不把旧版 MP4 当图片画。
  */
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { MediaEndpoints, type MediaObject } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { useRemote } from '../data/use-remote.js';
@@ -515,6 +515,14 @@ export function CachedImage({
     setIdentityState(identity);
     setState(initialPicture(mediaKey, url, cache, eager));
   }
+  /*
+   * 回源回调放进 ref（U5 修 lint）：调用方每次渲染都传新函数，放进依赖会让探测副作用每次重渲染都重跑。
+   * 只在探测还有效（url / mediaKey 没变）时才会调用，此时最新的回调与副作用开始时那个闭包的取值相同，行为不变。
+   */
+  const linkBroken = useRef(onLinkBroken);
+  useLayoutEffect(() => {
+    linkBroken.current = onLinkBroken;
+  });
   // 首帧之后才到的新链接：先探测，确认能显示再换，避免把正在显示的图清空。
   useEffect(() => {
     if (!url) return;
@@ -557,7 +565,7 @@ export function CachedImage({
       if (!live) return;
       // 新链接不能显示：保留还在显示的那张（如果有），同时让上层回源正式链接。
       setState((previous) => (previous.src ? previous : { ...previous, failed: true }));
-      onLinkBroken?.();
+      linkBroken.current?.();
     };
     probe.src = url;
     return () => {

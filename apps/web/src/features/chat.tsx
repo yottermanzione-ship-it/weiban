@@ -1,3 +1,4 @@
+import { isImeEnter } from './ime.js';
 import { ChatHeading } from './chat-heading.js';
 import { editEmoji } from './emoji-edit.js';
 /*
@@ -1834,7 +1835,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
               placeholder={group ? '输入消息，@成员' : '输入消息'}
               onFocus={() => setPanel('none')}
               onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                if (event.key === 'Enter' && !event.shiftKey && !isImeEnter(event)) {
                   event.preventDefault();
                   void submit();
                 }

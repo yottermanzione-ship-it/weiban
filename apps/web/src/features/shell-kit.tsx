@@ -477,6 +477,19 @@ export function useEscape(onClose: () => void) {
   }, [onClose]);
 }
 
+/** 面板里有没有已经填了字的输入框（勾选框 / 单选 / 隐藏域 / 搜索框不算）。 */
+function hasDraft(root: HTMLElement | null) {
+  if (!root) return false;
+  return [...root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea')].some(
+    (field) =>
+      !['checkbox', 'radio', 'hidden', 'range', 'file', 'button', 'submit', 'search'].includes(
+        field.type,
+      ) &&
+      !field.readOnly &&
+      field.value.trim() !== '',
+  );
+}
+
 /** 底部面板可吸附的档位：半屏 / 全屏（全屏留出顶部一条，看得出是浮层）。 */
 export type SheetSnap = 'half' | 'full';
 const SNAP_RATIO: Record<SheetSnap, number> = { half: 0.5, full: 0.92 };
@@ -520,8 +533,13 @@ export function Sheet({
   const closeIcon = closeLabel === '✕' || closeLabel === '关闭';
   const panel = useRef<HTMLDivElement>(null);
   const [nudge, setNudge] = useState(0);
+  /*
+   * U5：面板里任何输入框已经有字时，点蒙层 / 下拖都不关（不靠调用方记得传 keepOnScrim），
+   * 只有「取消」/ Esc 才关，已填内容不会因误触丢失。
+   */
+  const keep = () => keepOnScrim || hasDraft(panel.current);
   const drag = useSheetDrag(snaps, panel, () => {
-    if (keepOnScrim || closeDisabled) return false;
+    if (keep() || closeDisabled) return false;
     onClose();
     return true;
   });
@@ -530,7 +548,7 @@ export function Sheet({
       className="sheet-scrim"
       onClick={() => {
         if (closeDisabled) return;
-        if (keepOnScrim) setNudge((n) => n + 1);
+        if (keep()) setNudge((n) => n + 1);
         else onClose();
       }}
     >

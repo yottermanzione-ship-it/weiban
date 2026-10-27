@@ -104,7 +104,7 @@
 
 /* ---------- Bottom Sheet：分档吸附、把手、点蒙层不丢内容时的轻顿 ---------- */
 .sheet-panel.draggable {
-  transition: height var(--wb-motion-duration-base) var(--wb-motion-easing-standard);
+  transition: height var(--ui-motion-snap) var(--ui-ease-snap);
 }
 .sheet-panel.dragging {
   transition: none;
@@ -130,10 +130,10 @@
   touch-action: none;
 }
 .sheet-panel.nudge-a {
-  animation: sheet-nudge-a var(--wb-motion-duration-base) var(--wb-motion-easing-spring);
+  animation: sheet-nudge-a var(--ui-motion-pop) var(--ui-ease-spring);
 }
 .sheet-panel.nudge-b {
-  animation: sheet-nudge-b var(--wb-motion-duration-base) var(--wb-motion-easing-spring);
+  animation: sheet-nudge-b var(--ui-motion-pop) var(--ui-ease-spring);
 }
 @keyframes sheet-nudge-a {
   40% {
@@ -246,7 +246,7 @@
   justify-content: center;
   overflow-y: auto;
   background: var(--wb-color-bg-page);
-  animation: subpage-in var(--ui-motion-route) var(--ui-ease-out);
+  animation: subpage-in var(--ui-motion-route) var(--ui-ease-push);
 }
 .subpage-layer > main.edit-page {
   width: 100%;
@@ -435,6 +435,336 @@
     animation: none;
   }
   .sheet-panel.draggable {
+    transition: none;
+  }
+}
+
+/* ================= 批 U5 质感细节（26 号 §5；令牌见 tokens.css「动效分性格」） ================= */
+
+/* ---------- 等宽数字：积分、时间、计数、价格（数字跳动时不左右晃） ---------- */
+time,
+.numeric,
+.tabular,
+.badge,
+.unread-badge,
+.count-badge,
+.tab-badge,
+.red-badge,
+.wx-time,
+.wx-search-time,
+.wx-voice-len,
+.wx-call-status,
+.conv-meta,
+.conversation-meta,
+.group-row-time,
+.timeline-time,
+.moment-meta,
+.murmur-meta,
+.work-row-meta,
+.album-date,
+.char-count,
+.compose-count,
+.field-count,
+.field-page-count,
+.profile-field-count,
+.dialogue-count,
+.persona-count,
+.contacts-count,
+.big-count,
+.days-counter,
+.play-timer,
+.points-chip,
+.ecology-points,
+.benefit-points,
+.recharge-points,
+.recharge-price,
+.membership-price,
+.price-was,
+.price-discount,
+.wallet-number,
+.wallet-rate,
+.wallet-held,
+.ledger-row-old,
+.plaza-heat,
+.usage-card,
+.menu-value,
+.comment-tools,
+.wx-jump-latest {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 去硬边框：不加类名的普通按钮靠浅灰底分层（U1 遗留 5） ---------- */
+button:not([class]) {
+  background: var(--ui-fill-1);
+}
+button:not([class]):active {
+  background: var(--ui-fill-2);
+}
+
+/* ---------- 聊天：新消息气泡 120ms 淡入轻上移（只给打开后新来的行） ---------- */
+.virtual-list .msg-in {
+  animation: msg-in var(--ui-motion-bubble) var(--ui-ease-out) both;
+}
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* ---------- 聊天：上翻时右下角「↓ N 条新消息 / 回到最新」 ---------- */
+.wx-jump-latest {
+  position: absolute;
+  right: var(--wb-space-4);
+  bottom: var(--wb-space-4);
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wb-space-1);
+  min-height: 32px;
+  padding: 0 var(--wb-space-4) 0 var(--wb-space-3);
+  border: 0;
+  border-radius: var(--wb-radius-full);
+  background: var(--wb-color-bg-surface);
+  box-shadow: var(--ui-float-shadow);
+  color: var(--wb-color-brand-primary);
+  font-size: var(--wb-font-size-footnote);
+  animation: msg-in var(--ui-motion-bubble) var(--ui-ease-out) both;
+}
+.wx-jump-latest svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---------- 「正在输入」三点：全站一个节奏 ---------- */
+.typing-dots {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 1em;
+  margin-left: 2px;
+  padding-bottom: 0.2em;
+}
+.typing-dots i {
+  width: 3px;
+  height: 3px;
+  border-radius: var(--wb-radius-full);
+  background: currentColor;
+  animation: typing-dot var(--wb-motion-duration-typing-cycle) var(--ui-ease-in-out) infinite;
+}
+.typing-dots i:nth-child(2) {
+  animation-delay: calc(var(--wb-motion-duration-typing-cycle) / 6);
+}
+.typing-dots i:nth-child(3) {
+  animation-delay: calc(var(--wb-motion-duration-typing-cycle) / 3);
+}
+@keyframes typing-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+    transform: none;
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+/* ---------- 弹性：拍一拍时被拍的头像抖一下（与点赞同一性格） ---------- */
+.wx-avatar-link.nudging {
+  animation: ui-nudge var(--ui-motion-pop) var(--ui-ease-spring);
+}
+@keyframes ui-nudge {
+  0% {
+    transform: none;
+  }
+  25% {
+    transform: rotate(-10deg) scale(1.04);
+  }
+  55% {
+    transform: rotate(7deg);
+  }
+  80% {
+    transform: rotate(-3deg);
+  }
+  100% {
+    transform: none;
+  }
+}
+.moment-detail-actions button[aria-pressed='true'] .old-image,
+.moment-detail-actions button[aria-pressed='true'] svg {
+  animation: plaza-pop var(--ui-motion-pop) var(--ui-ease-spring);
+}
+
+/* ---------- 全屏看图 Lightbox ---------- */
+.lightbox {
+  touch-action: none;
+}
+.lightbox header {
+  position: relative;
+  z-index: 2;
+  transition: opacity var(--ui-motion-snap) var(--ui-ease-snap);
+}
+.lightbox-stage {
+  position: relative;
+  overflow: hidden;
+  touch-action: none;
+}
+.lightbox-image {
+  display: grid;
+  place-items: center;
+  transition: transform var(--ui-motion-snap) var(--ui-ease-snap);
+  will-change: transform;
+}
+.lightbox.moving .lightbox-image {
+  transition: none;
+}
+.lightbox:not(.moving) {
+  transition: background-color var(--ui-motion-snap) var(--ui-ease-snap);
+}
+
+/* ---------- 贴键盘输入条（朋友圈评论） ---------- */
+.keyboard-bar-host {
+  position: fixed;
+  inset: 0;
+  z-index: var(--wb-z-index-sheet);
+}
+.keyboard-bar-scrim {
+  position: absolute;
+  inset: 0;
+}
+.keyboard-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  padding: var(--wb-space-2) var(--wb-space-3) calc(var(--wb-space-2) + env(safe-area-inset-bottom));
+  background: var(--wb-color-bg-input-bar);
+  box-shadow: 0 -0.5px 0 var(--wb-color-border-hairline);
+  animation: keyboard-bar-in var(--ui-motion-bubble) var(--ui-ease-out) both;
+}
+@keyframes keyboard-bar-in {
+  from {
+    transform: translateY(100%);
+  }
+}
+.moment-comment-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--wb-space-2);
+  max-width: var(--wb-size-content-max-width);
+  margin: 0 auto;
+}
+.moment-comment-bar textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 38px;
+  max-height: 104px;
+  padding: 8px var(--wb-space-3);
+  border: 0;
+  border-radius: var(--wb-radius-xs);
+  background: var(--wb-color-bg-surface);
+  font-size: var(--wb-font-size-body);
+  line-height: 22px;
+  resize: none;
+}
+.moment-comment-bar .wx-send {
+  min-height: 38px;
+  padding: 0 var(--wb-space-4);
+  font-size: var(--wb-font-size-subhead);
+}
+.moment-comment-bar small[role='alert'] {
+  flex-basis: 100%;
+  color: var(--wb-color-text-danger);
+}
+/* 评论里的名字 / 正文按钮按文字排，不撑成一列（原来名字会竖着折行） */
+.moment-comment button {
+  display: inline;
+}
+
+/* ---------- 长文件名中间省略、保留后缀 ---------- */
+.middle-ellipsis {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  white-space: nowrap;
+}
+.middle-ellipsis-head {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.middle-ellipsis-tail {
+  flex-shrink: 0;
+}
+.import-file-name {
+  display: flex;
+  min-width: 0;
+}
+
+/* ---------- 聊天记录整页（原全屏底部面板，改为整页推入） ---------- */
+.push-layer .wx-forward-record {
+  min-height: 0;
+  flex: 1;
+}
+
+/* ---------- 首次资料地区：分组那层点一项即选中，不需要「完成」 ---------- */
+.region-group-layer .edit-done {
+  visibility: hidden;
+}
+
+/* ---------- 作品详情评论区：去掉框套框（列表内缩发丝线，输入入口是浅灰输入条） ---------- */
+#work-comments .panel {
+  margin-bottom: 0;
+  padding-top: 0;
+  padding-bottom: var(--wb-space-3);
+}
+#work-comments .comment-item {
+  border-bottom: 0;
+  position: relative;
+}
+#work-comments .comment-item + .comment-item::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: calc(32px + var(--wb-space-3));
+  right: 0;
+  border-top: 0.5px solid var(--wb-color-border-hairline);
+}
+#work-comments .plaza-comment-bar {
+  position: static;
+  margin: var(--wb-space-2) 0 0;
+  padding: 0;
+  border-top: 0;
+  background: none;
+}
+#work-comments .plaza-comment-bar > .text-button {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 var(--wb-space-3);
+  border-radius: var(--wb-radius-xs);
+  background: var(--ui-fill-1);
+  color: var(--wb-color-text-placeholder);
+  text-align: left;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .virtual-list .msg-in,
+  .wx-jump-latest,
+  .typing-dots i,
+  .wx-avatar-link.nudging,
+  .keyboard-bar,
+  .moment-detail-actions button[aria-pressed='true'] .old-image {
+    animation: none;
+  }
+  .lightbox-image,
+  .lightbox:not(.moving) {
     transition: none;
   }
 }

@@ -374,7 +374,7 @@ button.tonal {
   gap: var(--wb-space-2);
   padding: var(--wb-space-3) var(--wb-space-5);
   background: var(--wb-color-bg-tab-bar);
-  border-top: 1px solid var(--wb-color-border-hairline);
+  border-top: 0.5px solid var(--wb-color-border-hairline);
   z-index: var(--wb-z-index-sticky);
 }
 .select-bar .button-row {

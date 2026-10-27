@@ -82,6 +82,25 @@
   --ui-motion-spin: 800ms; /* 加载转圈一周 */
   --ui-ease-out: cubic-bezier(0, 0, 0.58, 1);
   --ui-ease-in-out: cubic-bezier(0.42, 0, 0.58, 1);
+  /*
+   * 动效分性格（U5，26 号 §5）——新动效先归到下面某一类，不另起数值：
+   * 1. 跟手：拖拽中（底部面板、左滑、下拉小程序、看图下滑）不加过渡，位移直接等于手指；
+   *    松手后吸附 / 回弹统一 --ui-motion-snap + --ui-ease-snap（先快后慢，不过冲）。
+   * 2. 弹性：点赞、拍一拍、选中这类「有回应」的小反馈用 --ui-motion-pop + --ui-ease-spring（轻微过冲）。
+   * 3. 页面推入：整页路由与页内二级页面统一 --ui-motion-route + --ui-ease-push（iOS 式先快后慢）。
+   * 4. 出现：新消息气泡 120ms 淡入 + 轻上移（--ui-motion-bubble）；「正在输入」三点一轮 --wb-motion-duration-typing-cycle。
+   */
+  --ui-motion-snap: var(--wb-motion-duration-swipe); /* 180ms */
+  --ui-ease-snap: var(--wb-motion-easing-decelerate);
+  --ui-motion-pop: 360ms;
+  --ui-ease-spring: var(--wb-motion-easing-spring);
+  --ui-ease-push: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ui-motion-bubble: 120ms;
+
+  /* ---------- 浮在内容上的小块（回到最新、更新提示）：用阴影分层，不用边框 ---------- */
+  --ui-float-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+  /* 最浅一层灰（3%）：白底上的图片占位、表情格 */
+  --ui-fill-0: rgba(0, 0, 0, 0.03);
 }
 
 /*
@@ -97,6 +116,8 @@
     --ui-fill-1: rgba(255, 255, 255, 0.08);
     --ui-fill-2: rgba(255, 255, 255, 0.1);
     --ui-fill-3: rgba(255, 255, 255, 0.3);
+    --ui-fill-0: rgba(255, 255, 255, 0.04);
+    --ui-float-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
   }
 }
 :root[data-scheme='dark'] {
@@ -107,6 +128,8 @@
   --ui-fill-1: rgba(255, 255, 255, 0.08);
   --ui-fill-2: rgba(255, 255, 255, 0.1);
   --ui-fill-3: rgba(255, 255, 255, 0.3);
+  --ui-fill-0: rgba(255, 255, 255, 0.04);
+  --ui-float-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
 }
 
 /* styles.css 的 body 用 font 简写会把字重重置成 normal，这里用更高优先级接回令牌 */

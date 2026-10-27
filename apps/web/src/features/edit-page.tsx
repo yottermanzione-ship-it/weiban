@@ -7,6 +7,7 @@
  * - InfoPage：白底，左上返回、大图标、标题、说明、底部灰色按钮（微信「微信号」页）。
  * 这些页面都是独立路由，进入 / 返回沿用 RouteMotion 的整页推入转场。
  */
+import { isImeEnter } from './ime.js';
 import { useRef, useState, type ReactNode } from 'react';
 import { OldIcon } from './old-icons.js';
 import { useLayerHistory } from './layer-history.js';
@@ -257,7 +258,7 @@ export function ClearInput({
         autoFocus={autoFocus}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === 'Enter' && !event.nativeEvent.isComposing) onEnter?.();
+          if (event.key === 'Enter' && !isImeEnter(event)) onEnter?.();
         }}
       />
       {value !== '' && !disabled && (
@@ -379,8 +380,7 @@ export function FormPage({
           autoFocus
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.nativeEvent.isComposing && canSubmit && !pending)
-              onSubmit();
+            if (event.key === 'Enter' && !isImeEnter(event) && canSubmit && !pending) onSubmit();
           }}
         />
       </div>

@@ -26,7 +26,7 @@ a {
 }
 button {
   cursor: pointer;
-  border: 1px solid var(--wb-color-border-strong);
+  border: 0;
   border-radius: var(--wb-radius-sm);
   background: var(--wb-color-bg-surface);
   color: var(--wb-color-text-primary);
@@ -157,7 +157,7 @@ textarea {
   align-items: center;
   padding: var(--wb-space-5);
   min-height: var(--wb-size-setting-row);
-  border-bottom: 1px solid var(--wb-color-border-hairline);
+  border-bottom: 0.5px solid var(--wb-color-border-hairline);
 }
 .rows > a > svg:last-child {
   margin-left: auto;
@@ -228,7 +228,7 @@ textarea {
   max-width: var(--wb-size-content-max-width);
   display: flex;
   background: var(--wb-color-bg-tab-bar);
-  border-top: 1px solid var(--wb-color-border-hairline);
+  border-top: 0.5px solid var(--wb-color-border-hairline);
   padding-bottom: env(safe-area-inset-bottom);
 }
 .tabbar a {
@@ -374,7 +374,7 @@ textarea {
   padding: var(--wb-space-3);
   border-radius: var(--wb-radius-md);
   background: var(--wb-color-bg-elevated);
-  border: 1px solid var(--wb-color-border-strong);
+  box-shadow: var(--ui-float-shadow);
 }
 .chat-list-page,
 .conversation-page {
@@ -397,7 +397,7 @@ textarea {
   align-items: center;
   gap: var(--wb-space-3);
   padding: var(--wb-space-3);
-  border-bottom: 1px solid var(--wb-color-border-hairline);
+  border-bottom: 0.5px solid var(--wb-color-border-hairline);
   background: var(--wb-color-bg-surface);
 }
 .conversation-row.pinned {
@@ -919,9 +919,9 @@ a.button {
   justify-content: center;
   min-height: var(--wb-size-touch-target);
   padding: var(--wb-space-3) var(--wb-space-5);
-  border: 1px solid var(--wb-color-border-strong);
+  border: 0;
   border-radius: var(--wb-radius-sm);
-  background: var(--wb-color-bg-surface);
+  background: var(--ui-fill-1);
 }
 a.button.primary {
   background: var(--wb-color-brand-primary);
@@ -1102,7 +1102,6 @@ a.button.primary {
   padding: var(--wb-space-3) var(--wb-space-4);
   border-radius: var(--wb-radius-md);
   background: var(--wb-color-bg-surface);
-  border: 1px solid var(--wb-color-border-hairline);
 }
 .contact-card span {
   display: flex;
@@ -1112,7 +1111,6 @@ a.button.primary {
   padding: var(--wb-space-4);
   border-radius: var(--wb-radius-md);
   background: var(--wb-color-bg-surface);
-  border: 1px solid var(--wb-color-border-hairline);
 }
 .mention-sheet {
   position: fixed;
@@ -1212,7 +1210,7 @@ a.button.primary {
   display: flex;
   flex-direction: column;
   padding: var(--wb-space-2) 0;
-  border-bottom: 1px solid var(--wb-color-border-hairline);
+  border-bottom: 0.5px solid var(--wb-color-border-hairline);
 }
 .moments-page {
   display: flex;
@@ -1238,7 +1236,7 @@ a.button.primary {
   display: flex;
   gap: var(--wb-space-3);
   padding: var(--wb-space-4) var(--wb-space-3);
-  border-bottom: 1px solid var(--wb-color-border-hairline);
+  border-bottom: 0.5px solid var(--wb-color-border-hairline);
   background: var(--wb-color-bg-surface);
 }
 .moment-body {
