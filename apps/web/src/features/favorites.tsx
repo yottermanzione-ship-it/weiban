@@ -15,7 +15,8 @@ import { CharacterAvatar } from './character-avatar.js';
 import { UserAvatar } from './user-avatar.js';
 import { CallRecordBubble, ImageBubble, LinkCardBubble, MediaImg, StickerBubble } from './media.js';
 import { shareText } from './share-render.js';
-import { EmptyState, NavBar, Sheet } from './shell-kit.js';
+import { Lightbox } from './lightbox.js';
+import { EmptyState, NavBar } from './shell-kit.js';
 import { showSnackbar, showToast } from './toast.js';
 
 function FavoriteVoice({ mediaId, transcript }: { mediaId: string; transcript?: string | null }) {
@@ -81,16 +82,21 @@ function FavoriteContent({ favorite }: { favorite: Favorite }) {
     </div>
   );
 }
+/** U5：点图片用全屏看图 Lightbox（原来是底部弹层）；同一条收藏里的多张图可左右切换。 */
 function FavoriteImage({
   mediaId,
   width = null,
   height = null,
+  gallery,
 }: {
   mediaId: string;
   width?: number | null;
   height?: number | null;
+  /** 同一条收藏里的全部图片（含自己），看图时可左右滑。 */
+  gallery?: string[];
 }) {
   const [open, setOpen] = useState(false);
+  const list = gallery && gallery.includes(mediaId) ? gallery : [mediaId];
   return (
     <>
       <ImageBubble
@@ -98,11 +104,11 @@ function FavoriteImage({
         onOpen={() => setOpen(true)}
       />
       {open && (
-        <Sheet title="查看图片" closeLabel="返回" onClose={() => setOpen(false)}>
-          <div className="favorite-image-sheet">
-            <MediaImg mediaId={mediaId} thumbnail={false} />
-          </div>
-        </Sheet>
+        <Lightbox
+          items={list.map((id, i) => ({ mediaId: id, key: id + ':' + i }))}
+          index={list.indexOf(mediaId)}
+          onClose={() => setOpen(false)}
+        />
       )}
     </>
   );
@@ -114,7 +120,7 @@ function FavoriteBody({ favorite }: { favorite: Favorite }) {
       {favorite.extraImages.length > 0 && (
         <div className="favorite-extra-images">
           {favorite.extraImages.map((id, i) => (
-            <FavoriteImage key={id + ':' + i} mediaId={id} />
+            <FavoriteImage key={id + ':' + i} mediaId={id} gallery={favorite.extraImages} />
           ))}
         </div>
       )}

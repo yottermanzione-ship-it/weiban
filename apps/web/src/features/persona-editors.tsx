@@ -3,6 +3,7 @@
  * 顶栏「取消 / 标题 / 完成」，没改动时完成灰色；编辑的是草稿，「完成」才写回创建页，「取消」/ 返回键丢弃。
  * 用哪个编辑器、参数是多少由人设板块配置（packages/client-core/src/persona-sections.ts）决定，这里只管长相和交互。
  */
+import { isImeEnter } from './ime.js';
 import { useEffect, useRef, useState } from 'react';
 import type { AgeSetting, CharacterBasis, RealPersonKind } from '@weiban/contracts';
 import { CountTextarea, PickRow, SubPageLayer } from './edit-page.js';
@@ -132,7 +133,7 @@ export function ListPage({
                 setItems(items.map((v, i) => (i === index ? event.target.value : v)))
               }
               onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+                if (event.key === 'Enter' && !isImeEnter(event)) {
                   event.preventDefault();
                   if (item.trim()) add();
                 }

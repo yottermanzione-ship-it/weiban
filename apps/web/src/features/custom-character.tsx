@@ -6,6 +6,7 @@
  * - 二级页面挂在地址参数 ?edit=子板块编号 上：安卓返回键 / 浏览器后退只关掉这一层（等同取消）。
  * 行的分组、顺序、编辑器类型都由配置决定；加字段见 docs/handoffs/2026-10-27-ui-u3.md。
  */
+import { LayerHistoryContext } from './layer-history.js';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
@@ -708,7 +709,10 @@ function CustomCharacterEditor({
         </button>
       </div>
       {trial && <CharacterTrial {...trial} onClose={() => setTrial(null)} />}
-      {editing && renderEditor(editing)}
+      {/* 二级页已经挂在 ?edit= 上管返回键，不再让 SubPageLayer 自己压历史（U5） */}
+      <LayerHistoryContext.Provider value={false}>
+        {editing && renderEditor(editing)}
+      </LayerHistoryContext.Provider>
       {avatarOpen && (
         <AvatarEditor
           sheet

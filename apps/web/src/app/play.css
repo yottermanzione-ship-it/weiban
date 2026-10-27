@@ -53,7 +53,7 @@
   grid-template-columns: auto 1fr;
   align-items: center;
   gap: var(--wb-space-2);
-  border-bottom: 1px solid var(--wb-color-border-hairline);
+  border-bottom: 0.5px solid var(--wb-color-border-hairline);
 }
 .play-wish .icon-button svg {
   color: var(--wb-color-brand-primary);
@@ -62,7 +62,7 @@
   display: flex;
   justify-content: center;
   gap: var(--wb-space-8);
-  border-bottom: 1px solid var(--wb-color-border-hairline);
+  border-bottom: 0.5px solid var(--wb-color-border-hairline);
   margin-bottom: var(--wb-space-3);
 }
 .play-tabs button {
@@ -87,7 +87,7 @@
   text-align: left;
   background: none;
   border: 0;
-  border-bottom: 1px solid var(--wb-color-border-hairline);
+  border-bottom: 0.5px solid var(--wb-color-border-hairline);
   border-radius: 0;
   padding: var(--wb-space-3) var(--wb-space-4);
 }
@@ -178,9 +178,9 @@
   width: 100%;
   min-height: 48px;
   padding: 0 var(--wb-space-3);
-  border: 1px solid var(--wb-color-border-hairline);
+  border: 0;
   border-radius: var(--wb-radius-md);
-  background: var(--wb-color-bg-surface);
+  background: var(--ui-fill-1);
 }
 .play-focus-setup .play-focus-note small {
   color: var(--wb-color-text-secondary);
@@ -234,7 +234,7 @@
   align-items: center;
   gap: var(--wb-space-3);
   padding: var(--wb-space-3) var(--wb-space-4);
-  border-bottom: 1px solid var(--wb-color-border-hairline);
+  border-bottom: 0.5px solid var(--wb-color-border-hairline);
 }
 .play-reminder a {
   color: inherit;

@@ -13,6 +13,8 @@ export function VirtualList<T>({
   label,
   bottom = false,
   onBottom,
+  onFar,
+  jumpToBottom,
   onStart,
   anchorItem,
   scrollTo,
@@ -25,6 +27,10 @@ export function VirtualList<T>({
   label: string;
   bottom?: boolean;
   onBottom?(value: boolean): void;
+  /** 离底部超过一屏半（U5「回到最新」按钮用）；值变了才回调。 */
+  onFar?(value: boolean): void;
+  /** 回到底部并恢复跟随；nonce 变化时执行一次（U5「↓ N 条新消息」）。 */
+  jumpToBottom?: number;
   onStart?(): void;
   anchorItem?(item: T): boolean;
   /** 定位到某一行（距顶部 1/3 处，search.md 第 4 节）；nonce 变化时执行一次。 */
@@ -78,12 +84,29 @@ export function VirtualList<T>({
   const targetRow = scrollTo ? rows.find((row) => row.key === scrollTo.key) : undefined;
   const targetTop = targetRow?.top;
   const targetHeight = targetRow?.height;
-  const handled = useRef(0);
   /** 写 scrollTop 并记下这次是我们写的：紧接着补发的 scroll 事件不能靠它换掉锚点行。 */
   const writeScroll = (element: HTMLDivElement, value: number) => {
     element.scrollTop = value;
     written.current = element.scrollTop;
   };
+  const handled = useRef(0);
+  const far = useRef(false);
+  const jumped = useRef(jumpToBottom ?? 0);
+  useLayoutEffect(() => {
+    const element = root.current;
+    if (!element || !jumpToBottom || jumped.current === jumpToBottom) return;
+    jumped.current = jumpToBottom;
+    stick.current = true;
+    anchor.current = null;
+    writeScroll(element, Math.max(0, element.scrollHeight - element.clientHeight));
+    lastTop.current = element.scrollTop;
+    onBottom?.(true);
+    if (far.current) {
+      far.current = false;
+      onFar?.(false);
+    }
+    setViewport({ top: element.scrollTop, height: element.clientHeight });
+  }, [jumpToBottom, onBottom, onFar]);
   useLayoutEffect(() => {
     const element = root.current;
     if (!element || !scrollTo || targetTop === undefined || handled.current === scrollTo.nonce)
@@ -251,6 +274,13 @@ export function VirtualList<T>({
             };
         }
         if (top <= 48) onStart?.();
+        if (onFar) {
+          const isFar = element.scrollHeight - top - height > height * 1.5;
+          if (isFar !== far.current) {
+            far.current = isFar;
+            onFar(isFar);
+          }
+        }
         onBottom?.(stick.current);
         /*
          * 挂着的行没换就不写状态：以前每个 scroll 事件都重建 rows（items.map）再重渲染一遍，

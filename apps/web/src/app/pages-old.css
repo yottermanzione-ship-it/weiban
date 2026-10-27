@@ -708,7 +708,7 @@ label.profile-field.multiline {
   width: 46px;
   height: 46px;
   min-height: 0;
-  border: 1px solid var(--wb-color-border-hairline);
+  border: 0;
   border-radius: var(--wb-radius-sm);
   background: var(--wb-color-bg-page);
   color: var(--wb-color-text-secondary);
@@ -954,7 +954,8 @@ label.profile-field.multiline {
   gap: var(--wb-space-3);
   min-height: 44px;
   padding: 8px 12px;
-  border-radius: var(--wb-radius-sm);
+  /* U5 同心圆角：外 12 = 头像 4 + 间距 8 */
+  border-radius: var(--wb-radius-lg);
   background: var(--wb-color-ui-moments-new-msg-bg);
   color: var(--ui-text-on-color);
   font-size: var(--wb-font-size-callout);
@@ -1945,7 +1946,7 @@ button.primary.wx-auth-submit {
   color: var(--wb-color-text-primary);
 }
 .memory-entry + .memory-entry {
-  border-top: 1px solid var(--wb-color-border-hairline);
+  border-top: 0.5px solid var(--wb-color-border-hairline);
 }
 .memory-entry-content {
   white-space: pre-wrap;
@@ -2175,9 +2176,9 @@ button.primary.wx-auth-submit {
   min-height: 0;
   padding: 0;
   overflow: hidden;
-  border: 0.5px solid var(--wb-color-border-hairline);
+  border: 0;
   border-radius: var(--wb-radius-sm);
-  background: var(--wb-color-bg-surface);
+  background: var(--ui-fill-1);
   color: var(--wb-color-text-secondary);
   font-size: var(--wb-font-size-caption1);
 }
@@ -2430,16 +2431,6 @@ button.primary.wx-auth-submit {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 8px;
-}
-.favorite-image-sheet .media-frame {
-  display: block;
-  width: 100%;
-}
-.favorite-image-sheet img {
-  display: block;
-  width: 100%;
-  max-height: 70dvh;
-  object-fit: contain;
 }
 
 /* 3.17 会员 v5：PRO+ 价格与权益对照（features/membership.tsx） */

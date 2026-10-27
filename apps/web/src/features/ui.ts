@@ -26,7 +26,14 @@ export {
   type ChoiceOption,
   type SheetSnap,
 } from './shell-kit.js';
-export { EditPage as SubPage, FieldPage, PickRow, SubPageLayer } from './edit-page.js';
+export { EditPage as SubPage, FieldPage, PickRow, PushLayer, SubPageLayer } from './edit-page.js';
+// 2026-10-27 批 U5
+export { Lightbox, type LightboxItem } from './lightbox.js';
+export { KeyboardBar } from './keyboard-bar.js';
+export { MiddleEllipsis } from './middle-ellipsis.js';
+export { LayerHistoryContext, useLayerHistory } from './layer-history.js';
+export { isImeEnter } from './ime.js';
+export { TypingDots } from './chat-heading.js';
 export {
   DateField,
   DatePickerSheet,

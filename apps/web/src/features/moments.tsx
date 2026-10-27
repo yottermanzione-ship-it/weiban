@@ -26,6 +26,7 @@ import { friendlyError, useRemote } from '../data/use-remote.js';
 import { useUpdates } from '../data/updates.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { VirtualList } from './virtual-list.js';
+import { KeyboardBar } from './keyboard-bar.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { UserAvatar } from './user-avatar.js';
 import { AvatarEditor } from './avatar-editor.js';
@@ -42,7 +43,6 @@ import {
   NavBar,
   NavIcon,
   CheckCircle,
-  Sheet,
 } from './shell-kit.js';
 
 /*
@@ -236,16 +236,29 @@ export function MomentCommentRow({
           <MomentActorName actor={comment.replyTo} actors={actors} />
         </>
       )}
-      <button
-        type="button"
+      {/*
+        U5：正文用可点的行内文字（role=button），跟在名字后面接着排；
+        原生 button 在浏览器里总是行内块，长评论会整块掉到下一行。
+      */}
+      <span
+        role="button"
+        tabIndex={pending ? -1 : 0}
         className="moment-comment-text"
+        aria-disabled={pending || undefined}
         aria-label={`回复${actors.name(comment.author)}的评论`}
         {...press}
-        disabled={pending}
-        onClick={onReply}
+        onClick={() => {
+          if (!pending) onReply();
+        }}
+        onKeyDown={(event) => {
+          if ((event.key === 'Enter' || event.key === ' ') && !pending) {
+            event.preventDefault();
+            onReply();
+          }
+        }}
       >
         ：{comment.text}
-      </button>
+      </span>
     </p>
   );
 }
@@ -266,6 +279,16 @@ export function MomentCard({
 }) {
   const [replying, setReplying] = useState<MomentsComment | null | undefined>(undefined);
   const [text, setText] = useState('');
+  /** U5：草稿跟着评论对象走——收起后再点同一处评论接着写，换了回复对象才清空。 */
+  const [draftFor, setDraftFor] = useState<string | null>(null);
+  function openReply(target: MomentsComment | null) {
+    const key = target?.commentId ?? 'post';
+    if (key !== draftFor) {
+      setText('');
+      setDraftFor(key);
+    }
+    setReplying(target);
+  }
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [menu, setMenu] = useState(false);
@@ -386,7 +409,7 @@ export function MomentCard({
                     disabled={pending}
                     onClick={() => {
                       setMenu(false);
-                      setReplying(null);
+                      openReply(null);
                     }}
                   >
                     <OldIcon name="wechat/chat" size={18} />
@@ -419,7 +442,7 @@ export function MomentCard({
               disabled={pending}
               onClick={() => {
                 setError('');
-                setReplying(null);
+                openReply(null);
               }}
             >
               <OldIcon name="wechat/chat" size={18} />
@@ -450,7 +473,7 @@ export function MomentCard({
                 pending={pending}
                 onReply={() => {
                   setError('');
-                  setReplying(c);
+                  openReply(c);
                 }}
                 onDelete={() => setCommentMenu(c)}
               />
@@ -463,21 +486,15 @@ export function MomentCard({
           </div>
         )}
         {replying !== undefined && (
-          <Sheet
-            title={replying ? `回复${actors.name(replying.author)}` : '评论'}
-            closeLabel="取消"
-            closeDisabled={pending}
-            keepOnScrim={!!text.trim()}
-            half
-            onClose={() => {
-              if (!pending) {
-                setText('');
-                setReplying(undefined);
-              }
+          <KeyboardBar
+            label={replying ? `回复${actors.name(replying.author)}` : '评论'}
+            onDismiss={() => {
+              // 收起但保留草稿（微信同款）；发送中不收。
+              if (!pending) setReplying(undefined);
             }}
           >
             <form
-              className="moment-reply"
+              className="moment-reply moment-comment-bar"
               onSubmit={(e) => {
                 e.preventDefault();
                 if (pending || !text.trim()) return;
@@ -498,20 +515,29 @@ export function MomentCard({
             >
               <textarea
                 autoFocus
-                rows={2}
+                rows={1}
                 disabled={pending}
                 maxLength={500}
                 value={text}
                 aria-label="评论"
                 placeholder={replying ? `回复${actors.name(replying.author)}：` : '评论'}
-                onChange={(e) => setText(e.target.value)}
+                onChange={(e) => {
+                  setText(e.target.value);
+                  // 随内容长高，最多 4 行（样式里 max-height 封顶）。
+                  e.target.style.height = 'auto';
+                  e.target.style.height = `${e.target.scrollHeight}px`;
+                }}
               />
-              <button className="wx-send" disabled={pending || !text.trim()} aria-busy={pending}>
-                {pending ? '发送中…' : '发送'}
+              <button
+                className="primary wx-send"
+                disabled={pending || !text.trim()}
+                aria-busy={pending}
+              >
+                发送
               </button>
               {error && <small role="alert">{error}</small>}
             </form>
-          </Sheet>
+          </KeyboardBar>
         )}
         {error && <small role="alert">{error}</small>}
       </div>

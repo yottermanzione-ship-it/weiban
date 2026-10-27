@@ -7,10 +7,9 @@ import { api } from '../data/client.js';
 import { AvatarEditor } from './avatar-editor.js';
 import { ProfileAvatar } from './profile-avatar.js';
 import { useAuth } from '../app/auth.js';
-import { AliasRow, NudgeRow } from './profile-edit.js';
+import { AliasRow, NudgeRow, RegionPickerLayer } from './profile-edit.js';
 import { GroupHeader, MenuGroup, MenuRow, NavBar } from './shell-kit.js';
-import { REGION_GROUPS } from '../data/regions.js';
-import { DateField, SelectField } from './wheel-picker.js';
+import { DateField, PickerTrigger, SelectField } from './wheel-picker.js';
 
 /** 首次填写页「性别」选项（U2 起用 Choice Sheet 选择）。 */
 const GENDER_LABELS: Record<string, string> = {
@@ -37,6 +36,7 @@ function OnboardingProfilePage() {
   const [pending, setPending] = useState(false);
   // 头像和「我 › 个人信息」一样走同一套弹层（10-25：首次填写页对齐资料页，不再在页面上单开一块头像区）。
   const [editingAvatar, setEditingAvatar] = useState(false);
+  const [regionOpen, setRegionOpen] = useState(false);
   useEffect(() => {
     if (remote.data) {
       setForm({
@@ -158,21 +158,13 @@ function OnboardingProfilePage() {
           </div>
           <div className="menu-row profile-field">
             <span>地区</span>
-            <SelectField
-              title="地区"
-              value={form.city}
+            {/* U5：和资料页同一个地区页（定位 + 省份分组），原来是 30 多项的单列滚轮 */}
+            <PickerTrigger
+              text={form.city}
               placeholder="不填写"
+              label="地区"
               disabled={!loaded}
-              options={[
-                { value: '', label: '不填写' },
-                ...(form.city && !REGION_GROUPS.some((g) => g.items.includes(form.city))
-                  ? [{ value: form.city, label: form.city }]
-                  : []),
-                ...REGION_GROUPS.flatMap((group) =>
-                  group.items.map((item) => ({ value: item, label: item })),
-                ),
-              ]}
-              onChange={(city) => setForm({ ...form, city })}
+              onOpen={() => setRegionOpen(true)}
             />
           </div>
           <label className="menu-row profile-field multiline">
@@ -204,6 +196,13 @@ function OnboardingProfilePage() {
           </p>
         )}
       </form>
+      {regionOpen && (
+        <RegionPickerLayer
+          value={form.city}
+          onPick={(city) => setForm((value) => ({ ...value, city }))}
+          onClose={() => setRegionOpen(false)}
+        />
+      )}
       {editingAvatar && (
         <AvatarEditor
           sheet

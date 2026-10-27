@@ -7,8 +7,11 @@
  * - InfoPage：白底，左上返回、大图标、标题、说明、底部灰色按钮（微信「微信号」页）。
  * 这些页面都是独立路由，进入 / 返回沿用 RouteMotion 的整页推入转场。
  */
+import { isImeEnter } from './ime.js';
 import { useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { OldIcon } from './old-icons.js';
+import { useLayerHistory } from './layer-history.js';
 import { BackArrow, NavBar, useBack, useEscape } from './shell-kit.js';
 
 /**
@@ -100,6 +103,10 @@ export function SubPageLayer({
   useEscape(() => {
     if (!pending) onCancel();
   });
+  // U5：进浏览器历史，安卓返回键 / 浏览器后退只关这一层（等同「取消」）。
+  useLayerHistory(() => {
+    if (!pending) onCancel();
+  });
   return (
     <div className="subpage-layer" role="dialog" aria-modal="true" aria-label={title}>
       <EditPage
@@ -115,6 +122,42 @@ export function SubPageLayer({
         {children}
       </EditPage>
     </div>
+  );
+}
+
+/**
+ * 页内只读整页（2026-10-27 批 U5）：外观同普通二级页面——从右侧整页推入、顶栏返回箭头 + 标题，
+ * 用来看内容而不是编辑（聊天记录详情）。和 SubPageLayer 一样进浏览器历史，返回键只关这一层。
+ */
+export function PushLayer({
+  title,
+  onClose,
+  right,
+  children,
+  className,
+}: {
+  title: ReactNode;
+  onClose(): void;
+  right?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  useEscape(onClose);
+  useLayerHistory(onClose);
+  // 挂到 body：常从消息气泡里打开（聊天记录卡片），不能被消息列表的层叠上下文压在顶部浮条下面。
+  return createPortal(
+    <div
+      className="subpage-layer"
+      role="dialog"
+      aria-modal="true"
+      aria-label={typeof title === 'string' ? title : undefined}
+    >
+      <main className={`edit-page push-layer ${className ?? ''}`}>
+        <NavBar title={title} onBack={onClose} right={right} />
+        {children}
+      </main>
+    </div>,
+    document.body,
   );
 }
 
@@ -218,7 +261,7 @@ export function ClearInput({
         autoFocus={autoFocus}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === 'Enter' && !event.nativeEvent.isComposing) onEnter?.();
+          if (event.key === 'Enter' && !isImeEnter(event)) onEnter?.();
         }}
       />
       {value !== '' && !disabled && (
@@ -340,8 +383,7 @@ export function FormPage({
           autoFocus
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.nativeEvent.isComposing && canSubmit && !pending)
-              onSubmit();
+            if (event.key === 'Enter' && !isImeEnter(event) && canSubmit && !pending) onSubmit();
           }}
         />
       </div>

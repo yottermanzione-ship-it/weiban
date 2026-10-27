@@ -80,7 +80,7 @@
 }
 .persona-count.on svg,
 .persona-count.on img {
-  animation: plaza-pop var(--wb-motion-duration-base) var(--wb-motion-easing-spring);
+  animation: plaza-pop var(--ui-motion-pop) var(--ui-ease-spring);
 }
 .persona-head-extra {
   display: flex;
@@ -196,7 +196,8 @@
   gap: var(--wb-space-3);
   margin: 0;
   padding: var(--wb-space-4) var(--wb-space-3);
-  border-radius: var(--wb-radius-md);
+  /* U5 同心圆角：外 12 = 里面头像 4 + 间距 8 */
+  border-radius: var(--wb-radius-lg);
   background: var(--wb-color-bg-page);
   list-style: none;
 }

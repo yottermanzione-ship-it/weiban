@@ -6,6 +6,20 @@ import { useLongPress } from './shell-kit.js';
 const DOUBLE_TAP_MS = 320;
 
 /**
+ * U5 动效分性格：拍一拍属于「弹性」一类——被拍的头像轻轻抖一下（--ui-motion-pop + 弹性曲线），
+ * 和点赞的弹一下同一种性格。去掉再加类名，连拍也能重播。
+ */
+function playNudge(element: Element | null) {
+  if (!element) return;
+  element.classList.remove('nudging');
+  void (element as HTMLElement).offsetWidth;
+  element.classList.add('nudging');
+  element.addEventListener('animationend', () => element.classList.remove('nudging'), {
+    once: true,
+  });
+}
+
+/**
  * 聊天里对方头像：单击进资料（延迟一下等第二次点击）、双击拍一拍、长按弹菜单（3.27 H1）。
  * 只延迟普通指针点击；Enter 与带修饰键的点击保持链接原本行为。
  */
@@ -22,6 +36,7 @@ export function ChatAvatarLink({
   children: ReactNode;
 }) {
   const navigate = useNavigate();
+  const link = useRef<HTMLAnchorElement>(null);
   const timer = useRef(0);
   const last = useRef(0);
   useEffect(() => () => window.clearTimeout(timer.current), []);
@@ -32,6 +47,7 @@ export function ChatAvatarLink({
   });
   return (
     <Link
+      ref={link}
       className="wx-avatar-link"
       to={to}
       aria-label="查看资料（双击拍一拍）"
@@ -53,6 +69,7 @@ export function ChatAvatarLink({
         window.clearTimeout(timer.current);
         if (last.current && now - last.current < DOUBLE_TAP_MS) {
           last.current = 0;
+          playNudge(link.current);
           onNudge();
         } else {
           last.current = now;
@@ -71,8 +88,10 @@ export function ChatAvatarLink({
 /** 3.27（H1）：自己的头像双击 = 拍了拍自己（微信同款）；单击没有动作。 */
 export function SelfNudgeAvatar({ onNudge, children }: { onNudge(): void; children: ReactNode }) {
   const last = useRef(0);
+  const self = useRef<HTMLSpanElement>(null);
   return (
     <span
+      ref={self}
       className="wx-avatar-link"
       role="button"
       tabIndex={-1}
@@ -82,6 +101,7 @@ export function SelfNudgeAvatar({ onNudge, children }: { onNudge(): void; childr
         const now = Date.now();
         if (last.current && now - last.current < DOUBLE_TAP_MS) {
           last.current = 0;
+          playNudge(self.current);
           onNudge();
         } else last.current = now;
       }}

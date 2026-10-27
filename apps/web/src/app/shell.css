@@ -1158,7 +1158,7 @@ main > button.danger-row {
 .swipe-track {
   position: relative;
   z-index: 1;
-  transition: transform var(--wb-motion-duration-swipe) var(--ui-ease-out);
+  transition: transform var(--ui-motion-snap) var(--ui-ease-snap);
 }
 /*
  * will-change 只在真正拖动 / 已滑开的那一行挂：常驻会给列表里每个挂载行都建一个合成层
@@ -1556,8 +1556,9 @@ main > button.danger-row {
   gap: var(--wb-space-2);
   margin-top: var(--wb-space-3);
   padding: var(--wb-space-2) 10px;
-  border: 1px solid var(--ui-brand-line);
-  border-radius: var(--wb-radius-xl);
+  border: 0;
+  border-radius: var(--wb-radius-full);
+  background: var(--wb-color-brand-soft);
   color: var(--wb-color-brand-primary);
   font-size: var(--wb-font-size-footnote);
 }
@@ -1590,8 +1591,9 @@ main > button.danger-row {
   gap: 3px;
   min-height: 28px;
   padding: 0 11px 0 9px;
-  border: 1px solid var(--wb-color-border-hairline);
+  border: 0;
   border-radius: var(--wb-radius-full);
+  background: var(--ui-fill-1);
   color: var(--wb-color-text-secondary);
   font-size: var(--wb-font-size-footnote);
   text-decoration: none;
@@ -1773,9 +1775,9 @@ main.status-page {
 .status-durations button {
   min-height: 32px;
   padding: 0 14px;
-  border: 1px solid var(--ui-on-dark-line);
+  border: 0;
   border-radius: var(--wb-radius-full);
-  background: transparent;
+  background: var(--ui-on-dark-fill-2);
   color: var(--ui-on-dark-text);
   font-size: var(--wb-font-size-footnote);
 }
@@ -1979,7 +1981,7 @@ main.status-page {
   gap: var(--wb-space-5);
   margin: 0;
   padding: 0 0 0 var(--wb-space-5);
-  border-left: 1px solid var(--wb-color-border-hairline);
+  border-left: 0.5px solid var(--wb-color-border-hairline);
   list-style: none;
 }
 .moments-line li {
@@ -2035,8 +2037,9 @@ main.status-page {
   display: inline-block;
   margin-left: 6px;
   padding: 0 5px;
-  border: 1px solid var(--wb-color-brand-primary);
+  border: 0;
   border-radius: var(--wb-radius-xs);
+  background: var(--wb-color-brand-soft);
   color: var(--wb-color-brand-primary);
   font-size: 11px;
   line-height: 16px;
@@ -2047,8 +2050,9 @@ main.status-page {
   display: inline-block;
   margin-left: 6px;
   padding: 0 5px;
-  border: 1px solid var(--wb-color-text-danger);
+  border: 0;
   border-radius: var(--wb-radius-xs);
+  background: var(--wb-color-status-danger-soft);
   color: var(--wb-color-text-danger);
   font-size: 11px;
   line-height: 16px;

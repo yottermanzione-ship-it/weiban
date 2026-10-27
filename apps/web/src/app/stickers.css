@@ -188,8 +188,8 @@
   width: 100%;
   aspect-ratio: 1;
   object-fit: contain;
-  border: 0.5px solid var(--wb-color-border-hairline);
   border-radius: var(--wb-radius-md);
+  background: var(--ui-fill-0);
 }
 .sticker-store-tile span {
   font-size: var(--wb-font-size-footnote);

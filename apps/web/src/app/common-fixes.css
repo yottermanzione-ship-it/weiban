@@ -230,16 +230,16 @@ select {
 .route-enter-right {
   position: relative;
   z-index: 2;
-  animation: route-enter-right var(--ui-motion-route) var(--ui-ease-out);
+  animation: route-enter-right var(--ui-motion-route) var(--ui-ease-push);
 }
 .route-enter-left {
-  animation: route-enter-left var(--ui-motion-route) var(--ui-ease-out);
+  animation: route-enter-left var(--ui-motion-route) var(--ui-ease-push);
 }
 .route-exit-right {
-  animation: route-exit-right var(--ui-motion-route) var(--ui-ease-out) forwards;
+  animation: route-exit-right var(--ui-motion-route) var(--ui-ease-push) forwards;
 }
 .route-exit-left {
-  animation: route-exit-left var(--ui-motion-route) var(--ui-ease-out) forwards;
+  animation: route-exit-left var(--ui-motion-route) var(--ui-ease-push) forwards;
 }
 @keyframes route-enter-right {
   from {
