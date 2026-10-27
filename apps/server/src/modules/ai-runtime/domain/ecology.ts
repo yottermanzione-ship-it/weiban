@@ -454,6 +454,44 @@ export function interpretJevAnswers(
   return verdict;
 }
 
+/**
+ * 保底（总经理 10-27「加保底」）：Jev 一项都没通过时，只要此刻不打扰，就取「想做」可能性最高的一项去做，
+ * 让活跃程度 ≈ 实际动静次数。可能性：选 act 时 = 把握值，选 defer 时 = 1 − 把握值；缺答案 / 重复 / 非法值不参与。
+ * 打扰的情形不保底：深夜、已有 2 条以上未回、对方在用应用却没回。只在聊天类与朋友圈互动里挑（用户看得见的动静）。
+ */
+export function ecologyFallback(
+  candidates: readonly EcologyActionKey[],
+  answers: ReadonlyArray<{ questionId: string; choice: string; confidence: number }>,
+  context: { lateNight: boolean; unansweredCount: number; userActiveInApp30m: boolean },
+): { action: EcologyActionKey; score: number } | null {
+  if (
+    context.lateNight ||
+    context.unansweredCount >= 2 ||
+    (context.unansweredCount >= 1 && context.userActiveInApp30m)
+  )
+    return null;
+  let best: { action: EcologyActionKey; score: number } | null = null;
+  for (const action of candidates) {
+    if (!CHAT_FAMILY.has(action) && !FALLBACK_EXTRA.has(action)) continue;
+    const matches = answers.filter((a) => a.questionId === action);
+    const answer = matches[0];
+    if (
+      !answer ||
+      matches.length !== 1 ||
+      !(JEV_OPTIONS as readonly string[]).includes(answer.choice) ||
+      !Number.isFinite(answer.confidence) ||
+      answer.confidence < 0 ||
+      answer.confidence > 1
+    )
+      continue;
+    const score = answer.choice === 'act' ? answer.confidence : 1 - answer.confidence;
+    if (!best || score > best.score) best = { action, score };
+  }
+  return best;
+}
+
+const FALLBACK_EXTRA: ReadonlySet<EcologyActionKey> = new Set(['moment_interact', 'moment_reply']);
+
 /** 同一轮最多一个「给对方发聊天」的动作（拍一拍也算），避免连发打扰。 */
 const CHAT_FAMILY: ReadonlySet<EcologyActionKey> = new Set([
   'message',

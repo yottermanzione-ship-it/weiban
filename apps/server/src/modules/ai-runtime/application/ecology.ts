@@ -72,6 +72,7 @@ import {
   LEVEL_ORDER,
   TEXT_MODEL_ACTIONS,
   detectUserRequest,
+  ecologyFallback,
   interpretJevAnswers,
   jevPrompt,
   microsToPoints,
@@ -436,8 +437,22 @@ export class EcologyService {
     }
     let charged = asked.chargedMicros;
     const verdict = interpretJevAnswers(candidates, asked.answers);
-    const { selected, dropped } = resolveEcologyConflicts(verdict.approved, MAX_ACTIONS_PER_WAKE);
-    const trace = jevTrace(verdict, dropped);
+    const resolved = resolveEcologyConflicts(verdict.approved, MAX_ACTIONS_PER_WAKE);
+    const { dropped } = resolved;
+    let { selected } = resolved;
+    let trace = jevTrace(verdict, dropped);
+    if (!selected.length) {
+      // 保底：Jev 一项都没通过但此刻不打扰时，做「想做」可能性最高的一项（详见 ecologyFallback）。
+      const fallback = ecologyFallback(candidates, asked.answers, {
+        lateNight: snapshot.features.lateNight === true,
+        unansweredCount: Number(snapshot.features.unansweredCount ?? 0),
+        userActiveInApp30m: snapshot.features.userActiveInApp30m === true,
+      });
+      if (fallback) {
+        selected = [fallback.action];
+        trace += `${trace ? ' ' : ' | '}fb=${fallback.action}:${fallback.score.toFixed(2)}`;
+      }
+    }
     if (!selected.length)
       return idle(
         `${verdict.lowConfidence.length ? 'jev_low_confidence' : verdict.invalid.length ? 'jev_invalid' : 'jev_declined'}${trace}`,
