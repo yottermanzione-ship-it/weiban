@@ -110,28 +110,40 @@ function setup(implementation: 'jev' | 'rules' | 'rules_model' = 'jev') {
   return { service, rows, decide, generateText, spend, select };
 }
 
+// 3.29：行为规划不再调用 Jev；后台旧的 jev 配置映射为「规则 + 用户自己的聊天文本模型」，
+// 所以下面以文本模型（generateText）为真实付费路径，并断言 Jev（decide）永远不会被调用。
+const textAnswer = (answers: Record<string, Record<string, number>>, chargedMicros = 456) => ({
+  ok: true as const,
+  value: {
+    text: JSON.stringify({
+      answers: Object.fromEntries(
+        Object.entries(answers).map(([id, probs]) => [id, { probs, why: 'x' }]),
+      ),
+    }),
+    usageRecordId: 'text-usage',
+    chargedMicros,
+  },
+});
+
 describe('independent planner batches', () => {
-  it('asks Jev once, permits both actions, and records the shared charge exactly once', async () => {
-    const s = setup();
+  it('maps a legacy Jev config to one text-model call, permits both actions, records the shared charge once', async () => {
+    const s = setup('jev');
     const result = await s.service.decideBatch(request());
     expect(result.voice?.choice).toBe('voice');
     expect(result.sticker?.choice).toBe('keep_sticker');
-    expect(s.decide).toHaveBeenCalledTimes(1);
-    expect(s.decide).toHaveBeenCalledWith(
+    expect(s.generateText).toHaveBeenCalledTimes(1);
+    expect(s.generateText).toHaveBeenCalledWith(
       expect.objectContaining({
         billingOwner: 'user',
         purpose: 'behavior_planning',
         characterId: 'character',
-        questions: expect.arrayContaining([
-          expect.objectContaining({ questionId: 'voice' }),
-          expect.objectContaining({ questionId: 'sticker' }),
-        ]),
+        modelRole: 'chat',
       }),
     );
-    expect(s.generateText).not.toHaveBeenCalled();
+    expect(s.decide).not.toHaveBeenCalled();
     expect(s.rows).toHaveLength(2);
-    expect(s.rows.map((row) => row.usageRecordId)).toEqual(['usage-1', 'usage-1']);
-    expect(s.rows.reduce((sum, row) => sum + row.chargedMicros, 0)).toBe(1234);
+    expect(s.rows.map((row) => row.usageRecordId)).toEqual(['text-usage', 'text-usage']);
+    expect(s.rows.reduce((sum, row) => sum + row.chargedMicros, 0)).toBe(456);
   });
 
   it('replays the same decision despite reordered questions without asking or recording twice', async () => {
@@ -140,40 +152,24 @@ describe('independent planner batches', () => {
     const first = await s.service.decideBatch(req);
     const replay = await s.service.decideBatch({ ...req, questions: [...req.questions].reverse() });
     expect(replay).toEqual(first);
-    expect(s.decide).toHaveBeenCalledTimes(1);
+    expect(s.generateText).toHaveBeenCalledTimes(1);
     expect(s.rows).toHaveLength(2);
   });
 
   it('rejects only the low-confidence action, not the independent approved action', async () => {
     const s = setup();
-    const base = await s.decide({ questions: [] });
-    s.decide.mockClear();
-    s.decide.mockResolvedValue({
-      ...base,
-      value: {
-        ...base.value,
-        answers: [
-          {
-            questionId: 'voice',
-            choice: 'voice',
-            confidence: 0.2,
-            probabilities: { voice: 0.6, text: 0.4 },
-          },
-          {
-            questionId: 'sticker',
-            choice: 'keep_sticker',
-            confidence: 0.9,
-            probabilities: { keep_sticker: 0.95, no_sticker: 0.05 },
-          },
-        ],
-      },
-    });
+    s.generateText.mockResolvedValue(
+      textAnswer({
+        voice: { voice: 0.6, text: 0.4 },
+        sticker: { keep_sticker: 0.95, no_sticker: 0.05 },
+      }),
+    );
     const result = await s.service.decideBatch(request());
     expect(result.voice).toMatchObject({ choice: 'text', fallback: 'low_confidence' });
     expect(result.sticker).toMatchObject({ choice: 'keep_sticker', fallback: null });
   });
 
-  it('does not send raw text or arbitrary new feature values to Jev', async () => {
+  it('does not send raw text or arbitrary new feature values to the planner model', async () => {
     const s = setup();
     const req = request();
     req.questions[0]!.features = {
@@ -184,7 +180,7 @@ describe('independent planner batches', () => {
       stickerMeaning: '健康金丝雀',
     };
     await s.service.decideBatch(req);
-    const payload = JSON.stringify(s.decide.mock.calls[0]);
+    const payload = JSON.stringify(s.generateText.mock.calls[0]);
     expect(payload).not.toContain('金丝雀');
     expect(payload).toContain('replyLength');
   });
@@ -203,12 +199,12 @@ describe('independent planner batches', () => {
 
   it('uses conservative actions on supplier failure rather than positive rule defaults', async () => {
     const s = setup();
-    s.decide.mockRejectedValue(new Error('supplier failure'));
+    s.generateText.mockRejectedValue(new Error('supplier failure'));
     const result = await s.service.decideBatch(request());
     expect(result.voice).toMatchObject({ choice: 'text', fallback: 'error' });
     expect(result.sticker?.choice).toBe('no_sticker');
-    expect(s.decide).toHaveBeenCalledTimes(1);
-    expect(s.generateText).not.toHaveBeenCalled();
+    expect(s.generateText).toHaveBeenCalledTimes(1);
+    expect(s.decide).not.toHaveBeenCalled();
   });
 
   it('skips the supplier when the existing cost guard trips', async () => {
@@ -217,6 +213,7 @@ describe('independent planner batches', () => {
     const result = await s.service.decideBatch(request());
     expect(result.voice).toMatchObject({ choice: 'text', fallback: 'cost_guard' });
     expect(s.decide).not.toHaveBeenCalled();
+    expect(s.generateText).not.toHaveBeenCalled();
   });
 
   it('does not call anything for an empty batch or forced-only options', async () => {
@@ -228,13 +225,12 @@ describe('independent planner batches', () => {
     ];
     expect((await s.service.decideBatch(req)).voice?.choice).toBe('text');
     expect(s.decide).not.toHaveBeenCalled();
+    expect(s.generateText).not.toHaveBeenCalled();
   });
 
   it('rejects missing answers and keeps the already-incurred charge in one record', async () => {
     const s = setup();
-    const base = await s.decide({ questions: [] });
-    s.decide.mockClear();
-    s.decide.mockResolvedValue(base);
+    s.generateText.mockResolvedValue(textAnswer({ voice: { voice: 0.95, text: 0.05 } }, 1234));
     const result = await s.service.decideBatch(request());
     expect(result.voice).toMatchObject({ choice: 'text', fallback: 'invalid_choice' });
     expect(result.sticker?.choice).toBe('no_sticker');
@@ -279,14 +275,14 @@ describe('independent planner batches', () => {
     vi.useFakeTimers();
     try {
       const s = setup();
-      s.decide.mockImplementation(() => new Promise(() => {}));
+      s.generateText.mockImplementation(() => new Promise(() => {}));
       const pending = s.service.decideBatch({ ...request(), timeoutMs: 5 });
       await vi.advanceTimersByTimeAsync(10);
       const result = await pending;
       expect(result.voice).toMatchObject({ choice: 'text', fallback: 'timeout' });
       expect(result.sticker?.choice).toBe('no_sticker');
-      expect(s.decide).toHaveBeenCalledTimes(1);
-      expect(s.generateText).not.toHaveBeenCalled();
+      expect(s.generateText).toHaveBeenCalledTimes(1);
+      expect(s.decide).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }

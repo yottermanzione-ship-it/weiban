@@ -1,6 +1,9 @@
 package app.weiban.feature.me
 
 import android.content.Context
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -175,7 +178,7 @@ class MeScreenTest {
         compose.setContent { WeibanTheme { MeScreen(repository, onTheme = {}, onLogout = {}, entry = MeEntry(notifications = controls)) } }
         compose.waitUntil(10_000) { requests.any { it.path == "/api/v1/me/preferences" } }
         compose.onNodeWithText("设置").performScrollTo().performClick()
-        compose.onNodeWithText("新消息通知").performScrollTo().performClick()
+        compose.onNodeWithText("推送").performScrollTo().performClick()
         awaitNotificationControls()
         compose.onNodeWithText("此设备暂不支持消息通知").assertExists()
         compose.onNodeWithText("开启通知").assertIsNotEnabled()
@@ -261,7 +264,15 @@ class MeScreenTest {
 
     @Test fun firstProfileSaveUsesNativeFormAndRefreshesAccount() {
         var theme = "green"
-        compose.setContent { WeibanTheme { MeScreen(repository, firstProfile = true, onTheme = { theme = it }, onLogout = {}) } }
+        compose.setContent {
+            val auth by repository.auth.collectAsState()
+            // SignedIn leaves the first-profile screen after updateUser; reproduce that host lifecycle.
+            key(auth?.user?.profileCompleted) {
+                WeibanTheme {
+                    MeScreen(repository, firstProfile = auth?.user?.profileCompleted == false, onTheme = { theme = it }, onLogout = {})
+                }
+            }
+        }
         compose.waitUntil(10_000) {
             requests.size >= 3 &&
                 compose
@@ -273,7 +284,7 @@ class MeScreenTest {
         compose.onNodeWithText("选择并裁剪头像").assertDoesNotExist()
         compose.onNodeWithText("昵称").performTextInput("原生昵称")
         compose.onNodeWithText("下一步").performScrollTo().performClick()
-        compose.waitUntil(10_000) { compose.onAllNodesWithText("账号：native_user").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("微伴号：native_user").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("原生昵称").assertIsDisplayed()
         assertTrue(
             repository.auth.value!!

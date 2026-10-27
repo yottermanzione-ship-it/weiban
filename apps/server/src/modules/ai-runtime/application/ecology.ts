@@ -69,8 +69,10 @@ import { HOLIDAY_EVENT_PORT } from '../../proactive/index.js';
 import {
   ACTION_DEF,
   JEV_OPTIONS,
+  LEVEL_ORDER,
   TEXT_MODEL_ACTIONS,
   detectUserRequest,
+  ecologyFallback,
   interpretJevAnswers,
   jevPrompt,
   microsToPoints,
@@ -110,6 +112,8 @@ export const ECOLOGY_CLEANUP_JOB = 'ai.ecology_cleanup';
 const MAX_WAKES_PER_TICK = 2;
 /** 你发了还没回的主动消息达到这个数，就不再给聊天类工具（不纠缠，17 号 §7、PRD SIM-05）。 */
 const UNANSWERED_LIMIT = 2;
+/** 角色消息之间超过这个间隔，算新的一轮（一次回复的多个气泡只算一轮）。 */
+const TURN_GAP_MS = 10 * 60_000;
 /** 用户 5 分钟内在聊天：不插聊天类动作（同 P-09）。 */
 const BUSY_MS = 5 * 60_000;
 const ABSENCE_MS = 72 * 3600_000;
@@ -435,8 +439,22 @@ export class EcologyService {
     }
     let charged = asked.chargedMicros;
     const verdict = interpretJevAnswers(candidates, asked.answers);
-    const { selected, dropped } = resolveEcologyConflicts(verdict.approved, MAX_ACTIONS_PER_WAKE);
-    const trace = jevTrace(verdict, dropped);
+    const resolved = resolveEcologyConflicts(verdict.approved, MAX_ACTIONS_PER_WAKE);
+    const { dropped } = resolved;
+    let { selected } = resolved;
+    let trace = jevTrace(verdict, dropped);
+    if (!selected.length) {
+      // 保底：Jev 一项都没通过但此刻不打扰时，做「想做」可能性最高的一项（详见 ecologyFallback）。
+      const fallback = ecologyFallback(candidates, asked.answers, {
+        lateNight: snapshot.features.lateNight === true,
+        unansweredCount: Number(snapshot.features.unansweredCount ?? 0),
+        userActiveInApp30m: snapshot.features.userActiveInApp30m === true,
+      });
+      if (fallback) {
+        selected = [fallback.action];
+        trace += `${trace ? ' ' : ' | '}fb=${fallback.action}:${fallback.score.toFixed(2)}`;
+      }
+    }
     if (!selected.length)
       return idle(
         `${verdict.lowConfidence.length ? 'jev_low_confidence' : verdict.invalid.length ? 'jev_invalid' : 'jev_declined'}${trace}`,
@@ -831,12 +849,17 @@ export class EcologyService {
       .readMessages({ conversationId: contact.conversationId, scopes: ['normal'], limit: 30 })
       .catch(() => []);
     const visible = history.filter((m) => m.senderKind !== 'system' && m.status === 'normal');
+    // 未回复 = 用户最后一句之后角色「主动」的轮数。对那句话的直接回复（常拆成几个气泡）不算；
+    // 与上一条相隔超过 TURN_GAP_MS 的一串角色消息算一轮主动（10-28 生产：3 个回复气泡被算成 3 条未回，聊天类候选全被挡掉）。
+    const lastUserIndex = visible.map((m) => m.senderKind).lastIndexOf('user');
     let unanswered = 0;
-    for (let i = visible.length - 1; i >= 0; i--) {
-      if (visible[i]!.senderKind === 'user') break;
-      unanswered++;
+    let previousAt = lastUserIndex >= 0 ? Date.parse(visible[lastUserIndex]!.createdAt) : null;
+    for (const m of visible.slice(lastUserIndex + 1)) {
+      const at = Date.parse(m.createdAt);
+      if (previousAt === null || at - previousAt > TURN_GAP_MS) unanswered++;
+      previousAt = at;
     }
-    const lastUser = [...visible].reverse().find((m) => m.senderKind === 'user');
+    const lastUser = lastUserIndex >= 0 ? visible[lastUserIndex] : undefined;
     const sinceUserMs = lastUser ? nowMs - Date.parse(lastUser.createdAt) : Infinity;
     const [activity] = await this.db.db
       .select({ at: sql<Date>`max(${userChatActivity.lastAt})` })
@@ -1031,6 +1054,10 @@ export class EcologyService {
       if (ok) tools.push(def.key);
     }
     const features: JevState = {
+      // 10-27：用户在生态设置里选的活跃程度（1 偶尔冒泡 … 4 形影不离），Jev 据此决定主动的力度。
+      userActivityLevel:
+        LEVEL_ORDER.indexOf((userRow?.activityLevel ?? 'often') as (typeof LEVEL_ORDER)[number]) +
+        1,
       localHour: local.hour,
       weekday,
       lateNight,

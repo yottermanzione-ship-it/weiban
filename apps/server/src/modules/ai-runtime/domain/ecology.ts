@@ -393,7 +393,7 @@ const JEV_HINT: Partial<Record<EcologyActionKey, string>> = {
 /** 每个候选的判定题干：只问做不做，不让 Jev 写内容。 */
 export function jevPrompt(action: EcologyActionKey): string {
   const label = ACTION_DEF.get(action)?.label ?? action;
-  return `陪伴应用里的角色此刻是否适合「${label}」？${JEV_HINT[action] ?? ''}依据 state.summary 的对话现状和 state.features 中的时间、活跃情况、未回复条数、今天已做过的次数独立判断这一项（与其他题互不影响）；像真人一样克制，深夜一般不打扰。act 表示现在适合做；defer 表示不适合、会打扰或不确定。`;
+  return `陪伴应用里的角色此刻是否适合「${label}」？${JEV_HINT[action] ?? ''}依据 state.summary 的对话现状和 state.features 中的时间、活跃情况、未回复条数、今天已做过的次数独立判断这一项（与其他题互不影响）；state.features.userActivityLevel 是用户主动选择的活跃程度（1 偶尔冒泡、2 时常出现、3 常伴左右、4 形影不离），这次唤醒本身就是按用户期望安排的主动机会：档位越高越应该主动，3、4 档时只要不会明显打扰（深夜、对方刚说要忙或已有多条未回复）就倾向 act；1 档时更克制。act 表示现在适合做；defer 表示会打扰或明显不合时宜。`;
 }
 
 export interface JevVerdict {
@@ -453,6 +453,44 @@ export function interpretJevAnswers(
   }
   return verdict;
 }
+
+/**
+ * 保底（总经理 10-27「加保底」）：Jev 一项都没通过时，只要此刻不打扰，就取「想做」可能性最高的一项去做，
+ * 让活跃程度 ≈ 实际动静次数。可能性：选 act 时 = 把握值，选 defer 时 = 1 − 把握值；缺答案 / 重复 / 非法值不参与。
+ * 打扰的情形不保底：深夜、已有 2 条以上未回、对方在用应用却没回。只在聊天类与朋友圈互动里挑（用户看得见的动静）。
+ */
+export function ecologyFallback(
+  candidates: readonly EcologyActionKey[],
+  answers: ReadonlyArray<{ questionId: string; choice: string; confidence: number }>,
+  context: { lateNight: boolean; unansweredCount: number; userActiveInApp30m: boolean },
+): { action: EcologyActionKey; score: number } | null {
+  if (
+    context.lateNight ||
+    context.unansweredCount >= 2 ||
+    (context.unansweredCount >= 1 && context.userActiveInApp30m)
+  )
+    return null;
+  let best: { action: EcologyActionKey; score: number } | null = null;
+  for (const action of candidates) {
+    if (!CHAT_FAMILY.has(action) && !FALLBACK_EXTRA.has(action)) continue;
+    const matches = answers.filter((a) => a.questionId === action);
+    const answer = matches[0];
+    if (
+      !answer ||
+      matches.length !== 1 ||
+      !(JEV_OPTIONS as readonly string[]).includes(answer.choice) ||
+      !Number.isFinite(answer.confidence) ||
+      answer.confidence < 0 ||
+      answer.confidence > 1
+    )
+      continue;
+    const score = answer.choice === 'act' ? answer.confidence : 1 - answer.confidence;
+    if (!best || score > best.score) best = { action, score };
+  }
+  return best;
+}
+
+const FALLBACK_EXTRA: ReadonlySet<EcologyActionKey> = new Set(['moment_interact', 'moment_reply']);
 
 /** 同一轮最多一个「给对方发聊天」的动作（拍一拍也算），避免连发打扰。 */
 const CHAT_FAMILY: ReadonlySet<EcologyActionKey> = new Set([

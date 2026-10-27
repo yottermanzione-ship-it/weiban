@@ -661,20 +661,29 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
     expect(
       (await http().get(path).set('Authorization', auth()).expect(200)).body.scenarioMode,
     ).toBe('adult');
+    // 4.1（dead31c）：私密模型下架 / 不可用时不再静默切回日常（否则之后的敏感输入会落进 normal），
+    // 保留私密设置与消息范围，只发一次「私密模型不可用」提示，由用户自己切换。
     adultAvailability = 'model_removed';
     expect(
       (await http().get(path).set('Authorization', auth()).expect(200)).body.scenarioMode,
-    ).toBe('daily');
-    expect((await app.get(CHAT_READ_PORT).getConversation(cid)).contentScope).toBe('normal');
+    ).toBe('adult');
+    expect((await app.get(CHAT_READ_PORT).getConversation(cid)).contentScope).toBe('adult');
     const messages = await app
       .get(CHAT_READ_PORT)
-      .readMessages({ conversationId: cid, scopes: ['normal'], limit: 2 });
+      .readMessages({ conversationId: cid, scopes: ['normal', 'adult'], limit: 5 });
     expect(
       messages.some(
         (m: { content?: { type: string; code?: string } | null }) =>
-          m.content?.code === 'scenario_mode_changed',
+          m.content?.code === 'scenario_mode_unavailable',
       ),
     ).toBe(true);
+    // 用户主动切回日常：范围回到 normal（下一条用例从日常起步）。
+    await http()
+      .patch(path)
+      .set('Authorization', auth())
+      .send({ scenarioMode: 'daily' })
+      .expect(200);
+    expect((await app.get(CHAT_READ_PORT).getConversation(cid)).contentScope).toBe('normal');
     adultAvailability = 'not_configured';
   });
   it('H2：切出私密模式由私密模型生成干净整理且只一次；日常不读私密原文；私密模式拒绝语音', async () => {
@@ -934,7 +943,18 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
   }, 120_000);
   it('长消息抽取按完整来源分批，网关输入有界且不跳过剩余游标', async () => {
     response = JSON.stringify({ operations: [] });
-    for (let i = 0; i < 4; i++) await memory().extract(await job());
+    // 先把前面用例留下的待抽取消息清空（固定跑 4 次不一定够：H2 / H3 用例会多留几条），最多 20 次。
+    const pendingCount = async () =>
+      (
+        await db.query<{ pending_count: number }>(
+          'SELECT pending_count FROM ai_runtime.memory_states WHERE user_id=$1',
+          [userId],
+        )
+      ).rows[0]?.pending_count ?? 0;
+    for (let i = 0; i < 20; i++) {
+      await memory().extract(await job());
+      if (i >= 3 && (await pendingCount()) === 0) break;
+    }
     for (let i = 0; i < 65; i++)
       await app.get<ChatUserPort>(CHAT_USER_PORT).sendMessage(userId, cid, {
         clientMsgId: newId(),

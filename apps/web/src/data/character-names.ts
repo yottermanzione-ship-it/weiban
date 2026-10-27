@@ -1,8 +1,24 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CharacterEndpoints } from '@weiban/contracts';
 import { api } from './client.js';
 import { useAuth } from '../app/auth.js';
 import { loadCharacterProfile } from './character-profile.js';
+/**
+ * U8：内存里已有的角色资料（含启动页从本机库 prime 进来的）先把名字给出来：
+ * 通讯录首帧就能按名字排好序，不再先空着、名字陆续到了再整列表跳一次。
+ */
+function memoryNames(ids: string[]): Record<string, string> {
+  const names: Record<string, string> = {};
+  for (const characterId of ids) {
+    const hit = api.peek(
+      CharacterEndpoints.getProfile,
+      { params: { characterId } },
+      { allowStale: true },
+    );
+    if (hit) names[characterId] = hit.value.name;
+  }
+  return names;
+}
 export function useCharacterNames(ids: string[]) {
   const { session } = useAuth();
   const userId = session?.user.userId;
@@ -49,5 +65,11 @@ export function useCharacterNames(ids: string[]) {
       active = false;
     };
   }, [signature, userId, sessionId, ownerKey]);
-  return state.ownerKey === ownerKey ? state.names : {};
+  const seeded = useMemo(
+    () => memoryNames(JSON.parse(signature) as string[]),
+    // signature 已涵盖 ids 的内容；ownerKey 换账号时重新从内存取。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [signature, ownerKey],
+  );
+  return state.ownerKey === ownerKey ? { ...seeded, ...state.names } : seeded;
 }

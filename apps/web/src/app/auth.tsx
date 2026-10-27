@@ -20,6 +20,8 @@ interface AuthState {
   refreshUser(): Promise<void>;
 }
 const AuthContext = createContext<AuthState | null>(null);
+/** U8：启动时等服务器确认登录状态的上限（本机已有会话时）；超过就先用本机会话进入。 */
+const ME_WAIT_MS = 3500;
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -33,13 +35,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // StrictMode 会清理后重跑 effect；旧恢复链不能再刷新或恢复会话。
         if (!active) return;
         if (auth) {
-          try {
-            const user = await api.call(IdentityEndpoints.me);
-            if (!active) return;
-            auth = await api.updateUser(user);
-            if (!active) return;
-          } catch {
-            if (!active) return;
+          const cached = auth;
+          const owner = { userId: cached.user.userId, sessionId: cached.session.sessionId };
+          const fresh = api.call(IdentityEndpoints.me).then((user) => api.updateUser(user));
+          // U8：本机已有会话时最多等 ME_WAIT_MS。弱网先用本机会话进入（启动页不再等满 20 秒超时），
+          // 资料晚到再更新；会话失效（401）时 api-client 照常清库并发 weiban:unauthenticated 退出。
+          const settled = await Promise.race([
+            fresh.then(
+              (value) => ({ value }),
+              () => ({ failed: true as const }),
+            ),
+            new Promise<null>((resolve) => window.setTimeout(() => resolve(null), ME_WAIT_MS)),
+          ]);
+          if (!active) return;
+          if (settled === null) {
+            void fresh
+              .then((updated) => {
+                if (!active || latest.current !== cached || !api.owns(owner)) return;
+                latest.current = updated;
+                setSession(updated);
+              })
+              .catch(() => {});
+          } else if ('value' in settled) {
+            auth = settled.value;
+          } else {
             // 失效请求已经清库，不能在其回调后又恢复旧会话。
             auth = await api.restore();
             if (!active) return;

@@ -75,8 +75,8 @@ test('两个 tab 在 335 / 356 宽都等宽铺满顶栏、下划线贴着文字�
     expect(labelBox.width).toBeLessThan(first.width - 8);
     const navBottom = nav.y + nav.height;
     expect(navBottom - (labelBox.y + labelBox.height)).toBeGreaterThanOrEqual(8);
-    // 选中态：近黑加粗；未选中：灰、常规字重（与表情商店一致：标题外层 h1 的 500 被继承）
-    expect(await label.evaluate((element) => getComputedStyle(element).fontWeight)).toBe('600');
+    // 选中态只变近黑 + 下划线，字重不变（U7）：两颗都继承标题外层 h1 的 500，切换时文字宽度不跳
+    expect(await label.evaluate((element) => getComputedStyle(element).fontWeight)).toBe('500');
     const other = page.locator(
       '.role-plaza-tabs > button[aria-selected="false"] .role-plaza-tab-label',
     );

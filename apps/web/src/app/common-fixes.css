@@ -316,18 +316,24 @@ select {
 /*
  * F1-9：手机宽度下外壳占满屏幕，body 底色只在状态栏区域（iPhone Safari 取它着色）和回弹时露出来，
  * 统一成页面底色，与标题栏同色；宽屏仍保留外框底色。「我」页、设个状态页顶部不是灰底，按页面顶部颜色。
+ * U7：登录 / 注册 / 单字段表单页 / 说明页这类整页白底的页面挂载时写 html[data-surface=white]（display-prefs.ts
+ * 的 useWhiteSurface，同时把 theme-color 改白），这里一起变白；离开即恢复灰色。
+ * U8：「我」页 / 设个状态页改由页面挂载时写 html[data-backdrop]（display-prefs.ts usePageBackdrop），
+ * 不再用 html:has(main.me-page)——祖先上的 :has() 会让列表滚动时每插一行都整页重算样式。
  */
 @media (max-width: 640px) {
   html,
   body {
     background: var(--wb-color-bg-page);
   }
-  html:has(main.me-page),
-  html:has(main.me-page) body {
+  html[data-backdrop='me'],
+  html[data-backdrop='me'] body,
+  html[data-surface='white'],
+  html[data-surface='white'] body {
     background: var(--wb-color-bg-surface);
   }
-  html:has(main.status-page),
-  html:has(main.status-page) body {
+  html[data-backdrop='status'],
+  html[data-backdrop='status'] body {
     background: var(--ui-status-page-base);
   }
 }

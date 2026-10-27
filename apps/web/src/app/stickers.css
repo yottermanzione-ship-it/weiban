@@ -51,7 +51,6 @@
 }
 .sticker-store-page .sticker-store-tabs > button[aria-selected='true'] {
   color: var(--wb-color-text-primary);
-  font-weight: var(--wb-font-weight-semibold);
 }
 .sticker-store-tabs > button[aria-selected='true']::after {
   position: absolute;

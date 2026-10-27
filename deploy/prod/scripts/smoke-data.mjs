@@ -73,14 +73,27 @@ assert.equal((await (await call('/health')).json()).checks.crypto.configured, tr
 let user, record;
 if (mode === 'seed') {
   const admin = await login('deploy_admin', 'admin');
-  const invite = await json('/admin/invites', {
+  // Invitations are retired: keep checking legacy compatibility, then register directly.
+  await call('/api/v1/admin/invites', {
     method: 'POST',
     token: admin.session.token,
-    body: { expiresInDays: 1, bonusMicros: 5000001 },
+    body: { expiresInDays: 1 },
+    status: 503,
   });
+  assert.deepEqual((await json('/admin/invites', { token: admin.session.token })).items, []);
   user = await json('/auth/register', {
     method: 'POST',
-    body: { username: 'deploy_user', password, inviteCode: invite.code, device },
+    body: { username: 'deploy_user', password, device },
+  });
+  await json(`/admin/billing/accounts/${user.user.userId}/adjustments`, {
+    method: 'POST',
+    token: admin.session.token,
+    body: {
+      direction: 'grant',
+      amountMicros: 5000001,
+      reason: '隔离部署演练余额',
+      idempotencyKey: 'smoke-seed-credit',
+    },
   });
   const uploaded = await json('/media?purpose=user_avatar', {
     method: 'POST',

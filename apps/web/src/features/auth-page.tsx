@@ -9,6 +9,7 @@ import { useRef, useState, type FormEvent } from 'react';
 import { IdentityEndpoints } from '@weiban/contracts';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../data/client.js';
+import { useWhiteSurface } from '../data/display-prefs.js';
 import { useAuth } from '../app/auth.js';
 import { friendlyError } from '../data/use-remote.js';
 import { OldIcon } from './old-icons.js';
@@ -22,6 +23,8 @@ export function AuthPage() {
   const [pending, setPending] = useState(false);
   const [sync, setSync] = useState(true);
   const form = useRef<HTMLFormElement>(null);
+  // U7：欢迎 / 登录 / 注册都是整页白底，顶部安全区和 theme-color 一起变白，离开时切回灰色。
+  useWhiteSurface();
   const auth = useAuth();
   const navigate = useNavigate();
   const switchMode = (next: boolean) => {

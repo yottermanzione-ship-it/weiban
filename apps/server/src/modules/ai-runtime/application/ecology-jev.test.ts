@@ -31,6 +31,7 @@ function service(options: {
   decisionProblem?: string | null;
   balanceInsufficient?: boolean;
   privateMode?: boolean;
+  features?: Record<string, number | boolean | null>;
   perform?: (
     action: EcologyActionKey,
   ) => Promise<{ ok: boolean; chargedMicros: number; reason?: string }>;
@@ -65,7 +66,12 @@ function service(options: {
     finish,
     perform,
     buildSnapshot: vi.fn().mockResolvedValue({
-      features: { localHour: 20, unansweredCount: 0, lateNight: false, pointsLow: false },
+      features: options.features ?? {
+        localHour: 20,
+        unansweredCount: 0,
+        lateNight: false,
+        pointsLow: false,
+      },
       summary: '现在是对方当地时间周一 20:00。',
       balanceInsufficient: options.balanceInsufficient ?? false,
       privateMode: options.privateMode ?? false,
@@ -221,9 +227,13 @@ describe('executeWake 接入原生判定', () => {
     );
   });
 
+  // 打扰情形（2 条未回）不触发保底，用来单独验证「不通过就不做」。
+  const DISTURBING = { localHour: 20, unansweredCount: 2, lateNight: false, pointsLow: false };
+
   it('低把握不做（不补批、不重试），费用照记判定一次', async () => {
     const s = service({
       tools: ['message'],
+      features: DISTURBING,
       decide: okDecide([answer('message', 'act', 0.5)]),
     });
     await s.wake();
@@ -239,9 +249,53 @@ describe('executeWake 接入原生判定', () => {
     );
   });
 
+  it('保底：全部不通过但不打扰时，做「想做」可能性最高的一项，记 fb=', async () => {
+    const s = service({
+      tools: ['message', 'nudge', 'status'],
+      decide: okDecide([
+        answer('message', 'defer', 0.9),
+        answer('nudge', 'act', 0.4),
+        answer('status', 'act', 0.5),
+      ]),
+    });
+    await s.wake();
+    // status 不在保底范围（资料改动用户看不见动静）；nudge 0.4 > message 1−0.9。
+    expect(s.perform).toHaveBeenCalledTimes(1);
+    expect(s.perform.mock.calls[0]![1]).toBe('nudge');
+    expect((s.finish.mock.calls[0]![1] as { outcome: string }).outcome).toContain('fb=nudge:0.40');
+  });
+
+  it('保底不在深夜、对方在用应用却没回时触发', async () => {
+    for (const features of [
+      {
+        localHour: 2,
+        userActiveInApp30m: false,
+        unansweredCount: 0,
+        lateNight: true,
+        pointsLow: false,
+      },
+      {
+        localHour: 20,
+        unansweredCount: 1,
+        lateNight: false,
+        userActiveInApp30m: true,
+        pointsLow: false,
+      },
+    ]) {
+      const s = service({
+        tools: ['message'],
+        features,
+        decide: okDecide([answer('message', 'defer', 0.6)]),
+      });
+      await s.wake();
+      expect(s.perform).not.toHaveBeenCalled();
+    }
+  });
+
   it('陌生 ID 不做任何事', async () => {
     const s = service({
       tools: ['message'],
+      features: DISTURBING,
       decide: okDecide([answer('message', 'defer', 0.9), answer('send_money', 'act', 1)]),
     });
     await s.wake();

@@ -67,7 +67,7 @@ const modes = [
   {
     id: 'adult',
     name: '私密',
-    description: '只在你们俩之间',
+    description: '不可描述的情景',
     section: 'private',
     recommended: false,
     aiReady: true,

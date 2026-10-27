@@ -614,8 +614,10 @@ label.profile-field.multiline {
   font-size: var(--wb-font-size-subhead);
 }
 .star-toggle {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
   min-height: 0;
-  margin-top: 2px;
   padding: 0;
   border: 0;
   background: none;
@@ -1852,52 +1854,7 @@ button.primary.wx-auth-submit {
   opacity: 1;
 }
 
-/* ---------- 启动页（10-14 反馈 1.1） ---------- */
-.splash {
-  position: fixed;
-  inset: 0;
-  z-index: calc(var(--wb-z-index-toast) + 1);
-  display: grid;
-  place-items: center;
-  padding: env(safe-area-inset-top) 28px env(safe-area-inset-bottom);
-  background: var(--ui-splash-bg);
-  transition: opacity var(--wb-motion-duration-base) var(--wb-motion-easing-standard);
-}
-.splash.fading {
-  opacity: 0;
-  pointer-events: none;
-}
-.splash-brand {
-  display: grid;
-  align-content: center;
-  justify-items: center;
-  gap: 18px;
-  animation: splash-in var(--wb-motion-duration-slow) var(--wb-motion-easing-decelerate) both;
-}
-.splash-brand img {
-  width: 88px;
-  height: 88px;
-  border-radius: var(--ui-radius-app-icon);
-  box-shadow: var(--ui-brand-icon-shadow);
-}
-.splash-brand strong {
-  color: var(--ui-splash-text);
-  font-size: 20px;
-  font-weight: var(--wb-font-weight-semibold);
-  letter-spacing: 2px;
-}
-@keyframes splash-in {
-  from {
-    opacity: 0;
-    transform: translateY(12px) scale(0.96);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .splash-brand {
-    animation: none;
-  }
-}
-
+/* 启动页：U8 起改为 index.html 里的绿色启动层（src/boot/boot.css、app/boot-splash.ts）。 */
 /* ---------- 角色广场两个 tab、角色创建、申请制作（10-14 裁定 2.3） ---------- */
 .role-plaza-hub > .text-tabs {
   gap: 0;
@@ -1909,11 +1866,16 @@ button.primary.wx-auth-submit {
   font-size: var(--wb-font-size-body);
   font-family: inherit;
 }
+/* U7：状态表情按名字字号等比（1.05em 时表情上下边与汉字墨迹重合），行高 1 + inline-flex 严格居中 */
 .character-status {
+  display: inline-flex;
   flex: none;
-  font-size: 21px;
-  line-height: 1.2;
-  margin-left: 6px;
+  align-items: center;
+  align-self: center;
+  margin-left: 2px;
+  font-size: 1.05em;
+  font-weight: var(--wb-font-weight-regular);
+  line-height: 1;
 }
 .memory-owner {
   display: flex;

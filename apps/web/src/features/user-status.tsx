@@ -13,6 +13,7 @@ import {
   type StatusChoice,
 } from './status-icons.js';
 import { showToast } from './toast.js';
+import { usePageBackdrop } from '../data/display-prefs.js';
 
 function useLiveStatus() {
   const remote = useRemote(UserStatusEndpoints.get, { networkOnly: true });
@@ -87,6 +88,7 @@ function untilText(expiresAt: string | null) {
 
 /** F1-5「设个状态」：深色毛玻璃 + 分组图标宫格（参照微信版式，图标自绘）。 */
 export function UserStatusPage() {
+  usePageBackdrop('status');
   const remote = useLiveStatus();
   const goBack = useBack('/me');
   const current = activeStatus(remote.data?.status);

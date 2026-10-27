@@ -16,6 +16,10 @@ export class SyncEngine {
   get state(): LocalSyncState {
     return structuredClone(this.value);
   }
+  /** 当前游标（不复制整份状态）。 */
+  get lastUpdateSeq(): number {
+    return this.value.lastUpdateSeq;
+  }
   /** 供恢复入口等待快照真正提交，不以旧游标冒充完成。 */
   get isRebuilding(): boolean {
     return this.rebuilding;

@@ -65,14 +65,15 @@ export class BillingBoundsService {
     modelKey: string,
     candidates: RouteCandidate[],
     imageCount: number,
-    requested: number,
+    /** null = 聊天未指定业务小额度，使用各线路核准的完整输出上限（含思考）。 */
+    requested: number | null,
     /** 批 EJ：后台任务另给的思考预算；线路核验只看正文额度，计费上限另外加上思考。 */
     thinkingBudget = 0,
   ) {
     const verified: VerifiedRoute[] = [];
     for (const candidate of candidates) {
       const b = await this.get(modelKey, candidate.upstreamId, candidate.upstreamModelId);
-      if (b?.text && b.text.maxOutputTokens >= requested && b.text.maxImages >= imageCount)
+      if (b?.text && b.text.maxOutputTokens >= (requested ?? 1) && b.text.maxImages >= imageCount)
         verified.push({ ...candidate, billingBounds: b });
     }
     if (!verified.length) return null;
@@ -82,7 +83,9 @@ export class BillingBoundsService {
         ...verified.map((r) =>
           Math.min(
             32000,
-            Math.ceil(requested * 1.5) + Math.max(0, thinkingBudget),
+            requested === null
+              ? r.billingBounds.text!.maxOutputTokens
+              : Math.ceil(requested * 1.5) + Math.max(0, thinkingBudget),
             r.billingBounds.text!.maxOutputTokens,
           ),
         ),

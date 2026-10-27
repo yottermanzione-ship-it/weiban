@@ -338,3 +338,46 @@ it('引导完成后同账号迟到草稿写入也不能复原，标记与清草�
   expect(await db.get('ui:onboarding')).toBe(false);
   expect(await db.get('ui:onboardingDraft')).toBeNull();
 });
+it('U8：prime 把本机结果读进内存，只有 allowStale 才拿到；超过 4 分钟的结果也只给 allowStale', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  try {
+    const db = store();
+    const auth = session();
+    let served = 0;
+    const fetcher = async () => {
+      served++;
+      return Response.json(auth.user);
+    };
+    const first = new ApiClient(db, fetcher);
+    await first.authenticate(auth);
+    await first.call(IdentityEndpoints.me);
+    // 重新打开：内存是空的，本机库里有上次的结果。
+    const next = new ApiClient(db, fetcher);
+    await next.restore();
+    expect(next.peek(IdentityEndpoints.me)).toBeUndefined();
+    expect(await next.prime(IdentityEndpoints.me)).toBe(true);
+    expect(next.peek(IdentityEndpoints.me)).toBeUndefined();
+    expect(next.peek(IdentityEndpoints.me, {}, { allowStale: true })).toMatchObject({
+      value: auth.user,
+      stale: true,
+    });
+    expect(served).toBe(1);
+    // networkOnly 从不读内存，也不能 prime。
+    expect(await next.prime(IdentityEndpoints.me, { networkOnly: true })).toBe(false);
+    expect(
+      next.peek(IdentityEndpoints.me, { networkOnly: true }, { allowStale: true }),
+    ).toBeUndefined();
+    // 回源后是新结果；过了 4 分钟默认不给，allowStale 仍可先画。
+    await next.call(IdentityEndpoints.me);
+    expect(next.peek(IdentityEndpoints.me)?.stale).toBe(false);
+    vi.setSystemTime(Date.now() + 5 * 60 * 1000);
+    expect(next.peek(IdentityEndpoints.me)).toBeUndefined();
+    expect(next.peek(IdentityEndpoints.me, {}, { allowStale: true })?.stale).toBe(true);
+    // 换账号清空内存。
+    await next.authenticate(session('another_user'));
+    expect(next.peek(IdentityEndpoints.me, {}, { allowStale: true })).toBeUndefined();
+    expect(await next.prime(IdentityEndpoints.me)).toBe(false);
+  } finally {
+    vi.useRealTimers();
+  }
+});

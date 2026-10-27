@@ -67,9 +67,10 @@ it('作者提示词原样拼入，不再追加平台规则护栏', () => {
     expect(output).not.toMatch(/以平台规则为准|平台规则优先|AUTHOR_GUARD/u);
 });
 
-it('朋友圈生成的三条提示都接入卡片主题，而不是只加字段', () => {
+// 4.1（dead31c）：私人朋友圈改为只同步微博素材、不再 AI 生成，剩公开与生态两条生成提示。
+it('朋友圈生成的两条提示都接入卡片主题，而不是只加字段', () => {
   const source = readFileSync(resolve(import.meta.dirname, '../application/moments-ai.ts'), 'utf8');
-  expect(source.match(/momentsTopicsText\(moments\.topics\)/gu) ?? []).toHaveLength(3);
+  expect(source.match(/momentsTopicsText\(moments\.topics\)/gu) ?? []).toHaveLength(2);
 });
 
 it('AI 运行时生产源码不再包含平台规则护栏与 AUTHOR_GUARD', () => {

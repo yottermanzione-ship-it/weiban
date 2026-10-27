@@ -27,6 +27,16 @@ export interface RowGestureOptions {
   onLongPress(at: { x: number; y: number }): void;
 }
 
+/**
+ * 写前景位移，同时给外层 .swipe-host 挂 / 摘 swiped 类（按钮层据此显示）。
+ * U8：以前靠 CSS `.swipe-host:has(> .swipe-track[style*='translate'])` 判断，
+ * 滚动时每插入一行，浏览器都要从 <html> 往下重查 :has()，把所有行的按钮层重算样式（实测每次约 900 个元素）。
+ */
+function setOffset(el: HTMLElement, x: number) {
+  el.style.transform = x ? `translateX(${x}px)` : '';
+  el.closest('.swipe-host')?.classList.toggle('swiped', x !== 0);
+}
+
 export function useRowGesture(
   host: RefObject<HTMLElement | null>,
   track: RefObject<HTMLElement | null>,
@@ -41,7 +51,7 @@ export function useRowGesture(
     const el = track.current;
     if (!el) return;
     el.classList.remove('dragging');
-    el.style.transform = options.open ? `translateX(${-options.swipeWidth}px)` : '';
+    setOffset(el, options.open ? -options.swipeWidth : 0);
   }, [options.open, options.swipeWidth, track]);
 
   useEffect(() => {
@@ -60,7 +70,7 @@ export function useRowGesture(
       const t = track.current;
       if (!t) return;
       t.classList.toggle('dragging', dragging);
-      t.style.transform = x ? `translateX(${x}px)` : '';
+      setOffset(t, x);
     };
     const reset = () => {
       window.clearTimeout(timer);

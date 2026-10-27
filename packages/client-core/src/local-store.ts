@@ -9,29 +9,71 @@ export interface StoreOwner {
   userId: string;
   sessionId: string;
 }
+/** 事务失败时带上浏览器原始错误（如 QuotaExceededError），便于上层判断是不是空间不足。 */
+function storeError(message: string, tx: IDBTransaction, failure?: unknown): unknown {
+  if (failure) return failure;
+  const error = tx.error;
+  return error ?? new Error(message);
+}
 export class IndexedLocalStore implements LocalStore {
-  private readonly database: Promise<IDBDatabase>;
-  constructor(name: string, factory: IDBFactory = indexedDB) {
-    this.database = new Promise((resolve, reject) => {
-      const request = factory.open(name, 1);
+  private database: Promise<IDBDatabase>;
+  constructor(
+    private readonly name: string,
+    private readonly factory: IDBFactory = indexedDB,
+  ) {
+    this.database = this.open();
+  }
+  private open(): Promise<IDBDatabase> {
+    const opening: Promise<IDBDatabase> = new Promise((resolve, reject) => {
+      const request = this.factory.open(this.name, 1);
       request.onupgradeneeded = () => {
         for (const store of ['records', 'outbox', 'sync']) request.result.createObjectStore(store);
       };
       request.onerror = () => reject(new Error('本机存储不可用，请检查浏览器设置'));
-      request.onsuccess = () => resolve(request.result);
+      request.onsuccess = () => {
+        const db = request.result;
+        // 浏览器可能在后台、清理站点数据或内部出错时关掉连接（Safari 常见），下次用时重开。
+        db.onclose = () => {
+          if (this.database === opening) this.database = this.open();
+        };
+        resolve(db);
+      };
     });
+    return opening;
   }
-  private async run<T>(
+  /** 连接已被关掉（InvalidStateError）时重开一次再试，不把它当成设备存储故障。 */
+  /** 请求必须在建事务的同一拍里发出，所以 body 同步拿到事务。 */
+  private async transaction<T>(
+    names: string | string[],
+    mode: IDBTransactionMode,
+    body: (tx: IDBTransaction) => Promise<T>,
+  ): Promise<T> {
+    const current = this.database;
+    const db = await current;
+    let tx: IDBTransaction;
+    try {
+      tx = db.transaction(names, mode);
+    } catch (error) {
+      if (!(error instanceof Error) || error.name !== 'InvalidStateError') throw error;
+      if (this.database === current) this.database = this.open();
+      tx = (await this.database).transaction(names, mode);
+    }
+    return body(tx);
+  }
+  private run<T>(
     mode: IDBTransactionMode,
     action: (store: IDBObjectStore) => IDBRequest<T>,
   ): Promise<T> {
-    const db = await this.database;
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction('records', mode);
-      const request = action(tx.objectStore('records'));
-      tx.oncomplete = () => resolve(request.result);
-      tx.onabort = tx.onerror = () => reject(new Error('本机存储操作失败'));
-    });
+    return this.transaction(
+      'records',
+      mode,
+      (tx) =>
+        new Promise((resolve, reject) => {
+          const request = action(tx.objectStore('records'));
+          tx.oncomplete = () => resolve(request.result);
+          tx.onabort = tx.onerror = () => reject(storeError('本机存储操作失败', tx));
+        }),
+    );
   }
   get(key: string): Promise<unknown> {
     return this.run('readonly', (store) => store.get(key));
@@ -50,49 +92,55 @@ export class IndexedLocalStore implements LocalStore {
     expected?: { key: string; value: boolean },
   ): Promise<boolean> {
     if (Object.hasOwn(values, 'session')) throw new Error('驱动不能改写登录会话');
-    const db = await this.database;
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction('records', 'readwrite');
-      const records = tx.objectStore('records');
-      const request = records.get('session');
-      let written = false;
-      let failure: unknown;
-      const commit = () => {
-        try {
-          for (const [key, value] of Object.entries(values)) records.put(value, key);
-          written = true;
-        } catch (error) {
-          failure = error;
-          tx.abort();
-        }
-      };
-      request.onsuccess = () => {
-        const parsed = AuthResponse.safeParse(request.result);
-        if (
-          !parsed.success ||
-          parsed.data.user.userId !== owner.userId ||
-          parsed.data.session.sessionId !== owner.sessionId
-        )
-          return;
-        if (!expected) commit();
-        else {
-          const condition = records.get(expected.key);
-          condition.onsuccess = () => {
-            if (condition.result === expected.value) commit();
+    return this.transaction(
+      'records',
+      'readwrite',
+      (tx) =>
+        new Promise((resolve, reject) => {
+          const records = tx.objectStore('records');
+          const request = records.get('session');
+          let written = false;
+          let failure: unknown;
+          const commit = () => {
+            try {
+              for (const [key, value] of Object.entries(values)) records.put(value, key);
+              written = true;
+            } catch (error) {
+              failure = error;
+              tx.abort();
+            }
           };
-        }
-      };
-      tx.oncomplete = () => resolve(written);
-      tx.onabort = tx.onerror = () => reject(failure ?? new Error('同步数据保存失败'));
-    });
+          request.onsuccess = () => {
+            const parsed = AuthResponse.safeParse(request.result);
+            if (
+              !parsed.success ||
+              parsed.data.user.userId !== owner.userId ||
+              parsed.data.session.sessionId !== owner.sessionId
+            )
+              return;
+            if (!expected) commit();
+            else {
+              const condition = records.get(expected.key);
+              condition.onsuccess = () => {
+                if (condition.result === expected.value) commit();
+              };
+            }
+          };
+          tx.oncomplete = () => resolve(written);
+          tx.onabort = tx.onerror = () => reject(storeError('同步数据保存失败', tx, failure));
+        }),
+    );
   }
   async clear(): Promise<void> {
-    const db = await this.database;
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(['records', 'outbox', 'sync'], 'readwrite');
-      for (const name of ['records', 'outbox', 'sync']) tx.objectStore(name).clear();
-      tx.oncomplete = () => resolve();
-      tx.onabort = tx.onerror = () => reject(new Error('清理本机数据失败'));
-    });
+    await this.transaction(
+      ['records', 'outbox', 'sync'],
+      'readwrite',
+      (tx) =>
+        new Promise<void>((resolve, reject) => {
+          for (const name of ['records', 'outbox', 'sync']) tx.objectStore(name).clear();
+          tx.oncomplete = () => resolve();
+          tx.onabort = tx.onerror = () => reject(new Error('清理本机数据失败'));
+        }),
+    );
   }
 }

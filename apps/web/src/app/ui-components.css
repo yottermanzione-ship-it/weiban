@@ -211,30 +211,42 @@
   font-weight: var(--wb-font-weight-medium);
 }
 
-/* ---------- 分段 Tab SegmentedTabs ---------- */
+/* ---------- 分段 Tab SegmentedTabs（U7 改为通栏下划线页签，与全站页签一致；不加粗） ---------- */
 .segmented-tabs {
   display: flex;
-  gap: var(--wb-space-2);
-  margin: var(--wb-space-4) var(--wb-space-5) var(--wb-space-2);
-  padding: var(--wb-space-2); /* 外圆角 8 = 内圆角 4 + 间距 4 */
-  border-radius: var(--wb-radius-md);
-  background: var(--ui-fill-2);
+  margin: var(--wb-space-2) calc(-1 * var(--wb-space-5)) 0;
+  border-bottom: 0.5px solid var(--wb-color-border-hairline);
+  background: var(--wb-color-bg-surface);
 }
 .segmented-tabs > button {
-  flex: 1;
-  min-height: 30px;
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: var(--wb-size-touch-target);
   padding: 0 var(--wb-space-3);
   border: 0;
-  border-radius: var(--wb-radius-xs);
+  border-radius: 0;
   background: none;
+  box-shadow: none;
   color: var(--wb-color-text-secondary);
-  font-size: var(--wb-font-size-subhead);
+  font-size: var(--wb-font-size-callout);
 }
 .segmented-tabs > button[aria-selected='true'] {
-  background: var(--wb-color-bg-surface);
   color: var(--wb-color-text-primary);
-  font-weight: var(--wb-font-weight-medium);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.segmented-tabs > button[aria-selected='true']::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 24px;
+  height: 2px;
+  margin-left: -12px;
+  border-radius: var(--wb-radius-full);
+  background: var(--wb-color-brand-primary);
 }
 
 /* ---------- 页内二级页面 SubPageLayer：整页从右侧推入，盖住当前页 ---------- */
@@ -779,4 +791,81 @@ button:where(:not([class])):where(:active) {
   .lightbox:not(.moving) {
     transition: none;
   }
+}
+
+/* ---------- 批 U7：总经理界面反馈 ---------- */
+/* 顶部提示条可关闭；需要重新打开时右侧给「重新打开」 */
+.notice-bar > span {
+  flex: 1;
+  min-width: 0;
+}
+.notice-bar > .notice-bar-action,
+.notice-bar > .notice-bar-close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+.notice-bar > .notice-bar-action {
+  text-decoration: underline;
+}
+.notice-bar > .notice-bar-close {
+  width: 28px;
+  margin-right: -6px;
+}
+/* 文字必须上下左右居中的块状主按钮（链接也能用） */
+.ui-block-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 var(--wb-space-5);
+  border-radius: var(--wb-radius-md);
+  text-align: center;
+  text-decoration: none;
+  line-height: 1.2;
+}
+/* 页面底部的灰色小字说明（代替彩色提示框） */
+.ui-foot-note {
+  margin: var(--wb-space-3) 0 var(--wb-space-6);
+  padding: 0;
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-footnote);
+  line-height: var(--wb-line-height-normal);
+}
+/* 第 9 条：页面级提示条（黄色 inline-tip、notice-bar）左右通栏，不再是缩进的圆角浮块。
+   只作用于默认带 20px 左右内边距的页面主体（main / .stack 的直接子元素）；聊天页、会话列表另有布局。 */
+main:not(.wx-chat):not(.chat-list-page) > .inline-tip,
+main:not(.wx-chat):not(.chat-list-page) > .stack > .inline-tip,
+main:not(.wx-chat):not(.chat-list-page) > .notice-bar {
+  margin-right: calc(-1 * var(--wb-space-5));
+  margin-left: calc(-1 * var(--wb-space-5));
+  padding-right: var(--wb-space-5);
+  padding-left: var(--wb-space-5);
+  border-radius: 0;
+}
+.empty-state > .ui-block-button {
+  width: auto;
+  min-width: 184px;
+}
+/* 第 9 条：旧式 .rows 列表行（卡片册、宠物、经期等）行尾箭头与标准行一致：灰色、贴最右 */
+.rows > a > .old-icon:last-child,
+.rows > button > .old-icon:last-child {
+  flex: none;
+  margin-left: auto;
+  color: var(--wb-color-ui-chevron);
+}
+/* 第 9 条：卡册白色卡片区左右通栏（原来两侧各留 20px 灰边，像浮着的块） */
+main .card-grid {
+  margin-right: calc(-1 * var(--wb-space-5));
+  margin-left: calc(-1 * var(--wb-space-5));
+  padding: var(--wb-space-3) var(--wb-space-5);
 }
