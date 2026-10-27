@@ -13,6 +13,17 @@
  * application/weibo-runtime.ts（用服务器已有的 ws 依赖）。
  */
 import { CHANNEL_OUTBOUND_TEXT_MAX } from '@weiban/contracts';
+import { createHash } from 'node:crypto';
+
+/** 凭据命名空间，不把 token.uid 当作来信人；不同助手凭据不会因共享助手账号而互相挤掉。 */
+export function weiboBindingAccountId(appId: string): string {
+  return 'weibo-app:' + createHash('sha256').update(appId.trim()).digest('hex');
+}
+
+/** 复用加密传输上下文列，绑定行不变时跨重启仍能保留回信目标。 */
+export function weiboPeerContextAad(bindingId: string): string {
+  return `channels:binding:${bindingId}:weibo_peer`;
+}
 
 export const DEFAULT_WEIBO_TOKEN_ENDPOINT = 'https://open-im.api.weibo.com/open/auth/ws_token';
 export const DEFAULT_WEIBO_WS_ENDPOINT = 'wss://open-im.api.weibo.com/ws/stream';
@@ -51,6 +62,7 @@ export async function fetchWeiboToken(input: {
   const doFetch = input.fetchImpl ?? fetch;
   const response = await doFetch(endpoint, {
     method: 'POST',
+    redirect: 'error',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ app_id: appId, app_secret: appSecret }),
     signal: AbortSignal.timeout(15_000),

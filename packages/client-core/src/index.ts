@@ -13,3 +13,5 @@ export {
   type PersonaTextDocument,
   type PersonaTextPart,
 } from './persona-text.js';
+
+export { parseWeiboCredentials } from './channel-credentials.js';

@@ -70,6 +70,9 @@ export class WeiboRuntime implements OnApplicationShutdown {
       if (!isChannelUserAllowed(this.config, 'weibo', binding.user_id)) continue;
       if (!binding.weibo_app_id_sealed || !binding.weibo_app_secret_sealed) continue;
       alive.add(binding.id);
+      const current = this.connections.get(binding.id);
+      if (current && current.binding.generation !== binding.generation)
+        this.close(binding.id, current);
       if (!this.connections.has(binding.id)) this.connect(binding);
     }
     for (const [bindingId, connection] of this.connections) {
@@ -78,11 +81,23 @@ export class WeiboRuntime implements OnApplicationShutdown {
   }
 
   /** 发一条文字：连接没就绪时返回 false，调用方按失败重试。 */
-  async send(bindingId: string, toUserId: string, text: string): Promise<boolean> {
+  async send(
+    bindingId: string,
+    toUserId: string,
+    text: string,
+    generation: number,
+    messageId: string,
+  ): Promise<boolean> {
     const connection = this.connections.get(bindingId);
     const socket = connection?.socket;
-    if (!connection || !socket || socket.readyState !== WebSocket.OPEN) return false;
-    const messageId = `out-${toUserId}-${this.clock.nowMs()}`;
+    if (
+      !connection ||
+      connection.stop ||
+      connection.binding.generation !== generation ||
+      !socket ||
+      socket.readyState !== WebSocket.OPEN
+    )
+      return false;
     for (const frame of buildWeiboSendFrames({ toUserId, text, messageId })) {
       socket.send(JSON.stringify(frame));
     }
@@ -141,6 +156,12 @@ export class WeiboRuntime implements OnApplicationShutdown {
       this.scheduleReconnect(connection);
       return;
     }
+    if (
+      connection.stop ||
+      this.stopping ||
+      this.connections.get(connection.binding.id) !== connection
+    )
+      return;
     connection.botUid = token.uid;
     let socket: WebSocket;
     try {
@@ -171,6 +192,7 @@ export class WeiboRuntime implements OnApplicationShutdown {
       }, PING_MS);
     });
     socket.on('message', (raw) => {
+      if (connection.stop || this.stopping || connection.socket !== socket) return;
       const inbound = parseWeiboInbound(String(raw), this.clock.nowMs());
       if (!inbound) return;
       void this.bridge
@@ -180,6 +202,10 @@ export class WeiboRuntime implements OnApplicationShutdown {
           text: inbound.text,
           contextToken: '',
           createdAt: new Date(inbound.timestamp),
+          weiboSession: {
+            bindingId: connection.binding.id,
+            generation: connection.binding.generation,
+          },
         })
         .catch((error) =>
           this.logger.warn({ err: error, bindingId: connection.binding.id }, '微博入站处理失败'),

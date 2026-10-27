@@ -4,13 +4,12 @@
  * 这个文件只测两件最容易写错、且一旦写错就等于「对外全开」的事：
  * 1. 环境变量解析：逗号分隔、去空白、转小写、去重，非法 UUID 直接拒绝启动。
  * 2. 判定：不在名单 = not_integrated（页面「未联调」+ 接口 422 + worker 不轮询），
- *    而不是「开关打开就对所有人 live」。微博即使开关+白名单都开也仍按未联调处理。
+ *    而不是「开关打开就对所有人 live」。微博也必须同时满足开关和用户白名单。
  */
 import { describe, expect, it } from 'vitest';
 import type { AppConfig } from '../../platform/config/config.js';
 import { ConfigError, loadConfig } from '../../platform/config/config.js';
 import {
-  WEIBO_PEER_UID_VERIFIABLE,
   channelAllowedUsers,
   channelRuntimeConfig,
   isChannelUserAllowed,
@@ -102,8 +101,7 @@ describe('内测白名单：服务端判定', () => {
     expect(isChannelUserAllowed(config, 'wechat', null)).toBe(false);
   });
 
-  it('微博即使开关 + 白名单都开，也仍按未联调处理（对方身份不可验证）', () => {
-    expect(WEIBO_PEER_UID_VERIFIABLE).toBe(false);
+  it('微博龙虾助手凭据接入：名单内可绑定，名单外仍拒绝', () => {
     const config = configOf({
       wechatEnabled: true,
       wechatAllowed: [OWNER],
@@ -111,6 +109,7 @@ describe('内测白名单：服务端判定', () => {
       weiboAllowed: [OWNER],
     });
     expect(isChannelUserAllowed(config, 'weibo', OWNER)).toBe(true);
-    expect(channelRuntimeConfig(config, 'weibo', OWNER).integration).toBe('not_integrated');
+    expect(channelRuntimeConfig(config, 'weibo', OWNER).integration).toBe('live');
+    expect(channelRuntimeConfig(config, 'weibo', STRANGER).integration).toBe('not_integrated');
   });
 });

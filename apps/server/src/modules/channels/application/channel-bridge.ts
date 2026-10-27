@@ -10,7 +10,7 @@
  * - 只做文字。图片 / 语音 / 表情本轮不发到微信（契约与页面都如实写明），也不从微信取媒体。
  * - 成人范围（scope = adult）的正文**绝不**发到站外渠道：读取正文时只要 normal。
  * - 正文落库前用该用户 DEK 加密；解密只在本进程、只为了发送。
- * - 入站只认「这条绑定的对面账号本人」发来的消息，别人的消息一律拒绝（旧版 foreign_sender）。
+ * - 微信按扫码 peer；微博按助手凭据鉴权会话固定回信 peer，不从来信改写站内绑定者。
  */
 import { Inject, Injectable } from '@nestjs/common';
 import {
@@ -35,6 +35,7 @@ import { IDENTITY_MEMBERSHIP_READ_PORT } from '../../identity/index.js';
 import { ChannelStore, type BindingRow } from './channel-store.js';
 import { channelRuntimeConfig } from './channel-config.js';
 import { isOwnPeer } from '../domain/peer.js';
+import { weiboPeerContextAad } from '../domain/weibo-openim.js';
 
 export interface InboundInput {
   externalId: string;
@@ -42,6 +43,8 @@ export interface InboundInput {
   text: string;
   contextToken: string;
   createdAt: Date | null;
+  /** 仅由完成 AppID/AppSecret 鉴权的微博 WSS runtime 提供，不是 HTTP 请求字段。 */
+  weiboSession?: { bindingId: string; generation: number };
 }
 
 export type IngestOutcome = 'accepted' | 'duplicate' | 'rejected' | 'failed';
@@ -63,8 +66,17 @@ export class ChannelBridge {
    * 入站一条消息：入流水（幂等）→ 写进现有私聊（用户发言）→ 记结果。
    * 失败不抛：返回结果由 worker 记日志。重复投递返回 duplicate，不会产生两条聊天消息。
    */
-  async ingest(binding: BindingRow, input: InboundInput): Promise<IngestOutcome> {
-    if (binding.status !== 'active') return 'rejected';
+  async ingest(candidate: BindingRow, input: InboundInput): Promise<IngestOutcome> {
+    // 长连接无需因换角色重建；每次入站读取当前选择，同时拒绝旧凭据代际的迟到事件。
+    const binding =
+      candidate.channel === 'weibo' ? await this.store.bindingById(candidate.id) : candidate;
+    if (
+      !binding ||
+      binding.status !== 'active' ||
+      binding.generation !== candidate.generation ||
+      binding.user_id !== candidate.user_id
+    )
+      return 'rejected';
     // 纵深防御：即使库里还留着绑定行，只要这个渠道对**这个用户**不是 live（开关关了、被撤下白名单、
     // 或微博本来就没开放），就既不进聊天也不计费。
     if (
@@ -73,6 +85,12 @@ export class ChannelBridge {
       return 'rejected';
     }
     if (!input.externalId) return 'rejected';
+    if (
+      binding.channel === 'weibo' &&
+      (input.weiboSession?.bindingId !== binding.id ||
+        input.weiboSession?.generation !== binding.generation)
+    )
+      return 'rejected';
     const text = String(input.text ?? '')
       .trim()
       .slice(0, CHANNEL_INBOUND_TEXT_MAX);
@@ -110,14 +128,8 @@ export class ChannelBridge {
     };
 
     if (!text) return reject('empty_text');
-    /**
-     * 只认这条绑定对面那个人发的消息（isOwnPeer 是唯一判定处）。
-     * 微信：ilink_user_id 扫码时就确认了，可信。
-     * 微博：ws_token 只能证明 AppID 属于本人，证明不了私信者是谁 → 没有可信对面账号，
-     *       所有 sender 都不匹配，入站全拒（通道也因此固定按「未联调」处理）。
-     * 绝不能「谁最后发消息谁就是主人」：那等于任意私信者都能改绑、触发本人付费聊天并收到私密回复。
-     */
-    if (!isOwnPeer(binding.channel, binding.account_id, input.senderId)) {
+    // 微信按扫码确认的 peer；微博按助手专属凭据连接及固定回信上下文，不把 token.uid 当用户输入。
+    if (binding.channel === 'wechat' && !isOwnPeer('wechat', binding.account_id, input.senderId)) {
       return reject('foreign_sender');
     }
     if (!binding.character_id) return reject('no_character');
@@ -127,6 +139,33 @@ export class ChannelBridge {
       binding.character_id,
     );
     if (!conversation) return reject('no_conversation');
+    if (conversation.contentScope !== 'normal') return reject('private_scope');
+    if (binding.channel === 'weibo') {
+      if (!input.senderId.trim()) return reject('empty_sender');
+      const candidate = await this.crypto.seal(
+        binding.user_id,
+        weiboPeerContextAad(binding.id),
+        input.senderId.trim(),
+      );
+      const selected = await this.store.pinWeiboPeer(
+        binding.id,
+        binding.generation,
+        candidate,
+        now,
+      );
+      if (!selected) return reject('stale_binding');
+      const plaintext = await this.crypto.open(
+        binding.user_id,
+        weiboPeerContextAad(binding.id),
+        selected,
+      );
+      try {
+        if (!isOwnPeer('weibo', plaintext.toString('utf8'), input.senderId))
+          return reject('foreign_sender');
+      } finally {
+        plaintext.fill(0);
+      }
+    }
     try {
       const ack = await this.chatUser.sendMessage(binding.user_id, conversation.conversationId, {
         clientMsgId: row.clientMsgId,
@@ -176,27 +215,34 @@ export class ChannelBridge {
     if (!event.senderRefId) return null;
     const userId = event.userRecipientIds[0];
     if (!userId) return null;
-    const binding = await this.store.activeBindingForCharacter(userId, event.senderRefId);
-    if (!binding || binding.status !== 'active') return null;
+    const bindings = await this.store.activeBindingsForCharacter(userId, event.senderRefId);
     const message = await this.chatRead.getMessage(event.messageId, ['normal']);
     if (!message || message.content?.type !== 'text') return null;
     const text = String(message.content.text ?? '').trim();
     if (!text) return null;
-    const textSealed = await this.crypto.seal(
-      userId,
-      `channels:outbound:${binding.id}:${event.messageId}:text`,
-      text,
-      tx,
-    );
-    const outboundId = await this.store.enqueueOutbound(tx, {
-      bindingId: binding.id,
-      userId,
-      channel: binding.channel,
-      chatMessageId: event.messageId,
-      textSealed,
-      now: this.clock.now(),
-    });
-    if (!outboundId) return null;
-    return { outboundId, bindingId: binding.id };
+    let first: { outboundId: string; bindingId: string } | null = null;
+    for (const binding of bindings) {
+      if (
+        binding.status !== 'active' ||
+        channelRuntimeConfig(this.config, binding.channel, userId).integration !== 'live'
+      )
+        continue;
+      const textSealed = await this.crypto.seal(
+        userId,
+        `channels:outbound:${binding.id}:${event.messageId}:text`,
+        text,
+        tx,
+      );
+      const outboundId = await this.store.enqueueOutbound(tx, {
+        bindingId: binding.id,
+        userId,
+        channel: binding.channel,
+        chatMessageId: event.messageId,
+        textSealed,
+        now: this.clock.now(),
+      });
+      if (outboundId) first ??= { outboundId, bindingId: binding.id };
+    }
+    return first;
   }
 }

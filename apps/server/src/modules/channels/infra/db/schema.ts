@@ -40,10 +40,10 @@ export const bindings = channelsSchema.table(
     /** 出口角色（用户选的通讯录好友）。 */
     characterId: uuid('character_id'),
     characterName: text('character_name'),
-    /** 对面账号 id（微信 ilink_user_id / 微博 uid）；解绑时清空。 */
+    /** 对面标识（微信 ilink_user_id / 微博助手 AppID 的摘要命名空间）；解绑时清空。 */
     accountId: text('account_id'),
     accountName: text('account_name'),
-    /** 微信 ilink_bot_id。 */
+    /** 服务端账号标识（微信 ilink_bot_id / 微博 token.uid，仅诊断）。 */
     botId: text('bot_id'),
     /** iLink 服务节点（白名单节点）；只有微信有。 */
     baseUrl: text('base_url').notNull().default(''),
@@ -54,7 +54,7 @@ export const bindings = channelsSchema.table(
     /** 微博 AppID / AppSecret，该用户 DEK 加密。 */
     weiboAppIdSealed: bytea('weibo_app_id_sealed'),
     weiboAppSecretSealed: bytea('weibo_app_secret_sealed'),
-    /** 最近一次入站 context_token（出站带上更稳），该用户 DEK 加密。 */
+    /** 加密传输上下文：微信 context_token；微博固定回信 peer（不同 AAD），均为用户 DEK 加密。 */
     contextTokenSealed: bytea('context_token_sealed'),
     /** 重绑计数：后台轮询任务带 generation，重建绑定后旧任务自动作废。 */
     generation: integer('generation').notNull().default(1),

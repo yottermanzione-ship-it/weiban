@@ -144,7 +144,12 @@ export class ChannelsWorker implements OnModuleInit, UserDataOwner {
       return;
     }
     const binding = await this.store.bindingById(row.binding_id);
-    if (!binding || binding.status !== 'active') {
+    if (
+      !binding ||
+      binding.status !== 'active' ||
+      binding.user_id !== row.user_id ||
+      binding.channel !== row.channel
+    ) {
       await this.store.finishOutbound(row.id, {
         status: 'skipped',
         lastError: '绑定已解除',
@@ -171,7 +176,19 @@ export class ChannelsWorker implements OnModuleInit, UserDataOwner {
       return;
     }
     if (row.channel === 'weibo') {
-      const ok = await this.weibo.send(row.binding_id, binding.account_id ?? '', text);
+      if (!(await this.store.isOutboundCurrent(row.id, binding.id, binding.generation))) return;
+      const peer = await this.channels.weiboReplyPeer(binding);
+      if (!peer) {
+        await this.retryOrFail(row, '请先在微博给龙虾助手发一句话，建立回信目标');
+        return;
+      }
+      const ok = await this.weibo.send(
+        row.binding_id,
+        peer,
+        text,
+        binding.generation,
+        `out-${row.id}`,
+      );
       if (ok) {
         await this.store.finishOutbound(row.id, { status: 'sent', now: this.clock.now() });
         await this.store.touchEvent(binding.id, this.clock.now());

@@ -9,7 +9,7 @@
  */
 import { Inject, Injectable } from '@nestjs/common';
 import type { ChannelId, ChannelBindingStatus } from '@weiban/contracts';
-import { DATABASE, newId, type Database, type DbTx } from '../../../platform/index.js';
+import { DATABASE, AppError, newId, type Database, type DbTx } from '../../../platform/index.js';
 import type { InboundOutcomeValue, OutboundStatusValue } from '../infra/db/schema.js';
 
 export interface BindingRow {
@@ -233,13 +233,26 @@ export class ChannelStore {
     },
   ): Promise<BindingRow> {
     const id = input.id;
+    // 相同助手凭据不能悄悄夺走另一站内账号的绑定；跨库迁移另行授权处理。
+    if (input.channel === 'weibo') {
+      await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [input.accountId]);
+      const occupied = await tx.query<{ id: string }>(
+        "SELECT id FROM channels.bindings WHERE channel='weibo' AND account_id=$1 AND status='active' AND user_id<>$2",
+        [input.accountId, input.userId],
+      );
+      if (occupied.rows.length)
+        throw new AppError(
+          'conflict',
+          '这份微博助手凭据已有绑定，请先核对，不会自动解除其他账号的连接',
+        );
+    }
     await tx.query(
       `UPDATE channels.bindings
           SET status='revoked', account_id=NULL, account_name=NULL, bot_id=NULL, base_url='',
               cursor='', bot_token_sealed=NULL, weibo_app_id_sealed=NULL,
               weibo_app_secret_sealed=NULL, context_token_sealed=NULL,
               unbound_at=$3, last_error=$4, updated_at=$3
-        WHERE channel=$1 AND account_id=$2 AND status='active' AND user_id<>$5`,
+        WHERE channel=$1 AND channel<>'weibo' AND account_id=$2 AND status='active' AND user_id<>$5`,
       [input.channel, input.accountId, input.now, '对面账号已改绑到其他微伴账号', input.userId],
     );
     const { rows } = await tx.query<BindingRow>(
@@ -275,7 +288,49 @@ export class ChannelStore {
         input.now,
       ],
     );
+    await tx.query(
+      "UPDATE channels.outbound_messages SET status='skipped', last_error='绑定已更新', updated_at=$2 WHERE binding_id=$1 AND status IN ('pending','retry','sending')",
+      [rows[0]!.id, input.now],
+    );
     return rows[0]!;
+  }
+
+  /** 同一凭据代际只固定一个回信目标；并发消息也不能最后写入者覆盖前者。 */
+  async pinWeiboPeer(
+    bindingId: string,
+    generation: number,
+    sealed: Buffer,
+    now: Date,
+  ): Promise<Buffer | null> {
+    const result = await this.db.query<{ context_token_sealed: Buffer }>(
+      `UPDATE channels.bindings SET context_token_sealed=COALESCE(context_token_sealed,$3), updated_at=$4
+       WHERE id=$1 AND generation=$2 AND channel='weibo' AND status='active'
+       RETURNING context_token_sealed`,
+      [bindingId, generation, sealed, now],
+    );
+    return result.rows[0]?.context_token_sealed ?? null;
+  }
+
+  async activeBindingsForCharacter(userId: string, characterId: string): Promise<BindingRow[]> {
+    const result = await this.db.query<BindingRow>(
+      `SELECT ${BINDING_COLUMNS} FROM channels.bindings WHERE user_id=$1 AND character_id=$2 AND status='active'`,
+      [userId, characterId],
+    );
+    return result.rows;
+  }
+
+  /** 已领取的队列行在重绑时会被取消，发送前必须重查，不能借新凭据发送旧回复。 */
+  async isOutboundCurrent(
+    outboundId: string,
+    bindingId: string,
+    generation: number,
+  ): Promise<boolean> {
+    const result = await this.db.query<{ current: boolean }>(
+      `SELECT EXISTS (SELECT 1 FROM channels.outbound_messages o JOIN channels.bindings b ON b.id=o.binding_id
+       WHERE o.id=$1 AND b.id=$2 AND b.generation=$3 AND b.status='active' AND o.status='sending') AS current`,
+      [outboundId, bindingId, generation],
+    );
+    return result.rows[0]?.current === true;
   }
 
   async setCharacter(

@@ -38,7 +38,7 @@ import {
 } from './domain/weibo-openim.js';
 import { CHANNEL_BENEFIT, assertChannelProPlus } from './application/channel-access.js';
 import { isOwnPeer } from './domain/peer.js';
-import { WEIBO_PEER_UID_VERIFIABLE, channelRuntimeConfig } from './application/channel-config.js';
+import { channelRuntimeConfig } from './application/channel-config.js';
 
 interface RecordedCall {
   url: string;
@@ -331,18 +331,18 @@ describe('入站发送者必须就是绑定的对面账号（foreign_sender 一�
     expect(isOwnPeer('wechat', 'o9cq@im.wechat', '')).toBe(false);
   });
 
-  it('微博：没有可验证的对方身份时，任何 sender 都不能通过', () => {
-    // ws_token 只给出 bot 自己的 uid，不能证明私信者是谁。
+  it('微博：必须使用已固定的回信 peer，而不是 token.uid', () => {
+    // token.uid 不能被误当成回信 peer；用户不需手填个人 UID。
     expect(isOwnPeer('weibo', 'bot-uid-77', 'random-stranger')).toBe(false);
     expect(isOwnPeer('weibo', null, 'random-stranger')).toBe(false);
+    expect(isOwnPeer('weibo', 'confirmed-peer', 'confirmed-peer')).toBe(true);
     // 关键回归：第一个「发消息的人」不能因此变成主人，后来的也不能。
     const botUid = 'bot-uid-77';
     expect(isOwnPeer('weibo', botUid, 'first-sender')).toBe(false);
     expect(isOwnPeer('weibo', botUid, 'second-sender')).toBe(false);
   });
 
-  it('微博通道固定不按「已联通」处理（即使运维打开了开关）', () => {
-    expect(WEIBO_PEER_UID_VERIFIABLE).toBe(false);
+  it('微博内测开关可启用真实凭据流程；关闭时仍不可用', () => {
     const config = {
       channels: {
         wechat: { enabled: true, ilinkBaseUrl: 'https://ilinkai.weixin.qq.com' },
@@ -350,7 +350,7 @@ describe('入站发送者必须就是绑定的对面账号（foreign_sender 一�
       },
     } as unknown as Parameters<typeof channelRuntimeConfig>[0];
     expect(channelRuntimeConfig(config, 'wechat').integration).toBe('live');
-    expect(channelRuntimeConfig(config, 'weibo').integration).toBe('not_integrated');
+    expect(channelRuntimeConfig(config, 'weibo').integration).toBe('live');
     const disabled = {
       channels: {
         wechat: { enabled: false, ilinkBaseUrl: 'https://ilinkai.weixin.qq.com' },
@@ -358,6 +358,7 @@ describe('入站发送者必须就是绑定的对面账号（foreign_sender 一�
       },
     } as unknown as Parameters<typeof channelRuntimeConfig>[0];
     expect(channelRuntimeConfig(disabled, 'wechat').integration).toBe('not_integrated');
+    expect(channelRuntimeConfig(disabled, 'weibo').integration).toBe('not_integrated');
   });
 });
 

@@ -51,7 +51,12 @@ import type {
 import { channelRuntimeConfig, type ChannelRuntimeConfig } from './channel-config.js';
 import { assertChannelProPlus } from './channel-access.js';
 import { ChannelStore, type AttemptRow, type BindingRow } from './channel-store.js';
-import { fetchWeiboToken, WeiboError } from '../domain/weibo-openim.js';
+import {
+  fetchWeiboToken,
+  WeiboError,
+  weiboBindingAccountId,
+  weiboPeerContextAad,
+} from '../domain/weibo-openim.js';
 import { createIlinkClient, describeIlinkError } from '../domain/ilink.js';
 
 /** 后台 worker 的任务名（登记在 ChannelsWorker）。 */
@@ -67,7 +72,7 @@ const CHANNEL_INFO: Record<ChannelId, { name: string; description: string }> = {
   },
   weibo: {
     name: '微博接入',
-    description: '用微博开放平台的 AppID / AppSecret 把角色接到微博私信（OpenIM）',
+    description: '私信微博龙虾助手获取 AppID / AppSecret，把角色接到助手会话',
   },
 };
 
@@ -534,9 +539,9 @@ export class ChannelsService {
         channel: 'weibo',
         characterId: character.characterId,
         characterName: character.name,
-        accountId: token.uid || input.appId,
-        accountName: null,
-        botId: null,
+        accountId: weiboBindingAccountId(input.appId),
+        accountName: '微博龙虾助手',
+        botId: token.uid || null,
         baseUrl: '',
         botTokenSealed: null,
         weiboAppIdSealed: appIdSealed,
@@ -623,6 +628,21 @@ export class ChannelsService {
       `channels:binding:${binding.id}:context`,
       contextToken,
     );
+  }
+
+  /** token.uid 仅作服务端诊断；回信目标取自本凭据鉴权连接已经固定的入站 peer。 */
+  async weiboReplyPeer(binding: BindingRow): Promise<string> {
+    if (binding.channel !== 'weibo' || !binding.context_token_sealed) return '';
+    const plaintext = await this.crypto.open(
+      binding.user_id,
+      weiboPeerContextAad(binding.id),
+      binding.context_token_sealed,
+    );
+    try {
+      return plaintext.toString('utf8');
+    } finally {
+      plaintext.fill(0);
+    }
   }
 
   /** worker 用：解密该绑定的微博 AppID / AppSecret。 */

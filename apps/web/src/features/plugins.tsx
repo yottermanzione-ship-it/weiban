@@ -11,6 +11,7 @@ import { friendlyError } from '../data/use-remote.js';
 import { AlertDialog, showToast } from './toast.js';
 import { GroupHeader, MenuGroup, MenuRow, NavBar, Sheet, showComingSoon } from './shell-kit.js';
 import { encodeQr } from './qr-code.js';
+import { parseWeiboCredentials } from '@weiban/client-core';
 
 /**
  * 插件（设置 › 插件）：外部渠道接入。
@@ -130,8 +131,8 @@ export function PluginsPage() {
         })}
       </MenuGroup>
       <p className="page-note">
-        微信接入用微信扫一扫把角色接到微信里；微博接入要用你自己的微博开放平台 AppID / AppSecret。
-        QQ 暂未开放。
+        微信接入用微信扫一扫把角色接到微信里；微博接入用龙虾助手私信发放的 AppID / AppSecret。 QQ
+        暂未开放。
       </p>
       {open && current && (
         <ChannelSheet
@@ -164,6 +165,7 @@ function ChannelSheet({
   const [characterId, setCharacterId] = useState(state.characterId ?? '');
   const [appId, setAppId] = useState('');
   const [appSecret, setAppSecret] = useState('');
+  const [credentials, setCredentials] = useState('');
   const live = state.integration === 'live';
   // 契约里 channel 是容错枚举（未来可能出现不认识的渠道）：这里只认微信 / 微博两种。
   const channel: ChannelId | null =
@@ -235,17 +237,22 @@ function ChannelSheet({
   }
 
   async function connectWeibo() {
-    if (!characterId || !appId.trim() || !appSecret.trim()) {
-      setError('请先选好角色，并填 AppID 与 AppSecret');
+    const parsed = credentials.trim()
+      ? parseWeiboCredentials(credentials)
+      : { appId: appId.trim(), appSecret: appSecret.trim() };
+    if (!characterId || !parsed?.appId || !parsed.appSecret) {
+      setError('先选好角色，再粘贴助手返回的一组完整凭据，或手动填 AppID 与 AppSecret');
       return;
     }
     setBusy(true);
     setError('');
     try {
       await api.call(ChannelEndpoints.weiboConnect, {
-        body: { characterId, appId: appId.trim(), appSecret: appSecret.trim() },
+        body: { characterId, appId: parsed.appId, appSecret: parsed.appSecret },
       });
       setAppSecret('');
+      setAppId('');
+      setCredentials('');
       await onChanged();
       showToast('微博凭据已保存', 2000, 'success');
     } catch (e) {
@@ -391,8 +398,9 @@ function ChannelSheet({
         ) : (
           <>
             <p className="page-note">
-              微博接入要用你自己的微博开放平台 AppID / AppSecret：服务器用它换一次 ws_token
-              校验，校验通过后按你的密钥（DEK）加密保存。
+              在微博私信「微博龙虾助手」，发送“连接龙虾”，把助手返回的整段 AppID / AppSecret
+              粘贴到下面。 不需要个人微博
+              UID，也不用注册普通开放平台应用；服务器校验后加密保存凭据。
             </p>
             {live ? (
               <>
@@ -402,14 +410,39 @@ function ChannelSheet({
                   onSelect={setCharacterId}
                 />
                 <div className="wx-auth-fields">
+                  <label className="wx-auth-field wx-auth-field--credentials">
+                    <span>一键粘贴助手凭据</span>
+                    <textarea
+                      value={credentials}
+                      autoComplete="off"
+                      spellCheck={false}
+                      placeholder="把微博龙虾助手返回的整段凭据粘贴到这里"
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setCredentials(value);
+                        const pair = parseWeiboCredentials(value);
+                        if (pair) {
+                          setAppId(pair.appId);
+                          setAppSecret(pair.appSecret);
+                        }
+                      }}
+                    />
+                  </label>
+                  <p className="page-note">
+                    支持带标签、两行、JSON
+                    或配置命令；不会执行命令，点击连接时只发送识别出的两项凭据，不发送粘贴原文。也可在下面手动填。
+                  </p>
                   <label className="wx-auth-field">
                     <span>AppID</span>
                     <input
                       value={appId}
                       autoComplete="off"
                       spellCheck={false}
-                      placeholder="微博开放平台的 AppID"
-                      onChange={(event) => setAppId(event.target.value)}
+                      placeholder="龙虾助手给的 AppID"
+                      onChange={(event) => {
+                        setCredentials('');
+                        setAppId(event.target.value);
+                      }}
                     />
                   </label>
                   <label className="wx-auth-field">
@@ -419,8 +452,11 @@ function ChannelSheet({
                       type="password"
                       autoComplete="off"
                       spellCheck={false}
-                      placeholder="微博开放平台的 AppSecret"
-                      onChange={(event) => setAppSecret(event.target.value)}
+                      placeholder="龙虾助手给的 AppSecret"
+                      onChange={(event) => {
+                        setCredentials('');
+                        setAppSecret(event.target.value);
+                      }}
                     />
                   </label>
                 </div>
@@ -433,8 +469,9 @@ function ChannelSheet({
                   {busy ? '正在校验…' : '连接微博'}
                 </button>
                 <p className="page-note">
-                  这条通道本轮没有可用的微博账号做联调，属于「已实现、未实网验证」。
-                  连接后如果收不到消息，请回到这里解绑并联系管理员。
+                  凭据保存后，回到同一个龙虾助手私信发一句普通文字测试，服务器会自动取得回信目标，不需要再填
+                  UID。
+                  当前仅本人内测、只收发日常文字，私密模式不外发；请勿同时让旧站接管同一份凭据。
                 </p>
               </>
             ) : (

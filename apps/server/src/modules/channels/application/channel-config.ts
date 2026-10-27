@@ -27,14 +27,10 @@ export interface ChannelRuntimeConfig {
 }
 
 /**
- * 微博能不能按「已联通」处理。
- *
- * **本轮固定 false**：ws_token 只能证明「AppID / AppSecret → bot 自己的 uid」，
- * 证明不了「私信进来的是不是这个账号的主人」。在能验证对方身份之前开放绑定，
- * 等于任意私信者都能改绑、触发本人付费聊天并收到私密回复——比「未联调」危险得多。
- * 所以即使运维设了 CHANNEL_WEIBO_ENABLED=1 且把用户加进白名单，微博也仍然按「未联调」处理。
+ * 微博龙虾助手使用私信发放的专属 AppID / AppSecret，连接归属由凭据绑定决定。
+ * 不向用户额外索取个人 UID；回信目标由该鉴权连接的入站消息自动取得并固定，见 ChannelBridge。
+ * 本轮仍仅运维开关 + 明确白名单内测，不代表面向所有用户开放。
  */
-export const WEIBO_PEER_UID_VERIFIABLE = false;
 
 /** 某渠道的内测白名单（空数组 = 谁都不行）。 */
 export function channelAllowedUsers(config: AppConfig, channel: ChannelId): readonly string[] {
@@ -77,7 +73,7 @@ export function channelRuntimeConfig(
   }
   const settings = config.channels.weibo;
   const integration: ChannelIntegrationStatus =
-    settings.enabled && userAllowed && WEIBO_PEER_UID_VERIFIABLE ? 'live' : 'not_integrated';
+    settings.enabled && userAllowed ? 'live' : 'not_integrated';
   return {
     channel,
     integration,

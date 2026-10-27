@@ -1516,6 +1516,26 @@ label.profile-field.multiline {
 .wx-auth-field input:focus {
   outline: none;
 }
+.wx-auth-field--credentials {
+  height: auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--wb-space-2);
+  padding: var(--wb-space-3) 0;
+}
+.wx-auth-field--credentials span {
+  width: auto;
+}
+.wx-auth-field--credentials textarea {
+  width: 100%;
+  min-height: 112px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--wb-color-text-primary);
+  font: inherit;
+  resize: vertical;
+}
 .wx-auth-note {
   margin: var(--wb-space-4) 0 0;
   color: var(--wb-color-text-secondary);
