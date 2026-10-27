@@ -39,6 +39,8 @@ export function VirtualList<T>({
 }) {
   const root = useRef<HTMLDivElement>(null);
   const heights = useRef(new Map<string, number>());
+  const estimated = useRef(estimate);
+  estimated.current = estimate;
   const previous = useRef({ first: '', height: 0, revision: -1 });
   const stick = useRef(bottom);
   const lastTop = useRef(0);
@@ -143,14 +145,30 @@ export function VirtualList<T>({
      * 用户真正滚动后，scroll 事件会重取锚点，回到顶边钉住。
      */
     const aboveChanged = anchorTop !== undefined && anchorTop !== anchor.current?.top;
-    const desired =
-      bottom && stick.current
-        ? Math.max(0, element.scrollHeight - element.clientHeight)
-        : anchor.current && anchorTop !== undefined
-          ? aboveChanged
-            ? anchorTop + (anchorHeight ?? 0) + anchor.current.bottom
-            : anchorTop + anchor.current.offset
-          : element.scrollTop;
+    /*
+     * 用户正在滑（最后一次 scroll 不是我们写的）：锚点是上一个 scroll 事件记的，惯性滑动中
+     * 之后又滚过了一段。这时按锚点绝对位置写回会把列表拽回去并打断惯性——总经理 10-28 反馈
+     * 「一划只能翻一页、猛地停住」，每次进页面行高都要重量一遍，所以每次切 tab 都会出现。
+     * 改为：锚点上方没变就不动；上方变了只补那一段高度差，从当前位置算。
+     */
+    const userScrolling = written.current === null;
+    let desired = element.scrollTop;
+    if (bottom && stick.current) desired = Math.max(0, element.scrollHeight - element.clientHeight);
+    else if (anchor.current && anchorTop !== undefined) {
+      const edge = anchorTop + (anchorHeight ?? 0);
+      if (!userScrolling)
+        desired = aboveChanged ? edge + anchor.current.bottom : anchorTop + anchor.current.offset;
+      else if (aboveChanged) {
+        const was = anchor.current.top + anchor.current.offset - anchor.current.bottom;
+        desired = element.scrollTop + edge - was;
+        anchor.current = {
+          key: anchor.current.key,
+          top: anchorTop,
+          offset: desired - anchorTop,
+          bottom: desired - edge,
+        };
+      }
+    }
     // Writing even the same scrollTop cancels Safari momentum; compensate only actual layout shifts.
     if (Math.abs(element.scrollTop - desired) > 1) writeScroll(element, desired);
     onBottom?.(stick.current);
@@ -175,10 +193,11 @@ export function VirtualList<T>({
           continue;
         }
         const height = Math.ceil(entry.borderBoxSize[0]?.blockSize ?? entry.contentRect.height);
-        if (height > 0 && heights.current.get(key) !== height) {
-          heights.current.set(key, height);
-          changed = true;
-        }
+        if (height <= 0) continue;
+        // 排版用的是「量过的高度，没量过就按估算」：与它相同就不必重排（固定行高的会话行首次量到时常如此）。
+        const laidOut = heights.current.get(key) ?? estimated.current;
+        heights.current.set(key, height);
+        if (laidOut !== height) changed = true;
       }
       if (changed) setRevision((value) => value + 1);
     });

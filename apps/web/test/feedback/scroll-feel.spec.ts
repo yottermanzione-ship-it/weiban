@@ -139,6 +139,44 @@ test('会话列表连续滚动：不写 scrollTop、不跳位', async ({ page })
   expect(Math.abs((marked.y as number) - (markBefore - (marked.top - before.top)))).toBeLessThan(2);
 });
 
+test('惯性滑动中新行量高：不把列表拽回上一个 scroll 事件的位置', async ({ page }) => {
+  // 总经理 10-28「一划只能翻一页、猛地停住、每次切 tab 都这样」：估算行高与真实不一致时，
+  // 每批新挂的行量完都会触发一次补偿。惯性滑动在 scroll 事件之后还会继续走，补偿不能按旧锚点写回。
+  await page.goto(`${fixture}?page=conv&rows=300&est=60`);
+  await expect(page.locator('.conv-row').first()).toBeVisible();
+  await settle(page);
+  await patchScrollWrites(page);
+  // 先一小段一小段往下（每段都在预挂范围内，新行总是从下方挂进来，和连续滑动一样）。
+  for (let top = 400; top <= 2000; top += 400) {
+    await page.evaluate((value) => {
+      const el = document.querySelector<HTMLElement>('.virtual-list')!;
+      Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop')!.set!.call(el, value);
+    }, top);
+    await settle(page);
+  }
+  await page.evaluate(() => {
+    const el = document.querySelector<HTMLElement>('.virtual-list')!;
+    const track = el.firstElementChild!;
+    const proto = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop')!;
+    let armed = true;
+    // 在 VirtualList 自己的量高回调之后、React 提交补偿之前，再往下走一段（等价合成器线程上的惯性）。
+    const drift = new ResizeObserver(() => {
+      if (!armed) return;
+      armed = false;
+      proto.set!.call(el, (proto.get!.call(el) as number) + 30);
+    });
+    new MutationObserver((records) => {
+      for (const record of records)
+        for (const node of record.addedNodes)
+          if (node instanceof Element && node.matches('[data-row-key]')) drift.observe(node);
+    }).observe(track, { childList: true });
+    proto.set!.call(el, 2400);
+  });
+  await settle(page);
+  expect(await writeCount(page)).toBe(0);
+  expect((await state(page)).top).toBeGreaterThan(2420);
+});
+
 test('会话列表触摸路径没有阻塞主线程的 touchmove；到顶才挂下拉二楼', async ({ page }) => {
   await page.goto(`${fixture}?page=conv&rows=300`);
   await expect(page.locator('.conv-row').first()).toBeVisible();

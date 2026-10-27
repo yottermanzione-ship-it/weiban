@@ -62,7 +62,7 @@ function ConvRow({ index }: { index: number }) {
   );
 }
 
-function ConvFixture({ rows }: { rows: number }) {
+function ConvFixture({ rows, estimate }: { rows: number; estimate: number }) {
   const items = Array.from({ length: rows }, (_, i) => i);
   const render = useCallback((index: number) => <ConvRow index={index} />, []);
   return (
@@ -83,7 +83,7 @@ function ConvFixture({ rows }: { rows: number }) {
             items={items}
             itemKey={(index) => `conv-${index}`}
             label="会话列表"
-            estimate={72}
+            estimate={estimate}
             render={render}
           />
         </PullMiniApps>
@@ -177,9 +177,15 @@ function ChatFixture({ rows }: { rows: number }) {
 
 const rows = Number(new URLSearchParams(location.search).get('rows') ?? '') || 0;
 const page = new URLSearchParams(location.search).get('page') ?? 'conv';
+/** ?est= 让估算行高与真实 72 不一致：每批新挂的行都要重量一次（等价真实页面每次进入）。 */
+const estimate = Number(new URLSearchParams(location.search).get('est') ?? '') || 72;
 
 createRoot(document.getElementById('root')!).render(
   <MemoryRouter initialEntries={['/']}>
-    {page === 'chat' ? <ChatFixture rows={rows || 400} /> : <ConvFixture rows={rows || 300} />}
+    {page === 'chat' ? (
+      <ChatFixture rows={rows || 400} />
+    ) : (
+      <ConvFixture rows={rows || 300} estimate={estimate} />
+    )}
   </MemoryRouter>,
 );
