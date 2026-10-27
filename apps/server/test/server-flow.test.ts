@@ -25,7 +25,6 @@ import {
   P01_REPLY_DELAY,
   type Database,
 } from '../src/platform/index.js';
-import { IdentityCommands } from '../src/modules/identity/index.js';
 import { describeDb, resetTestDatabase } from './support/db.js';
 import {
   FLOW_DEVICE,
@@ -128,7 +127,19 @@ describeDb('T041真实启动：注册→延迟接受→HTTP上游→计费/消�
     await publishThroughWorker();
     const initialCalls = fixture.upstream.calls.length;
     const bonusMicros = 1_000_000;
-    const invite = await fixture.app.get(IdentityCommands).createInvite(null, bonusMicros);
+    // 11 C8：邀请码已停用；注册赠送改为后台会员配置的「注册赠送积分」（100 积分 = 1 元）。
+    const adminAuth = `Bearer ${fixture.adminToken}`;
+    const membership = (
+      await http()
+        .get('/api/v1/admin/membership/settings')
+        .set('Authorization', adminAuth)
+        .expect(200)
+    ).body as Record<string, unknown>;
+    await http()
+      .put('/api/v1/admin/membership/settings')
+      .set('Authorization', adminAuth)
+      .send({ ...membership, signupBonusPoints: 100 })
+      .expect(200);
     const registered = AuthResponse.parse(
       (
         await http()
@@ -136,7 +147,6 @@ describeDb('T041真实启动：注册→延迟接受→HTTP上游→计费/消�
           .send({
             username: 'flow_new_user',
             password: 'correct horse battery',
-            inviteCode: invite.code,
             device: FLOW_DEVICE,
           })
           .expect(201)

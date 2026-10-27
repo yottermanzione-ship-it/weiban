@@ -23,6 +23,7 @@ import {
   Upstream,
   type DeviceInfo,
   type PolicyDecision,
+  type UsageBillingState,
   type UsageCharge,
 } from '@weiban/contracts';
 import request from 'supertest';
@@ -160,6 +161,12 @@ class FakeCharges implements ChargeQuery {
     this.check();
     return Promise.resolve([...this.priced]);
   }
+  // 3.16：对账要按冻结查结算/解冻状态，正式 billing 已实现；替身补上（默认查不到任何冻结）。
+  states: UsageBillingState[] = [];
+  getBillingStatesByHoldIds(holdIds: readonly string[]): Promise<UsageBillingState[]> {
+    this.check();
+    return Promise.resolve(this.states.filter((s) => holdIds.includes(s.holdId)));
+  }
 }
 
 describeDb('model-access 模块（真实 PostgreSQL）', () => {
@@ -270,13 +277,12 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
 
   async function newUser(): Promise<{ userId: string; token: string }> {
     userCounter += 1;
-    const code = (await commands.createInvite(null, 0)).code;
+    // 11 C8：邀请码已停用，直接注册。
     const res = await http()
       .post('/api/v1/auth/register')
       .send({
         username: `chooser_${userCounter}`,
         password: PASSWORD,
-        inviteCode: code,
         device: DEVICE,
       })
       .expect(201);
@@ -314,6 +320,17 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
       // 3.22：文字模型默认可用于文本聊天、语音通话、私密模式
       scenarios: ['chat', 'voice_call', 'private'],
       enabled: true,
+      // 3.16：没有已核准计费上限的模型对用户显示不可用（provider_unavailable / billing_bounds_missing）。
+      billingBounds: {
+        format: 'billing-bounds-v1',
+        text: {
+          contextTokens: 128_000,
+          maxOutputTokens: 8_000,
+          totalOutputIncludesReasoning: true,
+          outputParameter: 'max_tokens',
+          maxImages: 0,
+        },
+      },
       ...extra,
     };
   }
@@ -809,38 +826,42 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
         (
           await http()
             .patch('/api/v1/model/selection', u.token)
-            .send({
-              adult: { modelKey: 'dolphin/dolphin-24b' },
-              chat: { modelKey: 'test/plain-chat' },
-            })
+            .send({ chat: { modelKey: 'test/plain-chat' } })
             .expect(200)
         ).body,
       );
-      expect(ok.adult).toEqual({
-        modelKey: 'dolphin/dolphin-24b',
-        available: true,
-        unavailableReason: null,
-      });
       expect(ok.chat?.modelKey).toBe('test/plain-chat');
       expect(ok.background).toBeNull();
-      // 失败的请求一个字段都不改（chat 合法、adult 不合法）
-      await http()
-        .patch('/api/v1/model/selection', u.token)
-        .send({
-          chat: { modelKey: 'deepseek/deepseek-flash' },
-          adult: { modelKey: 'test/disabled' },
-        })
-        .expect(422);
+      // 3.28：私密（adult）模型由平台固定，用户写入（含合法模型与 null）一律 422 model_not_allowed，
+      // 且同一请求里的 chat 也不改。
+      for (const adult of [{ modelKey: 'dolphin/dolphin-24b' }, null]) {
+        const denied = await http()
+          .patch('/api/v1/model/selection', u.token)
+          .send({ chat: { modelKey: 'deepseek/deepseek-flash' }, adult })
+          .expect(422);
+        expect(errorCode(denied)).toBe('model_not_allowed');
+      }
       const after = ModelSelection.parse(
         (await http().get('/api/v1/model/selection', u.token).expect(200)).body,
       );
       expect(after.chat?.modelKey).toBe('test/plain-chat');
-      // null 清除
-      const cleared = ModelSelection.parse(
-        (await http().patch('/api/v1/model/selection', u.token).send({ adult: null }).expect(200))
-          .body,
+      // 用户看到的 adult = 后台设定的固定私密模型
+      await http()
+        .put('/api/v1/admin/model/scenario-settings', adminToken)
+        .send({ recommended: {}, internal: {}, fixed: { private: 'dolphin/dolphin-24b' } })
+        .expect(200);
+      const fixed = ModelSelection.parse(
+        (await http().get('/api/v1/model/selection', u.token).expect(200)).body,
       );
-      expect(cleared.adult).toBeNull();
+      expect(fixed.adult).toEqual({
+        modelKey: 'dolphin/dolphin-24b',
+        available: true,
+        unavailableReason: null,
+      });
+      await http()
+        .put('/api/v1/admin/model/scenario-settings', adminToken)
+        .send({ recommended: {}, internal: {}, fixed: { private: null } })
+        .expect(200);
       const evts = (await outboxEvents('model_access.selection_changed')).map((e) => e.payload);
       expect(evts).toContainEqual({ userId: u.userId, characterId: null });
     });
@@ -932,15 +953,24 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
       expect(await resolver.resolve(base)).toEqual({ ok: false, error: 'model_not_allowed' });
       const ok = await resolver.resolve({ ...base, characterId: ELIGIBLE });
       expect(ok.ok && ok.value.modelKey).toBe('test/turns-adult');
-      // 成人模式模型同样受闸门约束
+      // 成人模式模型同样受闸门约束（3.28：私密模型改由后台固定设置，用户不能选）
       await http()
-        .patch('/api/v1/model/selection', u.token)
-        .send({ adult: { modelKey: 'dolphin/dolphin-24b' } })
+        .put('/api/v1/admin/model/scenario-settings', adminToken)
+        .send({ recommended: {}, internal: {}, fixed: { private: 'dolphin/dolphin-24b' } })
         .expect(200);
-      expect(await resolver.resolve({ ...base, modelRole: 'adult', characterId: MINOR })).toEqual({
-        ok: false,
-        error: 'model_not_allowed',
-      });
+      try {
+        expect(await resolver.resolve({ ...base, modelRole: 'adult', characterId: MINOR })).toEqual(
+          {
+            ok: false,
+            error: 'model_not_allowed',
+          },
+        );
+      } finally {
+        await http()
+          .put('/api/v1/admin/model/scenario-settings', adminToken)
+          .send({ recommended: {}, internal: {}, fixed: { private: null } })
+          .expect(200);
+      }
     });
 
     it('3.22 解析顺序：角色单独设置 > 场景配置 > 未配置（没有平台兜底）；后台跟随文本聊天；私密模式不回落；带图改用图片识别场景', async () => {
@@ -1004,11 +1034,18 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
         usedVisionDefault: false,
       });
       // 场景没勾选的模型不能选
+      await addModel('test/chat-only', upstreamId, { scenarios: ['chat'] });
       const wrong = await http()
+        .patch('/api/v1/model/scenarios', u.token)
+        .send({ selections: { voice_call: { modelKey: 'test/chat-only' } } })
+        .expect(422);
+      expect(errorCode(wrong)).toBe('model_unavailable');
+      // 「发照片」场景配置已取消：写入直接 422 bad_request
+      const cancelled = await http()
         .patch('/api/v1/model/scenarios', u.token)
         .send({ selections: { image_generation: { modelKey: 'test/plain-chat' } } })
         .expect(422);
-      expect(errorCode(wrong)).toBe('model_unavailable');
+      expect(errorCode(cancelled)).toBe('bad_request');
     });
   });
 
@@ -1034,6 +1071,33 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
         .patch('/api/v1/model/scenarios', u.token)
         .send({ selections: { chat: { modelKey: 'deepseek/deepseek-v4-pro' } } })
         .expect(200);
+      // 3.24：状态先按真实价目表报价，报不出价就是 provider_unavailable（price_missing）；
+      // 这里发布一版真实价格，才能走到余额判断。
+      const draft = (
+        await http()
+          .post('/api/v1/admin/billing/price-versions', adminToken)
+          .send({
+            versionLabel: 'ma-status',
+            note: null,
+            items: [
+              ['input_tokens_per_million', 2_000_000],
+              ['output_tokens_per_million', 8_000_000],
+            ].map(([unit, price]) => ({
+              modelKey: 'deepseek/deepseek-v4-pro',
+              unit,
+              priceMicros: price,
+              costMicros: Number(price) / 2,
+              band: null,
+            })),
+          })
+          .expect(201)
+      ).body as { priceVersionId: string };
+      await http()
+        .post(`/api/v1/admin/billing/price-versions/${draft.priceVersionId}/activate`, adminToken)
+        .send({ effectiveFrom: null })
+        .expect((r) => {
+          if (r.status >= 300) throw new Error(`activate ${r.status} ${JSON.stringify(r.body)}`);
+        });
       expect(await status()).toMatchObject({ available: false, reason: 'insufficient_balance' });
       await http()
         .post(`/api/v1/admin/billing/accounts/${u.userId}/adjustments`, adminToken)

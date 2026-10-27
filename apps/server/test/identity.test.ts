@@ -1,6 +1,6 @@
 /**
  * identity 模块集成测试（T-018 / D-L0-06）：每个接口的正常路径、未登录、无权限、参数错误、重复请求；
- * 邀请码（无效 / 已用 / 过期 / 并发只能用一次）；登录锁定；会话续期、过期与吊销；主题多设备同步；
+ * 邀请码已停用（11 C8：直接注册，旧字段被忽略，管理端生成返回 503）；登录锁定；会话续期、过期与吊销；主题多设备同步；
  * 命令行操作；注销编排（删除清单框架）；日志里没有密码和令牌。
  */
 import 'reflect-metadata';
@@ -10,7 +10,6 @@ import {
   ApiError,
   AuthResponse,
   CurrentUser,
-  Invite,
   NotificationSettings,
   Profile,
   SessionSummary,
@@ -26,7 +25,6 @@ import { CommandError, IdentityCommands } from '../src/modules/identity/index.js
 import {
   DEFAULT_NOTIFICATION_SETTINGS,
   IdentityTestQueries,
-  normalizeInviteCode,
 } from '../src/modules/identity/testing.js';
 import {
   DATABASE,
@@ -149,10 +147,6 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
     return token ? r.set('Authorization', `Bearer ${token}`) : r;
   }
 
-  async function newInvite(days: number | null = null): Promise<string> {
-    return (await commands.createInvite(days)).code;
-  }
-
   let userCounter = 0;
   function newUsername(prefix = 'user'): string {
     userCounter += 1;
@@ -168,7 +162,6 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
       .send({
         username,
         password: options.password ?? PASSWORD,
-        inviteCode: await newInvite(),
         device: options.device ?? DEVICE,
       })
       .expect(201);
@@ -239,11 +232,10 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
   // ---------- 注册 ----------
 
   describe('注册 POST /auth/register', () => {
-    it('正常：201，返回会话和用户；默认资料、设置、主题；邀请码被用掉；发 user_registered', async () => {
-      const code = await newInvite();
+    it('正常：201，返回会话和用户；默认资料、设置、主题；不需要邀请码；发 user_registered', async () => {
       const res = await http()
         .post('/api/v1/auth/register')
-        .send({ username: 'Alice_01', password: PASSWORD, inviteCode: code, device: DEVICE })
+        .send({ username: 'Alice_01', password: PASSWORD, device: DEVICE })
         .expect(201);
       const body = AuthResponse.parse(res.body);
       secrets.add(body.session.token);
@@ -278,9 +270,6 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
       );
       expect(prefs.theme).toBe('green');
 
-      const invite = await q.invite(normalizeInviteCode(code));
-      expect(invite?.usedBy).toBe(body.user.userId);
-      expect(invite?.usedAt).not.toBeNull();
       expect(await outbox('identity.user_registered', body.user.userId)).toHaveLength(1);
 
       // 密码只存 argon2id 哈希；令牌只存 SHA-256
@@ -293,11 +282,9 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
     });
 
     it('参数错误：用户名格式、密码长度、缺字段、时区不认识 → 400；弱密码 → 422', async () => {
-      const code = await newInvite();
       const base = {
         username: newUsername(),
         password: PASSWORD,
-        inviteCode: code,
         device: DEVICE,
       };
       for (const body of [
@@ -305,7 +292,7 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
         { ...base, username: 'has space' },
         { ...base, password: 'short' },
         { ...base, device: undefined },
-        { ...base, inviteCode: undefined },
+        { ...base, inviteCode: 'x'.repeat(65) }, // 旧兼容字段仍有长度上限
       ]) {
         const res = await http().post('/api/v1/auth/register').send(body).expect(400);
         expect(errorCode(res)).toBe('bad_request');
@@ -320,75 +307,47 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
         .send({ ...base, password: `${base.username}12345` })
         .expect(422);
       expect(errorCode(weak)).toBe('password_too_weak');
-      // 失败的请求没有用掉邀请码
-      expect((await q.invite(normalizeInviteCode(code)))?.usedAt).toBeNull();
+      // 失败的请求都没有建出账号
+      expect(await q.user(base.username)).toBeFalsy();
     });
 
-    it('邀请码无效、已用、过期都被拒绝（422 invite_invalid）', async () => {
-      const send = (inviteCode: string) =>
+    // 11 C8：邀请码已取消。旧客户端仍可能带 inviteCode：字段被忽略，不校验、不消耗。
+    // 原「无效/已用/过期被拒」「同一个码并发只能用一次」两条用例改为验证这一点。
+    it('旧客户端带邀请码字段（乱写、重复、并发同一个码）都被忽略，照常注册', async () => {
+      const send = (inviteCode: string, username = newUsername()) =>
         http()
           .post('/api/v1/auth/register')
-          .send({ username: newUsername(), password: PASSWORD, inviteCode, device: DEVICE });
+          .send({ username, password: PASSWORD, inviteCode, device: DEVICE });
+      const first = AuthResponse.parse((await send('NOPE-NOPE-NOPE').expect(201)).body);
+      const second = AuthResponse.parse((await send('NOPE-NOPE-NOPE').expect(201)).body);
+      secrets.add(first.session.token).add(second.session.token);
+      expect(second.user.userId).not.toBe(first.user.userId);
 
-      expect(errorCode(await send('NOPE-NOPE-NOPE').expect(422))).toBe('invite_invalid');
-
-      const used = await newInvite();
-      await send(used).expect(201);
-      expect(errorCode(await send(used).expect(422))).toBe('invite_invalid');
-
-      const expiring = await newInvite(1);
-      clock.advance(DAY + 1);
-      expect(errorCode(await send(expiring).expect(422))).toBe('invite_invalid');
-      // 邀请码不区分大小写、可带空格
-      const lower = await newInvite();
-      await send(` ${lower.toLowerCase()} `).expect(201);
-    });
-
-    it('同一个邀请码并发注册：只有一个成功（邀请码只能用一次）', async () => {
-      const code = await newInvite();
       const results = await Promise.all(
-        Array.from({ length: 6 }, () =>
-          http()
-            .post('/api/v1/auth/register')
-            .send({
-              username: newUsername('race'),
-              password: PASSWORD,
-              inviteCode: code,
-              device: DEVICE,
-            }),
-        ),
+        Array.from({ length: 4 }, () => send('SAME-CODE-0001', newUsername('race'))),
       );
-      const statuses = results.map((r) => r.status).sort();
-      expect(statuses).toEqual([201, 422, 422, 422, 422, 422]);
-      const winner = AuthResponse.parse(results.find((r) => r.status === 201)?.body);
-      secrets.add(winner.session.token);
-      expect((await q.invite(normalizeInviteCode(code)))?.usedBy).toBe(winner.user.userId);
+      expect(results.map((r) => r.status)).toEqual([201, 201, 201, 201]);
+      for (const r of results) secrets.add(AuthResponse.parse(r.body).session.token);
     });
 
-    it('同一个用户名用不同邀请码并发注册：只有一个成功，其余 409，邀请码不被消耗', async () => {
+    it('同一个用户名并发注册（密码各不相同）：只有一个成功，其余 409 username_taken', async () => {
       const username = newUsername('same');
-      const codes = await Promise.all([newInvite(), newInvite(), newInvite()]);
       const results = await Promise.all(
-        codes.map((inviteCode) =>
-          http()
-            .post('/api/v1/auth/register')
-            .send({ username, password: PASSWORD, inviteCode, device: DEVICE }),
+        ['first secret 1', 'second secret 2', 'third secret 3'].map((password) =>
+          http().post('/api/v1/auth/register').send({ username, password, device: DEVICE }),
         ),
       );
       expect(results.map((r) => r.status).sort()).toEqual([201, 409, 409]);
       for (const r of results.filter((x) => x.status === 409)) {
         expect(errorCode(r)).toBe('username_taken');
       }
-      const unused = await Promise.all(codes.map((c) => q.invite(normalizeInviteCode(c))));
-      expect(unused.filter((i) => i?.usedAt !== null)).toHaveLength(1);
+      secrets.add(AuthResponse.parse(results.find((r) => r.status === 201)?.body).session.token);
     });
 
-    it('重复请求：同一次注册重发（同用户名、密码、邀请码）→ 200 同一账号、新会话；用户名大小写不同也算占用', async () => {
-      const code = await newInvite();
+    it('重复请求：同一次注册重发（同用户名、密码）→ 200 同一账号、新会话；密码不同或大小写不同的用户名都算占用', async () => {
       const body = {
         username: newUsername('retry'),
         password: PASSWORD,
-        inviteCode: code,
         device: DEVICE,
       };
       const first = AuthResponse.parse(
@@ -402,16 +361,16 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
       expect(again.session.sessionId).not.toBe(first.session.sessionId);
       expect(await outbox('identity.user_registered', first.user.userId)).toHaveLength(1);
 
-      // 密码不对的重发不能借机拿到会话
+      // 密码不对的重发不能借机拿到会话：按用户名已被占用处理
       const wrong = await http()
         .post('/api/v1/auth/register')
         .send({ ...body, password: 'another password!' })
-        .expect(422);
-      expect(errorCode(wrong)).toBe('invite_invalid');
+        .expect(409);
+      expect(errorCode(wrong)).toBe('username_taken');
 
       const taken = await http()
         .post('/api/v1/auth/register')
-        .send({ ...body, username: body.username.toUpperCase(), inviteCode: await newInvite() })
+        .send({ ...body, username: body.username.toUpperCase(), password: 'another password!' })
         .expect(409);
       expect(errorCode(taken)).toBe('username_taken');
     });
@@ -757,47 +716,21 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
       adminAppToken = AuthResponse.parse((await login(adminName).expect(200)).body).session.token;
     });
 
-    it('管理会话生成邀请码（201），列表能看到；用它能注册', async () => {
+    // 11 C8：邀请码已停用。接口保留给旧后台兼容：生成返回 503 service_unavailable，列表恒为空。
+    // 原「生成后能注册」「Idempotency-Key 只生成一个码」「审计不记码」三条已无对应功能，合并为下面一条。
+    it('邀请码已停用：管理会话生成返回 503，列表为空，不写 invite.created 审计', async () => {
       const res = await http()
         .post('/api/v1/admin/invites', adminToken)
         .send({ expiresInDays: 7 })
-        .expect(201);
-      const invite = Invite.parse(res.body);
-      expect(invite.expiresAt).toBe(new Date(clock.nowMs() + 7 * DAY).toISOString());
-      expect(invite.usedAt).toBeNull();
+        .expect(503);
+      expect(errorCode(res)).toBe('service_unavailable');
       const list = await http().get('/api/v1/admin/invites', adminToken).expect(200);
-      expect(list.body.items.map((i: unknown) => Invite.parse(i).code)).toContain(invite.code);
-      await http()
-        .post('/api/v1/auth/register')
-        .send({
-          username: newUsername(),
-          password: PASSWORD,
-          inviteCode: invite.code,
-          device: DEVICE,
-        })
-        .expect(201);
-      const after = (await http().get('/api/v1/admin/invites', adminToken)).body.items.find(
-        (i: { code: string }) => i.code === invite.code,
+      expect(list.body.items).toEqual([]);
+      const rows = await withClient(
+        async (c) =>
+          (await c.query(`SELECT 1 FROM platform.audit_log WHERE action = 'invite.created'`)).rows,
       );
-      expect(after.usedAt).not.toBeNull();
-    });
-
-    it('重复请求：带同一个 Idempotency-Key 只生成一个码', async () => {
-      const send = () =>
-        http()
-          .post('/api/v1/admin/invites', adminToken)
-          .set('Idempotency-Key', 'invite-req-0001')
-          .send({ expiresInDays: null });
-      const [a, b] = await Promise.all([send(), send()]);
-      expect(a.body.code).toBe(b.body.code);
-      const c = await send().expect(201);
-      expect(c.body.code).toBe(a.body.code);
-      const bad = await http()
-        .post('/api/v1/admin/invites', adminToken)
-        .set('Idempotency-Key', 'x')
-        .send({ expiresInDays: null })
-        .expect(400);
-      expect(errorCode(bad)).toBe('bad_request');
+      expect(rows).toHaveLength(0);
     });
 
     it('无权限：普通用户 403；管理员的 App 会话（非管理会话）也 403；未登录 401', async () => {
@@ -835,25 +768,6 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
       clock.advance(HOUR);
       await http().get('/api/v1/admin/invites', token).expect(401);
     });
-
-    it('邀请码生成写审计，审计里不记码本身', async () => {
-      const rows = await withClient(
-        async (c) =>
-          (
-            await c.query(
-              `SELECT details::text AS d FROM platform.audit_log WHERE action = 'invite.created'`,
-            )
-          ).rows,
-      );
-      expect(rows.length).toBeGreaterThan(0);
-      const fresh = AuthResponse.parse(
-        (await login(adminName, { kind: 'admin' }).expect(200)).body,
-      );
-      const codes = (await http().get('/api/v1/admin/invites', fresh.session.token)).body.items.map(
-        (i: { code: string }) => normalizeInviteCode(i.code),
-      );
-      for (const row of rows) for (const code of codes) expect(row.d.includes(code)).toBe(false);
-    });
   });
 
   // ---------- 命令行操作 ----------
@@ -888,9 +802,10 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
       expect(me.body.role).toBe('user');
     });
 
-    it('生成邀请码：天数不合法报错', async () => {
-      await expect(commands.createInvite(0)).rejects.toThrow(/1–365/);
-      expect((await commands.createInvite(30)).expiresAt).not.toBeNull();
+    // 11 C8：命令行生成邀请码只保留兼容入口，一律提示已停用。
+    it('生成邀请码：功能已停用，命令报错提示直接注册', async () => {
+      await expect(commands.createInvite(30)).rejects.toBeInstanceOf(CommandError);
+      await expect(commands.createInvite(30)).rejects.toThrow(/邀请码功能已停用/);
     });
   });
 

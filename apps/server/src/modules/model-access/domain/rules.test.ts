@@ -39,7 +39,8 @@ describe('H4 shared search recovery', () => {
     });
     expect(result).toEqual({ ok: true, items: [], chargedMicros: 300, requesterChargeMicros: 100 });
     expect(search).not.toHaveBeenCalled();
-    expect(settle).toHaveBeenCalledWith('group', 'usage');
+    // 4.1 起 settle 带第三个参数 eligible（未给可分摊名单时为 undefined）。
+    expect(settle).toHaveBeenCalledWith('group', 'usage', undefined);
   });
   it('free cached receipts release admission and never collect an older supplier usage', async () => {
     const gateway = Object.create(SharedWebSearch.prototype) as SharedWebSearch;

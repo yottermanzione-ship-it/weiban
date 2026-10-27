@@ -808,7 +808,9 @@ export class ReservationService implements BillingReservationPort {
       `SELECT
          (SELECT background_settled_micros FROM billing.daily_spend
            WHERE account_id = $1 AND day = $2) AS settled,
-         (SELECT sum(amount_micros) FROM billing.holds
+         -- 3.27 先用后扣的冻结 amount_micros 恒为 0，在途金额记在 estimate_micros；
+         -- 只加 amount_micros 会让进行中的后台调用不占额度，并发时可超出每日上限。
+         (SELECT sum(CASE WHEN postpaid THEN estimate_micros ELSE amount_micros END) FROM billing.holds
            WHERE account_id = $1 AND status = 'active' AND counts_as_background
              AND background_day = $2) AS held`,
       [accountId, day],
