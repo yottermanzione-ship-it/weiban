@@ -144,6 +144,12 @@ function discover(options) {
     enabled: row.enabled,
     providerId: row.provider_id || null,
     baseUrl: safeBaseUrl(row.base_url),
+    // 新服 import-legacy-upstreams --prepare 的 scope.json 条目（与导出器的账号来源 ID 规则一致）。
+    scopeEntry: {
+      sourceId: row.provider_id ? `provider:${row.provider_id}` : `endpoint:${row.id}`,
+      vendor: row.vendor,
+      baseUrl: safeBaseUrl(row.base_url),
+    },
   }));
   const file = newFile(options.outDir, 'realtime-endpoints.json');
   fs.writeFileSync(file, JSON.stringify(rows, null, 2), { flag: 'wx' });

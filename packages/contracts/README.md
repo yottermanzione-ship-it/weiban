@@ -99,6 +99,7 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 - 计价单位 `PriceUnit` / `ServicePriceUnit` 新增 `audio_input_tokens_per_million`、`audio_output_tokens_per_million`（元 / 百万 token），用量 `UsageQuantities` 新增可选 `audioInputTokens`、`audioOutputTokens`。实时语音 / Omni 通话的文字 token 仍记在 `inputTokens` / `outputTokens`。
 - `RouteBillingBounds` 新增可选 `realtime`（单通最长秒数、每次回应输出上限、上下文上限），没有它的线路不能打开实时通话。
+- 后台一次写入的服务单价条数上限由 5 改为「服务计价单位总数」（现为 7），实时通话模型要同时写音频输入 / 输出两项；只放宽，不影响旧请求。
 - `ModelGatewayMediaPort` 新增两个**可选**方法：`voiceCallRoute`（这通电话走级联还是实时）与 `openRealtimeVoice`（服务端 WebSocket 中转的实时会话），以及 `RealtimeVoiceSession` / `RealtimeVoiceEvent` 类型。客户端通话协议（PCM 上行 16k、下行 24k、barge_in）不变。
 - 理由：百炼 `qwen-audio-3.0-realtime-plus` 与 Qwen Omni 实时模型按「文字输入 / 音频输入 / 文字输出 / 音频输出」四种 token 分别计价（调研见 `docs/refactor/2026-10-22-voice-provider-integration.md` 计费节），原有单位不能表达同一次回应里不同模态的单价；`realtime_minute` 不是供应商的计费方式。均为新增枚举值 / 可选字段 / 可选方法，按规则升次版本；Android 生成产物只同步版本号与枚举。旧客户端遇到新单位按 tolerant 规则显示原值（只出现在后台价目表）。
 
