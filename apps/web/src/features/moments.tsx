@@ -236,16 +236,29 @@ export function MomentCommentRow({
           <MomentActorName actor={comment.replyTo} actors={actors} />
         </>
       )}
-      <button
-        type="button"
+      {/*
+        U5：正文用可点的行内文字（role=button），跟在名字后面接着排；
+        原生 button 在浏览器里总是行内块，长评论会整块掉到下一行。
+      */}
+      <span
+        role="button"
+        tabIndex={pending ? -1 : 0}
         className="moment-comment-text"
+        aria-disabled={pending || undefined}
         aria-label={`回复${actors.name(comment.author)}的评论`}
         {...press}
-        disabled={pending}
-        onClick={onReply}
+        onClick={() => {
+          if (!pending) onReply();
+        }}
+        onKeyDown={(event) => {
+          if ((event.key === 'Enter' || event.key === ' ') && !pending) {
+            event.preventDefault();
+            onReply();
+          }
+        }}
       >
         ：{comment.text}
-      </button>
+      </span>
     </p>
   );
 }

@@ -5,6 +5,7 @@
  * 动效性格（U5）：手指拖动时图片跟手、不加过渡；松手后吸附 / 回弹统一用 --ui-motion-snap。
  */
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { useLayerHistory } from './layer-history.js';
 import { MediaImg } from './media.js';
 import { CaretLeft, CaretRight, OldIcon, X } from './old-icons.js';
@@ -185,7 +186,8 @@ export function Lightbox({
   const fade = drag.y > 0 ? Math.max(0.2, 1 - drag.y / 500) : 1;
   const shrink = drag.y > 0 ? Math.max(0.7, 1 - drag.y / 1200) : 1;
   const actions = menu?.(item, current) ?? [];
-  return (
+  // 挂到 body：从消息气泡 / 列表行里打开时不被列表的层叠上下文压住。
+  return createPortal(
     <div
       className={`image-viewer lightbox ${moving ? 'moving' : ''}`}
       role="dialog"
@@ -197,7 +199,9 @@ export function Lightbox({
         <button type="button" className="viewer-button" aria-label="关闭" onClick={onClose}>
           <X size={24} />
         </button>
-        <span className="numeric">{items.length > 1 ? `${current + 1} / ${items.length}` : ''}</span>
+        <span className="numeric">
+          {items.length > 1 ? `${current + 1} / ${items.length}` : ''}
+        </span>
         {actions.length > 0 ? (
           <button
             type="button"
@@ -261,6 +265,7 @@ export function Lightbox({
       )}
       {hint && <p className="viewer-hint">{hint}</p>}
       {sheet && <ActionSheet onClose={() => setSheet(false)} items={actions} />}
-    </div>
+    </div>,
+    document.body,
   );
 }

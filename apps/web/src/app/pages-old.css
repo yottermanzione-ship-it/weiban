@@ -954,7 +954,8 @@ label.profile-field.multiline {
   gap: var(--wb-space-3);
   min-height: 44px;
   padding: 8px 12px;
-  border-radius: var(--wb-radius-sm);
+  /* U5 同心圆角：外 12 = 头像 4 + 间距 8 */
+  border-radius: var(--wb-radius-lg);
   background: var(--wb-color-ui-moments-new-msg-bg);
   color: var(--ui-text-on-color);
   font-size: var(--wb-font-size-callout);
@@ -2430,16 +2431,6 @@ button.primary.wx-auth-submit {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 8px;
-}
-.favorite-image-sheet .media-frame {
-  display: block;
-  width: 100%;
-}
-.favorite-image-sheet img {
-  display: block;
-  width: 100%;
-  max-height: 70dvh;
-  object-fit: contain;
 }
 
 /* 3.17 会员 v5：PRO+ 价格与权益对照（features/membership.tsx） */

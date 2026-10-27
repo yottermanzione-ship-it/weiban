@@ -9,6 +9,7 @@
  */
 import { isImeEnter } from './ime.js';
 import { useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { OldIcon } from './old-icons.js';
 import { useLayerHistory } from './layer-history.js';
 import { BackArrow, NavBar, useBack, useEscape } from './shell-kit.js';
@@ -143,7 +144,8 @@ export function PushLayer({
 }) {
   useEscape(onClose);
   useLayerHistory(onClose);
-  return (
+  // 挂到 body：常从消息气泡里打开（聊天记录卡片），不能被消息列表的层叠上下文压在顶部浮条下面。
+  return createPortal(
     <div
       className="subpage-layer"
       role="dialog"
@@ -154,7 +156,8 @@ export function PushLayer({
         <NavBar title={title} onBack={onClose} right={right} />
         {children}
       </main>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

@@ -113,6 +113,7 @@
     --ui-pressed-strong: #2c2c2c;
     --ui-avatar-initial: #c9c9c9;
     --wb-font-weight-semibold: 500;
+    --wb-font-weight-bold: 600;
     --ui-fill-1: rgba(255, 255, 255, 0.08);
     --ui-fill-2: rgba(255, 255, 255, 0.1);
     --ui-fill-3: rgba(255, 255, 255, 0.3);
@@ -125,6 +126,7 @@
   --ui-pressed-strong: #2c2c2c;
   --ui-avatar-initial: #c9c9c9;
   --wb-font-weight-semibold: 500;
+  --wb-font-weight-bold: 600;
   --ui-fill-1: rgba(255, 255, 255, 0.08);
   --ui-fill-2: rgba(255, 255, 255, 0.1);
   --ui-fill-3: rgba(255, 255, 255, 0.3);
@@ -135,4 +137,12 @@
 /* styles.css 的 body 用 font 简写会把字重重置成 normal，这里用更高优先级接回令牌 */
 :root body {
   font-weight: var(--wb-font-weight-regular);
+}
+/*
+ * U5：浏览器默认的 <strong> / <b> 是 700，不走令牌，暗色下降不下来。改成中粗令牌：
+ * 浅色 600（MiSans 600 字形同时覆盖 600–700，看起来不变），暗色自动降到 500。
+ */
+strong,
+b {
+  font-weight: var(--wb-font-weight-semibold);
 }

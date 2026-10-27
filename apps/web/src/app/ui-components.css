@@ -494,10 +494,11 @@ time,
 }
 
 /* ---------- 去硬边框：不加类名的普通按钮靠浅灰底分层（U1 遗留 5） ---------- */
-button:not([class]) {
+/* :where 让优先级与 button 元素选择器相同：页面里「.xx button」自己设的底色仍然生效 */
+button:where(:not([class])) {
   background: var(--ui-fill-1);
 }
-button:not([class]):active {
+button:where(:not([class])):where(:active) {
   background: var(--ui-fill-2);
 }
 
@@ -683,9 +684,20 @@ button:not([class]):active {
   flex-basis: 100%;
   color: var(--wb-color-text-danger);
 }
-/* 评论里的名字 / 正文按钮按文字排，不撑成一列（原来名字会竖着折行） */
-.moment-comment button {
-  display: inline;
+/* 评论按一段文字排（styles.css 旧规则把它设成 flex，名字和「回复」被挤成竖排的几列） */
+.moment-comment {
+  display: block;
+}
+.moment-comment-text {
+  color: var(--wb-color-text-primary);
+  font-size: var(--wb-font-size-subhead);
+  cursor: pointer;
+}
+.moment-card-detail .moment-comment-text {
+  font-size: var(--wb-font-size-callout);
+}
+.moment-comment-bar textarea:focus-visible {
+  outline: none;
 }
 
 /* ---------- 长文件名中间省略、保留后缀 ---------- */

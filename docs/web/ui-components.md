@@ -1,6 +1,6 @@
 # 用户端公共 UI 组件说明
 
-> 2026-10-26 批 U1 建立、批 U2 补充表单选择框 / 页内二级页面 / 分段 Tab 与「确认与删除」统一规则（任务卡 `docs/tasks/2026-10-26-ui-quality.md`，规则来源 `docs/refactor/26-ui-quality-plan.md` §2 §5）。
+> 2026-10-26 批 U1 建立、批 U2 补充表单选择框 / 页内二级页面 / 分段 Tab 与「确认与删除」统一规则，批 U5 补充看图 / 只读整页 / 贴键盘输入条 / 返回键只关一层 / 质感细节规则（任务卡 `docs/tasks/2026-10-26-ui-quality.md`，规则来源 `docs/refactor/26-ui-quality-plan.md` §2 §5）。
 > 新页面一律从 `apps/web/src/features/ui.ts` 引入这些组件，不再自己手写弹窗、确认块、原生日期框。
 > 组件效果图（浅色 / 深色）：`C:\wb-dev\logs\ui-u1\after\gallery\`。
 
@@ -16,8 +16,12 @@
 - **圆角只三档**：`--wb-radius-xs` 4px（标签、缩略图、输入框、头像、顶栏小按钮）、`--wb-radius-md` 8px（按钮、气泡、卡片里的块）、`--wb-radius-lg` 12px（卡片、弹层、底部面板顶边）；另有 `--wb-radius-full`（圆点、胶囊、角标）和品牌图标形状 `--ui-radius-app-icon`。旧名 `--wb-radius-sm`（原 6px）、`--wb-radius-xl`（原 14px）已收进 4 / 12，新样式不要再用。外圆角 = 内圆角 + 间距。
 - **颜色**：沿用第 1 层语义色；网页补充了按钮语气（`--ui-button-*`、`--ui-text-action`）、浅灰分层（`--ui-fill-1/2/3`，深色自动换成白色半透明）、深色底上的白字层级（`--ui-on-dark-*`，状态页、下拉小程序、通话用）、固定色（`--ui-text-on-color` 等）。
 - **间距 / 字号**：用第 1 层 `--wb-space-*`、`--wb-font-size-*`（字号令牌跟随「字体大小」设置缩放）。
-- **字重**：`--wb-font-weight-*`。深色模式下中粗 500→400、粗 600→500（MiSans 只打包了 400 / 500 / 600 三个字形，正文 400 无法再细）。
+- **字重**：`--wb-font-weight-*`。深色模式下中粗 500→400、粗 600→500、最粗 700→600（MiSans 只打包了 400 / 500 / 600 三个字形，正文 400 无法再细）。`<strong>` / `<b>` 也走中粗令牌（U5），深色一起降。不要在样式或行内 style 里写数字字重。
 - **动效**：第 1 层 `--wb-motion-*`，网页补充 `--ui-motion-route`（整页推入 220ms）、`--ui-motion-dialog`（150ms）、`--ui-motion-spin`、`--ui-ease-out` / `--ui-ease-in-out`。
+- **动效分性格（U5）**：新动效先归类，不另起数值——① 跟手：拖拽中不加过渡，松手吸附 / 回弹用 `--ui-motion-snap` + `--ui-ease-snap`（底部面板分档、左滑、看图下滑）；② 弹性：点赞、拍一拍、选中这类小回应用 `--ui-motion-pop` + `--ui-ease-spring`；③ 页面推入：路由与页内二级页面统一 `--ui-motion-route` + `--ui-ease-push`；④ 出现：新消息气泡 `--ui-motion-bubble`（120ms 淡入轻上移），「正在输入」三点一轮 `--wb-motion-duration-typing-cycle`（组件 `TypingDots`）。都在 `prefers-reduced-motion` 下关闭。
+- **等宽数字（U5）**：积分、时间、计数、价格用等宽数字（`font-variant-numeric: tabular-nums`）。已有类名统一收在 `ui-components.css`「批 U5」开头的清单里，`<time>` 自动生效；新写的数字加 `className="numeric"`。
+- **分层不用边框（U5）**：容器只一层；按钮、输入条、标签用浅灰底（`--ui-fill-0/1/2`，约 3% / 5% / 8%）或品牌浅底（`--wb-color-brand-soft`）区分，浮在内容上的小块用 `--ui-float-shadow`；不加类名的 `<button>` 默认浅灰底无边框。列表分隔用 0.5px 发丝线。
+- **圆角同心（U5）**：外圆角 = 内圆角 + 间距（例：示例对话灰框 12 = 头像 4 + 间距 8；朋友圈「N 条新消息」12 = 头像 4 + 间距 8）。
 
 ## 二、按钮规则
 
@@ -50,6 +54,17 @@
 | 字段编辑页（U3） | `LongTextPage`（大文本区 + 字数，可设最少字数）、`ListPage`（可增删条目，左红色减号、末行「添加…」）、`DialoguePage`（「我说 / TA 说」气泡，可切「按原文编辑」）、`BasisPage` / `AgePage`（`persona-editors.tsx`）；`CharacterVoicePage`（音色单选 + 试听 + >10 个出搜索，`character-voice-select.tsx`） | 都是 `SubPageLayer`：顶栏「取消 / 标题 / 完成」，编辑草稿，完成才写回 | 自建角色创建 / 编辑页各字段；用哪个由人设板块配置（`packages/client-core/src/persona-sections.ts`）决定 | 单行文字（用 `FieldPage`）；日期（用滚轮） |
 | 分段 Tab（U2） | `SegmentedTabs`（`shell-kit.tsx`） | 浅灰槽里两三个等宽分段，选中段白底（外圆角 8 = 内圆角 4 + 间距 4） | 同一页内容的两种看法：角色生态「按角色 / 按动作」 | 页面顶部的一级切换（用 `TextTabs`） |
 | 人设卡（U4） | `<PersonaCard source hideHead? avatar? headAside? headExtra? intro? asides? renders? renderText?>`（`persona-card.tsx`）；数据形状用 `{ kind: 'draft' \| 'profile' \| 'plaza' \| 'legacy', data }`，角色资料可直接用 `useCharacterPersona(id)`（`character-persona.tsx`） | 头部（头像、名字、一句身份、一句话介绍、标签，右侧可放点赞评论）+ 按配置分组的白色板块，板块间 8px 灰缝、板块内无边框；正文超 5 行折叠「展开」，口头禅浅色引用块，示例对话迷你气泡（左 TA 右我），生日 / 音色 / 来源是灰字键值小行，空子板块整块不显示 | 展示一个角色的人设：广场作品详情、微伴角色详情、资料页「TA 的人设」、补充设定对照原卡。后台预览用 `PersonaCardPreview`（`apps/admin`） | 编辑人设（用创建页 + 字段编辑页）；**不要在页面里自己拼人设字段**，新字段加到配置里 |
+| 全屏看图 Lightbox（U5） | `<Lightbox items index onClose menu? hint?>`（`lightbox.tsx`）；聊天里用 `ImageViewer`（`media.tsx`，内部就是 Lightbox） | 黑底全屏、左右滑切换、双指缩放 / 双击放大、下滑关闭（跟手）、单击关闭；右上「…」出 Action Sheet；挂到 body | 图片、聊天记录里的图、收藏里的图 | 不要再用底部弹层看图 |
+| 只读整页 PushLayer（U5） | `<PushLayer title onClose right?>`（`edit-page.tsx`） | 从右侧整页推入，顶栏返回箭头 + 标题，挂到 body | 看内容不编辑、又不值得开路由的整页：聊天记录详情 | 要编辑（用 `SubPageLayer`）；要能分享链接（用路由） |
+| 贴键盘输入条（U5） | `<KeyboardBar onDismiss label?>`（`keyboard-bar.tsx`） | 底部一条输入栏贴在键盘上方，页面不被盖住；点输入条以外收起，草稿由调用方保留 | 一句话回复：朋友圈评论 / 回复 | 多字段表单（用 `SubPageLayer`） |
+| 中间省略 MiddleEllipsis（U5） | `<MiddleEllipsis text>`（`middle-ellipsis.tsx`） | 「很长的文件名…备份副本.txt」，省略号在中间，最后几个字和扩展名始终可见 | 文件名、导出名 | 普通文字（末尾省略即可） |
+| 返回键只关一层（U5 通用） | `useLayerHistory(onBack)`（`layer-history.ts`）；`SubPageLayer`、`PushLayer`、`Lightbox` 已内置 | 浮层打开时往浏览器历史压一条同地址记录；安卓返回键 / 浏览器后退只关最上面一层（等同取消）；用界面按钮关掉时自动退掉那条记录，同一拍关多层合并成一次后退 | 页内浮层默认就有，不用额外写 | 页面自己已经用地址参数管二级页（自建角色 `?edit=`）时，用 `<LayerHistoryContext.Provider value={false}>` 包住，免得压两次 |
+
+### 输入与浮层的细节规则（U5）
+
+1. **中文输入法回车只选字**：全站已装 `installImeEnterGuard`（`main.tsx`），单行输入框里输入法选字的回车不会触发表单提交；自己写 `onKeyDown` 判断回车时用 `isImeEnter(event)`（同时认 Chrome 的 isComposing、keyCode 229 和 Safari「选字刚结束」），不要只看 `isComposing`。
+2. **底部面板点蒙层不丢内容**：`BottomSheet` 里任何输入框有字时，点蒙层 / 下拖都不关（面板轻顿），只有「取消」/ Esc 才关；不用调用方记得传 `keepOnScrim`（搜索框不算）。
+3. **聊天上翻**：往上翻就停止跟随；离底部超过一屏半出现右下「↓ 回到最新」，上翻期间对方发来新消息时变成「↓ N 条新消息」，点一下回到底部并恢复跟随；自己发消息时也自动回到底部。
 
 ### 表单选值梯度（26 号 §2）
 
@@ -68,8 +83,8 @@
 
 ## 四、示例代码位置
 
-- 组件源码：`apps/web/src/features/toast.tsx`（Toast、Snackbar、Inline Alert、Dialog、Alert Dialog）、`shell-kit.tsx`（Action Sheet、Choice Sheet、Bottom Sheet）、`edit-page.tsx`（二级页面外壳、PickRow）、`wheel-picker.tsx`（滚轮）；样式 `apps/web/src/app/ui-components.css`。
-- 已在用的例子：Choice Sheet → `settings.tsx` / `account-settings.tsx` 的深色模式、字体大小；Action Sheet → `chat-settings.tsx` 人设贴合度、`plaza.tsx` 作品更多操作、`avatar-editor.tsx` 头像来源；Alert Dialog → `chat-settings.tsx` 清空聊天记录 / 删除角色、`settings.tsx` 退出登录；Snackbar → `conversation-list.tsx` 不显示该聊天、`favorites.tsx` 取消收藏（延迟提交）；二级页面 → `profile-edit.tsx`；页内二级页面 → `memories.tsx`、`groups.tsx` 群聊名称（`FieldPage`）、`settings.tsx` 提示音；表单选择框 → `play.tsx` 提醒、`period.tsx` 周期设置；分段 Tab → `ecology.tsx`。
+- 组件源码：`apps/web/src/features/toast.tsx`（Toast、Snackbar、Inline Alert、Dialog、Alert Dialog）、`shell-kit.tsx`（Action Sheet、Choice Sheet、Bottom Sheet）、`edit-page.tsx`（二级页面外壳、PickRow、PushLayer）、`wheel-picker.tsx`（滚轮）、`lightbox.tsx` / `keyboard-bar.tsx` / `middle-ellipsis.tsx` / `layer-history.ts` / `ime.ts`（U5）；样式 `apps/web/src/app/ui-components.css`（U5 规则在文件末尾「批 U5」一段）。
+- 已在用的例子：Choice Sheet → `settings.tsx` / `account-settings.tsx` 的深色模式、字体大小；Action Sheet → `chat-settings.tsx` 人设贴合度、`plaza.tsx` 作品更多操作、`avatar-editor.tsx` 头像来源；Alert Dialog → `chat-settings.tsx` 清空聊天记录 / 删除角色、`settings.tsx` 退出登录；Snackbar → `conversation-list.tsx` 不显示该聊天、`favorites.tsx` 取消收藏（延迟提交）；二级页面 → `profile-edit.tsx`；页内二级页面 → `memories.tsx`、`groups.tsx` 群聊名称（`FieldPage`）、`settings.tsx` 提示音；表单选择框 → `play.tsx` 提醒、`period.tsx` 周期设置；分段 Tab → `ecology.tsx`；Lightbox → `favorites.tsx` 收藏图片、`chat-forward.tsx` 聊天记录里的图；PushLayer → `chat-forward.tsx` 聊天记录详情；KeyboardBar → `moments.tsx` 评论；两层浮层一起关 → `profile-edit.tsx` 的 `RegionPickerLayer`（首次填写资料选地区）。
 - 全部组件的样板写法（含每种状态）：`C:\wb-dev\logs\ui-u1\gallery.tsx`（截图用，不进仓库）。
 
 ```tsx
