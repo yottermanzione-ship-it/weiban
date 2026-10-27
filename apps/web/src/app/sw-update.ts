@@ -21,8 +21,7 @@ const SWITCH_WAIT_MS = 4000;
 export async function adoptWaitingWorker(): Promise<void> {
   if (!import.meta.env.PROD || !('serviceWorker' in navigator)) return;
   const navigation = performance.getEntriesByType('navigation')[0] as
-    | PerformanceNavigationTiming
-    | undefined;
+    PerformanceNavigationTiming | undefined;
   if (navigation?.type !== 'reload' || !navigator.serviceWorker.controller) return;
   const registration = await Promise.race([
     navigator.serviceWorker.ready,
