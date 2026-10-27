@@ -547,8 +547,7 @@ export class ReplyEngine {
       messages: this.wire(snapshot.messages),
       deadlineAt: snapshot.deadlineAt,
       responseFormat: 'text',
-      // H3：附图时多留出图片描述尾标的输出额度（每张约 200 token）。
-      maxOutputTokens: 600 + snapshot.imageSlots.length * 200,
+      // 聊天由网关按当前模型核准的总输出能力分配，包含思考与图片描述，不再统一截成 600/900。
       idempotencyKey: `ai:${row.id}:${row.retryEpoch}:${suffix}`,
       meta: {
         personaVersion: snapshot.personaVersion,

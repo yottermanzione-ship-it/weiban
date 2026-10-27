@@ -63,6 +63,11 @@ import {
 } from './billing-bounds.js';
 
 type TextCeiling = NonNullable<ReserveInput['ceiling']>;
+/** 未指定输出额度的用户聊天按当前线路真实能力；显式调用方上限与平台任务仍保留。 */
+function usesModelOutputLimit(input: GenerateTextInput): boolean {
+  return input.purpose === 'chat_reply' && input.maxOutputTokens === undefined;
+}
+
 type GatewayInternal = {
   fallbackModelKey?: string;
   billingPlan?: TextCeiling;
@@ -291,7 +296,7 @@ export class ModelGateway implements ModelGatewayPort {
       model.modelKey,
       candidates,
       imageCount,
-      requested,
+      usesModelOutputLimit(input) ? null : requested,
       thinkingBudgetFor(input.purpose, requested),
     );
     if (!verified) {
@@ -376,6 +381,7 @@ export class ModelGateway implements ModelGatewayPort {
     ceiling: TextCeiling,
   ): Promise<CachedResult> {
     const maximum = input.maxOutputTokens ?? DEFAULT_TOKENS[input.purpose] ?? 8000;
+    const modelOutputLimit = usesModelOutputLimit(input);
     // 3.24：Anthropic 原生协议自己处理系统消息（顶层 system + 缓存断点）；OpenAI 兼容按模型的系统消息放法改写。
     const baseWire = await this.wireMessages(input);
     const wire = applySystemMessageMode(baseWire, model.systemMessageMode);
@@ -416,6 +422,14 @@ export class ModelGateway implements ModelGatewayPort {
         candidate = candidates[++index];
       if (!candidate) break;
       const route = candidate;
+      // 思考型聊天也使用线路核准的总额度；与计费 ceiling / 估算 / 实际请求保持同一上限。
+      const attemptOutputLimit = Math.min(
+        32000,
+        route.billingBounds.text!.maxOutputTokens,
+        modelOutputLimit
+          ? route.billingBounds.text!.maxOutputTokens
+          : outputBudget + thinkingBudget,
+      );
       const key = 'gateway:' + row.id + ':attempt:' + ordinal;
       const startedAt = this.clock.now();
       const usage = await this.recorder.start({
@@ -445,7 +459,7 @@ export class ModelGateway implements ModelGatewayPort {
             ),
             outputTokens: Math.min(
               ceiling.usage.outputTokens ?? Number.MAX_SAFE_INTEGER,
-              outputBudget + thinkingBudget,
+              attemptOutputLimit,
             ),
           },
           ceiling,
@@ -514,16 +528,16 @@ export class ModelGateway implements ModelGatewayPort {
                     apiKey,
                     model: route.upstreamModelId,
                     messages: textProtocolOf(route.kind) === 'anthropic' ? baseWire : wire,
-                    maxOutputTokens: Math.min(
-                      outputBudget + thinkingBudget,
-                      route.billingBounds.text!.maxOutputTokens,
-                    ),
+                    maxOutputTokens: attemptOutputLimit,
                     outputParameter: route.billingBounds.text!.outputParameter,
                     temperature: input.temperature ?? DEFAULT_TEMPERATURE[input.purpose],
                     responseFormat: input.responseFormat,
                     idempotencyKey: key,
                     // 开思考的后台整理单次常超 20 秒（10-27 生产：记忆整理 3 次 20 秒超时把整条上游判为不可用），放宽到 55 秒。
-                    timeoutMs: Math.min(thinkingBudget > 0 ? 55000 : 20000, remaining),
+                    timeoutMs: Math.min(
+                      thinkingBudget > 0 || modelOutputLimit ? 55000 : 20000,
+                      remaining,
+                    ),
                     ...(thinkingBudget > 0
                       ? { thinking: 'on' as const, thinkingBudget }
                       : { thinking: 'off' as const }),
@@ -648,6 +662,8 @@ export class ModelGateway implements ModelGatewayPort {
           answer.category === 'truncated' &&
           (answer.truncation === 'whitespace' || answer.truncation === 'repeat');
         if (runaway) break;
+        // 已按模型完整上限请求，空正文时不能原样再花一次钱重试，更不能越过已核准上限。
+        if (empty && modelOutputLimit) break;
         if (empty && !emptyRetried) {
           emptyRetried = true;
           const platformCap =

@@ -119,6 +119,28 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
         prompt_tokens_details: { cached_tokens: 30 },
         completion_tokens: 20,
       };
+      if (mode === 'reasoning-model' || mode === 'reasoning-empty') {
+        const limit = Number(requests.at(-1)?.max_tokens);
+        const exhausted = mode === 'reasoning-empty' || limit < 4096;
+        res.writeHead(200, { 'Content-Type': 'application/json' }).end(
+          JSON.stringify({
+            choices: [
+              {
+                finish_reason: exhausted ? 'length' : 'stop',
+                message: {
+                  content: exhausted ? '' : output,
+                },
+              },
+            ],
+            usage: {
+              ...usage,
+              completion_tokens: exhausted ? limit : 3020,
+              completion_tokens_details: { reasoning_tokens: exhausted ? limit : 3000 },
+            },
+          }),
+        );
+        return;
+      }
       if (mode === 'truncated') {
         // 批 EJ：正文 JSON 写到一半额度用完（含思考 token 报告）。
         res.writeHead(200, { 'Content-Type': 'application/json' }).end(
@@ -273,7 +295,7 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
       },
     });
     expect(requests[0]).toMatchObject({
-      max_tokens: 600,
+      max_tokens: TEXT_BOUNDS.text.maxOutputTokens,
       response_format: { type: 'json_object' },
     });
     expect(
@@ -291,6 +313,84 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
     expect(ledger.rows).toHaveLength(1);
     expect(ledger.rows[0]?.upstream_id).toBe(upstreamId);
     expect(Number(ledger.rows[0]?.amount_micros)).toBe(-330);
+  });
+  async function setOutputModel(upstreamModelId: string, maxOutputTokens: number) {
+    await app.get(CatalogService).upsert(admin, modelKey, {
+      modelKey,
+      displayName: 'Gateway Test',
+      vendorName: 'Fake',
+      upstreamId,
+      upstreamModelId,
+      capabilities: [],
+      tags: [],
+      leaderboardRank: null,
+      sortOrder: 0,
+      defaultFor: [],
+      scenarios: ['chat', 'voice_call', 'private'],
+      enabled: true,
+      billingBounds: { ...TEXT_BOUNDS, text: { ...TEXT_BOUNDS.text, maxOutputTokens } },
+    });
+  }
+  it('聊天不再600/900截断：两个思考模型来回切换，各按当前线路核准输出上限', async () => {
+    mode = 'reasoning-model';
+    try {
+      for (const [name, limit] of [
+        ['abliterated-model-large-flash', 8192],
+        ['abliterated-model', 16384],
+        ['abliterated-model-large-flash', 8192],
+      ] as const) {
+        await setOutputModel(name, limit);
+        const result = await gateway.generateText(input());
+        expect(result).toMatchObject({
+          ok: true,
+          value: { text: output, usage: { outputTokens: 3020, reasoningTokens: 3000 } },
+        });
+        if (result.ok) {
+          const [hold] = (
+            await db.query<{ limit_snapshot: { usage: { outputTokens: number } } }>(
+              'SELECT h.limit_snapshot FROM billing.holds h JOIN model_access.usage_records u ON u.hold_id=h.id WHERE u.id=$1',
+              [result.value.usageRecordId],
+            )
+          ).rows;
+          expect(hold?.limit_snapshot.usage.outputTokens).toBe(limit);
+        }
+        expect(requests.at(-1)).toMatchObject({ model: name, max_tokens: limit });
+      }
+      expect(calls).toBe(3);
+    } finally {
+      await setOutputModel('fake', TEXT_BOUNDS.text.maxOutputTokens);
+    }
+  });
+  it('聊天显式指定的调用上限仍受尊重，不能无条件扩张计费额度', async () => {
+    const result = await gateway.generateText(input({ maxOutputTokens: 256 }));
+    expect(result.ok).toBe(true);
+    expect(requests[0]).toMatchObject({ max_tokens: 256 });
+    expect(calls).toBe(1);
+  });
+  it('已按模型完整输出上限仍只有思考时，不原样重复付费重试', async () => {
+    mode = 'reasoning-empty';
+    try {
+      await setOutputModel('abliterated-model', 8192);
+      expect(await gateway.generateText(input())).toEqual({
+        ok: false,
+        error: 'provider_unavailable',
+      });
+      expect(calls).toBe(1);
+      expect(requests[0]).toMatchObject({ max_tokens: 8192 });
+      const [record] = (
+        await db.query<{ output_tokens: number; reasoning_tokens: number; error_code: string }>(
+          'SELECT output_tokens,reasoning_tokens,error_code FROM model_access.usage_records WHERE user_id=$1 ORDER BY created_at DESC,id DESC LIMIT 1',
+          [user],
+        )
+      ).rows;
+      expect(record).toMatchObject({
+        output_tokens: 8192,
+        reasoning_tokens: 8192,
+        error_code: 'empty_output',
+      });
+    } finally {
+      await setOutputModel('fake', TEXT_BOUNDS.text.maxOutputTokens);
+    }
   });
   it('调用方截止时间覆盖慢正文与重试；超期不调用、不扣款；无效截止拒绝', async () => {
     const before = (
