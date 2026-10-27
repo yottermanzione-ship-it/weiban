@@ -51,6 +51,7 @@ import { MediaAiService } from './media-ai.js';
 import { MemoryService } from './memory.js';
 import { CompanionSettingsService } from './settings.js';
 import { characterView, roleDeflect, roleVoiceIds } from './character-view.js';
+import { RealtimeAgentSession, realtimeCallInstructions } from './realtime-call-agent.js';
 
 /** 下行音频采样率（PCM16 24 kHz）。 */
 const OUTPUT_SAMPLE_RATE = 24_000;
@@ -509,6 +510,86 @@ export class CallAgentService implements CallAgentPort {
     return row?.reason ?? null;
   }
 
+  /** 最近 12 条文字聊天（每条截 300 字），作为通话上下文。 */
+  private async callHistory(
+    conversationId: string,
+    scope: 'normal' | 'adult',
+  ): Promise<ChatMessageForModel[]> {
+    const recent = await this.chat
+      .readMessages({
+        conversationId,
+        scopes: scope === 'adult' ? ['normal', 'adult'] : ['normal'],
+        limit: 30,
+      })
+      .catch(() => []);
+    return recent
+      .filter((m) => m.status === 'normal' && m.content?.type === 'text')
+      .slice(-12)
+      .map((m) => ({
+        role: m.senderKind === 'user' ? ('user' as const) : ('assistant' as const),
+        content: m.content?.type === 'text' ? m.content.text.slice(0, 300) : '',
+      }));
+  }
+
+  /** 批 V：实时语音 / Omni 通话（人设 + 记忆 + 边界拼成会话指令，由端到端模型直接听和说）。 */
+  private async openRealtime(
+    input: {
+      callId: string;
+      userId: string;
+      characterId: string;
+      conversationId: string;
+      direction: 'outgoing' | 'incoming';
+    },
+    ctx: { epoch: string; policy: CharacterPolicy; settingsHistory: ChatMessageForModel[] },
+  ): Promise<
+    PortResult<CallAgentSession, 'insufficient_balance' | 'service_disabled' | 'not_available'>
+  > {
+    if (!this.media.openRealtimeVoice) return { ok: false, error: 'service_disabled' };
+    const history = ctx.settingsHistory;
+    const brain = await this.brain
+      .build(input.userId, input.characterId, 'normal', history.map((h) => h.content).join('\n'))
+      .catch(() => null);
+    if (!brain) return { ok: false, error: 'not_available' };
+    const instructions = realtimeCallInstructions({ brain, policy: ctx.policy, history });
+    const rt = await this.media.openRealtimeVoice({
+      userId: input.userId,
+      purpose: 'voice',
+      billingOwner: 'user',
+      characterId: input.characterId,
+      conversationId: input.conversationId,
+      idempotencyKey: `call:${input.callId}:rt:${this.clock.nowMs()}`,
+      instructions,
+      sampleRate: 16000,
+    });
+    if (!rt.ok)
+      return {
+        ok: false,
+        error:
+          rt.error === 'insufficient_balance' || rt.error === 'budget_exceeded'
+            ? 'insufficient_balance'
+            : rt.error === 'not_configured'
+              ? 'service_disabled'
+              : 'not_available',
+      };
+    const session = new RealtimeAgentSession(
+      { billing: this.billing, memory: this.memory, clock: this.clock },
+      {
+        epoch: ctx.epoch,
+        callId: input.callId,
+        userId: input.userId,
+        characterId: input.characterId,
+        conversationId: input.conversationId,
+        direction: input.direction,
+        policy: ctx.policy,
+        callReason: input.direction === 'incoming' ? await this.reasonFor(input.callId) : null,
+        instructions,
+      },
+      rt.value,
+    );
+    session.start();
+    return { ok: true, value: session };
+  }
+
   async openSession(input: {
     callId: string;
     userId: string;
@@ -518,9 +599,26 @@ export class CallAgentService implements CallAgentPort {
   }): Promise<
     PortResult<CallAgentSession, 'insufficient_balance' | 'service_disabled' | 'not_available'>
   > {
+    // 批 V：先看这通电话走级联还是实时语音 / Omni（按用户 / 角色的「语音通话」选择；不换模型）。
+    const route = (await this.media.voiceCallRoute?.({
+      userId: input.userId,
+      characterId: input.characterId,
+    })) ?? { kind: 'cascade' as const };
+    if (route.kind === 'unavailable')
+      return {
+        ok: false,
+        error:
+          route.error === 'not_configured'
+            ? 'service_disabled'
+            : route.error === 'insufficient_balance' || route.error === 'budget_exceeded'
+              ? 'insufficient_balance'
+              : 'not_available',
+      };
+    const realtime = route.kind === 'realtime';
     if (
-      !(await this.media.isServiceEnabled('speech_recognition')) ||
-      !(await this.media.isServiceEnabled('speech_synthesis'))
+      !realtime &&
+      (!(await this.media.isServiceEnabled('speech_recognition')) ||
+        !(await this.media.isServiceEnabled('speech_synthesis')))
     )
       return { ok: false, error: 'service_disabled' };
     const spend = await this.billing.getSpendStatus(input.userId).catch(() => null);
@@ -537,6 +635,14 @@ export class CallAgentService implements CallAgentPort {
     const settings = await this.settings.get(input.userId, input.characterId).catch(() => null);
     const scope =
       settings?.scenarioMode === 'adult' && policy.adultModeEligible ? 'adult' : 'normal';
+    // 私密模式不开放通话（calls 已拒绝）；实时通话没有私密模型分流，这里再兜一次底。
+    if (realtime && scope === 'adult') return { ok: false, error: 'not_available' };
+    if (realtime)
+      return this.openRealtime(input, {
+        epoch: epoch.version,
+        policy,
+        settingsHistory: await this.callHistory(input.conversationId, 'normal'),
+      });
     const voiceId = await this.mediaAi.resolveVoice(
       input.characterId,
       settings?.voiceId ?? null,
@@ -549,20 +655,7 @@ export class CallAgentService implements CallAgentPort {
     );
     if (!voiceId) return { ok: false, error: 'service_disabled' };
 
-    const recent = await this.chat
-      .readMessages({
-        conversationId: input.conversationId,
-        scopes: scope === 'adult' ? ['normal', 'adult'] : ['normal'],
-        limit: 30,
-      })
-      .catch(() => []);
-    const history: ChatMessageForModel[] = recent
-      .filter((m) => m.status === 'normal' && m.content?.type === 'text')
-      .slice(-12)
-      .map((m) => ({
-        role: m.senderKind === 'user' ? ('user' as const) : ('assistant' as const),
-        content: m.content?.type === 'text' ? m.content.text.slice(0, 300) : '',
-      }));
+    const history = await this.callHistory(input.conversationId, scope);
     const brain = await this.brain
       .build(input.userId, input.characterId, scope, history.map((h) => h.content).join('\n'))
       .catch(() => null);
