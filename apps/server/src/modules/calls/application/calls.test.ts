@@ -4,7 +4,7 @@ import type { Conversation } from '@weiban/contracts';
 import { CallService } from './calls.js';
 
 /** H2（契约 3.28）：私密模式只开放文字与图片——通话入口给出 private_mode，拨打被拒。 */
-function service(scope: 'normal' | 'adult') {
+function service(scope: 'normal' | 'adult', blocker?: () => Promise<string | null>) {
   const conversation = {
     conversationId: '00000000-0000-4000-8000-000000000001',
     contentScope: scope,
@@ -31,7 +31,7 @@ function service(scope: 'normal' | 'adult') {
       getSpendStatus: async () => ({ depleted: false, insufficient: false, availableMicros: 100 }),
     } as never,
     {} as never,
-    { isVoiceCallEnabled: async () => true } as never,
+    { isVoiceCallEnabled: async () => true, voiceCallBlocker: blocker } as never,
   );
   return svc;
 }
@@ -57,4 +57,38 @@ it('私密模式：发起通话被拒（private_mode_unsupported）', async () =
       clientRequestId: 'r',
     }),
   ).rejects.toMatchObject({ code: 'private_mode_unsupported', status: 422 });
+});
+
+it('V2：实时电话没有可用声音 → 拨打前就拒绝并带明确提示，来电也不发起', async () => {
+  const hint = '这个角色还没有能用于实时通话的声音';
+  const blocked = service('normal', async () => hint);
+  await expect(
+    blocked.startCall('00000000-0000-4000-8000-000000000002', {
+      characterId: 'c',
+      clientRequestId: 'r',
+    }),
+  ).rejects.toMatchObject({ code: 'service_disabled', message: hint, status: 422 });
+  expect(
+    await blocked.startIncomingCall({
+      userId: '00000000-0000-4000-8000-000000000002',
+      characterId: 'c',
+      reason: '想你了',
+      idempotencyKey: 'k',
+    }),
+  ).toEqual({ ok: false, error: 'service_disabled' });
+});
+
+it('V2：声音检查本身出错不拦拨打（接通时仍有兜底）', async () => {
+  const svc = service('normal', () => Promise.reject(new Error('boom')));
+  // 走到建档即说明没被声音检查拦下；假建档返回「已有通话」以便断言。
+  (svc as unknown as { create: () => Promise<unknown> }).create = async () => ({
+    ok: false,
+    error: 'busy',
+  });
+  await expect(
+    svc.startCall('00000000-0000-4000-8000-000000000002', {
+      characterId: 'c',
+      clientRequestId: 'r',
+    }),
+  ).rejects.toMatchObject({ code: 'call_busy' });
 });

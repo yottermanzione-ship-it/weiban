@@ -1,6 +1,7 @@
 /**
- * 实时通话音色（批 V，0145）：角色专属音色（旧站复刻、按模型登记）优先，否则用该模型的默认系统音色。
- * 供应商复刻音色只在登记它的模型 / 账号 workspace 上有效，所以按 (角色, 模型键) 存，绝不跨模型复用。
+ * 实时通话音色（批 V，0145；V2 0146 加 source = clone）：角色专属音色（旧站迁入、管理员登记、按需复刻）优先，
+ * 否则用该模型的默认系统音色。供应商复刻音色只在登记它的模型 / 账号上有效，所以按 (角色, 模型键) 存，绝不跨模型复用。
+ * 按需复刻的流程见 realtime-voice-clone.ts。
  */
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
@@ -43,8 +44,8 @@ export class RealtimeVoiceStore {
     return parsed.success ? parsed.data : {};
   }
 
-  /** 这通电话用的供应商音色：角色专属 → 模型默认 → null（不可接通，不换别的模型的音色）。 */
-  async voiceFor(characterId: string, modelKey: string): Promise<string | null> {
+  /** 角色在这个模型下的专属音色（旧站迁入 / 管理员登记 / V2 按需复刻）；没有返回 null。 */
+  async binding(characterId: string, modelKey: string): Promise<string | null> {
     const [own] = await this.database.db
       .select({ key: realtimeVoiceBindings.providerVoiceKey })
       .from(realtimeVoiceBindings)
@@ -54,8 +55,77 @@ export class RealtimeVoiceStore {
           eq(realtimeVoiceBindings.modelKey, modelKey),
         ),
       );
-    if (own && ProviderVoiceKey.safeParse(own.key).success) return own.key;
-    return (await this.defaults())[modelKey] ?? null;
+    return own && ProviderVoiceKey.safeParse(own.key).success ? own.key : null;
+  }
+
+  /**
+   * V2：按需复刻成功后写入绑定（source = clone）并审计。复刻费 0.01 元 / 个目前由平台承担（计价单位待契约变更，
+   * 见 docs/architecture/2026-10-28-voice-clone-billing-contract-change.md），审计里记成本便于对账。
+   * 已有绑定（并发 / 其他实例 / 管理员刚登记）时不覆盖，返回已有的音色。
+   */
+  async saveClone(input: {
+    characterId: string;
+    modelKey: string;
+    providerVoiceKey: string;
+    sampleMediaId: string;
+    costYuan: number;
+  }): Promise<string> {
+    if (!ProviderVoiceKey.safeParse(input.providerVoiceKey).success)
+      throw new Error('REALTIME_VOICE_INVALID');
+    return this.database.transaction(async (tx) => {
+      const now = this.clock.now();
+      const inserted = await tx.db
+        .insert(realtimeVoiceBindings)
+        .values({
+          characterId: input.characterId,
+          modelKey: input.modelKey,
+          providerVoiceKey: input.providerVoiceKey,
+          source: 'clone',
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoNothing()
+        .returning({ key: realtimeVoiceBindings.providerVoiceKey });
+      await this.audit.record(
+        {
+          module: 'model_access',
+          action: 'realtime_voice.cloned',
+          actorType: 'system',
+          actorId: null,
+          targetType: 'character',
+          targetId: input.characterId,
+          details: {
+            modelKey: input.modelKey,
+            sampleMediaId: input.sampleMediaId,
+            saved: inserted.length > 0,
+            costYuan: input.costYuan,
+            billedTo: 'platform',
+          },
+        },
+        tx,
+      );
+      if (inserted.length) return input.providerVoiceKey;
+      const [existing] = await tx.db
+        .select({ key: realtimeVoiceBindings.providerVoiceKey })
+        .from(realtimeVoiceBindings)
+        .where(
+          and(
+            eq(realtimeVoiceBindings.characterId, input.characterId),
+            eq(realtimeVoiceBindings.modelKey, input.modelKey),
+          ),
+        );
+      return existing?.key ?? input.providerVoiceKey;
+    });
+  }
+
+  /** 各来源的绑定条数（--show 用；clone 条数 × 0.01 元 ≈ 平台已承担的复刻费）。 */
+  async countBySource(modelKey: string): Promise<Record<string, number>> {
+    const rows = await this.database.db
+      .select({ source: realtimeVoiceBindings.source, n: sql<number>`count(*)::int` })
+      .from(realtimeVoiceBindings)
+      .where(eq(realtimeVoiceBindings.modelKey, modelKey))
+      .groupBy(realtimeVoiceBindings.source);
+    return Object.fromEntries(rows.map((r) => [r.source, r.n]));
   }
 
   async setDefault(operatorUserId: string, modelKey: string, voice: string | null): Promise<void> {

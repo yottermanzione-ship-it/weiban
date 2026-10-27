@@ -15,4 +15,10 @@ export type { CallAgentPort };
 export const CALL_SERVICE_STATUS = Symbol('weiban.calls.service-status');
 export interface CallServiceStatus {
   isVoiceCallEnabled(): Promise<boolean>;
+  /**
+   * V2（2026-10-28）：这个用户给这个角色打实时语音 / Omni 电话时有没有声音可用（没有绑定、没有样本或复刻失败、
+   * 也没有模型默认音色）。返回给用户看的说明；null = 可以打（含级联通话）。可选：未绑定时按可以打处理。
+   * 装配入口绑定到模型网关；拨打前检查，避免接通后才失败、只显示「网络中断」。
+   */
+  voiceCallBlocker?(userId: string, characterId: string): Promise<string | null>;
 }

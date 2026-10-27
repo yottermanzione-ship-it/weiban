@@ -66,3 +66,13 @@ export const MEDIA_ADAPTER = Symbol('weiban.model-access.media-adapter');
 /** 契约 3.1 ModelQuotePort：按用户所选模型报价（调用方 ai-runtime）。 */
 export const MODEL_QUOTE_PORT = Symbol('weiban.model-access.quote');
 export const SHARED_WEB_SEARCH_PORT = Symbol('weiban.model-access.shared-web-search');
+
+/**
+ * V2（2026-10-28）：实时通话按需复刻要用角色自己的声音样本（默认音色登记的参考音频）。characters 依赖 model-access，
+ * 不能反向 import，由装配入口（app.module.ts）绑定到 CHARACTER_VOICE_READ_PORT（契约 CharacterVoiceReadPort）。
+ * 未绑定时不复刻，只用已有绑定或模型默认音色。
+ */
+export const MODEL_ACCESS_CHARACTER_VOICE = Symbol('weiban.model-access.character-voice');
+export interface ModelAccessCharacterVoice {
+  getDefaultVoiceId(characterId: string): Promise<string | null>;
+}

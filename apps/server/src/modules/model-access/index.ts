@@ -45,4 +45,11 @@ export { listVoiceMessageModelKeys } from './application/voice-model-registry.js
 /** 批 V：语音目录登记 / 实时通话音色运维脚本。 */
 export { ModelAdminService } from './application/models.js';
 export { RealtimeVoiceStore, ProviderVoiceKey } from './application/realtime-voices.js';
-export { isRealtimeCallEntry, REALTIME_CALL_TAG } from './application/realtime-call.js';
+export {
+  isRealtimeCallEntry,
+  REALTIME_CALL_TAG,
+  REALTIME_VOICE_CLONE_COST_YUAN,
+} from './application/realtime-call.js';
+/** V2：实时通话按需复刻——角色声音来源（装配入口绑定）与拨打前的音色检查（calls 经 CALL_SERVICE_STATUS 调用）。 */
+export { MODEL_ACCESS_CHARACTER_VOICE, type ModelAccessCharacterVoice } from './tokens.js';
+export type { RealtimeCallVoiceCheck } from './application/media-gateway.js';

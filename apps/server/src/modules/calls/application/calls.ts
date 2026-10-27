@@ -182,6 +182,16 @@ export class CallService implements CallSessionPort, UserDataOwner, OnModuleInit
     }
   }
 
+  /** V2：实时语音 / Omni 电话没有声音可用时的说明（检查本身出错按可以打处理，接通时仍有兜底）。 */
+  private async voiceBlocker(userId: string, characterId: string): Promise<string | null> {
+    if (!this.service?.voiceCallBlocker) return null;
+    try {
+      return await this.service.voiceCallBlocker(userId, characterId);
+    } catch {
+      return null;
+    }
+  }
+
   private async balanceOk(userId: string): Promise<boolean> {
     const status = await this.billing.getSpendStatus(userId);
     return !status.depleted && !status.insufficient && status.availableMicros > 0;
@@ -245,6 +255,8 @@ export class CallService implements CallSessionPort, UserDataOwner, OnModuleInit
       throw new AppError('private_mode_unsupported', '私密模式只支持文字和图片，暂时不能语音通话', {
         status: 422,
       });
+    const blocked = await this.voiceBlocker(userId, input.characterId);
+    if (blocked) throw new AppError('service_disabled', blocked, { status: 422 });
     const row = await this.create(userId, {
       characterId: input.characterId,
       conversationId: conversation.conversationId,
@@ -345,6 +357,9 @@ export class CallService implements CallSessionPort, UserDataOwner, OnModuleInit
     if (!conversation) return { ok: false, error: 'contact_inactive' };
     // H2：私密模式不来电（只开放文字与图片）。
     if (conversation.contentScope === 'adult') return { ok: false, error: 'service_disabled' };
+    // V2：实时电话没有声音可用就不来电（不响铃后才失败）。
+    if (await this.voiceBlocker(input.userId, input.characterId))
+      return { ok: false, error: 'service_disabled' };
     const row = await this.create(input.userId, {
       characterId: input.characterId,
       conversationId: conversation.conversationId,
