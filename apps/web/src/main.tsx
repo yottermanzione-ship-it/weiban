@@ -20,20 +20,26 @@ import { RuntimeErrorBoundary } from './app/runtime-error-boundary.js';
 import { applyDisplayPrefs } from './data/display-prefs.js';
 import { installImeEnterGuard } from './features/ime.js';
 import { takeOverSplash } from './app/boot-splash.js';
+import { adoptWaitingWorker } from './app/sw-update.js';
 // U8：index.html 的绿色启动层从这里起由 JS 推进度条（app/boot-splash.ts）。
 takeOverSplash();
 performance.mark('weiban:boot-js');
 applyDisplayPrefs();
 installImeEnterGuard();
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <BrowserRouter>
-      <RuntimeErrorBoundary>
-        <App />
-      </RuntimeErrorBoundary>
-    </BrowserRouter>
-  </StrictMode>,
-);
+// 刷新时若有已准备好的新版本，先在渲染前接续（app/sw-update.ts）；没有就立即渲染。
+void adoptWaitingWorker()
+  .catch(() => {})
+  .then(() =>
+    createRoot(document.getElementById('root')!).render(
+      <StrictMode>
+        <BrowserRouter>
+          <RuntimeErrorBoundary>
+            <App />
+          </RuntimeErrorBoundary>
+        </BrowserRouter>
+      </StrictMode>,
+    ),
+  );
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   void navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
