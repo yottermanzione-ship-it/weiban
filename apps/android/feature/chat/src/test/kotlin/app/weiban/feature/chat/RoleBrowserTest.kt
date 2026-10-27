@@ -261,7 +261,8 @@ class RoleBrowserTest {
     // 换壳第一批（339f723）：通讯录顶部多了 6 行入口（新的朋友、新建角色、群聊…），Robolectric 默认 470dp 高的屏幕
     // 放不下联系人行（LazyColumn 不组合屏外行），这里用常见手机尺寸。
     @Config(qualifiers = "w411dp-h891dp")
-    @Test fun actualContactsSearchUsesCanonicalNamesAndPendingCannotOpenChat() {
+    @Test
+    fun actualContactsSearchUsesCanonicalNamesAndPendingCannotOpenChat() {
         runBlocking {
             runtime.detach()
             repository.saveSync(
