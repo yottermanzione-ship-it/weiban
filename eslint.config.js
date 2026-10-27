@@ -17,4 +17,9 @@ export default [
     plugins: { 'react-hooks': reactHooks },
     rules: { 'react-hooks/rules-of-hooks': 'error', 'react-hooks/exhaustive-deps': 'error' },
   },
+  {
+    // 运维脚本由 node 直接运行（类型剥离），无法解析 @weiban/contracts 包入口，只能引用源码路径。
+    files: ['scripts/ops/**/*.mjs'],
+    rules: { 'weiban/contracts-source': 'off' },
+  },
 ];

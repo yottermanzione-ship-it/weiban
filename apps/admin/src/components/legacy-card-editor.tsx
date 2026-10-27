@@ -748,9 +748,7 @@ export function LegacyCharacterEditor({
                   </label>
                   <details className="legacy-entry-options">
                     <summary>
-                      {Boolean(
-                        row.payload.constant ?? row.payload.is_constant ?? row.payload.always,
-                      )
+                      {(row.payload.constant ?? row.payload.is_constant ?? row.payload.always)
                         ? '常驻词条'
                         : `触发：${keysOf(row.payload.trigger_keys_json).join('、') || '尚未设置'}`}{' '}
                       · 设置

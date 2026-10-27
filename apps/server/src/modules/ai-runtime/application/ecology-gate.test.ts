@@ -1,3 +1,4 @@
+/* eslint-disable weiban/module-boundaries -- 单元测试直接构造其他模块内部服务（既有技术债，见 status 技术债） */
 /**
  * 3.29：生态 Gate 只做是/否、朋友圈只同步微博素材、规划跟随用户 chat 场景。
  * 只覆盖本次窄改，不重复私密固定等前批测试。

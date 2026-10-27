@@ -52,7 +52,7 @@ import { HOLIDAY_EVENT_PORT } from '../../proactive/index.js';
 import { healthPrivate } from '../domain/memory.js';
 import { ecoRandom } from '../domain/ecology.js';
 import { momentsTopicsText } from '../domain/character-prompt.js';
-import { BrainContextService, brainMessages, brainTail } from './brain.js';
+import { BrainContextService } from './brain.js';
 import { outputAllowed } from '../domain/reply-rules.js';
 import { momentsPlans, simulationStates } from '../infra/db/schema.js';
 import { localParts } from './proactive-scheduler.js';

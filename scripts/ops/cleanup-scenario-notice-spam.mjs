@@ -55,7 +55,7 @@ async function main() {
         batch.map((row) => ({ aad: `chat:message:${row.id}`, sealed: row.content_ciphertext })),
       );
       for (let i = 0; i < batch.length; i += 1) {
-        let content = null;
+        let content;
         try {
           content = JSON.parse(plains[i].toString('utf8'));
         } catch {

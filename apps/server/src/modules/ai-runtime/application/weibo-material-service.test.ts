@@ -20,7 +20,6 @@ const PAGE_URL = 'https://weibo.com/1234567890/AbCdEf';
 const IMAGE_A = 'https://wx1.sinaimg.cn/large/a.jpg';
 const IMAGE_B = 'https://wx2.sinaimg.cn/large/b.jpg';
 const KEY_A = weiboImageKey(IMAGE_A)!;
-const KEY_B = weiboImageKey(IMAGE_B)!;
 
 const role = {
   card: {

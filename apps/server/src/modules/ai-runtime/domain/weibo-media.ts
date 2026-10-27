@@ -63,7 +63,7 @@ export function weiboPageAllowed(raw: string): boolean {
  */
 export function weiboGateHit(input: { status: number; finalUrl: string; html?: string }): boolean {
   if ([403, 418, 429, 432].includes(input.status)) return true;
-  let host = '';
+  let host: string;
   try {
     host = new URL(input.finalUrl).hostname.toLowerCase();
   } catch {
