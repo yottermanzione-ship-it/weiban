@@ -21,9 +21,9 @@ describe('百炼实时语音协议（纯函数）', () => {
   });
 
   it('https 基址换成 wss 实时地址；非 https / 带账号的地址拒绝', () => {
-    expect(realtimeUrl('https://dashscope.aliyuncs.com/api/v1', 'qwen-audio-3.0-realtime-plus')).toBe(
-      'wss://dashscope.aliyuncs.com/api-ws/v1/realtime?model=qwen-audio-3.0-realtime-plus',
-    );
+    expect(
+      realtimeUrl('https://dashscope.aliyuncs.com/api/v1', 'qwen-audio-3.0-realtime-plus'),
+    ).toBe('wss://dashscope.aliyuncs.com/api-ws/v1/realtime?model=qwen-audio-3.0-realtime-plus');
     expect(realtimeUrl('https://ws1.cn-beijing.maas.aliyuncs.com/api/v1/', 'm')).toBe(
       'wss://ws1.cn-beijing.maas.aliyuncs.com/api-ws/v1/realtime?model=m',
     );
@@ -32,14 +32,20 @@ describe('百炼实时语音协议（纯函数）', () => {
   });
 
   it('Audio Realtime Plus 与 Omni 的会话参数结构不同（沿用旧版）', () => {
-    const plus = realtimeSessionUpdate('qwen-audio-3.0-realtime-plus', { instructions: 'i', voice: 'v' });
+    const plus = realtimeSessionUpdate('qwen-audio-3.0-realtime-plus', {
+      instructions: 'i',
+      voice: 'v',
+    });
     expect(plus).toMatchObject({
       input_audio_format: 'pcm',
       output_audio_format: 'pcm',
       turn_detection: { type: 'server_vad', threshold: 0.5, silence_duration_ms: 800 },
       voice: 'v',
     });
-    const omni = realtimeSessionUpdate('qwen3.1-omni-flash-realtime', { instructions: 'i', voice: 'v' });
+    const omni = realtimeSessionUpdate('qwen3.1-omni-flash-realtime', {
+      instructions: 'i',
+      voice: 'v',
+    });
     expect(omni).toMatchObject({
       audio: {
         input: { format: { type: 'pcm', sample_rate: 16000 } },
@@ -90,10 +96,22 @@ describe('百炼实时语音协议（纯函数）', () => {
       delta: Buffer.alloc(8).toString('base64'),
     });
     expect(audio).toMatchObject({ type: 'audio', responseId: 'r1' });
-    expect(t({ type: 'response.audio.delta', response_id: 'r1', delta: Buffer.alloc(3).toString('base64') })).toBeNull();
-    expect(t({ type: 'response.audio_transcript.delta', response_id: 'r1', delta: '你' })).toMatchObject({ text: '你', final: false });
-    expect(t({ type: 'response.audio_transcript.delta', response_id: 'r1', delta: '好' })).toMatchObject({ text: '你好', final: false });
-    expect(t({ type: 'response.audio_transcript.done', response_id: 'r1', transcript: '你好。' })).toMatchObject({ text: '你好。', final: true });
+    expect(
+      t({
+        type: 'response.audio.delta',
+        response_id: 'r1',
+        delta: Buffer.alloc(3).toString('base64'),
+      }),
+    ).toBeNull();
+    expect(
+      t({ type: 'response.audio_transcript.delta', response_id: 'r1', delta: '你' }),
+    ).toMatchObject({ text: '你', final: false });
+    expect(
+      t({ type: 'response.audio_transcript.delta', response_id: 'r1', delta: '好' }),
+    ).toMatchObject({ text: '你好', final: false });
+    expect(
+      t({ type: 'response.audio_transcript.done', response_id: 'r1', transcript: '你好。' }),
+    ).toMatchObject({ text: '你好。', final: true });
     expect(t({ type: 'response.done', response: { id: 'r1', status: 'cancelled' } })).toEqual({
       type: 'response_done',
       responseId: 'r1',
@@ -120,7 +138,9 @@ describe('百炼实时语音 WebSocket（本机假供应商，不连外网）', 
     server = null;
   });
 
-  async function fakeProvider(onClient: (socket: ServerSocket, headers: Record<string, unknown>) => void) {
+  async function fakeProvider(
+    onClient: (socket: ServerSocket, headers: Record<string, unknown>) => void,
+  ) {
     server = new WebSocketServer({ port: 0, host: '127.0.0.1' });
     server.on('connection', (socket, req) => onClient(socket, req.headers));
     await new Promise<void>((resolve) => server!.once('listening', () => resolve()));
@@ -129,7 +149,12 @@ describe('百炼实时语音 WebSocket（本机假供应商，不连外网）', 
 
   it('非百炼账号或非 https 基址不建立连接（不发请求）', async () => {
     const result = await openDashscopeRealtime(
-      { kind: 'openai_compatible', baseUrl: 'https://x/api/v1', apiKey: 'k', model: 'qwen-audio-3.0-realtime-plus' },
+      {
+        kind: 'openai_compatible',
+        baseUrl: 'https://x/api/v1',
+        apiKey: 'k',
+        model: 'qwen-audio-3.0-realtime-plus',
+      },
       { instructions: 'i', voice: 'v' },
     );
     expect(result).toEqual({ ok: false, category: 'bad_request', zeroCost: true });
@@ -171,7 +196,9 @@ describe('百炼实时语音 WebSocket（本机假供应商，不连外网）', 
       });
     });
     const port = (server!.address() as AddressInfo).port;
-    const opened = await openWithLocalUrl(`ws://127.0.0.1:${port}/api-ws/v1/realtime?model=qwen-audio-3.0-realtime-plus`);
+    const opened = await openWithLocalUrl(
+      `ws://127.0.0.1:${port}/api-ws/v1/realtime?model=qwen-audio-3.0-realtime-plus`,
+    );
     expect(opened.ok).toBe(true);
     if (!opened.ok) return;
     expect(auth).toBe('Bearer test-key');
@@ -185,7 +212,12 @@ describe('百炼实时语音 WebSocket（本机假供应商，不连外网）', 
     }
     expect(events.map((e) => e.type)).toEqual(['response_started', 'audio', 'response_done']);
     expect(events[2]).toMatchObject({
-      usage: { textInputTokens: 10, audioInputTokens: 5, textOutputTokens: 2, audioOutputTokens: 7 },
+      usage: {
+        textInputTokens: 10,
+        audioInputTokens: 5,
+        textOutputTokens: 2,
+        audioOutputTokens: 7,
+      },
     });
     // 40000 字节按 32000 字节一帧拆成两次 append
     expect(received.filter((e) => e.type === 'input_audio_buffer.append')).toHaveLength(2);

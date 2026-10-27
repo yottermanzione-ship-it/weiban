@@ -75,9 +75,7 @@ async function main(): Promise<void> {
         )
       : { rows: [] as Array<{ id: string }> };
     const present = new Set(found.map((r) => r.id));
-    const rows = plan.rows.filter(
-      (r) => present.has(r.characterId) && registered.has(r.modelKey),
-    );
+    const rows = plan.rows.filter((r) => present.has(r.characterId) && registered.has(r.modelKey));
     const report = {
       offered: plan.rows.length,
       importable: rows.length,

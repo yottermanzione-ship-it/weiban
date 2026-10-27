@@ -66,7 +66,12 @@ function fakeOps(options: { reserveOk?: (segment: number) => boolean } = {}) {
     }),
     succeed: vi.fn(async (c: FakeCharge) => ({
       ok: true as const,
-      value: { modelKey: 'qwen/rt', chargedMicros: 100, latencyMs: 0, usageRecordId: c.usageRecordId },
+      value: {
+        modelKey: 'qwen/rt',
+        chargedMicros: 100,
+        latencyMs: 0,
+        usageRecordId: c.usageRecordId,
+      },
     })),
     failUnknown: vi.fn(async () => undefined),
     cancelCharge: vi.fn(async () => undefined),

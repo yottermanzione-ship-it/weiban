@@ -16,10 +16,7 @@ import type {
   RouteBillingBounds,
   UsageQuantities,
 } from '@weiban/contracts';
-import type {
-  RealtimeConnection,
-  RealtimeTransportEvent,
-} from '../infra/dashscope-realtime.js';
+import type { RealtimeConnection, RealtimeTransportEvent } from '../infra/dashscope-realtime.js';
 import { realtimeUsageQuantities, SpeechGate } from './realtime-call.js';
 
 /** 网关里本会话用到的计费操作（ModelGatewayMedia 的公开方法；单独声明便于测试替换）。 */
@@ -48,9 +45,9 @@ const CLOSE_GRACE_MS = 3000;
 const MAX_INSTRUCTIONS = 20_000;
 const MAX_PUSH_BYTES = 32_000 * 10;
 
-export class RealtimeVoice<C extends { sent: boolean; usageRecordId: string }>
-  implements RealtimeVoiceSession
-{
+export class RealtimeVoice<
+  C extends { sent: boolean; usageRecordId: string },
+> implements RealtimeVoiceSession {
   readonly outputSampleRate = 24000 as const;
   private readonly gate = new SpeechGate();
   private readonly out: RealtimeVoiceEvent[] = [];
@@ -302,17 +299,18 @@ export class RealtimeVoice<C extends { sent: boolean; usageRecordId: string }>
       this.conn.cancelResponse();
     }
     // 等进行中的回应报回用量（最多 3 秒），之后断开连接。
-    const deadline = Date.now() + CLOSE_GRACE_MS;
-    while (
-      !this.connClosed &&
-      [...this.inflight].some((r) => !r.done) &&
-      Date.now() < deadline
-    ) {
-      await Promise.race([
-        new Promise<void>((resolve) => this.doneWaiters.push(resolve)),
-        new Promise<void>((resolve) => setTimeout(resolve, Math.max(1, deadline - Date.now()))),
-      ]);
+    let graceTimer: NodeJS.Timeout | undefined;
+    let graceOver = false;
+    const grace = new Promise<void>((resolve) => {
+      graceTimer = setTimeout(() => {
+        graceOver = true;
+        resolve();
+      }, CLOSE_GRACE_MS);
+    });
+    while (!this.connClosed && !graceOver && [...this.inflight].some((r) => !r.done)) {
+      await Promise.race([new Promise<void>((resolve) => this.doneWaiters.push(resolve)), grace]);
     }
+    if (graceTimer) clearTimeout(graceTimer);
     this.conn.close();
     await this.billing;
     // 没拿到用量的回应：已向供应商发出，成本待核（不猜、不按估算扣用户）。

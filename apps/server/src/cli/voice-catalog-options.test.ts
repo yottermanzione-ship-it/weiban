@@ -22,7 +22,10 @@ describe('voice-catalog 参数', () => {
   it('默认预演；--apply 必须带管理员；未知参数拒绝', () => {
     expect(command([]).kind).toBe('plan');
     expect(command(['--show']).kind).toBe('show');
-    expect(parseVoiceCatalogCommand(['--apply'])).toMatchObject({ ok: false, code: 'OPERATOR_REQUIRED' });
+    expect(parseVoiceCatalogCommand(['--apply'])).toMatchObject({
+      ok: false,
+      code: 'OPERATOR_REQUIRED',
+    });
     expect(parseVoiceCatalogCommand(['--apply', '--operator-id', ADMIN]).ok).toBe(true);
     expect(parseVoiceCatalogCommand(['--bogus'])).toMatchObject({ ok: false });
     expect(parseVoiceCatalogCommand(['--only', 'telespeech,nope'])).toMatchObject({ ok: false });
@@ -55,7 +58,9 @@ describe('voice-catalog 条目与价格（售价 = 成本 × 1.3）', () => {
   it('两个新 ASR 按分钟 10,833 微元；MiMo ASR 默认停用', () => {
     for (const item of ['telespeech', 'mimo-asr'] as const) {
       const e = byItem.get(item)!;
-      expect(e.write.serviceRates).toEqual([{ unit: 'asr_minute', price: 0.010833, cost: 0.008333 }]);
+      expect(e.write.serviceRates).toEqual([
+        { unit: 'asr_minute', price: 0.010833, cost: 0.008333 },
+      ]);
       expect(e.write.scenarios).toEqual(['speech_recognition']);
     }
     expect(byItem.get('telespeech')!.enable).toBe(true);
@@ -103,7 +108,9 @@ describe('旧站实时音色绑定', () => {
     expect(
       parseLegacyRealtimeVoiceCommand(['--input', '/x.json', '--endpoint-prefix', '156abcdef']),
     ).toMatchObject({ ok: false, code: 'ENDPOINT_FORBIDDEN' });
-    expect(parseLegacyRealtimeVoiceCommand(['--input', '/x.json', '--endpoint-prefix', '8d1b'])).toMatchObject({
+    expect(
+      parseLegacyRealtimeVoiceCommand(['--input', '/x.json', '--endpoint-prefix', '8d1b']),
+    ).toMatchObject({
       ok: false,
     });
     const parsed = parseLegacyRealtimeVoiceCommand([
@@ -116,19 +123,65 @@ describe('旧站实时音色绑定', () => {
     const plan = planLegacyRealtimeBindings(
       {
         bindings: [
-          { character_id: ROLE, endpoint_id: '8d1b5e3b-aaaa', model: 'qwen-audio-3.0-realtime-plus', voice_id: 'qwen-audio-3.0-realtime-plus-vc-x', status: 'ready' },
-          { character_id: ROLE, endpoint_id: '8d1b5e3b-aaaa', model: 'qwen-audio-3.0-realtime-plus', voice_id: 'dup', status: 'ready' },
-          { character_id: ROLE, endpoint_id: '156ffff', model: 'qwen-audio-3.0-realtime-plus', voice_id: 'v', status: 'ready' },
-          { character_id: ROLE, endpoint_id: '8d1b5e3b-aaaa', model: 'qwen-audio-3.0-tts-plus', voice_id: 'v', status: 'ready' },
-          { character_id: ROLE, endpoint_id: '8d1b5e3b-aaaa', model: 'qwen3.5-omni-plus-realtime', voice_id: 'v', status: 'ready' },
-          { character_id: ROLE, endpoint_id: '8d1b5e3b-aaaa', model: 'qwen-audio-3.0-realtime-plus', voice_id: 'v', status: 'pending' },
-          { character_id: 'not-a-uuid', endpoint_id: '8d1b5e3b-aaaa', model: 'qwen-audio-3.0-realtime-plus', voice_id: 'v', status: 'ready' },
+          {
+            character_id: ROLE,
+            endpoint_id: '8d1b5e3b-aaaa',
+            model: 'qwen-audio-3.0-realtime-plus',
+            voice_id: 'qwen-audio-3.0-realtime-plus-vc-x',
+            status: 'ready',
+          },
+          {
+            character_id: ROLE,
+            endpoint_id: '8d1b5e3b-aaaa',
+            model: 'qwen-audio-3.0-realtime-plus',
+            voice_id: 'dup',
+            status: 'ready',
+          },
+          {
+            character_id: ROLE,
+            endpoint_id: '156ffff',
+            model: 'qwen-audio-3.0-realtime-plus',
+            voice_id: 'v',
+            status: 'ready',
+          },
+          {
+            character_id: ROLE,
+            endpoint_id: '8d1b5e3b-aaaa',
+            model: 'qwen-audio-3.0-tts-plus',
+            voice_id: 'v',
+            status: 'ready',
+          },
+          {
+            character_id: ROLE,
+            endpoint_id: '8d1b5e3b-aaaa',
+            model: 'qwen3.5-omni-plus-realtime',
+            voice_id: 'v',
+            status: 'ready',
+          },
+          {
+            character_id: ROLE,
+            endpoint_id: '8d1b5e3b-aaaa',
+            model: 'qwen-audio-3.0-realtime-plus',
+            voice_id: 'v',
+            status: 'pending',
+          },
+          {
+            character_id: 'not-a-uuid',
+            endpoint_id: '8d1b5e3b-aaaa',
+            model: 'qwen-audio-3.0-realtime-plus',
+            voice_id: 'v',
+            status: 'ready',
+          },
         ],
       },
       parsed.command,
     );
     expect(plan.rows).toEqual([
-      { characterId: ROLE, modelKey: REALTIME_PLUS_MODEL_KEY, providerVoiceKey: 'qwen-audio-3.0-realtime-plus-vc-x' },
+      {
+        characterId: ROLE,
+        modelKey: REALTIME_PLUS_MODEL_KEY,
+        providerVoiceKey: 'qwen-audio-3.0-realtime-plus-vc-x',
+      },
     ]);
     expect(plan.skipped).toEqual({
       other_endpoint: 1,

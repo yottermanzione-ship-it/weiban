@@ -705,9 +705,10 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       adapter.openRealtime
         ? adapter.openRealtime(target, { instructions, voice })
         : ({ ok: false, category: 'bad_request', zeroCost: true } as const),
-    ).catch(
-      (): MediaAdapterResult<RealtimeConnection> => ({ ok: false, category: 'network_error' }),
-    );
+    ).catch((): MediaAdapterResult<RealtimeConnection> => ({
+      ok: false,
+      category: 'network_error',
+    }));
     if (!opened.ok) {
       await this.cancelCharge(first.value);
       if (opened.category === 'invalid_key' || opened.category === 'quota_exhausted')
@@ -740,7 +741,8 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
   /** 实时通话模型的线路：目录启用、上游可用、核准了 realtime 计费上限。不换别的模型。 */
   private async resolveRealtime(facts: ModelFacts): Promise<PortResult<Resolved, GenerateError>> {
     const reason = unavailableReason(facts.entry, facts.upstreamStatus);
-    if (reason === 'model_removed' || !facts.entry) return { ok: false, error: 'model_unavailable' };
+    if (reason === 'model_removed' || !facts.entry)
+      return { ok: false, error: 'model_unavailable' };
     if (reason === 'provider_unavailable') return { ok: false, error: 'provider_unavailable' };
     const billingBounds = await this.bounds?.get(
       facts.entry.modelKey,

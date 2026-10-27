@@ -123,7 +123,16 @@ function setup(
   const heard = (async () => {
     for await (const a of session.audio()) audio.push(a);
   })();
-  return { session, ...fake, signals, audio, collected, heard, enqueueCallExtraction, getSpendStatus };
+  return {
+    session,
+    ...fake,
+    signals,
+    audio,
+    collected,
+    heard,
+    enqueueCallExtraction,
+    getSpendStatus,
+  };
 }
 
 const flush = () => vi.advanceTimersByTimeAsync(0);
@@ -284,8 +293,7 @@ describe('通话入口按场景路由到实时模型', () => {
     open?: ReturnType<typeof vi.fn>;
   }) {
     const asr = vi.fn(async () => ({ ok: false, error: 'not_configured' }));
-    const open =
-      opts.open ?? vi.fn(async () => ({ ok: true, value: fakeRealtime().rt }));
+    const open = opts.open ?? vi.fn(async () => ({ ok: true, value: fakeRealtime().rt }));
     const module = await Test.createTestingModule({
       providers: [
         CallAgentService,
@@ -310,14 +318,24 @@ describe('通话入口按场景路由到实时模型', () => {
         {
           provide: BILLING_READ_PORT,
           useValue: {
-            getSpendStatus: async () => ({ depleted: false, insufficient: false, availableMicros: 1 }),
+            getSpendStatus: async () => ({
+              depleted: false,
+              insufficient: false,
+              availableMicros: 1,
+            }),
           },
         },
-        { provide: IDENTITY_READ_PORT, useValue: { getProfile: async () => ({ nickname: '朋友' }) } },
+        {
+          provide: IDENTITY_READ_PORT,
+          useValue: { getProfile: async () => ({ nickname: '朋友' }) },
+        },
         {
           provide: AI_CHARACTER_READ,
           useValue: {
-            getForRuntime: async () => ({ card: null, profile: { name: '实时测试角色', kind: 'preset' } }),
+            getForRuntime: async () => ({
+              card: null,
+              profile: { name: '实时测试角色', kind: 'preset' },
+            }),
           },
         },
         {

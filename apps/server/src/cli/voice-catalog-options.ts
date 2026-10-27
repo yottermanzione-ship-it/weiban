@@ -126,7 +126,12 @@ export function parseVoiceCatalogCommand(argv: readonly string[]): Parsed<VoiceC
   const omniModel = values.get('omni-model');
   const omniCost = values.get('omni-cost');
   if (omniModel !== undefined || omniCost !== undefined) {
-    if (!omniModel || !MODEL_ID.test(omniModel) || !/realtime/u.test(omniModel) || !/omni/u.test(omniModel))
+    if (
+      !omniModel ||
+      !MODEL_ID.test(omniModel) ||
+      !/realtime/u.test(omniModel) ||
+      !/omni/u.test(omniModel)
+    )
       return fail('BAD_ARGUMENT', '--omni-model 必须是百炼 Omni 实时型号名（含 omni 与 realtime）');
     const cost = (omniCost ?? '').split(',').map((v) => Number(v.trim()));
     if (cost.length !== 4 || cost.some((v) => !Number.isFinite(v) || v < 0 || v > 10_000))
@@ -207,7 +212,12 @@ function realtimeWrite(input: {
   };
 }
 
-function asrWrite(modelKey: string, upstreamModelId: string, displayName: string, vendorName: string) {
+function asrWrite(
+  modelKey: string,
+  upstreamModelId: string,
+  displayName: string,
+  vendorName: string,
+) {
   return {
     modelKey,
     displayName,
@@ -240,7 +250,12 @@ export function planVoiceCatalog(command: VoiceCatalogCommand): {
     entries.push({
       item: 'telespeech',
       modelKey: 'siliconflow/telespeech-asr',
-      write: asrWrite('siliconflow/telespeech-asr', 'TeleAI/TeleSpeechASR', 'TeleSpeech 语音识别', '硅基流动'),
+      write: asrWrite(
+        'siliconflow/telespeech-asr',
+        'TeleAI/TeleSpeechASR',
+        'TeleSpeech 语音识别',
+        '硅基流动',
+      ),
       enable: true,
       upstream: { flag: 'siliconflow', reference: UPSTREAM_REFERENCE.telespeech! },
       defaultVoice: null,
@@ -256,7 +271,9 @@ export function planVoiceCatalog(command: VoiceCatalogCommand): {
       defaultVoice: null,
       notes: command.enableUnverified
         ? ['型号名未经真实账号核实，已按 --enable-unverified 启用']
-        : ['型号名未经真实账号核实：登记为停用；后台「测试」通过后再启用（或加 --enable-unverified）'],
+        : [
+            '型号名未经真实账号核实：登记为停用；后台「测试」通过后再启用（或加 --enable-unverified）',
+          ],
     });
   if (want('qwen-tts-flash'))
     entries.push({
@@ -395,12 +412,19 @@ export function parseLegacyRealtimeVoiceCommand(
     return fail('BAD_ARGUMENT', '--endpoint-prefix 至少 8 位（例 8d1b5e3b）');
   if (endpointPrefix.startsWith(FORBIDDEN_ENDPOINT_PREFIX))
     return fail('ENDPOINT_FORBIDDEN', '156 开头的私有 workspace 不迁移');
-  const modelMap = new Map<string, string>([[REALTIME_PLUS_UPSTREAM_MODEL, REALTIME_PLUS_MODEL_KEY]]);
+  const modelMap = new Map<string, string>([
+    [REALTIME_PLUS_UPSTREAM_MODEL, REALTIME_PLUS_MODEL_KEY],
+  ]);
   const map = values.get('map');
   if (map)
     for (const pair of map.split(',')) {
       const [from, to] = pair.split('=').map((s) => s?.trim() ?? '');
-      if (!from || !to || !MODEL_ID.test(from) || !/^[a-z0-9][a-z0-9._-]*\/[A-Za-z0-9._:-]+$/u.test(to))
+      if (
+        !from ||
+        !to ||
+        !MODEL_ID.test(from) ||
+        !/^[a-z0-9][a-z0-9._-]*\/[A-Za-z0-9._:-]+$/u.test(to)
+      )
         return fail('BAD_ARGUMENT', '--map 形如 旧型号=新模型键[,旧型号=新模型键]');
       modelMap.set(from, to);
     }

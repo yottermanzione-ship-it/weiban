@@ -158,7 +158,8 @@ function bindings(options) {
   const file = newFile(options.outDir, 'realtime-bindings.json');
   fs.writeFileSync(file, JSON.stringify({ version: 1, bindings: rows }), { flag: 'wx' });
   const byModel = {};
-  for (const row of rows) byModel[`${row.model}|${row.status}`] = (byModel[`${row.model}|${row.status}`] ?? 0) + 1;
+  for (const row of rows)
+    byModel[`${row.model}|${row.status}`] = (byModel[`${row.model}|${row.status}`] ?? 0) + 1;
   return { ok: true, rows: rows.length, byModelAndStatus: byModel, file };
 }
 
@@ -166,7 +167,8 @@ function account(options) {
   const certificate = fs.readFileSync(options.receiverCert);
   if (certificate.includes(Buffer.from('PRIVATE KEY'))) throw new Error('只能给公开证书');
   const fingerprint = createHash('sha256').update(certificate).digest('hex');
-  if (fingerprint !== options.receiverSha256) throw new Error('证书指纹与 --receiver-sha256 不一致');
+  if (fingerprint !== options.receiverSha256)
+    throw new Error('证书指纹与 --receiver-sha256 不一致');
   const exporter =
     options.exporter ??
     path.join(path.dirname(fileURLToPath(import.meta.url)), 'export-legacy-upstreams.mjs');
@@ -221,9 +223,13 @@ finally:
     oldServerFilesWritten: false,
     result: diagnostics,
   };
-  fs.writeFileSync(newFile(options.outDir, 'export-receipt.json'), JSON.stringify(receipt, null, 2), {
-    flag: 'wx',
-  });
+  fs.writeFileSync(
+    newFile(options.outDir, 'export-receipt.json'),
+    JSON.stringify(receipt, null, 2),
+    {
+      flag: 'wx',
+    },
+  );
   return receipt;
 }
 
@@ -239,7 +245,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     console.log(JSON.stringify({ step: options.step, dryRun: !options.run, ...output }, null, 2));
     if (output.ok === false) process.exitCode = 1;
   } catch (error) {
-    console.error(JSON.stringify({ ok: false, message: error instanceof Error ? error.message : 'unknown' }));
+    console.error(
+      JSON.stringify({ ok: false, message: error instanceof Error ? error.message : 'unknown' }),
+    );
     process.exitCode = 1;
   }
 }

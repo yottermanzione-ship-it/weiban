@@ -192,7 +192,12 @@ describe('计价 priceUsage（billing.md 4.2）', () => {
         costMicros: 150_000_000,
       },
     ];
-    const usage = { inputTokens: 1000, outputTokens: 100, audioInputTokens: 500, audioOutputTokens: 200 };
+    const usage = {
+      inputTokens: 1000,
+      outputTokens: 100,
+      audioInputTokens: 500,
+      audioOutputTokens: 200,
+    };
     // 1000×2 + 100×8 + 500×52 + 200×195 = 2000 + 800 + 26000 + 39000 = 67800
     expect(priceUsage(audioRows, usage, MON_NIGHT, true)).toMatchObject({
       ok: true,

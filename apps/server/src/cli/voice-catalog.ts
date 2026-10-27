@@ -56,7 +56,9 @@ function summary(model: AdminModel | undefined, upstreams: readonly Upstream[]) 
     enabled: model.enabled,
     scenarios: model.scenarios ?? [],
     tags: model.tags,
-    upstream: upstream ? { name: upstream.name, kind: upstream.kind, status: upstream.status } : null,
+    upstream: upstream
+      ? { name: upstream.name, kind: upstream.kind, status: upstream.status }
+      : null,
     rates: model.rates,
     serviceRates: model.serviceRates ?? [],
     available: model.availability?.available ?? null,
@@ -83,14 +85,20 @@ function resolveUpstream(
     };
   const upstream = upstreams.find((u) => u.upstreamId === id);
   if (!upstream) return { problem: `上游账号 ${id} 不存在或已删除` };
-  if ((planned.item === 'qwen-realtime' || planned.item === 'omni') && upstream.kind !== 'dashscope')
+  if (
+    (planned.item === 'qwen-realtime' || planned.item === 'omni') &&
+    upstream.kind !== 'dashscope'
+  )
     return { problem: `实时通话账号必须是百炼（dashscope），当前是 ${upstream.kind}` };
   if (planned.item === 'qwen-tts-flash' && upstream.kind !== 'dashscope')
     return { problem: `千问 TTS 账号必须是百炼（dashscope），当前是 ${upstream.kind}` };
   return { upstreamId: id };
 }
 
-async function run(command: VoiceCatalogCommand, app: Awaited<ReturnType<typeof NestFactory.createApplicationContext>>) {
+async function run(
+  command: VoiceCatalogCommand,
+  app: Awaited<ReturnType<typeof NestFactory.createApplicationContext>>,
+) {
   const admin = app.get(ModelAdminService, { strict: false });
   const voices = app.get(RealtimeVoiceStore, { strict: false });
   const upstreams = await app.get(UpstreamService, { strict: false }).list();
@@ -150,9 +158,13 @@ async function run(command: VoiceCatalogCommand, app: Awaited<ReturnType<typeof 
     return;
   }
   if (problems.length)
-    throw new VoiceCatalogCliError('UPSTREAM_UNRESOLVED', '有条目找不到合适的上游账号，未写入任何内容', {
-      problems,
-    });
+    throw new VoiceCatalogCliError(
+      'UPSTREAM_UNRESOLVED',
+      '有条目找不到合适的上游账号，未写入任何内容',
+      {
+        problems,
+      },
+    );
   const database = app.get<Database>(DATABASE, { strict: false });
   if (!(await isActiveMaintenanceAdmin(database, command.operatorId!)))
     throw new VoiceCatalogCliError(
@@ -177,7 +189,12 @@ async function run(command: VoiceCatalogCommand, app: Awaited<ReturnType<typeof 
       await voices.setDefault(command.operatorId!, planned.modelKey, planned.defaultVoice);
     written.push(summary(saved, upstreams));
   }
-  out({ ok: true, written, skipped, notes: preview.map((p) => ({ modelKey: p.modelKey, notes: p.notes })) });
+  out({
+    ok: true,
+    written,
+    skipped,
+    notes: preview.map((p) => ({ modelKey: p.modelKey, notes: p.notes })),
+  });
 }
 
 async function main(): Promise<void> {

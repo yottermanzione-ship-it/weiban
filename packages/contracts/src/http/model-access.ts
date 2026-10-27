@@ -862,10 +862,11 @@ export const ModelServiceRate = ModelServiceRateWrite.extend({
   hasTimeBands: z.boolean().optional(),
 });
 export type ModelServiceRate = z.infer<typeof ModelServiceRate>;
+/** 4.5：上限 = 服务计价单位总数（实时通话模型同时有音频输入 / 输出两项）。 */
 const ServiceRatesWrite = z
   .array(ModelServiceRateWrite)
   .min(1)
-  .max(5)
+  .max(ServicePriceUnit.options.length)
   .refine(
     (rates) => new Set(rates.map((r) => r.unit)).size === rates.length,
     '同一计价单位不能重复',

@@ -12,6 +12,7 @@
  * 安全：只连 https 基址换出的 wss 地址，不跟随重定向；单帧上限 2 MiB；不记录上游原文、地址或密钥；
  * 解析失败的帧丢弃。用量只采信供应商在 `response.done` 里按模态报告的数字，缺模态明细 = 用量未知。
  */
+import { randomUUID } from 'node:crypto';
 import { WebSocket } from 'ws';
 import type { MediaAdapterResult, MediaFailure, MediaTarget } from './media-adapter.js';
 
@@ -306,10 +307,12 @@ export async function openDashscopeRealtimeAt(
   });
   const queue = new EventQueue<RealtimeTransportEvent>();
   const transcripts = new Map<string, string>();
+  // 事件 ID 只需在本连接内唯一：随机前缀 + 递增序号（不读系统时钟）。
+  const prefix = randomUUID().slice(0, 8);
   let counter = 0;
   const send = (payload: Record<string, unknown>) => {
     if (socket.readyState !== WebSocket.OPEN) return;
-    socket.send(JSON.stringify({ event_id: `wb_${Date.now()}_${++counter}`, ...payload }));
+    socket.send(JSON.stringify({ event_id: `wb_${prefix}_${++counter}`, ...payload }));
   };
   const ready = await new Promise<MediaFailure | null>((resolve) => {
     const timer = setTimeout(() => resolve('network_error'), READY_TIMEOUT_MS);
@@ -416,7 +419,12 @@ export function openFakeRealtime(_config: RealtimeSessionConfig): RealtimeConnec
     queue.push({ type: 'response_started', responseId: id });
     for (let i = 0; i < 4; i++)
       queue.push({ type: 'audio', responseId: id, pcm: new Uint8Array(12_000) });
-    queue.push({ type: 'assistant_text', responseId: id, text: '（假回应）嗯，我在听。', final: true });
+    queue.push({
+      type: 'assistant_text',
+      responseId: id,
+      text: '（假回应）嗯，我在听。',
+      final: true,
+    });
     setTimeout(() => {
       if (active !== id) return;
       active = null;

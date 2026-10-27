@@ -199,12 +199,19 @@ export class ModelAdminService {
         audio_input_tokens_per_million: 'voice_input',
         audio_output_tokens_per_million: 'voice_output',
       } as const;
-      const duplex = ['realtime_minute', 'audio_input_tokens_per_million', 'audio_output_tokens_per_million'];
+      const duplex = [
+        'realtime_minute',
+        'audio_input_tokens_per_million',
+        'audio_output_tokens_per_million',
+      ];
       for (const rate of serviceRates) {
         if (
           !body.capabilities.includes(capability[rate.unit]) ||
           (duplex.includes(rate.unit) &&
-            !(body.capabilities.includes('voice_input') && body.capabilities.includes('voice_output')))
+            !(
+              body.capabilities.includes('voice_input') &&
+              body.capabilities.includes('voice_output')
+            ))
         )
           throw new AppError('bad_request', `服务计价单位 ${rate.unit} 与模型能力不匹配`);
       }
