@@ -287,8 +287,18 @@ export async function openDashscopeRealtime(
     return { ok: false, category: 'bad_request', zeroCost: true };
   const address = realtimeUrl(t.baseUrl, t.model);
   if (!address) return { ok: false, category: 'bad_request', zeroCost: true };
+  return openDashscopeRealtimeAt(address, t.model, t.apiKey, config);
+}
+
+/** 按已校验的地址连接（生产只经 openDashscopeRealtime 调用；测试用它指向本机假供应商）。 */
+export async function openDashscopeRealtimeAt(
+  address: string,
+  model: string,
+  apiKey: string,
+  config: RealtimeSessionConfig,
+): Promise<MediaAdapterResult<RealtimeConnection>> {
   const socket = new WebSocket(address, {
-    headers: { Authorization: `Bearer ${t.apiKey}` },
+    headers: { Authorization: `Bearer ${apiKey}` },
     maxPayload: MAX_FRAME_BYTES,
     handshakeTimeout: READY_TIMEOUT_MS,
     followRedirects: false,
@@ -314,7 +324,7 @@ export async function openDashscopeRealtime(
     socket.once('error', () => settle('network_error'));
     socket.once('close', () => settle('network_error'));
     socket.once('open', () =>
-      send({ type: 'session.update', session: realtimeSessionUpdate(t.model, config) }),
+      send({ type: 'session.update', session: realtimeSessionUpdate(model, config) }),
     );
     socket.on('message', (raw: Buffer, isBinary: boolean) => {
       if (isBinary) return;
