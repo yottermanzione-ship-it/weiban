@@ -30,6 +30,7 @@ import {
   type WorkLink,
 } from '@weiban/contracts';
 import { api } from '../data/client.js';
+import { adminMediaUrl } from '../data/media-url.js';
 import { errorText, useRemote } from '../data/hooks.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
 import { BatchStatusActions } from '../ui/batch-status.js';
@@ -796,7 +797,7 @@ export function CardTemplatesPage() {
       width: 260,
       render: (_, row) => (
         <div className="sticker-card-inline">
-          <img src={row.url} alt={row.name} />
+          <img src={adminMediaUrl(row.url)} alt={row.name} />
           <div className="cell-main">
             <span className="cell-title">{row.name}</span>
             <span className="cell-sub">
@@ -970,6 +971,10 @@ function CardDrawer({
           mediaId: template?.mediaId,
         }}
       >
+        {/* Uploaded IDs must be registered: validateFields only returns registered fields. */}
+        <Form.Item name="mediaId" hidden>
+          <Input />
+        </Form.Item>
         <FormSection title="模板" />
         <Form.Item
           name="name"
@@ -1011,7 +1016,11 @@ function CardDrawer({
               </Button>
             </Upload>
             {preview && (
-              <img src={preview} alt="卡面预览" style={{ height: 64, borderRadius: 6 }} />
+              <img
+                src={adminMediaUrl(preview)}
+                alt="卡面预览"
+                style={{ height: 64, borderRadius: 6 }}
+              />
             )}
           </Space>
         </Form.Item>

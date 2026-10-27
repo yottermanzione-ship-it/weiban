@@ -24,7 +24,13 @@ import { IdentityCommands } from '../../src/modules/identity/index.js';
 import { IMPORTER_ANALYZER } from '../../src/modules/importer/index.js';
 import { ImporterService } from '../../src/modules/importer/testing.js';
 import { MediaAssetService, MediaService } from '../../src/modules/media/testing.js';
-import { BillingAdminService } from '../../src/modules/billing/testing.js';
+import { BillingAdminService, PriceService } from '../../src/modules/billing/testing.js';
+import {
+  CatalogService,
+  ScenarioService,
+  UpstreamService,
+} from '../../src/modules/model-access/testing.js';
+import { FlowUpstream } from './server-flow-fixture.js';
 import { newId, TestClock, loadConfig, createLogger } from '../../src/platform/index.js';
 import { AdminAlertService } from '../../src/modules/push/testing.js';
 import { DATABASE, type Database } from '../../src/platform/index.js';
@@ -93,7 +99,56 @@ const commands = app.get(IdentityCommands);
 let chatUser = '';
 let guideUser = '';
 let importUser = '';
+let avatarUser = '';
 const admin = await commands.createAdmin('browser_admin', 'correct horse battery');
+// 3.22: sending requires an explicit chat model. This upstream is local and controlled;
+// background workers remain disabled, so browser checks never call a paid provider.
+const localUpstream = new FlowUpstream();
+const localUrl = await localUpstream.start();
+const upstream = await app.get(UpstreamService).create(admin, {
+  name: '浏览器受控聊天上游',
+  kind: 'openai_compatible',
+  baseUrl: localUrl,
+  apiKey: 'sk-browser-local-fixture-only',
+});
+const chatModel = 'browser/chat-fixture';
+const prices = app.get(PriceService);
+const price = await prices.createDraft(admin, {
+  versionLabel: 'browser-fixture',
+  note: null,
+  items: ['input_tokens_per_million', 'output_tokens_per_million'].map((unit) => ({
+    modelKey: chatModel,
+    unit: unit as 'input_tokens_per_million' | 'output_tokens_per_million',
+    priceMicros: 0,
+    costMicros: 0,
+    band: null,
+  })),
+});
+await prices.activate(admin, price.priceVersionId, null);
+await app.get(CatalogService).upsert(admin, chatModel, {
+  modelKey: chatModel,
+  displayName: '浏览器受控聊天模型',
+  vendorName: '本机测试',
+  upstreamId: upstream.upstreamId,
+  upstreamModelId: 'browser-chat',
+  capabilities: ['vision'],
+  tags: [],
+  leaderboardRank: null,
+  sortOrder: 0,
+  defaultFor: [],
+  scenarios: ['chat'],
+  billingBounds: {
+    format: 'billing-bounds-v1',
+    text: {
+      contextTokens: 128_000,
+      maxOutputTokens: 32_000,
+      totalOutputIncludesReasoning: true,
+      outputParameter: 'max_tokens',
+      maxImages: 4,
+    },
+  },
+  enabled: true,
+});
 // Real playable WAV through encrypted media storage; a tone tests playback, not voice quality.
 const sampleRate = 8000;
 const wav = Buffer.alloc(44 + sampleRate * 10 * 2);
@@ -128,13 +183,16 @@ for (const [name, balance] of [
   ['browser_other', 1_000_000],
   ['browser_first', 1_000_000],
   ['browser_guide', 1_000_000],
+  ['browser_avatar', 1_000_000],
 ] as const) {
   const user = await commands.createAdmin(name, 'correct horse battery');
   if (name === 'browser_user') chatUser = user;
   if (name === 'browser_guide') guideUser = user;
   if (name === 'browser_other') importUser = user;
+  if (name === 'browser_avatar') avatarUser = user;
   await commands.setRole(name, 'user');
-  if (name === 'browser_other' || name === 'browser_guide')
+  await app.get(ScenarioService).updateConfig(user, { chat: { modelKey: chatModel } });
+  if (name === 'browser_other' || name === 'browser_guide' || name === 'browser_avatar')
     await app.get(SettingsService).updateProfile(user, { nickname: '其他用户' });
   await app.get(BillingAdminService).adjust(admin, user, {
     direction: 'grant',
@@ -225,6 +283,14 @@ async function seedConversation(userId: string, count: number) {
 }
 await seedConversation(chatUser, 70);
 await seedConversation(guideUser, 1);
+await seedConversation(avatarUser, 1);
 await app.listen(3000, '127.0.0.1');
 for (const signal of ['SIGINT', 'SIGTERM'] as const)
-  process.on(signal, () => void app.close().then(() => process.exit(0)));
+  process.on(
+    signal,
+    () =>
+      void app
+        .close()
+        .then(() => localUpstream.close())
+        .then(() => process.exit(0)),
+  );
