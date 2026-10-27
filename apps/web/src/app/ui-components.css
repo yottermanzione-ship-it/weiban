@@ -780,3 +780,30 @@ button:where(:not([class])):where(:active) {
     transition: none;
   }
 }
+
+/* ---------- 批 U7：总经理界面反馈 ---------- */
+/* 顶部提示条可关闭；需要重新打开时右侧给「重新打开」 */
+.notice-bar > span {
+  flex: 1;
+  min-width: 0;
+}
+.notice-bar > .notice-bar-action,
+.notice-bar > .notice-bar-close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+.notice-bar > .notice-bar-action {
+  text-decoration: underline;
+}
+.notice-bar > .notice-bar-close {
+  width: 28px;
+  margin-right: -6px;
+}

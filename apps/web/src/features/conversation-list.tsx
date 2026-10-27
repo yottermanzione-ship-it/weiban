@@ -232,7 +232,7 @@ function ConversationRow({ item, local }: { item: Conversation; local: Message |
 }
 
 export function ConversationListPage() {
-  const { state, error, synchronize, clearHistory } = useChat();
+  const { state, error, errorFatal, dismissError, synchronize, clearHistory } = useChat();
   const navigate = useNavigate();
   useMinuteTick();
   const [menu, setMenu] = useState(false);
@@ -349,26 +349,41 @@ export function ConversationListPage() {
           </Link>
         </div>
         {error && (
-          <p role="alert" className="notice-bar">
-            {error}
-          </p>
-        )}
-        {!state.initialized && (
-          <div className="chat-list-loading" role="status" aria-label="正在读取聊天">
-            <p className="hint center">正在读取聊天…</p>
-            {!items.length && (
-              <div className="conversation-skeleton" aria-hidden="true">
-                {[0, 1, 2].map((row) => (
-                  <div className="conversation-skeleton-row" key={row}>
-                    <span className="conversation-skeleton-avatar" />
-                    <span>
-                      <span className="skeleton-line" />
-                      <span className="skeleton-line" />
-                    </span>
-                  </div>
-                ))}
-              </div>
+          <div role="alert" className="notice-bar">
+            <span>{error}</span>
+            {errorFatal && (
+              <button
+                type="button"
+                className="notice-bar-action"
+                onClick={() => window.location.reload()}
+              >
+                重新打开
+              </button>
             )}
+            <button
+              type="button"
+              className="notice-bar-close"
+              aria-label="关闭提示"
+              onClick={dismissError}
+            >
+              <OldIcon name="wechat/close" size={16} />
+            </button>
+          </div>
+        )}
+        {/* U7：首次读取只显示骨架屏，不再叠一行「正在读取聊天…」；已有本机列表时不显示加载态。 */}
+        {!state.initialized && !items.length && (
+          <div className="chat-list-loading" role="status" aria-label="正在读取聊天">
+            <div className="conversation-skeleton" aria-hidden="true">
+              {[0, 1, 2].map((row) => (
+                <div className="conversation-skeleton-row" key={row}>
+                  <span className="conversation-skeleton-avatar" />
+                  <span>
+                    <span className="skeleton-line" />
+                    <span className="skeleton-line" />
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
         <VirtualList

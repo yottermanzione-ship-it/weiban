@@ -10,6 +10,7 @@ import {
   type ClientSyncOperation,
 } from '@weiban/contracts';
 import {
+  LocalSaveError,
   LocalSyncState,
   SyncRunner,
   freshSyncState,
@@ -22,7 +23,8 @@ export interface ChatDriverObserver {
   state(state: LocalSyncState): void;
   connection(online: boolean): void;
   typing(conversationId: string, participantId: string, active: boolean): void;
-  error(message: string): void;
+  /** fatal：同步已停止，需要重新打开；否则会自动恢复。 */
+  error(message: string, kind?: 'fatal' | 'retry'): void;
 }
 export class ChatDriver {
   private runner: SyncRunner | null = null;
@@ -70,19 +72,25 @@ export class ChatDriver {
         if (state.initialized) this.bootstrapping = false;
         this.observer.state(state);
       },
-      failed: () => {
+      failed: (error) => {
         if (this.stopped) return;
         this.syncFailures++;
-        if (this.runner?.active === false) {
+        // 只有真正写不进本机（IndexedDB）才停止同步并请用户处理；数据或网络问题自动重试。
+        if (error instanceof LocalSaveError || this.runner?.active === false) {
           this.stop();
           this.observer.connection(false);
-          this.observer.error('本机保存失败，请检查设备存储后重新打开微伴');
+          this.observer.error(
+            error instanceof LocalSaveError && error.quota
+              ? '设备存储空间不足，聊天暂停保存。请清理空间后重新打开微伴'
+              : '聊天没能保存到本机，请重新打开微伴',
+            'fatal',
+          );
           return;
         }
         this.bootstrapping = false;
         this.canSync = false;
         this.observer.connection(false);
-        this.observer.error('同步暂未完成，将自动重试');
+        this.observer.error('同步暂未完成，将自动重试', 'retry');
         void this.runner?.dispatch({ type: 'offline' }).catch(() => {});
       },
     });
@@ -257,11 +265,12 @@ export class ChatDriver {
     const runner = this.runner;
     if (!runner || this.stopped || this.paused || !runner.active || !this.api.owns(this.owner))
       throw new Error('聊天尚未准备好');
+    const since = runner.lastUpdateSeq;
     const state = await this.api.call(SyncEndpoints.getState, {
       networkOnly: true,
       signal,
     });
-    await this.reconnect(state.latestUpdateSeq);
+    await this.reconnect(state.latestUpdateSeq, since);
     const deadline = Date.now() + 10_000;
     while (!runner.state.initialized || runner.state.lastUpdateSeq < state.latestUpdateSeq) {
       if (
@@ -323,11 +332,13 @@ export class ChatDriver {
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     const socket = new WebSocket(url);
     this.socket = socket;
+    let since = 0;
     this.authenticated = false;
     this.openedAt = Date.now();
     const current = () => !this.stopped && this.socket === socket;
     socket.onopen = () => {
       if (!current()) return;
+      since = this.runner?.lastUpdateSeq ?? 0;
       socket.send(
         JSON.stringify(
           ClientFrame.parse({
@@ -342,7 +353,7 @@ export class ChatDriver {
                 appVersion: '0.1.0',
                 timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
               },
-              lastUpdateSeq: this.runner?.state.lastUpdateSeq ?? 0,
+              lastUpdateSeq: since,
             },
           }),
         ),
@@ -366,7 +377,7 @@ export class ChatDriver {
             runtimeLogs.connection(true);
             this.lastPong = this.lastPing = Date.now();
             this.presence();
-            void this.reconnect(frame.data.latestUpdateSeq);
+            void this.reconnect(frame.data.latestUpdateSeq, since).catch(() => {});
             break;
           case 'pong':
             this.lastPong = Date.now();
@@ -409,7 +420,7 @@ export class ChatDriver {
         return;
       }
       if (event.code === WsCloseCode.clientTooOld) {
-        this.observer.error('请更新微伴后继续');
+        this.observer.error('请更新微伴后继续', 'fatal');
         this.stop();
         return;
       }
@@ -425,11 +436,12 @@ export class ChatDriver {
       );
     };
   }
-  private async reconnect(seq: number): Promise<void> {
+  /** since：读到 seq 时本机的游标；排队期间被推送超过的读数不算服务器倒退。 */
+  private async reconnect(seq: number, since: number): Promise<void> {
     if (!this.runner || this.stopped || this.paused || !navigator.onLine || this.bootstrapping)
       return;
     this.bootstrapping = !this.runner.state.initialized;
-    await this.runner.dispatch({ type: 'reconnect', latestUpdateSeq: seq, now: Date.now() });
+    await this.runner.reconnect(seq, since, Date.now());
     if (!this.stopped) {
       this.canSync = true;
       this.observer.connection(true);
@@ -440,12 +452,13 @@ export class ChatDriver {
       return;
     this.polling = true;
     this.lastPoll = Date.now();
+    const since = this.runner?.lastUpdateSeq ?? 0;
     try {
       const state = await this.api.call(SyncEndpoints.getState, {
         networkOnly: true,
         signal: this.lifetime.signal,
       });
-      await this.reconnect(state.latestUpdateSeq);
+      await this.reconnect(state.latestUpdateSeq, since);
     } catch {
       if (!this.stopped) {
         this.canSync = false;
