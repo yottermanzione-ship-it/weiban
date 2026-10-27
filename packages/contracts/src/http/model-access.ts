@@ -729,6 +729,18 @@ export const RouteBillingBounds = z
       .object({ maxResults: z.number().int().min(1).max(10), billableCalls: z.literal(1) })
       .optional(),
     decision: z.object({ maxInputTokens: z.number().int().min(1).max(10000000) }).optional(),
+    /**
+     * 4.5：实时语音 / Omni 通话（服务端 WebSocket 中转；按供应商每次回应报告的文字 / 音频 token 结算）。
+     * maxSessionSeconds = 单通最长秒数；maxResponseOutputTokens = 每次回应的输出上限（发给供应商，也用于估算）；
+     * contextTokens = 会话上下文上限（人设 + 记忆 + 通话内容），用于估算每次回应的输入。
+     */
+    realtime: z
+      .object({
+        maxSessionSeconds: z.number().int().min(60).max(7200),
+        maxResponseOutputTokens: z.number().int().min(1).max(32000),
+        contextTokens: z.number().int().min(1).max(10000000),
+      })
+      .optional(),
   })
   .strict();
 export type RouteBillingBounds = z.infer<typeof RouteBillingBounds>;
