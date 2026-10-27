@@ -22,6 +22,7 @@ function service(scope: 'normal' | 'adult') {
     unused as never,
     unused as never,
     unused as never,
+    unused as never, // purgeRegistry（33480b0 新增）
     unused as never,
     { findDirectConversation: async () => conversation } as never,
     unused as never,

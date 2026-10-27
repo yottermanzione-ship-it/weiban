@@ -166,6 +166,12 @@ describeDb('T-028 实际装配与基础缺陷回归', () => {
       purpose: 'chat_reply',
       modelKey,
       estimate: { inputTokens: 1000, outputTokens: 1000 },
+      // 3.16：新冻结必须带网关核准的计费上限，否则 price_missing。
+      ceiling: {
+        usage: { inputTokens: 1000, outputTokens: 1000 },
+        evidence: 'c13-test',
+        pricingModels: [modelKey],
+      },
       idempotencyKey: key,
     });
     if (!result.ok) throw new Error(result.error);

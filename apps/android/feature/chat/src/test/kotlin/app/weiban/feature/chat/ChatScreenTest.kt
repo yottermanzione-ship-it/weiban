@@ -146,7 +146,7 @@ class ChatScreenTest {
                 .body.clientMsgId,
         )
         compose.onNodeWithText("原生离线消息").assertExists()
-        compose.onNodeWithText("返回", useUnmergedTree = true).performClick()
+        compose.onNodeWithText("‹", useUnmergedTree = true).performClick()
         compose.onNodeWithText("主导航").assertExists()
     }
 
@@ -164,13 +164,13 @@ class ChatScreenTest {
         compose.onNode(hasSetTextAction()).assertTextContains("导航恢复草稿")
         compose.onNodeWithText("发送", useUnmergedTree = true).assertExists()
         compose.onNodeWithText("主导航").assertDoesNotExist()
-        compose.onNodeWithText("聊天信息", useUnmergedTree = true).performClick()
+        compose.onNodeWithText("···", useUnmergedTree = true).performClick()
         compose.onNodeWithText("主导航").assertDoesNotExist()
-        compose.onNodeWithText("返回聊天", useUnmergedTree = true).performClick()
+        compose.onNodeWithText("‹", useUnmergedTree = true).performClick()
         compose.onNode(hasSetTextAction()).assertTextContains("导航恢复草稿")
         compose.onNodeWithText("发送", useUnmergedTree = true).assertExists()
         compose.onNodeWithText("主导航").assertDoesNotExist()
-        compose.onNodeWithText("返回", useUnmergedTree = true).performClick()
+        compose.onNodeWithText("‹", useUnmergedTree = true).performClick()
         compose.onNodeWithText("主导航").assertExists()
     }
 

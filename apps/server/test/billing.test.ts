@@ -14,7 +14,6 @@ import {
   AdminPriceVersion,
   ApiError,
   AuthResponse,
-  Invite,
   LedgerEntry,
   PendingAccountDeletion,
   PriceTable,
@@ -147,6 +146,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       get: (path: string, token?: string) => wrap(agent.get(path), token),
       post: (path: string, token?: string) => wrap(agent.post(path), token),
       patch: (path: string, token?: string) => wrap(agent.patch(path), token),
+      put: (path: string, token?: string) => wrap(agent.put(path), token),
       delete: (path: string, token?: string) => wrap(agent.delete(path), token),
     };
   }
@@ -160,13 +160,13 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
     }
   }
 
-  async function newUser(bonusMicros = 0): Promise<{ userId: string; token: string }> {
+  // 11 C8：邀请码已停用，直接注册。
+  async function newUser(): Promise<{ userId: string; token: string }> {
     userCounter += 1;
     const username = `payer_${userCounter}`;
-    const code = (await commands.createInvite(null, bonusMicros)).code;
     const res = await http()
       .post('/api/v1/auth/register')
-      .send({ username, password: PASSWORD, inviteCode: code, device: DEVICE })
+      .send({ username, password: PASSWORD, device: DEVICE })
       .expect(201);
     const body = AuthResponse.parse(res.body);
     return { userId: body.user.userId, token: body.session.token };
@@ -201,11 +201,18 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
   }
 
   function reserveInput(userId: string, extra: Partial<ReserveInput> = {}): ReserveInput {
+    const estimate = extra.estimate ?? SMALL;
     return {
       account: { kind: 'user', userId },
       purpose: 'chat_reply',
       modelKey: MODEL,
-      estimate: SMALL,
+      estimate,
+      // 3.16：新冻结必须带网关核准的计费上限（缺失即 price_missing）；测试里上限 = 估算用量。
+      ceiling: {
+        usage: estimate,
+        evidence: 'billing-test',
+        pricingModels: [extra.modelKey ?? MODEL],
+      },
       idempotencyKey: key(),
       ...extra,
     };
@@ -1317,87 +1324,64 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
 
   // ---------- A. 注册赠送（billing.md 8.3） ----------
 
+  // 11 C8：邀请码已停用、直接注册；注册赠送改为后台「会员配置 › 注册赠送积分」（默认 0 不发，1 元 = 100 积分）。
+  // 旧的「带赠送的邀请码」用例改为验证这套现行做法。
   describe('A. 注册赠送余额', () => {
-    it('带赠送的码注册后余额 = 赠送金额，明细一条「注册赠送」admin_grant；重复投递只记一次', async () => {
-      const user = await newUser(3 * YUAN);
-      const regs = await events('identity.user_registered', user.userId);
-      expect(regs).toEqual([
-        { userId: user.userId, signupBonus: { amountMicros: 3 * YUAN, grantedByUserId: null } },
-      ]);
-      expect(JSON.stringify(regs)).not.toMatch(/inviteCode|code/);
-      // 事件处理前：钱包按需创建，余额 0
-      expect((await wallet(user.token)).balanceMicros).toBe(0);
-      await dispatchAll();
-      expect((await wallet(user.token)).balanceMicros).toBe(3 * YUAN);
-      const items = (
-        await http().get('/api/v1/billing/ledger', user.token).expect(200)
-      ).body.items.map((e: unknown) => LedgerEntry.parse(e));
-      expect(items).toHaveLength(1);
-      expect(items[0]).toMatchObject({
-        type: 'admin_grant',
-        amountMicros: 3 * YUAN,
-        note: SIGNUP_BONUS_REASON,
-      });
-      const restored = await events('billing.balance_restored', user.userId);
-      expect(restored).toEqual([
-        { userId: user.userId, availableMicros: 3 * YUAN, trigger: 'crossed_zero' },
-      ]);
+    async function setSignupBonusPoints(points: number): Promise<void> {
+      const current = (
+        await http().get('/api/v1/admin/membership/settings', adminToken).expect(200)
+      ).body as Record<string, unknown>;
+      await http()
+        .put('/api/v1/admin/membership/settings', adminToken)
+        .send({ ...current, signupBonusPoints: points })
+        .expect(200);
+    }
 
-      // 重复投递：把事件重新标为未投递 → 订阅者被收件箱去重；直接再调一次处理函数 → 幂等键去重
-      await withClient((c) =>
-        c.query(
-          `UPDATE platform.outbox SET dispatched_at = NULL
-            WHERE event_type = 'identity.user_registered' AND event->'payload'->>'userId' = $1`,
-          [user.userId],
-        ),
-      );
-      await dispatchAll();
-      await database.transaction((tx) =>
-        lifecycle.onUserRegistered(
-          regs[0] as {
-            userId: string;
-            signupBonus: { amountMicros: number; grantedByUserId: null };
-          },
-          tx,
-        ),
-      );
-      expect(await q.ledgerOf(user.userId)).toHaveLength(1);
-      expect((await wallet(user.token)).balanceMicros).toBe(3 * YUAN);
+    it('后台配置注册赠送后注册：余额 = 赠送，明细一条「注册赠送」admin_grant；重复投递只记一次', async () => {
+      await setSignupBonusPoints(300); // 300 积分 = 3 元
+      try {
+        const user = await newUser();
+        const regs = await events('identity.user_registered', user.userId);
+        // 事件只带 userId（不再有邀请码 / 赠送字段）
+        expect(regs).toEqual([{ userId: user.userId }]);
+        // 事件处理前：钱包按需创建，余额 0
+        expect((await wallet(user.token)).balanceMicros).toBe(0);
+        await dispatchAll();
+        expect((await wallet(user.token)).balanceMicros).toBe(3 * YUAN);
+        const items = (
+          await http().get('/api/v1/billing/ledger', user.token).expect(200)
+        ).body.items.map((e: unknown) => LedgerEntry.parse(e));
+        expect(items).toHaveLength(1);
+        expect(items[0]).toMatchObject({
+          type: 'admin_grant',
+          amountMicros: 3 * YUAN,
+          note: SIGNUP_BONUS_REASON,
+        });
+        const restored = await events('billing.balance_restored', user.userId);
+        expect(restored).toEqual([
+          { userId: user.userId, availableMicros: 3 * YUAN, trigger: 'crossed_zero' },
+        ]);
+
+        // 重复投递：把事件重新标为未投递 → 订阅者被收件箱去重；直接再调一次处理函数 → 幂等键去重
+        await withClient((c) =>
+          c.query(
+            `UPDATE platform.outbox SET dispatched_at = NULL
+              WHERE event_type = 'identity.user_registered' AND event->'payload'->>'userId' = $1`,
+            [user.userId],
+          ),
+        );
+        await dispatchAll();
+        await database.transaction((tx) =>
+          lifecycle.onUserRegistered(regs[0] as { userId: string }, tx),
+        );
+        expect(await q.ledgerOf(user.userId)).toHaveLength(1);
+        expect((await wallet(user.token)).balanceMicros).toBe(3 * YUAN);
+      } finally {
+        await setSignupBonusPoints(0);
+      }
     });
 
-    it('管理员生成的带赠送的码：流水操作人 = 该管理员；不带赠送的码不写流水', async () => {
-      const invite = Invite.parse(
-        (
-          await http()
-            .post('/api/v1/admin/invites', adminToken)
-            .send({ expiresInDays: null, bonusMicros: 500_000 })
-            .expect(201)
-        ).body,
-      );
-      expect(invite.bonusMicros).toBe(500_000);
-      const res = await http()
-        .post('/api/v1/auth/register')
-        .send({
-          username: 'bonus_by_admin',
-          password: PASSWORD,
-          inviteCode: invite.code,
-          device: DEVICE,
-        })
-        .expect(201);
-      const { user } = AuthResponse.parse(res.body);
-      await dispatchAll();
-      const [entry] = await q.ledgerOf(user.userId);
-      const adminId = (
-        await withClient((c) =>
-          c.query(`SELECT id FROM identity.users WHERE username = 'billing_boss'`),
-        )
-      ).rows[0]?.id;
-      expect(entry).toMatchObject({
-        type: 'admin_grant',
-        operator_user_id: adminId,
-        reason: '注册赠送',
-      });
-
+    it('默认配置（0）注册只建钱包、不写流水；历史事件里遗留的 signupBonus 字段被忽略', async () => {
       const plain = await newUser();
       await dispatchAll();
       expect(await q.account(plain.userId)).not.toBeNull(); // 钱包已建
@@ -1405,6 +1389,14 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       expect(await events('identity.user_registered', plain.userId)).toEqual([
         { userId: plain.userId },
       ]);
+      // 旧版本留在收件箱里的注册事件带 signupBonus：不再新增赠分
+      await database.transaction((tx) =>
+        lifecycle.onUserRegistered(
+          { userId: plain.userId, signupBonus: { amountMicros: YUAN, grantedByUserId: null } },
+          tx,
+        ),
+      );
+      expect(await q.ledgerOf(plain.userId)).toHaveLength(0);
     });
 
     it('账号已注销 / 不存在时迟到的注册事件不建钱包、不记流水', async () => {
@@ -1417,7 +1409,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       );
       expect(await q.account(ghost)).toBeNull();
 
-      const user = await newUser(YUAN);
+      const user = await newUser();
       await http()
         .delete('/api/v1/me', user.token)
         .send({ password: PASSWORD, confirm: 'DELETE' })
@@ -1432,27 +1424,21 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       expect(await q.account(user.userId)).toBeNull();
     });
 
-    it('赠送金额为负、非整数或超过上限的生成请求被拒（400）', async () => {
+    it('邀请码已停用：管理端生成返回 503 service_unavailable，列表为空；参数错误仍是 400', async () => {
       for (const bonusMicros of [-1, 1.5, 1_000_000_001]) {
         await http()
           .post('/api/v1/admin/invites', adminToken)
           .send({ expiresInDays: null, bonusMicros })
           .expect(400);
       }
-      const plain = Invite.parse(
-        (
-          await http()
-            .post('/api/v1/admin/invites', adminToken)
-            .send({ expiresInDays: 7 })
-            .expect(201)
-        ).body,
-      );
-      expect(plain.bonusMicros).toBe(0);
+      const res = await http()
+        .post('/api/v1/admin/invites', adminToken)
+        .send({ expiresInDays: 7 })
+        .expect(503);
+      expect(errorCode(res)).toBe('service_unavailable');
       const list = (await http().get('/api/v1/admin/invites', adminToken).expect(200)).body
-        .items as Array<{
-        bonusMicros?: number;
-      }>;
-      expect(list.every((i) => typeof i.bonusMicros === 'number')).toBe(true);
+        .items as unknown[];
+      expect(list).toEqual([]);
     });
   });
 

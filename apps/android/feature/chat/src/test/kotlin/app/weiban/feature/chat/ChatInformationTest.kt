@@ -207,9 +207,10 @@ class ChatInformationTest {
                 },
         )
 
+    // 换壳第一批（339f723）：「模型选择」跳转改为聊天信息内的「聊天模型 › TA 用的模型」，在本页打开「为 TA 选模型」。
     @Test fun modelSelectionLeavesConversationSettingsWithoutMutatingItsState() {
-        compose.onNodeWithText("模型选择").performScrollTo().performClick()
-        assertTrue(modelsOpened.get())
+        compose.onNodeWithText("TA 用的模型").performScrollTo().performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("为 TA 选模型").fetchSemanticsNodes().isNotEmpty() }
         assertTrue(mutations.isEmpty())
     }
 

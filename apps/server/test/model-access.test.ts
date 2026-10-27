@@ -270,13 +270,12 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
 
   async function newUser(): Promise<{ userId: string; token: string }> {
     userCounter += 1;
-    const code = (await commands.createInvite(null, 0)).code;
+    // 11 C8：邀请码已停用，直接注册。
     const res = await http()
       .post('/api/v1/auth/register')
       .send({
         username: `chooser_${userCounter}`,
         password: PASSWORD,
-        inviteCode: code,
         device: DEVICE,
       })
       .expect(201);
