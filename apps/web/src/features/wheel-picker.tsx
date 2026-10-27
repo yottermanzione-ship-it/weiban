@@ -315,7 +315,7 @@ export function OptionPickerSheet<T extends string | number>({
 // ---------- 表单里的选择框（替代浏览器原生 date / time / select，2026-10-26 批 U2） ----------
 
 /** 输入框外观的触发按钮：显示当前值（空则灰字占位），右侧小箭头；点开对应的选择面板。 */
-function PickerTrigger({
+export function PickerTrigger({
   text,
   placeholder,
   disabled,

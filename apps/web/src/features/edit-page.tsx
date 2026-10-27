@@ -9,6 +9,7 @@
  */
 import { useRef, useState, type ReactNode } from 'react';
 import { OldIcon } from './old-icons.js';
+import { useLayerHistory } from './layer-history.js';
 import { BackArrow, NavBar, useBack, useEscape } from './shell-kit.js';
 
 /**
@@ -100,6 +101,10 @@ export function SubPageLayer({
   useEscape(() => {
     if (!pending) onCancel();
   });
+  // U5：进浏览器历史，安卓返回键 / 浏览器后退只关这一层（等同「取消」）。
+  useLayerHistory(() => {
+    if (!pending) onCancel();
+  });
   return (
     <div className="subpage-layer" role="dialog" aria-modal="true" aria-label={title}>
       <EditPage
@@ -114,6 +119,40 @@ export function SubPageLayer({
       >
         {children}
       </EditPage>
+    </div>
+  );
+}
+
+/**
+ * 页内只读整页（2026-10-27 批 U5）：外观同普通二级页面——从右侧整页推入、顶栏返回箭头 + 标题，
+ * 用来看内容而不是编辑（聊天记录详情）。和 SubPageLayer 一样进浏览器历史，返回键只关这一层。
+ */
+export function PushLayer({
+  title,
+  onClose,
+  right,
+  children,
+  className,
+}: {
+  title: ReactNode;
+  onClose(): void;
+  right?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  useEscape(onClose);
+  useLayerHistory(onClose);
+  return (
+    <div
+      className="subpage-layer"
+      role="dialog"
+      aria-modal="true"
+      aria-label={typeof title === 'string' ? title : undefined}
+    >
+      <main className={`edit-page push-layer ${className ?? ''}`}>
+        <NavBar title={title} onBack={onClose} right={right} />
+        {children}
+      </main>
     </div>
   );
 }

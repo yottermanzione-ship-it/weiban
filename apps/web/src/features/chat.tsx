@@ -585,6 +585,12 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   const [sending, setSending] = useState(false);
   const [quoteId, setQuoteId] = useState<string | null>(null);
   const [atBottom, setAtBottom] = useState(true);
+  /** U5「↓ N 条新消息 / 回到最新」：离底部超过一屏半、回底 nonce、上翻那一刻的最后序号。 */
+  const [farFromBottom, setFarFromBottom] = useState(false);
+  const [jumpNonce, setJumpNonce] = useState(0);
+  const [unreadFrom, setUnreadFrom] = useState<number | null>(null);
+  const seenRows = useRef<Set<string> | null>(null);
+  const freshRows = useRef(new Map<string, number>());
   const [visible, setVisible] = useState(document.visibilityState === 'visible');
   const callEntry = useCallEntry(group ? undefined : role?.refId);
   const { start: startCall } = useCall();
@@ -897,6 +903,15 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   const quote =
     messages.find((item) => item.messageId === quoteId && item.status === 'normal') ?? null;
   const lastVisibleSeq = messages.at(-1)?.seq ?? 0;
+  // 上翻停止跟随时记下最后一条的序号；之后别人发来的条数显示在右下角「↓ N 条新消息」上。
+  if (atBottom && unreadFrom !== null) setUnreadFrom(null);
+  else if (!atBottom && unreadFrom === null && lastVisibleSeq > 0) setUnreadFrom(lastVisibleSeq);
+  const newBelow =
+    unreadFrom === null
+      ? 0
+      : messages.filter(
+          (m) => m.seq > unreadFrom && m.senderKind !== 'user' && m.status === 'normal',
+        ).length;
   useEffect(() => {
     const update = () => setVisible(document.visibilityState === 'visible');
     document.addEventListener('visibilitychange', update);
@@ -1166,6 +1181,43 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   );
   for (const upload of uploads)
     rows.push({ kind: 'upload', key: `upload:${upload.localId}`, upload });
+  /*
+   * U5 气泡出现：只给「打开聊天之后才新来的」行加 120ms 淡入轻上移（.msg-in）。
+   * 首屏已有的、往上加载的更早记录、滚动重新挂载的行都不动；
+   * 自己发出的消息在 pending / 上传行出现时已经动过一次，换成正式消息（带 clientMsgId）时不再重复。
+   */
+  if (seenRows.current === null) {
+    if (messages.length > 0) seenRows.current = new Set(rows.map((row) => row.key));
+  } else {
+    const seen = seenRows.current;
+    let lastSeen = -1;
+    rows.forEach((row, index) => {
+      if (seen.has(row.key)) lastSeen = index;
+    });
+    const now = Date.now();
+    rows.forEach((row, index) => {
+      if (seen.has(row.key)) return;
+      seen.add(row.key);
+      if (index < lastSeen) return;
+      if (row.kind === 'message' && row.message.clientMsgId && row.message.senderKind === 'user')
+        return;
+      freshRows.current.set(row.key, now);
+    });
+  }
+  const isFresh = (key: string) => {
+    const at = freshRows.current.get(key);
+    if (at === undefined) return false;
+    if (Date.now() - at < 600) return true;
+    freshRows.current.delete(key);
+    return false;
+  };
+  // 自己发了消息（文字 / 图片 / 语音 / 表情）而当时正停在上面：回到底部看自己发的。
+  const outgoing = pending.length + uploads.length;
+  const [lastOutgoing, setLastOutgoing] = useState(outgoing);
+  if (outgoing !== lastOutgoing) {
+    setLastOutgoing(outgoing);
+    if (outgoing > lastOutgoing && !atBottom) setJumpNonce((n) => n + 1);
+  }
   const lastMine = [...messages]
     .reverse()
     .find((m) => m.senderKind === 'user' && m.status === 'normal');
@@ -1617,13 +1669,34 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           estimate={64}
           bottom
           onBottom={setAtBottom}
+          onFar={setFarFromBottom}
+          jumpToBottom={jumpNonce}
           anchorItem={(row) => row.kind === 'message'}
           scrollTo={scrollTarget}
           rowClassName={(row) =>
-            row.kind === 'message' && row.message.messageId === flash ? 'flash-row' : undefined
+            row.kind === 'message' && row.message.messageId === flash
+              ? 'flash-row'
+              : isFresh(row.key)
+                ? 'msg-in'
+                : undefined
           }
           render={renderRow}
         />
+        {!atBottom && (newBelow > 0 || farFromBottom) && (
+          <button
+            type="button"
+            className="wx-jump-latest"
+            onClick={(event) => {
+              event.stopPropagation();
+              setJumpNonce((n) => n + 1);
+            }}
+          >
+            <svg viewBox="0 0 16 16" aria-hidden>
+              <path d="M8 3v9M4 8.5 8 12.5l4-4" />
+            </svg>
+            {newBelow > 0 ? `${newBelow > 99 ? '99+' : newBelow} 条新消息` : '回到最新'}
+          </button>
+        )}
       </div>
       {viewer !== null && (
         <ImageViewer
