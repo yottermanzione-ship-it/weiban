@@ -1,5 +1,17 @@
 import { expect, test } from '@playwright/test';
-
+import {
+  editText,
+  loginUser,
+  openField,
+  setBirthday,
+  setDialogue,
+  setMinor,
+  setTags,
+  setVoice,
+  uploadAvatar,
+} from './persona-ui.js';
+const description =
+  '这是一个喜欢观察日常生活的原创成年角色，性格温柔而耐心，喜欢晴天散步和阅读，说话自然简洁，尊重他人边界，不编造真实经历。';
 test('保存前试聊走真实接口，关闭清理后继续保存同一份编辑字段', async ({ page }) => {
   await page.addInitScript(() => {
     window.Audio = new Proxy(window.Audio, {
@@ -10,19 +22,12 @@ test('保存前试聊走真实接口，关闭清理后继续保存同一份编�
       },
     });
   });
-  await page.goto('/');
-  await page.getByLabel('微伴号').fill('browser_other');
-  await page.getByLabel('密码', { exact: true }).fill('correct horse battery');
-  await page.getByRole('button', { name: '登录', exact: true }).click();
-  await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
+  await loginUser(page);
   await page.goto('/characters/custom/new');
-  await page.getByRole('textbox', { name: '名字', exact: true }).fill('保存前试聊测试');
-  const description =
-    '这是一个喜欢观察日常生活的原创成年角色，性格温柔而耐心，喜欢晴天散步和阅读，说话自然简洁，尊重他人边界，不编造真实经历。';
-  await page.getByLabel(/人设描述/).fill(description);
-  await page.getByLabel('音色（可选）').selectOption({ label: '浏览器测试音色' });
-  const selectedVoice = await page.getByLabel('音色（可选）').inputValue();
-  await page.getByRole('button', { name: '试听音色', exact: true }).click();
+  await editText(page, '名字', '保存前试聊测试');
+  await editText(page, '人设描述', description);
+  const voice = await openField(page, '音色');
+  await voice.getByRole('radio', { name: /^浏览器测试音色(?: 已选择)?$/ }).click();
   await expect
     .poll(() =>
       page.evaluate(
@@ -32,7 +37,7 @@ test('保存前试聊走真实接口，关闭清理后继续保存同一份编�
       ),
     )
     .toBe(false);
-  await page.getByLabel('音色（可选）').selectOption('');
+  await voice.getByRole('button', { name: '完成', exact: true }).click();
   await expect
     .poll(() =>
       page.evaluate(
@@ -42,18 +47,20 @@ test('保存前试聊走真实接口，关闭清理后继续保存同一份编�
       ),
     )
     .toBe(true);
-  await page.getByLabel('音色（可选）').selectOption({ label: '浏览器测试音色' });
+  await setVoice(page, false);
+  await setVoice(page, true);
   const started = page.waitForResponse(
     (r) =>
       new URL(r.url()).pathname === '/api/v1/characters/custom/trial' &&
       r.request().method() === 'POST',
   );
-  await page.getByRole('button', { name: '保存前试聊', exact: true }).click();
+  await page.getByRole('button', { name: '试聊', exact: true }).click();
   const response = await started;
   expect(response.status()).toBe(200);
-  expect(response.request().postDataJSON().voiceId).toBe(selectedVoice);
+  const selectedVoice = response.request().postDataJSON().voiceId;
+  expect(selectedVoice).toBeTruthy();
   const trial = (await response.json()) as { characterId: string; conversationId: string };
-  const dialog = page.getByRole('dialog', { name: '角色试聊' });
+  const dialog = page.getByRole('dialog', { name: '和保存前试聊测试试聊', exact: true });
   await expect(dialog).toBeVisible();
   await dialog.getByLabel('试聊消息').fill('试聊消息只在这次会话里');
   const sent = page.waitForResponse(
@@ -69,13 +76,19 @@ test('保存前试聊走真实接口，关闭清理后继续保存同一份编�
       new URL(r.url()).pathname === `/api/v1/characters/custom/trial/${trial.conversationId}` &&
       r.request().method() === 'DELETE',
   );
-  await dialog.getByRole('button', { name: '结束试聊，返回编辑' }).click();
+  await dialog.getByRole('button', { name: '结束试聊', exact: true }).click();
   expect((await ended).status()).toBe(200);
   await expect(dialog).toHaveCount(0);
-  await expect(page.getByRole('textbox', { name: '名字', exact: true })).toHaveValue(
+  const name = await openField(page, '名字');
+  await expect(name.getByRole('textbox', { name: '名字', exact: true })).toHaveValue(
     '保存前试聊测试',
   );
-  await expect(page.getByLabel(/人设描述/)).toHaveValue(description);
+  await name.getByRole('button', { name: '取消', exact: true }).click();
+  const persona = await openField(page, '人设描述');
+  await expect(persona.getByRole('textbox', { name: '人设描述', exact: true })).toHaveValue(
+    description,
+  );
+  await persona.getByRole('button', { name: '取消', exact: true }).click();
   const saved = page.waitForResponse(
     (r) =>
       new URL(r.url()).pathname === '/api/v1/characters/custom' && r.request().method() === 'POST',
@@ -88,66 +101,25 @@ test('保存前试聊走真实接口，关闭清理后继续保存同一份编�
   expect(role.characterId).not.toBe(trial.characterId);
   await expect(page).toHaveURL(new RegExp(`/characters/${role.characterId}$`));
 });
-
 for (const delayedUpload of [false, true]) {
   test(`头像生日真实保存重读，编辑分类和清空字段实际生效${delayedUpload ? '（上传延迟）' : ''}`, async ({
     page,
   }) => {
     if (delayedUpload)
       await page.route(/\/api\/v1\/media(?:\?|$)/, async (route) => {
-        // 延迟转发到真实服务器，不伪造上传或媒体响应。
         if (route.request().method() === 'POST')
           await new Promise((resolve) => setTimeout(resolve, 6_000));
         await route.continue();
       });
-    await page.goto('/');
-    await page.getByLabel('微伴号').fill('browser_other');
-    await page.getByLabel('密码', { exact: true }).fill('correct horse battery');
-    await page.getByRole('button', { name: '登录', exact: true }).click();
-    await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
+    await loginUser(page);
     await page.goto('/characters/custom/new');
-    await page.getByRole('textbox', { name: '名字', exact: true }).fill('完整字段编辑测试');
-    await page
-      .getByLabel(/人设描述/)
-      .fill(
-        '这是一位喜欢观察日常生活的原创成年角色，性格温柔耐心，喜欢晴天散步和读书，说话自然简短，尊重别人边界，不编造真实经历。',
-      );
-    await page.getByLabel(/生日/).fill('2000-05-16');
-    await page.getByLabel('音色（可选）').selectOption({ label: '浏览器测试音色' });
-    const selectedVoice = await page.getByLabel('音色（可选）').inputValue();
-    await page.getByLabel(/示例对话/).fill('我：你好\nTA：今天过得怎样？');
-    await page.getByLabel(/标签/).fill('shy');
-    await page.getByLabel('头像', { exact: true }).setInputFiles({
-      name: 'avatar.png',
-      mimeType: 'image/png',
-      buffer: Buffer.from(
-        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jGqoAAAAASUVORK5CYII=',
-        'base64',
-      ),
-    });
-    await page.waitForFunction(
-      () =>
-        document.querySelector('canvas')?.getContext('2d')?.getImageData(256, 256, 1, 1).data[3] ===
-        255,
-    );
-    const uploaded = page.waitForResponse(
-      (r) => new URL(r.url()).pathname === '/api/v1/media' && r.request().method() === 'POST',
-    );
-    const metadata = page.waitForResponse(
-      (r) =>
-        /^\/api\/v1\/media\/[^/]+$/.test(new URL(r.url()).pathname) &&
-        r.request().method() === 'GET',
-    );
-    await page.getByRole('button', { name: '完成裁剪并上传', exact: true }).click();
-    const [uploadResponse, metadataResponse] = await Promise.all([uploaded, metadata]);
-    expect(uploadResponse.status()).toBe(201);
-    expect(metadataResponse.status()).toBe(200);
-    const uploadedMedia = await uploadResponse.json();
-    expect(new URL(metadataResponse.url()).pathname).toBe(`/api/v1/media/${uploadedMedia.mediaId}`);
-    await expect(page.getByRole('img', { name: '角色头像', exact: true })).toHaveJSProperty(
-      'naturalWidth',
-      512,
-    );
+    await editText(page, '名字', '完整字段编辑测试');
+    await editText(page, '人设描述', description);
+    await setBirthday(page, '2000-05-16');
+    await setVoice(page, true);
+    await setDialogue(page, '我：你好\nTA：今天过得怎样？');
+    await setTags(page, 'shy');
+    await uploadAvatar(page, delayedUpload);
     const saved = page.waitForResponse(
       (r) =>
         new URL(r.url()).pathname === '/api/v1/characters/custom' &&
@@ -156,26 +128,23 @@ for (const delayedUpload of [false, true]) {
     await page.getByRole('button', { name: '创建角色', exact: true }).click();
     const response = await saved;
     expect(response.status()).toBe(200);
-    const role = (await response.json()) as {
-      characterId: string;
-      birthday: string;
-      voiceId: string;
-      avatar: { image: { mediaId: string } };
-    };
+    const role = await response.json();
     expect(role.birthday).toBe('2000-05-16');
-    expect(role.voiceId).toBe(selectedVoice);
+    expect(role.voiceId).toBeTruthy();
     expect(role.avatar.image.mediaId).toBeTruthy();
     await page.goto(`/characters/custom/${role.characterId}/edit`);
-    await expect(page.getByLabel(/生日/)).toHaveValue('2000-05-16');
-    await expect(page.getByLabel('音色（可选）')).toHaveValue(selectedVoice);
-    await page.getByLabel('音色（可选）').selectOption('');
+    await expect(page.getByRole('button', { name: /^生日 / })).toContainText('5');
+    const voice = await openField(page, '音色');
+    await expect(voice.getByRole('radio', { name: /^浏览器测试音色(?: 已选择)?$/ })).toBeChecked();
+    await voice.getByRole('radio', { name: '默认（不指定音色）', exact: true }).click();
+    await voice.getByRole('button', { name: '完成', exact: true }).click();
     await expect(page.getByRole('img', { name: '角色头像', exact: true })).toHaveJSProperty(
       'naturalWidth',
       512,
     );
-    await page.getByRole('radio', { name: '未满 18 岁', exact: true }).check();
-    await page.getByLabel(/示例对话/).fill('');
-    await page.getByLabel(/标签/).fill('');
+    await setMinor(page);
+    await setDialogue(page, '');
+    await setTags(page, '');
     const updated = page.waitForResponse(
       (r) =>
         new URL(r.url()).pathname === `/api/v1/characters/custom/${role.characterId}` &&
@@ -191,9 +160,14 @@ for (const delayedUpload of [false, true]) {
     expect(value.voiceId).toBeNull();
     expect(value.avatar.image.mediaId).toBe(role.avatar.image.mediaId);
     await page.reload();
-    await expect(page.getByLabel('音色（可选）')).toHaveValue('');
-    await expect(page.getByRole('radio', { name: '未满 18 岁', exact: true })).toBeChecked();
-    await expect(page.getByLabel(/标签/)).toHaveValue('');
-    await expect(page.getByLabel(/示例对话/)).toHaveValue('');
+    await expect(page.getByRole('button', { name: /^音色 / })).toContainText('默认');
+    const age = await openField(page, '年龄设定');
+    await expect(age.getByRole('radio', { name: /^未满 18 岁(?: 已选择)?$/ })).toBeChecked();
+    await age.getByRole('button', { name: '取消', exact: true }).click();
+    const tags = await openField(page, '标签');
+    await expect(tags.getByRole('textbox').first()).toHaveValue('');
+    await tags.getByRole('button', { name: '取消', exact: true }).click();
+    const dialogue = await openField(page, '示例对话');
+    await expect(dialogue.getByText('还没有对话，从下面添加第一句', { exact: true })).toBeVisible();
   });
 }

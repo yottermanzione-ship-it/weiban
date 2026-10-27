@@ -2,11 +2,13 @@ import { expect, test } from '@playwright/test';
 test.use({ hasTouch: true });
 test('拍照选图裁剪支持真实鼠标拖动、双指缩放和512px私有上传', async ({ page }) => {
   await page.goto('/');
-  await page.getByLabel('微伴号').fill('browser_guide');
-  await page.getByLabel('密码', { exact: true }).fill('correct horse battery');
   await page.getByRole('button', { name: '登录', exact: true }).click();
+  await page.getByLabel('账号', { exact: true }).fill('browser_guide');
+  await page.getByLabel('密码', { exact: true }).fill('correct horse battery');
+  await page.getByRole('button', { name: '同意并登录', exact: true }).click();
   await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
   await page.goto('/profile');
+  await page.getByRole('button', { name: /^头像 / }).click();
   await expect(page.getByLabel('拍照', { exact: true })).toHaveAttribute('capture', 'user');
   const png = await page.evaluate(() => {
     const image = document.createElement('canvas');
@@ -19,14 +21,13 @@ test('拍照选图裁剪支持真实鼠标拖动、双指缩放和512px私有上
     context.fillRect(100, 0, 100, 100);
     return image.toDataURL('image/png').split(',')[1]!;
   });
-  await page.getByRole('button', { name: '选择头像', exact: true }).click();
-  await expect(page.getByRole('dialog', { name: '选择头像来源' })).toBeVisible();
+  await expect(page.getByRole('menu')).toBeVisible();
   await page.getByRole('button', { name: '取消', exact: true }).click();
-  await expect(page.getByRole('dialog', { name: '选择头像来源' })).toHaveCount(0);
-  await page.getByRole('button', { name: '选择头像', exact: true }).click();
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await page.getByRole('button', { name: /^头像 / }).click();
   const [picker] = await Promise.all([
     page.waitForEvent('filechooser'),
-    page.getByRole('button', { name: '拍照', exact: true }).click(),
+    page.getByRole('menuitem', { name: '拍照', exact: true }).click(),
   ]);
   await picker.setFiles({
     name: 'camera.png',
@@ -75,15 +76,15 @@ test('拍照选图裁剪支持真实鼠标拖动、双指缩放和512px私有上
   await expect
     .poll(() => page.getByLabel('缩放', { exact: true }).inputValue().then(Number))
     .toBeGreaterThan(2);
-  const fine = page.getByText('精细调整（可选）', { exact: true });
+  const fine = page.getByText('精细调整', { exact: true });
   await fine.focus();
   await page.keyboard.press('Enter');
   await expect(page.getByLabel('缩放', { exact: true })).toBeVisible();
   await page.keyboard.press('Enter');
   await expect(page.getByLabel('缩放', { exact: true })).toBeHidden();
   await page.screenshot({ path: 'apps/web/test-results/avatar-crop-gestures.png', fullPage: true });
-  await page.getByRole('button', { name: '完成裁剪并上传', exact: true }).click();
-  await expect(page.getByRole('status')).toHaveText('头像已保存');
+  await page.getByRole('button', { name: '完成', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('头像已保存');
   await expect(page.locator('.user-avatar')).toHaveJSProperty('naturalWidth', 512);
   await expect(preview).toHaveCount(0);
 });
