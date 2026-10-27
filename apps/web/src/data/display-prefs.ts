@@ -73,6 +73,31 @@ export function setPageSurface(value: PageSurface) {
   else delete root.dataset.surface;
   syncThemeColor(getScheme());
 }
+/**
+ * U8：「我」页、设个状态页顶部不是灰底，手机宽度下 html / body 底色要跟页面顶部一致（F1-9，iPhone 状态栏取它着色）。
+ * 以前用 html:has(main.me-page) 判断；祖先上的 :has() 让任何列表滚动插入新行时都要整页重算样式（U8 实测卡顿根因之一），
+ * 改为页面挂载时写 html[data-backdrop]。只管底色，不改 theme-color（与改前一致）。
+ * 切页动画里新旧两页可能同时挂着：按挂载顺序记一个栈，卸载只摘掉自己那一项。
+ */
+export type PageBackdrop = 'me' | 'status';
+const backdrops: { kind: PageBackdrop }[] = [];
+function syncBackdrop() {
+  const top = backdrops[backdrops.length - 1];
+  if (top) document.documentElement.dataset.backdrop = top.kind;
+  else delete document.documentElement.dataset.backdrop;
+}
+export function usePageBackdrop(kind: PageBackdrop) {
+  useEffect(() => {
+    const entry = { kind };
+    backdrops.push(entry);
+    syncBackdrop();
+    return () => {
+      const index = backdrops.indexOf(entry);
+      if (index >= 0) backdrops.splice(index, 1);
+      syncBackdrop();
+    };
+  }, [kind]);
+}
 /** 整页白底的页面调用：挂载时切白，离开时切回灰色。 */
 export function useWhiteSurface() {
   useEffect(() => {
@@ -87,13 +112,24 @@ export function useWhiteSurface() {
  */
 function syncThemeColor(scheme: Scheme) {
   const white = surface === 'white';
+  // U8：启动页（html[data-boot]，index.html 写入、app/boot-splash.ts 移除）期间一律品牌绿，深色模式也一样。
+  const booting = document.documentElement.hasAttribute('data-boot');
   document.querySelectorAll('meta[name="theme-color"]').forEach((meta) => {
+    if (booting) {
+      meta.setAttribute('content', BOOT_GREEN);
+      return;
+    }
     const dark =
       scheme === 'dark' ||
       (scheme === 'system' && (meta.getAttribute('media') ?? '').includes('dark'));
     const light = white ? '#FFFFFF' : '#EDEDED';
     meta.setAttribute('content', dark ? (white ? '#191919' : '#202020') : light);
   });
+}
+const BOOT_GREEN = '#07C160';
+/** U8：启动页结束（去掉 html[data-boot]）后调用，状态栏 / 地址栏切回当前页面的颜色。 */
+export function refreshThemeColor() {
+  syncThemeColor(getScheme());
 }
 export function setScheme(value: Scheme) {
   write(SCHEME_KEY, value);

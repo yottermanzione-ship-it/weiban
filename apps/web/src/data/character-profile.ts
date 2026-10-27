@@ -9,6 +9,7 @@ const pending = new Map<string, Promise<CharacterProfile>>();
 /** 资料只用来显示名字和头像，一分钟内重复读取直接用刚拿到的结果，切页面不再重新生成图片链接。 */
 const FRESH_MS = 60_000;
 const profileRequest = (id: string) => ({ params: { characterId: id } });
+const STALE_OK = { allowStale: true } as const;
 
 /** A name and avatar share one request; never share requests between login sessions. */
 export function loadCharacterProfile(
@@ -47,7 +48,8 @@ export function useCharacterProfile(id: string) {
   const forced = useRef(false);
   function seed(): Result {
     if (!userId || !sessionId || !id) return { key, loading: true };
-    const hit = api.peek(CharacterEndpoints.getProfile, profileRequest(id));
+    // U8：旧结果（含启动时从本机库 prime 进来的）也先画，随后照常回源刷新。
+    const hit = api.peek(CharacterEndpoints.getProfile, profileRequest(id), STALE_OK);
     return hit ? { key, data: hit.value, loading: false } : { key, loading: true };
   }
   useEffect(() => {
@@ -64,7 +66,7 @@ export function useCharacterProfile(id: string) {
     const force = forced.current;
     forced.current = false;
     let active = true;
-    const hit = api.peek(CharacterEndpoints.getProfile, profileRequest(id));
+    const hit = api.peek(CharacterEndpoints.getProfile, profileRequest(id), STALE_OK);
     if (hit) setState({ key, data: hit.value, loading: false });
     else
       setState((previous) => ({

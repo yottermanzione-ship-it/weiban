@@ -104,6 +104,7 @@ export function ensureScope(): void {
   for (const entry of blobs.values()) URL.revokeObjectURL(entry.url);
   blobs.clear();
   blobBytes = 0;
+  decoded.clear();
 }
 
 /** 简单 LRU：取用时挪到队尾，超上限时从头淘汰。 */
@@ -678,6 +679,59 @@ export function rememberCharacterAvatar(characterId: string, mediaId: string | n
 export function recallCharacterAvatar(characterId: string): string | undefined {
   ensureScope();
   return characterId ? touch(avatarOf, characterId) : undefined;
+}
+
+// ---------- U8 启动预加载 ----------
+
+/** 启动页期间解码过的头像：留着引用，浏览器才不会马上丢掉解码结果；有上限。 */
+const decoded = new Set<HTMLImageElement>();
+const DECODED_LIMIT = 80;
+
+async function decodeInMemory(src: string): Promise<void> {
+  if (typeof Image === 'undefined') return;
+  const image = new Image();
+  image.decoding = 'async';
+  image.src = src;
+  try {
+    await image.decode();
+  } catch {
+    return;
+  }
+  decoded.add(image);
+  while (decoded.size > DECODED_LIMIT) {
+    const oldest = decoded.values().next();
+    if (oldest.done) break;
+    decoded.delete(oldest.value);
+  }
+}
+
+/**
+ * U8：启动页期间把一张头像的字节取进内存（与列表里 CachedPicture 同一个 `a:mediaId` 缓存）并解码，
+ * 进首页时第一帧直接从内存出图。有资料顺带的签名链接就用它，否则取一次正式链接。
+ * 并发由调用方控制（启动预加载最多 4 张同时下）；列表里同一张图在下载时直接复用这次请求。
+ * 返回是否已就绪；失败不影响页面，页面照常自己加载。
+ */
+export async function preloadAvatar(mediaId: string, hintUrl?: string): Promise<boolean> {
+  ensureScope();
+  const owner = scope;
+  const key = `a:${mediaId}`;
+  let src = pictureSource(key);
+  if (!src) {
+    let link = freshLink(mediaId) ?? (hintUrl ? adoptHint(mediaId, hintUrl) : undefined);
+    if (!link) {
+      const media = await api
+        .call(MediaEndpoints.getMedia, { params: { mediaId }, networkOnly: true })
+        .catch(() => undefined);
+      if (!media || owner !== scope) return false;
+      rememberLink(mediaId, fromMedia(media));
+      link = freshLink(mediaId);
+    }
+    if (!link || tooBig.has(link.url)) return false;
+    src = pictureSource(key) ?? (await (inFlight.get(key) ?? startTransfer(key, link.url)));
+    if (!src || owner !== scope) return false;
+  }
+  await decodeInMemory(src);
+  return owner === scope;
 }
 
 // ---------- 当前账号自己的头像 ----------

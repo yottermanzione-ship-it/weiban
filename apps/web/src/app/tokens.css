@@ -46,14 +46,11 @@
   --ui-pressed-strong: #e0e0e0; /* 按住说话等需要明显按下感的块 */
   --ui-avatar-initial: #8c8c8c; /* 头像占位首字母（令牌 #BBBBBB 在浅灰底上看不清） */
   --ui-media-shade: linear-gradient(rgba(0, 0, 0, 0.05), rgba(0, 0, 0, 0.45)); /* 图片上压字 */
-  --ui-brand-icon-shadow: 0 4px 20px rgb(0 0 0 / 8%);
 
   /* ---------- 固定颜色（不随深浅模式变） ---------- */
   --ui-text-on-color: #fff; /* 绿底、红角标、图片和深色底上的白字 */
   --ui-knob: #fff; /* 开关圆钮 */
   --ui-media-bg: #000; /* 看图黑底 */
-  --ui-splash-bg: #ededed; /* 启动页：与安卓启动图一致，固定浅色 */
-  --ui-splash-text: #181818;
 
   /* ---------- 深色底（状态页、下拉小程序、通话、录音）上的白字与白层 ---------- */
   --ui-on-dark-text: rgba(255, 255, 255, 0.9);

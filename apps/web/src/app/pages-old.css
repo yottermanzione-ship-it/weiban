@@ -1854,52 +1854,7 @@ button.primary.wx-auth-submit {
   opacity: 1;
 }
 
-/* ---------- 启动页（10-14 反馈 1.1） ---------- */
-.splash {
-  position: fixed;
-  inset: 0;
-  z-index: calc(var(--wb-z-index-toast) + 1);
-  display: grid;
-  place-items: center;
-  padding: env(safe-area-inset-top) 28px env(safe-area-inset-bottom);
-  background: var(--ui-splash-bg);
-  transition: opacity var(--wb-motion-duration-base) var(--wb-motion-easing-standard);
-}
-.splash.fading {
-  opacity: 0;
-  pointer-events: none;
-}
-.splash-brand {
-  display: grid;
-  align-content: center;
-  justify-items: center;
-  gap: 18px;
-  animation: splash-in var(--wb-motion-duration-slow) var(--wb-motion-easing-decelerate) both;
-}
-.splash-brand img {
-  width: 88px;
-  height: 88px;
-  border-radius: var(--ui-radius-app-icon);
-  box-shadow: var(--ui-brand-icon-shadow);
-}
-.splash-brand strong {
-  color: var(--ui-splash-text);
-  font-size: 20px;
-  font-weight: var(--wb-font-weight-semibold);
-  letter-spacing: 2px;
-}
-@keyframes splash-in {
-  from {
-    opacity: 0;
-    transform: translateY(12px) scale(0.96);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .splash-brand {
-    animation: none;
-  }
-}
-
+/* 启动页：U8 起改为 index.html 里的绿色启动层（src/boot/boot.css、app/boot-splash.ts）。 */
 /* ---------- 角色广场两个 tab、角色创建、申请制作（10-14 裁定 2.3） ---------- */
 .role-plaza-hub > .text-tabs {
   gap: 0;

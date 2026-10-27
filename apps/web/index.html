@@ -1,15 +1,34 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-boot>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#EDEDED" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#202020" media="(prefers-color-scheme: dark)" />
+    <!-- U8：启动期间状态栏 / 地址栏是品牌绿；进入后 display-prefs.ts 按页面改回灰 / 白（深色同理）。 -->
+    <meta name="theme-color" content="#07C160" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#07C160" media="(prefers-color-scheme: dark)" />
     <link rel="icon" href="/favicon.png" type="image/png" />
     <link rel="apple-touch-icon" href="/Icon-192.png" />
+    <link rel="stylesheet" href="/src/boot/boot.css" data-boot-css />
     <title>微伴</title>
   </head>
-  <body>
+  <!-- bgcolor 是 HTML 属性而非内联样式（CSP 不拦）：样式表到之前画面也已是绿色。JS 接管后移除。 -->
+  <body bgcolor="#07C160">
+    <div id="boot-splash" role="status" aria-label="正在打开微伴">
+      <img
+        class="boot-logo"
+        src="/assets/old-ui/brand/icon.png"
+        alt=""
+        width="88"
+        height="88"
+        fetchpriority="high"
+      />
+      <div class="boot-name">微伴</div>
+      <div class="boot-bar-wrap" aria-hidden="true">
+        <div class="boot-bar"><div class="boot-bar-fill"></div></div>
+        <div class="boot-bar-text"></div>
+      </div>
+      <div class="boot-slow">网络有点慢，还在加载，请稍候…</div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

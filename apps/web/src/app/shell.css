@@ -1011,8 +1011,9 @@ main > button.danger-row {
 /*
  * 会话列表页自己已经给标签栏留了底边距；外壳再留一次会让整页比屏幕高 57 像素，
  * 鼠标滚轮 / 触摸在标题栏上一推，整个窗口就上滚，「微伴」标题栏被吃掉（10-20 总经理反馈）。
+ * U8：外壳在会话列表页时由 app.tsx 挂 on-chat-list 类，不再用 :has(.chat-list-page)（祖先上的 :has 会让列表滚动时整页重算样式）。
  */
-.app-shell.with-tabs:has(.chat-list-page) {
+.app-shell.with-tabs.on-chat-list {
   padding-bottom: 0;
 }
 .chat-list-head {
@@ -1176,18 +1177,17 @@ main > button.danger-row {
 /*
  * 没滑开时藏起来：电脑浏览器缩放（110% / 125% / 150%）下行高、位移是小数像素，
  * 前景行边缘会露出底下按钮的一丝颜色，看着像分隔线断成两截（10-20 总经理反馈）。
- * 前景行一有位移（手势脚本写的 translateX）就显示；收起时延迟到 180ms 过渡结束才藏，避免按钮先消失。
- * 不支持 :has 的旧浏览器保持原样（按钮一直在底下）。
+ * 前景行一有位移（手势脚本写 translateX 时同时给 .swipe-host 挂 swiped 类，row-gesture.ts setOffset）就显示；
+ * 收起时延迟到 180ms 过渡结束才藏，避免按钮先消失。
+ * U8：不再用 :has() 判断（滚动插入新行会让整张列表重算样式，见 docs/handoffs/2026-10-27-ui-u8.md）。
  */
-@supports selector(:has(a)) {
-  .swipe-actions {
-    visibility: hidden;
-    transition: visibility 0s linear var(--wb-motion-duration-swipe);
-  }
-  .swipe-host:has(> .swipe-track[style*='translate']) > .swipe-actions {
-    visibility: visible;
-    transition-delay: 0s;
-  }
+.swipe-actions {
+  visibility: hidden;
+  transition: visibility 0s linear var(--wb-motion-duration-swipe);
+}
+.swipe-host.swiped > .swipe-actions {
+  visibility: visible;
+  transition-delay: 0s;
 }
 /* 旧版 swipe_action_row：每个 68 宽、撑满行高、白字 15 */
 .swipe-actions button {

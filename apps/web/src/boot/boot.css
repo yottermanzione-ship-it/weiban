@@ -1,0 +1,111 @@
+/*
+ * U8 启动页（总经理 10-27：改回旧版微伴的绿色启动页，白边发光 logo，保留加载进度条）。
+ * 这份样式单独打包、放在 <head> 里第一个加载（很小），index.html 里的启动层第一帧就是绿的，
+ * 不等主样式表和 JS。生产 CSP 不允许内联 <style> / style 属性，所以写成独立文件。
+ * JS 接管后（app/boot-splash.ts）进度条按真实加载进度走，准备好后淡出并移除，
+ * html[data-boot] 同时去掉，页面底色 / theme-color 切回各页面自己的颜色。
+ * 尺寸沿用旧版（old-weiban c9490bb web/index.html）：logo 88 圆角 20、名字 20/600、进度条 190×4。
+ */
+:root[data-boot],
+:root[data-boot] body {
+  background: #07c160;
+}
+#boot-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: env(safe-area-inset-top) 28px env(safe-area-inset-bottom);
+  background: #07c160;
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: opacity 0.35s ease;
+}
+#boot-splash.boot-out {
+  opacity: 0;
+  pointer-events: none;
+}
+#boot-splash .boot-logo {
+  display: block;
+  width: 88px;
+  height: 88px;
+  border-radius: 20px;
+  box-shadow:
+    0 0 24px rgba(255, 255, 255, 0.5),
+    0 0 48px rgba(255, 255, 255, 0.2);
+}
+#boot-splash .boot-name {
+  margin-top: 18px;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 28px;
+  letter-spacing: 2px;
+}
+#boot-splash .boot-bar-wrap {
+  margin-top: 26px;
+  width: 190px;
+}
+#boot-splash .boot-bar {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.25);
+}
+#boot-splash .boot-bar-fill {
+  width: 0;
+  height: 100%;
+  border-radius: 4px;
+  background: #fff;
+  transition: width 0.3s ease;
+  /* JS 还没到的这段时间先自己慢慢走到 30%，JS 接管后按真实进度继续。 */
+  animation: boot-creep 4s cubic-bezier(0.1, 0.6, 0.3, 1) forwards;
+}
+#boot-splash.boot-js .boot-bar-fill {
+  animation: none;
+}
+#boot-splash .boot-bar-text {
+  min-height: 16px;
+  margin-top: 8px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+/* 脚本一直没加载下来（断网 / 极慢）时 10 秒后给一句提示；JS 接管后不再显示（有 8 秒上限兜底）。 */
+#boot-splash .boot-slow {
+  position: absolute;
+  right: 28px;
+  bottom: calc(env(safe-area-inset-bottom) + 48px);
+  left: 28px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+  line-height: 20px;
+  text-align: center;
+  opacity: 0;
+  animation: boot-slow 0.4s ease 10s forwards;
+}
+#boot-splash.boot-js .boot-slow {
+  display: none;
+}
+@keyframes boot-creep {
+  to {
+    width: 30%;
+  }
+}
+@keyframes boot-slow {
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #boot-splash,
+  #boot-splash .boot-bar-fill {
+    transition: none;
+  }
+}

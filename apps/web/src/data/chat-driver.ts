@@ -38,6 +38,13 @@ export class ChatDriver {
   private syncFailures = 0;
   private restoring = false;
   private canSync = false;
+  /**
+   * U8：最近一次 runner 交给界面的状态（只读）。以前每 250ms 的 tick、补拉等待循环都读 runner.state，
+   * 而 runner.state 每读一次就把整份本机聊天数据（全部消息、会话、联系人）深拷贝一遍，消息越多越卡。
+   */
+  private view: LocalSyncState | null = null;
+  /** U8：上一次对账成功、引擎在线且没有中途离线过；为真时「服务器没有新内容」的轮询不必再走一遍对账。 */
+  private upToDate = false;
   private focusId: string | null = null;
   private reconnectAttempt = 0;
   private reconnectTimer: number | undefined;
@@ -69,12 +76,14 @@ export class ChatDriver {
       save: (state) => this.store.setOwned(this.owner, this.key, state),
       execute: (effect, signal) => syncHttp(this.api, effect, signal),
       changed: (state) => {
+        this.view = state;
         if (state.initialized) this.bootstrapping = false;
         this.observer.state(state);
       },
       failed: (error) => {
         if (this.stopped) return;
         this.syncFailures++;
+        this.upToDate = false;
         // 只有真正写不进本机（IndexedDB）才停止同步并请用户处理；数据或网络问题自动重试。
         if (error instanceof LocalSaveError || this.runner?.active === false) {
           this.stop();
@@ -94,7 +103,8 @@ export class ChatDriver {
         void this.runner?.dispatch({ type: 'offline' }).catch(() => {});
       },
     });
-    this.observer.state(this.runner.state);
+    this.view = this.runner.state;
+    this.observer.state(this.view);
     this.connect();
     void this.poll();
     this.timer = window.setInterval(() => this.tick(), 250);
@@ -104,6 +114,7 @@ export class ChatDriver {
   }
   stop(): void {
     this.stopped = true;
+    this.upToDate = false;
     this.lifetime.abort();
     this.runner?.stop();
     window.clearTimeout(this.reconnectTimer);
@@ -131,6 +142,7 @@ export class ChatDriver {
         socket.close();
       });
     }
+    this.upToDate = false;
     await this.runner?.dispatch({ type: 'offline' });
   }
   resume(): void {
@@ -160,7 +172,7 @@ export class ChatDriver {
     const saved = this.historyPositions.get(id);
     let cursor = saved?.before === beforeSeq ? saved.cursor : beforeSeq;
     const cleared =
-      runner.state.conversations.find((item) => item.conversationId === id)?.state
+      this.view?.conversations.find((item) => item.conversationId === id)?.state
         .clearedThroughSeq ?? 0;
     for (let attempt = 0; attempt < 20 && cursor > cleared + 1; attempt++) {
       const page = await this.api.call(ChatEndpoints.listMessages, {
@@ -177,7 +189,7 @@ export class ChatDriver {
       const more = page.hasMore && next > cleared + 1;
       // 空页也有扫描范围：继续往前，不能永远拿最早可见消息作为同一个游标重复请求。
       this.historyPositions.set(id, { before: beforeSeq, cursor: next });
-      const visible = runner.state.messages.some(
+      const visible = (this.view?.messages ?? []).some(
         (message) => message.conversationId === id && message.seq < beforeSeq,
       );
       if (visible || !more) {
@@ -227,6 +239,7 @@ export class ChatDriver {
       failures = this.syncFailures;
     try {
       // 中止旧网络回调，复用过期游标重建；保留待发消息和清除边界。
+      this.upToDate = false;
       await runner.dispatch({ type: 'offline' });
       await runner.dispatch({ type: 'cursor.expired' });
       while (runner.snapshotRevision <= revision || runner.isRebuilding) {
@@ -272,7 +285,7 @@ export class ChatDriver {
     });
     await this.reconnect(state.latestUpdateSeq, since);
     const deadline = Date.now() + 10_000;
-    while (!runner.state.initialized || runner.state.lastUpdateSeq < state.latestUpdateSeq) {
+    while (!this.view?.initialized || runner.lastUpdateSeq < state.latestUpdateSeq) {
       if (
         signal.aborted ||
         this.stopped ||
@@ -300,6 +313,7 @@ export class ChatDriver {
   };
   private offline = () => {
     this.canSync = false;
+    this.upToDate = false;
     this.bootstrapping = false;
     this.socket?.close();
     this.observer.connection(false);
@@ -440,9 +454,10 @@ export class ChatDriver {
   private async reconnect(seq: number, since: number): Promise<void> {
     if (!this.runner || this.stopped || this.paused || !navigator.onLine || this.bootstrapping)
       return;
-    this.bootstrapping = !this.runner.state.initialized;
+    this.bootstrapping = !this.view?.initialized;
     await this.runner.reconnect(seq, since, Date.now());
     if (!this.stopped) {
+      this.upToDate = this.runner.active;
       this.canSync = true;
       this.observer.connection(true);
     }
@@ -458,9 +473,28 @@ export class ChatDriver {
         networkOnly: true,
         signal: this.lifetime.signal,
       });
+      /*
+       * U8：服务器没有新内容（序号没涨，或只是排队期间被实时推送超过的过时读数）且上次对账成功时，
+       * 不再走 reconnect：那一趟要把整份本机数据复制几遍、整份写回 IndexedDB、再通知界面整页重画，
+       * 每 5 秒一次，滑动列表时正好撞上就卡一下（实测每次 50～140ms 长任务）。到期的待发消息由 tick 照常发出。
+       * 读数比 since 还小（服务器真倒退）、有待合并的更新、还没初始化时照旧对账。
+       */
+      const runner = this.runner;
+      if (
+        runner &&
+        this.upToDate &&
+        this.canSync &&
+        this.view?.initialized &&
+        this.view.pendingUpdates.length === 0 &&
+        !runner.isRebuilding &&
+        state.latestUpdateSeq >= since &&
+        state.latestUpdateSeq <= runner.lastUpdateSeq
+      )
+        return;
       await this.reconnect(state.latestUpdateSeq, since);
     } catch {
       if (!this.stopped) {
+        this.upToDate = false;
         this.canSync = false;
         this.observer.connection(false);
         this.bootstrapping = false;
@@ -472,10 +506,12 @@ export class ChatDriver {
   private tick(): void {
     if (this.stopped || this.paused) return;
     const now = Date.now();
+    // U8：读缓存的 view，不读 runner.state（那是一次整份深拷贝，每秒 4 次）。
     if (
+      this.runner &&
       this.canSync &&
       navigator.onLine &&
-      this.runner?.state.outbox.some((item) => item.state === 'pending' && item.retryAt <= now)
+      this.view?.outbox.some((item) => item.state === 'pending' && item.retryAt <= now)
     )
       void this.runner.dispatch({ type: 'tick', now }).catch(() => {});
     if (now - this.lastPoll >= 5000) void this.poll();
