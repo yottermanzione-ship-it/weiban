@@ -41,6 +41,18 @@ import { ReplyPlanStore, CompanionSettingsService } from '../src/modules/ai-runt
 import { ContactsCommands, ACCEPT_CONTACT_JOB } from '../src/modules/contacts/testing.js';
 import { captureLogger, testConfig, testKekRing } from './support/fixtures.js';
 import { describeDb, resetTestDatabase } from './support/db.js';
+
+/** 测试上游的已核准计费上限（3.16 起没有它网关拒绝调用）。 */
+const TEXT_BOUNDS = {
+  format: 'billing-bounds-v1' as const,
+  text: {
+    contextTokens: 128_000,
+    maxOutputTokens: 32_000,
+    totalOutputIncludesReasoning: true as const,
+    outputParameter: 'max_tokens' as const,
+    maxImages: 4,
+  },
+};
 const sample = JSON.parse(
   readFileSync(
     resolve(import.meta.dirname, '../../../docs/ai/samples/S-01-cheng-che.md'),
@@ -178,6 +190,8 @@ describeDb('AI真实HTTP网关/计费与跨应用持久队列', () => {
       sortOrder: 0,
       defaultFor: [],
       scenarios: ['chat', 'voice_call', 'private'],
+      // 3.16：网关只按已核准的计费上限调用；没有 billingBounds 的模型一律 model_unavailable。
+      billingBounds: TEXT_BOUNDS,
       enabled: true,
     });
     // 3.22：没有平台默认模型：用户自己的文本聊天场景 + 平台内部模型（安全检查等）。

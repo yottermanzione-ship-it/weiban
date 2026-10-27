@@ -31,6 +31,18 @@ import {
 import { captureLogger, testConfig, testKekRing } from './support/fixtures.js';
 import { describeDb, resetTestDatabase } from './support/db.js';
 
+/** 测试上游的已核准计费上限（3.16 起没有它网关拒绝调用）。 */
+const TEXT_BOUNDS = {
+  format: 'billing-bounds-v1' as const,
+  text: {
+    contextTokens: 128_000,
+    maxOutputTokens: 32_000,
+    totalOutputIncludesReasoning: true as const,
+    outputParameter: 'max_tokens' as const,
+    maxImages: 4,
+  },
+};
+
 it('S 搜索服务完整依赖图可装配（不启动数据库与任务）', async () => {
   const module = await Test.createTestingModule({
     imports: [
@@ -206,6 +218,8 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
       sortOrder: 0,
       defaultFor: [],
       scenarios: ['chat', 'voice_call', 'private'],
+      // 3.16：网关只按已核准的计费上限调用；没有 billingBounds 的模型一律 model_unavailable。
+      billingBounds: TEXT_BOUNDS,
       enabled: true,
     });
     // 3.22：没有平台默认模型：调用用户自己的文本聊天场景 + 平台内部模型。
@@ -219,8 +233,16 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
     calls = 0;
     mode = 'ok';
     requests = [];
-    await app.get(UpstreamService).reportStatus(upstreamId, 'active', 'probe');
+    await resetUpstream();
   });
+  /** ADR-0032 账号池：失败计数与冷却记在上游行上，用例之间清零，免得上一条的故障把账号暂停。 */
+  async function resetUpstream(): Promise<void> {
+    await db.query(
+      'UPDATE model_access.upstreams SET consecutive_failures = 0, cooldown_until = NULL WHERE id = $1',
+      [upstreamId],
+    );
+    await app.get(UpstreamService).reportStatus(upstreamId, 'active', 'probe');
+  }
   afterAll(async () => {
     await app?.close();
     await new Promise<void>((resolve) => fake?.close(() => resolve()));
@@ -273,7 +295,7 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
   it('调用方截止时间覆盖慢正文与重试；超期不调用、不扣款；无效截止拒绝', async () => {
     const before = (
       await db.query<{ n: string }>(
-        "SELECT count(*) n FROM billing.ledger_entries WHERE type='charge'",
+        "SELECT count(*) n FROM billing.ledger_entries WHERE type='charge' AND absorbed = false",
       )
     ).rows[0]!.n;
     expect(await gateway.generateText(input({ deadlineAt: 'invalid' }))).toMatchObject({
@@ -297,43 +319,59 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
     expect(
       (
         await db.query<{ n: string }>(
-          "SELECT count(*) n FROM billing.ledger_entries WHERE type='charge'",
+          "SELECT count(*) n FROM billing.ledger_entries WHERE type='charge' AND absorbed = false",
         )
       ).rows[0]!.n,
     ).toBe(before);
   });
-  it('429重试3次，始终一个冻结；成功只扣一次', async () => {
+  // ADR-0032（上游账号池）：限流 / 故障改为「当场换下一个账号」，不再在同一账号上等待重试。
+  // 测试只有一个账号，所以 429 一次就失败；失败不向用户扣款、不留冻结。
+  it('429 当场换账号，不在同一账号上等待重试；只有一个账号时失败且不扣款', async () => {
     mode = '429';
-    const result = await gateway.generateText(input());
-    expect(result.ok).toBe(true);
-    expect(calls).toBe(4);
-    if (!result.ok) throw new Error('expected success');
-    const record = await db.query<{ retry_count: number }>(
-      'SELECT retry_count FROM model_access.usage_records WHERE id=$1',
-      [result.value.usageRecordId],
-    );
-    expect(record.rows[0]?.retry_count).toBe(3);
+    const before = (
+      await db.query<{ balance_micros: string }>(
+        'SELECT balance_micros FROM billing.accounts WHERE user_id=$1',
+        [user],
+      )
+    ).rows[0]?.balance_micros;
+    expect(await gateway.generateText(input())).toMatchObject({
+      ok: false,
+      error: 'provider_unavailable',
+    });
+    expect(calls).toBe(1);
+    const after = (
+      await db.query<{ balance_micros: string; held_micros: string }>(
+        'SELECT balance_micros,held_micros FROM billing.accounts WHERE user_id=$1',
+        [user],
+      )
+    ).rows[0];
+    expect(after?.balance_micros).toBe(before);
+    expect(Number(after?.held_micros)).toBe(0);
+    // 限流一次不暂停账号（连续失败达阈值 3 次才标「不可用」）
+    expect((await app.get(UpstreamService).get(upstreamId)).status).toBe('active');
   });
   it('上游持续故障、失效密钥和额度不足正确分类；失败解冻、不向用户扣款', async () => {
-    for (const [failure, status, expectedCalls] of [
-      ['down', 'unavailable', 4],
+    // 持续故障：每次调用只打一次该账号，连续 3 次失败后标为不可用。
+    for (const [failure, status, attempts] of [
+      ['down', 'unavailable', 3],
       ['invalid', 'invalid', 1],
       ['quota', 'quota_exhausted', 1],
     ] as const) {
       calls = 0;
       mode = failure;
-      await app.get(UpstreamService).reportStatus(upstreamId, 'active', 'probe');
+      await resetUpstream();
       const before = (
         await db.query<{ balance_micros: string }>(
           'SELECT balance_micros FROM billing.accounts WHERE user_id=$1',
           [user],
         )
       ).rows[0]?.balance_micros;
-      expect(await gateway.generateText(input())).toMatchObject({
-        ok: false,
-        error: 'provider_unavailable',
-      });
-      expect(calls).toBe(expectedCalls);
+      for (let i = 0; i < attempts; i++)
+        expect(await gateway.generateText(input())).toMatchObject({
+          ok: false,
+          error: 'provider_unavailable',
+        });
+      expect(calls).toBe(attempts);
       expect((await app.get(UpstreamService).get(upstreamId)).status).toBe(status);
       const after = (
         await db.query<{ balance_micros: string; held_micros: string }>(
@@ -347,6 +385,10 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
   });
   it('内容拒绝不改变上游状态；已产生的费用平台吸收；日志不包含密钥', async () => {
     mode = 'blocked';
+    // 3.26：前面超时等失败用例也会产生平台吸收记录，这里只看本用例新增的。
+    const earlier = (
+      await db.query<{ id: string }>('SELECT id FROM billing.ledger_entries WHERE absorbed=true')
+    ).rows.map((r) => r.id);
     expect(await gateway.generateText(input())).toMatchObject({
       ok: false,
       error: 'content_rejected',
@@ -354,7 +396,8 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
     expect(calls).toBe(1);
     expect((await app.get(UpstreamService).get(upstreamId)).status).toBe('active');
     const absorbed = await db.query<{ cost_micros: string; upstream_id: string }>(
-      'SELECT cost_micros,upstream_id FROM billing.ledger_entries WHERE absorbed=true',
+      'SELECT cost_micros,upstream_id FROM billing.ledger_entries WHERE absorbed=true AND NOT (id = ANY($1::uuid[]))',
+      [earlier],
     );
     expect(absorbed.rows).toHaveLength(1);
     expect(Number(absorbed.rows[0]?.cost_micros)).toBe(165);
@@ -365,6 +408,8 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
     const empty = await app
       .get(IdentityCommands)
       .createAdmin('gateway_empty', 'correct horse battery');
+    // 3.22：没有平台默认模型，先给这个用户配好聊天场景，才能走到余额检查。
+    await app.get(ScenarioService).updateConfig(empty, { chat: { modelKey } });
     expect(await gateway.generateText(input({ userId: empty }))).toMatchObject({
       ok: false,
       error: 'insufficient_balance',

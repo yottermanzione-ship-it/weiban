@@ -1,11 +1,13 @@
 import { expect, test } from '@playwright/test';
+import { openField, setBirthday, setMinor, setVoice, uploadAvatar } from './persona-ui.js';
 
 test('导入草稿生日、头像、分类保存重读并创建角色；清空后仍为空', async ({ page }) => {
   await page.goto('/');
-  await page.getByLabel('微伴号').fill('browser_other');
+  await page.getByRole('button', { name: '登录', exact: true }).click();
+  await page.getByLabel('账号', { exact: true }).fill('browser_other');
   await page.getByLabel('密码', { exact: true }).fill('correct horse battery');
   const login = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/v1/auth/login');
-  await page.getByRole('button', { name: '登录', exact: true }).click();
+  await page.getByRole('button', { name: '同意并登录', exact: true }).click();
   const token = (await (await login).json()).session.token as string;
   await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
   const jobs = await page.request.get('/api/v1/imports', {
@@ -17,42 +19,16 @@ test('导入草稿生日、头像、分类保存重读并创建角色；清空�
   );
   expect(job).toBeTruthy();
   await page.goto(`/characters/custom/new?import=${job.jobId}`);
-  await expect(page.getByRole('textbox', { name: /名字/ })).toHaveValue('导入测试');
-  await page.getByLabel(/生日/).fill('2000-05-16');
-  await page.getByLabel('音色（可选）').selectOption({ label: '浏览器测试音色' });
-  await page.getByLabel('真人类型').selectOption('historical');
-  await page.getByLabel('外表是儿童').check();
-  await page.getByRole('radio', { name: '未满 18 岁', exact: true }).check();
-  await page.getByLabel('头像', { exact: true }).setInputFiles({
-    name: 'avatar.png',
-    mimeType: 'image/png',
-    buffer: Buffer.from(
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jGqoAAAAASUVORK5CYII=',
-      'base64',
-    ),
-  });
-  await page.waitForFunction(
-    () =>
-      document.querySelector('canvas')?.getContext('2d')?.getImageData(256, 256, 1, 1).data[3] ===
-      255,
-  );
-  const uploaded = page.waitForResponse(
-    (r) => new URL(r.url()).pathname === '/api/v1/media' && r.request().method() === 'POST',
-  );
-  const metadata = page.waitForResponse(
-    (r) =>
-      /^\/api\/v1\/media\/[^/]+$/.test(new URL(r.url()).pathname) && r.request().method() === 'GET',
-  );
-  await page.getByRole('button', { name: '完成裁剪并上传', exact: true }).click();
-  const [uploadResponse, metadataResponse] = await Promise.all([uploaded, metadata]);
-  expect(uploadResponse.status()).toBe(201);
-  expect(metadataResponse.status()).toBe(200);
-  const uploadedMedia = await uploadResponse.json();
-  expect(new URL(metadataResponse.url()).pathname).toBe(`/api/v1/media/${uploadedMedia.mediaId}`);
-  await expect(page.getByRole('img', { name: '角色头像', exact: true })).toHaveJSProperty(
-    'naturalWidth',
-    512,
-  );
+  const name = await openField(page, '名字');
+  await expect(name.getByRole('textbox', { name: '名字', exact: true })).toHaveValue('导入测试');
+  await name.getByRole('button', { name: '取消', exact: true }).click();
+  await setBirthday(page, '2000-05-16');
+  await setVoice(page, true);
+  const basis = await openField(page, '角色分类');
+  await basis.getByRole('radio', { name: /^历史人物(?: 已选择)?$/ }).click();
+  await basis.getByRole('button', { name: '完成', exact: true }).click();
+  await setMinor(page, true);
+  await uploadAvatar(page);
   const save = () =>
     page.waitForResponse(
       (r) =>
@@ -60,7 +36,7 @@ test('导入草稿生日、头像、分类保存重读并创建角色；清空�
         r.request().method() === 'PUT',
     );
   const first = save();
-  await page.getByRole('button', { name: '保存草稿', exact: true }).click();
+  await page.getByRole('button', { name: /^保存草稿/ }).click();
   const response = await first;
   expect(response.status()).toBe(200);
   const saved = await response.json();
@@ -70,23 +46,29 @@ test('导入草稿生日、头像、分类保存重读并创建角色；清空�
   expect(saved.suggestedClassification.childAppearance).toBe(true);
   expect(saved.suggestedClassification.realPersonKind).toBe('historical');
   await page.reload();
-  await expect(page.getByLabel(/生日/)).toHaveValue('2000-05-16');
-  await expect(page.getByLabel('音色（可选）')).toHaveValue(saved.editorFields.voiceId);
-  await expect(page.getByLabel('外表是儿童')).toBeChecked();
-  await expect(page.getByLabel('真人类型')).toHaveValue('historical');
-  await expect(page.getByRole('radio', { name: '未满 18 岁', exact: true })).toBeChecked();
+  await expect(page.getByRole('button', { name: /^生日 / })).toContainText('5');
+  const voice = await openField(page, '音色');
+  await expect(voice.getByRole('radio', { name: /^浏览器测试音色(?: 已选择)?$/ })).toBeChecked();
+  await voice.getByRole('button', { name: '取消', exact: true }).click();
+  const age = await openField(page, '年龄设定');
+  await expect(age.getByRole('switch', { name: '外表是儿童', exact: true })).toBeChecked();
+  await expect(age.getByRole('radio', { name: /^未满 18 岁(?: 已选择)?$/ })).toBeChecked();
+  await age.getByRole('button', { name: '取消', exact: true }).click();
+  const classification = await openField(page, '角色分类');
+  await expect(classification.getByRole('radio', { name: /^历史人物(?: 已选择)?$/ })).toBeChecked();
+  await classification.getByRole('button', { name: '取消', exact: true }).click();
   await expect(page.getByRole('img', { name: '角色头像', exact: true })).toHaveJSProperty(
     'naturalWidth',
     512,
   );
-  await page.getByLabel(/生日/).fill('');
-  await page.getByRole('button', { name: '选择头像', exact: true }).click();
-  await page.getByRole('button', { name: '恢复默认头像', exact: true }).click();
+  await setBirthday(page, null);
+  await page.getByRole('button', { name: '更换头像', exact: true }).click();
+  await page.getByRole('menuitem', { name: '恢复默认头像', exact: true }).click();
   const second = save();
-  await page.getByRole('button', { name: '保存草稿', exact: true }).click();
+  await page.getByRole('button', { name: /^保存草稿/ }).click();
   expect((await second).status()).toBe(200);
   await page.reload();
-  await expect(page.getByLabel(/生日/)).toHaveValue('');
+  await expect(page.getByRole('button', { name: '生日', exact: true })).toBeVisible();
   await expect(page.getByRole('img', { name: '角色头像', exact: true })).toHaveCount(0);
   const create = page.waitForResponse(
     (r) =>

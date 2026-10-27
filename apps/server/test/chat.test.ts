@@ -377,10 +377,12 @@ describeDb('chat 真实事务、HTTP、隔离和历史负记录', () => {
       .set('Authorization', auth())
       .send({ hidden: true, pinned: true, muted: true })
       .expect(200);
-    expect(
-      (await http().get('/api/v1/conversations').set('Authorization', auth()).expect(200)).body
-        .items,
-    ).toEqual([]);
+    // cb34008：隐藏的会话照常返回（state.hidden = true，客户端在会话列表里过滤），
+    // 否则全量同步后客户端会把它删掉，「通讯录 › 群聊」也找不到。
+    const hiddenList = (
+      await http().get('/api/v1/conversations').set('Authorization', auth()).expect(200)
+    ).body.items as Array<{ conversationId: string; state: { hidden: boolean } }>;
+    expect(hiddenList.find((c) => c.conversationId === cid)?.state.hidden).toBe(true);
     await send('restore visible');
     expect(
       (await http().get('/api/v1/conversations').set('Authorization', auth()).expect(200)).body

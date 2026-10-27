@@ -3,9 +3,10 @@ const safari = (version: string) =>
   `Mozilla/5.0 (iPhone; CPU iPhone OS ${version} like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.4 Mobile/15E148 Safari/604.1`;
 async function login(page: Page) {
   await page.goto('/');
-  await page.getByLabel('微伴号').fill('browser_guide');
-  await page.getByLabel('密码', { exact: true }).fill('correct horse battery');
   await page.getByRole('button', { name: '登录', exact: true }).click();
+  await page.getByLabel('账号', { exact: true }).fill('browser_guide');
+  await page.getByLabel('密码', { exact: true }).fill('correct horse battery');
+  await page.getByRole('button', { name: '同意并登录', exact: true }).click();
   await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
 }
 async function openChat(page: Page) {
@@ -23,8 +24,8 @@ test.describe('iPhone安装状态夹具与真实角色消息/本机一次性记�
     await openChat(page);
     const guide = page.getByRole('dialog', { name: '添加到主屏幕，才能收到 TA 的消息提醒' });
     await expect(guide).toBeVisible();
-    await expect(guide.getByRole('listitem')).toHaveCount(3);
-    await expect(guide.getByRole('img', { name: /Safari 底部工具栏示意/ })).toBeVisible();
+    await expect(guide.getByRole('listitem')).toHaveCount(5);
+    await expect(guide.getByRole('img', { name: /操作示意$/ })).toHaveCount(5);
     await page.screenshot({ path: 'apps/web/test-results/home-screen-guide.png', fullPage: true });
     await guide.getByRole('button', { name: '知道了' }).click();
     await expect(guide).toBeHidden();

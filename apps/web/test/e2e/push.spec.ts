@@ -2,9 +2,10 @@ import { expect, test, type Page, type Worker } from '@playwright/test';
 import { AuthResponse, NotificationEnvelope } from '@weiban/contracts';
 async function login(page: Page) {
   await page.goto('/');
-  await page.getByLabel('微伴号').fill('browser_user');
-  await page.getByLabel('密码', { exact: true }).fill('correct horse battery');
   await page.getByRole('button', { name: '登录', exact: true }).click();
+  await page.getByLabel('账号', { exact: true }).fill('browser_user');
+  await page.getByLabel('密码', { exact: true }).fill('correct horse battery');
+  await page.getByRole('button', { name: '同意并登录', exact: true }).click();
   await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
 }
@@ -83,10 +84,26 @@ async function clickFirstNotice(worker: Worker) {
   });
 }
 test('未配置通道时明确失败，不向系统请求通知权限', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.assign(window, { weibanPermissionRequests: 0 });
+    const original = Notification.requestPermission.bind(Notification);
+    Object.defineProperty(Notification, 'requestPermission', {
+      value: () => {
+        const state = window as unknown as { weibanPermissionRequests: number };
+        state.weibanPermissionRequests++;
+        return original();
+      },
+    });
+  });
   await login(page);
   await page.goto('/settings');
-  await page.getByRole('button', { name: '开启此设备通知' }).click();
-  await expect(page.getByRole('alert')).toBeVisible();
+  await page.getByRole('switch', { name: '新消息通知', exact: true }).click();
+  await expect(page.getByRole('status')).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { weibanPermissionRequests: number }).weibanPermissionRequests,
+    ),
+  ).toBe(0);
   expect(await page.evaluate(() => Notification.permission)).not.toBe('granted');
 });
 test('实际Service Worker与通知系统夹具：归属/时效、去重、点击与退出清理', async ({
@@ -161,6 +178,10 @@ test('实际Service Worker与通知系统夹具：归属/时效、去重、点�
   expect((await notices(worker)).length).toBe(1);
   await page.goto('/settings');
   await page.getByRole('button', { name: '退出登录', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: '退出登录？', exact: true })
+    .getByRole('button', { name: '退出登录', exact: true })
+    .click();
   await expect(page.getByRole('button', { name: '登录', exact: true })).toBeVisible();
   expect(await notices(worker)).toEqual([]);
   await deliver(worker, { ...payload, notificationId: crypto.randomUUID() });
@@ -169,9 +190,10 @@ test('实际Service Worker与通知系统夹具：归属/时效、去重、点�
 
 test('管理员通知放行用户SW，跨源跳转后台并使用独立管理会话', async ({ page, context }) => {
   await page.goto('/');
-  await page.getByLabel('微伴号').fill('browser_admin');
-  await page.getByLabel('密码', { exact: true }).fill('correct horse battery');
   await page.getByRole('button', { name: '登录', exact: true }).click();
+  await page.getByLabel('账号', { exact: true }).fill('browser_admin');
+  await page.getByLabel('密码', { exact: true }).fill('correct horse battery');
+  await page.getByRole('button', { name: '同意并登录', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'TA 该怎么称呼你？' })).toBeVisible();
   const auth = AuthResponse.parse(
     await page.evaluate(

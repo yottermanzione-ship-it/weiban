@@ -16,6 +16,18 @@ import { PriceService } from '../../src/modules/billing/testing.js';
 import { CatalogService, UpstreamService } from '../../src/modules/model-access/testing.js';
 import { captureLogger, testConfig, testKekRing } from './fixtures.js';
 
+/** 测试上游的已核准计费上限（3.16 起没有它网关拒绝调用）。 */
+const TEXT_BOUNDS = {
+  format: 'billing-bounds-v1' as const,
+  text: {
+    contextTokens: 128_000,
+    maxOutputTokens: 32_000,
+    totalOutputIncludesReasoning: true as const,
+    outputParameter: 'max_tokens' as const,
+    maxImages: 4,
+  },
+};
+
 export const FLOW_MODEL = 'flow/real-assembly';
 export const FLOW_KEY = 'sk-weiban-canary-flow-upstream-479302';
 export const FLOW_INPUT = '首条消息FLOW-479302：今天想聊聊我的第一天。';
@@ -153,6 +165,8 @@ async function configureFlowModel(app: INestApplication, adminId: string, url: s
     sortOrder: 0,
     defaultFor: [],
     scenarios: ['chat', 'voice_call', 'private'],
+    // 3.16：网关只按已核准的计费上限调用；没有 billingBounds 的模型一律 model_unavailable。
+    billingBounds: TEXT_BOUNDS,
     enabled: true,
   });
   // 3.22：没有平台默认模型了：设为文本聊天推荐模型（用户首次引导一键选推荐）+ 平台内部模型。

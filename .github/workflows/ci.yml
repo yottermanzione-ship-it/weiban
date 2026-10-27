@@ -32,7 +32,8 @@ jobs:
     # 这个名字会出现在 main 保护规则的「必须通过的检查」里，用英文方便搜索，不要随意改名
     name: check
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # 2026-10-27：主线测试真正跑起来后约 10 分钟，加浏览器测试与部署演练超过原来的 20 分钟上限。
+    timeout-minutes: 45
     steps:
       - name: 取代码
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

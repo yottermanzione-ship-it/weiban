@@ -160,12 +160,25 @@ describeDb('T-028 实际装配与基础缺陷回归', () => {
     });
     return id;
   }
-  async function reserve(userId: string, key = newId()) {
+  // ADR-0032 v3.3：平台每日预算只由平台账户与「网关重试风险预留」（reservePlatformRisk）占用，
+  // 普通用户付费调用（3.27 先用后扣）不再占。需要验证平台预算的用例显式走这两条路。
+  async function reserve(
+    userId: string | null,
+    key = newId(),
+    options: { reservePlatformRisk?: boolean } = {},
+  ) {
     const result = await app.get(ReservationService).estimateAndReserve({
-      account: { kind: 'user', userId },
+      account: userId ? { kind: 'user', userId } : { kind: 'platform' },
+      ...options,
       purpose: 'chat_reply',
       modelKey,
       estimate: { inputTokens: 1000, outputTokens: 1000 },
+      // 3.16：新冻结必须带网关核准的计费上限，否则 price_missing。
+      ceiling: {
+        usage: { inputTokens: 1000, outputTokens: 1000 },
+        evidence: 'c13-test',
+        pricingModels: [modelKey],
+      },
       idempotencyKey: key,
     });
     if (!result.ok) throw new Error(result.error);
@@ -175,8 +188,8 @@ describeDb('T-028 实际装配与基础缺陷回归', () => {
   it('Q-011：注销归还active预留，重复注销不再次归还，不误清其他钱包', async () => {
     const user = await funded('c13_purge');
     const other = await funded('c13_keep');
-    await reserve(user);
-    const keep = await reserve(other);
+    await reserve(user, newId(), { reservePlatformRisk: true });
+    const keep = await reserve(other, newId(), { reservePlatformRisk: true });
     const before = await db.query<{ reserved: string }>(
       'SELECT reserved_cost_micros AS reserved FROM billing.platform_daily_budget',
     );
@@ -271,9 +284,10 @@ describeDb('T-028 实际装配与基础缺陷回归', () => {
 
   it('达到预算80%与对账异常发管理员提醒，载荷无用户名或用户ID', async () => {
     const user = await funded('c13_alert');
-    // Previous settled calls cost 15,000; five reservations bring usage to 40,000.
+    // 上限 50,000，80% = 40,000。用平台账户冻结 8 次 × 成本 5,000 达到提醒线：
+    // 用户调用（含前面已结算的）不占平台预算，且同一用户同时在途的付费调用最多 3 个（3.27）。
     const reserved = [];
-    for (let n = 0; n < 5; n++) reserved.push(await reserve(user));
+    for (let n = 0; n < 8; n++) reserved.push(await reserve(null));
     const { rows } = await db.query<{ event: { payload: Record<string, unknown> } }>(
       "SELECT event FROM platform.outbox WHERE event_type='platform.admin_alert_raised'",
     );

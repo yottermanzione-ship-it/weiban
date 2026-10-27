@@ -35,7 +35,12 @@ import {
 import { ContactsCommands, ContactsTestQueries } from '../src/modules/contacts/testing.js';
 import { CHAT_ADMIN_PORT, CHAT_READ_PORT, CHAT_USER_PORT } from '../src/modules/chat/index.js';
 import { MODEL_GATEWAY_PORT } from '../src/modules/model-access/index.js';
-import { ReplyPlanStore, ReplyEngine, replyPlans } from '../src/modules/ai-runtime/testing.js';
+import {
+  EcologySettingsService,
+  ReplyPlanStore,
+  ReplyEngine,
+  replyPlans,
+} from '../src/modules/ai-runtime/testing.js';
 import { captureLogger, testConfig, testKekRing } from './support/fixtures.js';
 import { describeDb, resetTestDatabase } from './support/db.js';
 const sample = JSON.parse(
@@ -248,6 +253,18 @@ describeDb('ai-runtime 真实PG：设置/加密计划/合并/幂等/关怀/删�
     );
     expect(short.summary).toBeNull();
     expect(calls).toHaveLength(before);
+    // v5（57b7ba5）：「你不在时」摘要只给开着角色生态的 PRO+ 用户生成；没开时只列事件、不调模型。
+    const inactive = TimelineSummaryResponse.parse(
+      (await http().get(path).query(query).set('Authorization', auth()).expect(200)).body,
+    );
+    expect(inactive.events.map((e) => e.summary)).toEqual(['时间线HTTP事件']);
+    expect(inactive.summary).toBeNull();
+    expect(calls).toHaveLength(before);
+    // 下面按「生态已开」验证生成路径（会员与开关由 ecology 模块自己的用例覆盖）。
+    const ecologyActive = vi
+      .spyOn(app.get(EcologySettingsService), 'isActive')
+      .mockResolvedValue(true);
+    // 5 分钟内重复进入视为同一次进入，沿用同一缺席基准（12 小时）。
     const result = TimelineSummaryResponse.parse(
       (await http().get(path).query(query).set('Authorization', auth()).expect(200)).body,
     );
@@ -266,6 +283,7 @@ describeDb('ai-runtime 真实PG：设置/加密计划/合并/幂等/关怀/删�
       (await http().get(path).query(query).set('Authorization', auth()).expect(200)).body.summary,
     ).toBeNull();
     failure = null;
+    ecologyActive.mockRestore();
     await db.query('DELETE FROM ai_runtime.daily_events WHERE user_id=$1', [userId]);
     // 本用例的网关观测与事件夹具不进入后续回复用例的计数基线。
     calls.splice(before);
@@ -451,7 +469,9 @@ describeDb('ai-runtime 真实PG：设置/加密计划/合并/幂等/关怀/删�
       const row = await user('我不想活了，AI_SAFETY_PRIVATE_CANARY');
       await finish(row.id);
       expect((await store.get(row.id))?.status).toBe('done');
-      expect(calls.at(-1)?.safetyPriority).toBe(true);
+      // c4773a3：安全检查改走可信平台端口（平台付费），普通高危聊天不再带 safetyPriority 借透支；
+      // 网关任何错误都由免费规则模板兜底，这里断言兜底完成且没有调用带透支标记。
+      expect(calls.every((call) => !call.safetyPriority)).toBe(true);
       const latest = await app
         .get(CHAT_READ_PORT)
         .readMessages({ conversationId: cid, scopes: ['normal'], limit: 2 });
