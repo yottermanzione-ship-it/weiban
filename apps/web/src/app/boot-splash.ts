@@ -79,6 +79,8 @@ export function finishBoot(immediate = false): void {
     document.body.removeAttribute('bgcolor');
     refreshThemeColor();
     if (!root) return;
+    // 淡出意味着启动完成：立即退出无障碍状态区，不能在延迟移除时与 toast 状态重复。
+    root.setAttribute('aria-hidden', 'true');
     root.classList.add('boot-out');
     window.setTimeout(() => root.remove(), FADE_MS);
   }, wait);
