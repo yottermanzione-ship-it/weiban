@@ -27,6 +27,7 @@ import { characterScenarioOverrides, scenarioSelections } from '../infra/db/sche
 import { MODEL_ACCESS_POLICY, type ModelPolicy } from '../tokens.js';
 import { ALL_SCENARIOS, CatalogService, type ModelFacts } from './catalog.js';
 import { refState, type ModelRefStateOut } from './selection-state.js';
+import { isRealtimeCallEntry } from './realtime-call.js';
 import {
   checkVoiceCallComponents,
   isVoiceCallComposite,
@@ -148,6 +149,8 @@ export class ScenarioService {
     source: 'override' | 'user';
   }): Promise<VoiceCallPlan> {
     const facts = await this.catalog.fact(selected.key);
+    if (isRealtimeCallEntry(facts.entry))
+      return { kind: 'realtime', source: selected.source, facts };
     if (!isVoiceCallComposite(facts.entry)) return { kind: 'not_composite' };
     const unavailable = (failure: VoiceCallFailure): VoiceCallPlan => ({
       kind: 'unavailable',
@@ -198,7 +201,7 @@ export class ScenarioService {
         unavailableReason: null,
         unavailableDetail: null,
       };
-    if (plan.kind === 'not_composite') return refState(facts);
+    if (plan.kind === 'not_composite' || plan.kind === 'realtime') return refState(facts);
     const failure = plan.failure;
     if (failure.reason === 'pipeline_unconfigured' || failure.reason === 'composite_disabled')
       return {
