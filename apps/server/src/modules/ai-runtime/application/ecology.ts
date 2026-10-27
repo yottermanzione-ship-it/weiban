@@ -112,6 +112,8 @@ export const ECOLOGY_CLEANUP_JOB = 'ai.ecology_cleanup';
 const MAX_WAKES_PER_TICK = 2;
 /** 你发了还没回的主动消息达到这个数，就不再给聊天类工具（不纠缠，17 号 §7、PRD SIM-05）。 */
 const UNANSWERED_LIMIT = 2;
+/** 角色消息之间超过这个间隔，算新的一轮（一次回复的多个气泡只算一轮）。 */
+const TURN_GAP_MS = 10 * 60_000;
 /** 用户 5 分钟内在聊天：不插聊天类动作（同 P-09）。 */
 const BUSY_MS = 5 * 60_000;
 const ABSENCE_MS = 72 * 3600_000;
@@ -847,12 +849,17 @@ export class EcologyService {
       .readMessages({ conversationId: contact.conversationId, scopes: ['normal'], limit: 30 })
       .catch(() => []);
     const visible = history.filter((m) => m.senderKind !== 'system' && m.status === 'normal');
+    // 未回复 = 用户最后一句之后角色「主动」的轮数。对那句话的直接回复（常拆成几个气泡）不算；
+    // 与上一条相隔超过 TURN_GAP_MS 的一串角色消息算一轮主动（10-28 生产：3 个回复气泡被算成 3 条未回，聊天类候选全被挡掉）。
+    const lastUserIndex = visible.map((m) => m.senderKind).lastIndexOf('user');
     let unanswered = 0;
-    for (let i = visible.length - 1; i >= 0; i--) {
-      if (visible[i]!.senderKind === 'user') break;
-      unanswered++;
+    let previousAt = lastUserIndex >= 0 ? Date.parse(visible[lastUserIndex]!.createdAt) : null;
+    for (const m of visible.slice(lastUserIndex + 1)) {
+      const at = Date.parse(m.createdAt);
+      if (previousAt === null || at - previousAt > TURN_GAP_MS) unanswered++;
+      previousAt = at;
     }
-    const lastUser = [...visible].reverse().find((m) => m.senderKind === 'user');
+    const lastUser = lastUserIndex >= 0 ? visible[lastUserIndex] : undefined;
     const sinceUserMs = lastUser ? nowMs - Date.parse(lastUser.createdAt) : Infinity;
     const [activity] = await this.db.db
       .select({ at: sql<Date>`max(${userChatActivity.lastAt})` })
