@@ -112,3 +112,55 @@ export function saveStoreSnapshot(items: CachedPack[]): void {
     // 存储满了或被禁用：只是下次要多加载一次，不影响使用。
   }
 }
+
+/**
+ * U8：本次打开里已经读出来的封面（object URL，按「系列ID + 更新时间」）。
+ * PackCover 首帧直接用，不再先画网络图、等读完本机库再换一次；启动预加载也写这里。有上限，淘汰时回收。
+ */
+const coverUrls = new Map<string, string>();
+const COVER_URL_LIMIT = 200;
+const coverKey = (packId: string, updatedAt: string) => `${packId}|${updatedAt}`;
+
+export function memoryCover(packId: string, updatedAt: string): string | undefined {
+  return coverUrls.get(coverKey(packId, updatedAt));
+}
+
+export function rememberCover(packId: string, updatedAt: string, blob: Blob): string {
+  const key = coverKey(packId, updatedAt);
+  const existing = coverUrls.get(key);
+  if (existing) return existing;
+  const url = URL.createObjectURL(blob);
+  coverUrls.set(key, url);
+  while (coverUrls.size > COVER_URL_LIMIT) {
+    const oldest = coverUrls.entries().next();
+    if (oldest.done) break;
+    coverUrls.delete(oldest.value[0]);
+    URL.revokeObjectURL(oldest.value[1]);
+  }
+  return url;
+}
+
+/** 本机库里有就读进内存；没有就下载一次并存进本机库。返回是否就绪。 */
+export async function preloadCover(
+  packId: string,
+  updatedAt: string,
+  url: string | null,
+): Promise<boolean> {
+  if (memoryCover(packId, updatedAt)) return true;
+  const cached = await readCover(packId, updatedAt);
+  if (cached) {
+    rememberCover(packId, updatedAt, cached);
+    return true;
+  }
+  if (!url) return false;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return false;
+    const blob = await response.blob();
+    void writeCover(packId, updatedAt, blob);
+    rememberCover(packId, updatedAt, blob);
+    return true;
+  } catch {
+    return false;
+  }
+}

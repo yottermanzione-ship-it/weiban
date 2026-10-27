@@ -112,13 +112,24 @@ export function useWhiteSurface() {
  */
 function syncThemeColor(scheme: Scheme) {
   const white = surface === 'white';
+  // U8：启动页（html[data-boot]，index.html 写入、app/boot-splash.ts 移除）期间一律品牌绿，深色模式也一样。
+  const booting = document.documentElement.hasAttribute('data-boot');
   document.querySelectorAll('meta[name="theme-color"]').forEach((meta) => {
+    if (booting) {
+      meta.setAttribute('content', BOOT_GREEN);
+      return;
+    }
     const dark =
       scheme === 'dark' ||
       (scheme === 'system' && (meta.getAttribute('media') ?? '').includes('dark'));
     const light = white ? '#FFFFFF' : '#EDEDED';
     meta.setAttribute('content', dark ? (white ? '#191919' : '#202020') : light);
   });
+}
+const BOOT_GREEN = '#07C160';
+/** U8：启动页结束（去掉 html[data-boot]）后调用，状态栏 / 地址栏切回当前页面的颜色。 */
+export function refreshThemeColor() {
+  syncThemeColor(getScheme());
 }
 export function setScheme(value: Scheme) {
   write(SCHEME_KEY, value);

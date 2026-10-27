@@ -7,9 +7,11 @@ export function friendlyError(error: unknown): string {
   return error instanceof ApiFailure ? error.message : '请检查填写的内容，稍后再试';
 }
 type Result<T> = { key: string; data?: T; error: string; loading: boolean };
+const STALE_OK = { allowStale: true } as const;
 /**
  * enabled = false 时不请求（同一组件里按条件二选一的接口）。
  * 上次的结果先同步画出来（api.peek），再在后台回源更新，所以切回页面不会先清空成占位或空列表；
+ * U8：超过 4 分钟的内存结果、启动时从本机库 prime 进来的结果也先画（allowStale），不再先闪一帧骨架屏；
  * 同一个资源的并发请求由 api-client 合并，组件卸载也不会取消别的组件还在等的那次请求。
  */
 export function useRemote<E extends EndpointDef>(
@@ -22,7 +24,7 @@ export function useRemote<E extends EndpointDef>(
   const [revision, setRevision] = useState(0);
   function seed(): Result<z.output<E['response']>> {
     if (!enabled) return { key, error: '', loading: false };
-    const hit = api.peek(endpoint, options);
+    const hit = api.peek(endpoint, options, STALE_OK);
     return { key, data: hit?.value, error: '', loading: !hit };
   }
   useEffect(() => {
@@ -37,7 +39,7 @@ export function useRemote<E extends EndpointDef>(
     const owner = api.ownerKey();
     const live = () => active && api.ownerKey() === owner;
     const request = JSON.parse(key) as RequestOptions<E>;
-    const hit = api.peek(endpoint, request);
+    const hit = api.peek(endpoint, request, STALE_OK);
     setState((previous) => {
       const data = hit?.value ?? (previous.key === key ? previous.data : undefined);
       return { key, data, error: '', loading: data === undefined };

@@ -142,9 +142,9 @@ export class ApiClient {
     this.memory.clear();
     this.inflight.clear();
   }
-  private remember(key: string, value: unknown): void {
+  private remember(key: string, value: unknown, at = Date.now()): void {
     this.memory.delete(key);
-    this.memory.set(key, { value, at: Date.now() });
+    this.memory.set(key, { value, at });
     if (this.memory.size <= MEMORY_LIMIT) return;
     const oldest = this.memory.keys().next();
     if (!oldest.done) this.memory.delete(oldest.value);
@@ -152,11 +152,14 @@ export class ApiClient {
   /**
    * 同步取上次成功的结果：组件重新挂载时先画出来，不必先清空成占位或空列表。
    * 显式 networkOnly、非 GET、未登录接口一律不读；媒体链接过期前 30 秒也不再返回。
+   * 默认只给 4 分钟内的结果；allowStale（U8）连更早的、以及启动时 prime 进来的本机结果也给，
+   * 用于页面首帧先画（调用方随后照常回源刷新），切页不再先出骨架屏再闪成内容。
    */
   peek<E extends EndpointDef>(
     endpoint: E,
     options: RequestOptions<E> = {},
-  ): { value: z.output<E['response']>; ageMs: number } | undefined {
+    mode: { allowStale?: boolean } = {},
+  ): { value: z.output<E['response']>; ageMs: number; stale: boolean } | undefined {
     if (!this.cacheResponses || endpoint.method !== 'GET' || endpoint.auth === 'none')
       return undefined;
     if (options.networkOnly) return undefined;
@@ -168,11 +171,42 @@ export class ApiClient {
     }
     const hit = this.memory.get(key);
     if (!hit) return undefined;
+    if (expiredLink(hit.value)) {
+      this.memory.delete(key);
+      return undefined;
+    }
     const ageMs = Date.now() - hit.at;
-    if (ageMs <= MEMORY_MAX_AGE_MS && !expiredLink(hit.value))
-      return { value: hit.value as z.output<E['response']>, ageMs };
-    this.memory.delete(key);
-    return undefined;
+    const stale = ageMs > MEMORY_MAX_AGE_MS;
+    // 过了 4 分钟的结果留在内存里（总数仍受 MEMORY_LIMIT 限制），只给明确接受旧结果的调用方。
+    if (stale && !mode.allowStale) return undefined;
+    return { value: hit.value as z.output<E['response']>, ageMs, stale };
+  }
+  /**
+   * U8 启动预加载：把本机库里上次的结果读进内存（记为旧结果），页面首帧用
+   * peek(..., { allowStale: true }) 同步画出来、再照常回源刷新。内存里已有就不覆盖。
+   * 返回内存里是否已有可先画的结果。读库期间换了账号不写入。
+   */
+  async prime<E extends EndpointDef>(
+    endpoint: E,
+    options: RequestOptions<E> = {},
+  ): Promise<boolean> {
+    const auth = this.auth;
+    if (!this.cacheResponses || !auth || endpoint.method !== 'GET' || endpoint.auth === 'none')
+      return false;
+    if (options.networkOnly) return false;
+    let key: string;
+    try {
+      key = this.key(endpoint, this.url(endpoint, options));
+    } catch {
+      return false;
+    }
+    if (this.memory.has(key)) return true;
+    const value = await this.cached(endpoint, options).catch(() => undefined);
+    if (this.auth !== auth) return false;
+    if (this.memory.has(key)) return true;
+    if (value === undefined || expiredLink(value)) return false;
+    this.remember(key, value, 0);
+    return true;
   }
   /** 旧WebSocket的失效通知不能退出刚切换的新会话。 */
   async forgetIf(owner: { userId: string; sessionId: string }): Promise<boolean> {

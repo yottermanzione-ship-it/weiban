@@ -115,13 +115,56 @@ function MomentImage({ mediaId, single }: { mediaId: string; single: boolean }) 
   );
 }
 /** 列表加载器：游标原样回传；收到 moments.post_changed 时重拉单条。 */
+type PostPage = { items: MomentsPost[]; nextCursor: string | null };
+/**
+ * U8：朋友圈首页第一页的内存快照（按账号）。切回朋友圈先画上次那页、后台静默刷新，
+ * 不再每次先出骨架屏；启动页预加载也写这里。
+ */
+const firstPages = new Map<string, PostPage>();
+const FEED_CACHE = 'feed';
+const feedRequest = (cursor: string | undefined) =>
+  api.call(MomentsEndpoints.listFeed, { query: { cursor, limit: 10 }, networkOnly: true });
+/** 启动页预加载：取朋友圈第一页放进内存快照。 */
+export async function preloadMomentsFeed(): Promise<void> {
+  const owner = api.ownerKey();
+  const page = await feedRequest(undefined);
+  if (api.ownerKey() === owner) firstPages.set(`${owner}|${FEED_CACHE}`, page);
+}
 function usePostList(
-  fetchPage: (
-    cursor: string | undefined,
-  ) => Promise<{ items: MomentsPost[]; nextCursor: string | null }>,
+  fetchPage: (cursor: string | undefined) => Promise<PostPage>,
+  cacheKey?: string,
 ) {
-  const [items, setItems] = useState<MomentsPost[]>([]);
-  const [cursor, setCursor] = useState<string | null | undefined>(undefined);
+  const scoped = cacheKey ? `${api.ownerKey()}|${cacheKey}` : null;
+  const [seed] = useState(() => (scoped ? firstPages.get(scoped) : undefined));
+  const [items, setItems] = useState<MomentsPost[]>(() => seed?.items ?? []);
+  const [cursor, setCursor] = useState<string | null | undefined>(() =>
+    seed ? seed.nextCursor : undefined,
+  );
+  /** 内存快照跟着本页的删改走，切回来不会先闪出已删掉的动态。 */
+  const editCache = (change: (page: PostPage) => PostPage) => {
+    const cached = scoped ? firstPages.get(scoped) : undefined;
+    if (scoped && cached) firstPages.set(scoped, change(cached));
+  };
+  useEffect(() => {
+    if (!seed || !scoped) return;
+    let alive = true;
+    void fetchPage(undefined)
+      .then((page) => {
+        firstPages.set(scoped, page);
+        if (!alive) return;
+        // 只换掉第一页那一段；已经往下翻出来的保留。
+        setItems((previous) => {
+          const fresh = new Set(page.items.map((post) => post.postId));
+          const rest = previous.slice(seed.items.length).filter((post) => !fresh.has(post.postId));
+          return [...page.items, ...rest];
+        });
+        setCursor((previous) => (previous === seed.nextCursor ? page.nextCursor : previous));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [seed, scoped, fetchPage]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const busy = useRef(false);
@@ -132,6 +175,7 @@ function usePostList(
     setError('');
     try {
       const page = await fetchPage(cursor);
+      if (cursor === undefined && scoped) firstPages.set(scoped, page);
       setItems((prev) => [
         ...prev,
         ...page.items.filter((p) => !prev.some((q) => q.postId === p.postId)),
@@ -164,10 +208,21 @@ function usePostList(
     error,
     done: cursor === null,
     load,
-    replace: (post: MomentsPost) =>
-      setItems((prev) => prev.map((p) => (p.postId === post.postId ? post : p))),
-    remove: (postId: string) => setItems((prev) => prev.filter((p) => p.postId !== postId)),
-    prepend: (post: MomentsPost) => setItems((prev) => [post, ...prev]),
+    replace: (post: MomentsPost) => {
+      editCache((page) => ({
+        ...page,
+        items: page.items.map((p) => (p.postId === post.postId ? post : p)),
+      }));
+      setItems((prev) => prev.map((p) => (p.postId === post.postId ? post : p)));
+    },
+    remove: (postId: string) => {
+      editCache((page) => ({ ...page, items: page.items.filter((p) => p.postId !== postId) }));
+      setItems((prev) => prev.filter((p) => p.postId !== postId));
+    },
+    prepend: (post: MomentsPost) => {
+      editCache((page) => ({ ...page, items: [post, ...page.items] }));
+      setItems((prev) => [post, ...prev]);
+    },
   };
 }
 
@@ -674,12 +729,7 @@ export function MomentsFeedPage() {
   const navigate = useNavigate();
   const [cameraMenu, setCameraMenu] = useState(false);
   const cameraPress = useLongPress(() => navigate('/moments/new'));
-  const fetchPage = useCallback(
-    (cursor: string | undefined) =>
-      api.call(MomentsEndpoints.listFeed, { query: { cursor, limit: 10 }, networkOnly: true }),
-    [],
-  );
-  const list = usePostList(fetchPage);
+  const list = usePostList(feedRequest, FEED_CACHE);
   useEffect(() => {
     void api.call(MomentsEndpoints.markSeen, { body: { scope: 'posts' } }).catch(() => {});
   }, []);

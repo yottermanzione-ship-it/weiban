@@ -5,7 +5,7 @@ import { PluginsPage } from '../features/plugins.js';
 import { EcologyInsufficientNotice } from '../features/ecology-insufficient-notice.js';
 import { EcologyPage } from '../features/ecology.js';
 import { MurmursPage } from '../features/murmurs.js';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
 import { RouteMotion } from '../features/route-motion.js';
 import { BackArrow } from '../features/shell-kit.js';
@@ -29,7 +29,7 @@ import {
 import { ChatProvider } from './chat.js';
 import { AuthProvider, useAuth } from './auth.js';
 import { AuthPage } from '../features/auth-page.js';
-import { SplashScreen, useSplash } from '../features/splash.js';
+import { BootSplash } from '../features/splash.js';
 import { MePage, ServicesPage } from '../features/me.js';
 import { ProfilePage } from '../features/profile.js';
 import {
@@ -518,19 +518,16 @@ function Shell() {
     </CallProvider>
   );
 }
-/** 启动页盖在最上层：至少 1.2 秒、且登录状态恢复完成后淡出。 */
-function Splash() {
-  const auth = useAuth();
-  const phase = useSplash(!auth.loading);
-  return phase === 'done' ? null : <SplashScreen fading={phase === 'fading'} />;
-}
 export function App() {
+  // U8：启动页（index.html 里的绿色启动层）显示期间跑登录恢复与预加载，结束后卸载，不再订阅聊天状态。
+  const [booting, setBooting] = useState(true);
+  const bootDone = useCallback(() => setBooting(false), []);
   return (
     <AuthProvider>
       <ServiceWorkerRefresh />
       <ChatProvider>
         <Shell />
-        <Splash />
+        {booting && <BootSplash onDone={bootDone} />}
       </ChatProvider>
     </AuthProvider>
   );
