@@ -13,7 +13,8 @@ const fields = ['asrModelKey', 'textModelKey', 'ttsModelKey'] as const;
 
 /** Strict validation: unknown fields, missing components or repeated components are rejected. */
 export function parseVoiceCallPipeline(raw: unknown): VoiceCallPipelineResult {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, error: 'pipeline_invalid' };
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+    return { ok: false, error: 'pipeline_invalid' };
   const record = raw as Record<string, unknown>;
   if (Object.keys(record).some((key) => !(fields as readonly string[]).includes(key)))
     return { ok: false, error: 'pipeline_invalid' };

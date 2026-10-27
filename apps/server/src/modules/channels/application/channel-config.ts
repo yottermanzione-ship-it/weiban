@@ -20,7 +20,10 @@ export interface ChannelRuntimeConfig {
   /** iLink 服务节点（只有微信有；已校验过的官方 HTTPS 节点）。 */
   readonly ilinkBaseUrl: string;
   /** 微博端点（只有微博有）。 */
-  readonly weibo: { readonly tokenEndpoint: string | null; readonly wsEndpoint: string | null } | null;
+  readonly weibo: {
+    readonly tokenEndpoint: string | null;
+    readonly wsEndpoint: string | null;
+  } | null;
 }
 
 /**
