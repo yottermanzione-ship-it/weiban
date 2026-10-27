@@ -9,6 +9,8 @@ export const SERVICE_UNIT_LABELS = {
   asr_minute: '每分钟语音识别',
   realtime_minute: '每分钟通话',
   image: '每张图片',
+  audio_input_tokens_per_million: '实时通话音频输入 / 百万 token',
+  audio_output_tokens_per_million: '实时通话音频输出 / 百万 token',
 } as const;
 export type ServiceUnit = keyof typeof SERVICE_UNIT_LABELS;
 export interface ServicePriceDraft {
@@ -26,7 +28,8 @@ export const isSearchOnlyBounds = (bounds: RouteBillingBounds | null | undefined
     !bounds.tts &&
     !bounds.asr &&
     !bounds.image &&
-    !bounds.decision,
+    !bounds.decision &&
+    !bounds.realtime,
   );
 export function searchFormToBounds(
   maxResults: number | null | undefined,
@@ -80,7 +83,7 @@ export function ServicePriceFields() {
         type="info"
         showIcon
         message="按服务实际用量定价"
-        description="单位是什么，就填写每个该单位的人民币金额。搜索填「元/次」，不是「元/千次」，也不用伪造 token 价格。字数/分钟单位仅用于上游确实按该维度计费的旧语音；新音频 token 模型需要专用用量适配，不能强行换算成分钟。DeepSeek 公开标价 5 元/千次成功请求相当于 0.005 元/次；请核对供应商当前价及账户优惠后保存。"
+        description="单位是什么，就填写每个该单位的人民币金额。搜索填「元/次」，不是「元/千次」，也不用伪造 token 价格。字数/分钟单位仅用于上游确实按该维度计费的旧语音；实时语音 / Omni 通话模型：文字 token 填在上方「输入 / 输出」价格，音频 token 在这里分别填「实时通话音频输入 / 输出」（元 / 百万 token），不要换算成分钟。DeepSeek 公开标价 5 元/千次成功请求相当于 0.005 元/次；请核对供应商当前价及账户优惠后保存。"
       />
       <Form.List
         name="serviceRates"
@@ -160,7 +163,7 @@ export function ServicePriceFields() {
             <Button
               type="dashed"
               icon={<PlusOutlined />}
-              disabled={fields.length >= 5}
+              disabled={fields.length >= Object.keys(SERVICE_UNIT_LABELS).length}
               onClick={() => add({ unit: 'search_call', price: null, cost: null })}
             >
               添加服务单价

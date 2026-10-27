@@ -32,7 +32,8 @@ export function isTextOnlyBounds(bounds: RouteBillingBounds | null | undefined):
     !bounds.asr &&
     !bounds.image &&
     !bounds.search &&
-    !bounds.decision,
+    !bounds.decision &&
+    !bounds.realtime,
   );
 }
 

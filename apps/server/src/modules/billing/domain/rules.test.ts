@@ -174,6 +174,37 @@ describe('计价 priceUsage（billing.md 4.2）', () => {
     expect(third).toMatchObject({ ok: true, sellMicros: 234 });
   });
 
+  it('4.5：实时通话的音频 token 按各自单价计，不并入文字 token；缺价时严格模式拒绝', () => {
+    const audioRows: PriceRow[] = [
+      ...rows,
+      {
+        modelKey: M,
+        unit: 'audio_input_tokens_per_million',
+        band: null,
+        priceMicros: 52_000_000,
+        costMicros: 40_000_000,
+      },
+      {
+        modelKey: M,
+        unit: 'audio_output_tokens_per_million',
+        band: null,
+        priceMicros: 195_000_000,
+        costMicros: 150_000_000,
+      },
+    ];
+    const usage = { inputTokens: 1000, outputTokens: 100, audioInputTokens: 500, audioOutputTokens: 200 };
+    // 1000×2 + 100×8 + 500×52 + 200×195 = 2000 + 800 + 26000 + 39000 = 67800
+    expect(priceUsage(audioRows, usage, MON_NIGHT, true)).toMatchObject({
+      ok: true,
+      sellMicros: 67_800,
+      costMicros: 1000 + 400 + 20_000 + 30_000,
+    });
+    expect(priceUsage(rows, { audioOutputTokens: 1 }, MON_NIGHT, true)).toMatchObject({
+      ok: false,
+      missingUnit: 'audio_output_tokens_per_million',
+    });
+  });
+
   it('分时价：工作日高峰取高峰价，其余时段取全天价', () => {
     expect(priceUsage(rows, { outputTokens: 1_000_000 }, MON_PEAK, true)).toMatchObject({
       sellMicros: 16_000_000,
