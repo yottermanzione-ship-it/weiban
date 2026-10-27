@@ -17,8 +17,10 @@ import { ComingSoonRow, Chevron, GroupHeader, MenuGroup, MenuRow, NavBar } from 
 import { useAnnouncementUnread } from './release.js';
 import { pointsText } from './points.js';
 import { MyStatusChip } from './user-status.js';
+import { usePageBackdrop } from '../data/display-prefs.js';
 
 export function MePage() {
+  usePageBackdrop('me');
   const { session } = useAuth();
   const profile = useRemote(IdentityEndpoints.getProfile);
   const alias = useRemote(IdentityEndpoints.getAlias);

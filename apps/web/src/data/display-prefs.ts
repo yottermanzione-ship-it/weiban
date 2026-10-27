@@ -73,6 +73,31 @@ export function setPageSurface(value: PageSurface) {
   else delete root.dataset.surface;
   syncThemeColor(getScheme());
 }
+/**
+ * U8：「我」页、设个状态页顶部不是灰底，手机宽度下 html / body 底色要跟页面顶部一致（F1-9，iPhone 状态栏取它着色）。
+ * 以前用 html:has(main.me-page) 判断；祖先上的 :has() 让任何列表滚动插入新行时都要整页重算样式（U8 实测卡顿根因之一），
+ * 改为页面挂载时写 html[data-backdrop]。只管底色，不改 theme-color（与改前一致）。
+ * 切页动画里新旧两页可能同时挂着：按挂载顺序记一个栈，卸载只摘掉自己那一项。
+ */
+export type PageBackdrop = 'me' | 'status';
+const backdrops: { kind: PageBackdrop }[] = [];
+function syncBackdrop() {
+  const top = backdrops[backdrops.length - 1];
+  if (top) document.documentElement.dataset.backdrop = top.kind;
+  else delete document.documentElement.dataset.backdrop;
+}
+export function usePageBackdrop(kind: PageBackdrop) {
+  useEffect(() => {
+    const entry = { kind };
+    backdrops.push(entry);
+    syncBackdrop();
+    return () => {
+      const index = backdrops.indexOf(entry);
+      if (index >= 0) backdrops.splice(index, 1);
+      syncBackdrop();
+    };
+  }, [kind]);
+}
 /** 整页白底的页面调用：挂载时切白，离开时切回灰色。 */
 export function useWhiteSurface() {
   useEffect(() => {

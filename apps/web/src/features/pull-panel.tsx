@@ -373,12 +373,25 @@ export function PullMiniApps({ title, children }: { title: ReactNode; children: 
     };
     const sync = () => (atTop() ? attach() : detach());
     sync();
-    // scroll 不冒泡，用捕获阶段拿列表自己的滚动；滚动到顶 / 离开顶部时切换监听。
-    list.addEventListener('scroll', sync, { capture: true, passive: true });
+    /*
+     * scroll 不冒泡，用捕获阶段拿列表自己的滚动；滚动到顶 / 离开顶部时切换监听。
+     * U8：每个 scroll 事件里读 scrollTop 会在虚拟列表刚插完新行时强制浏览器同步排版（实测每轮滑动 150～360ms），
+     * 改成每帧最多读一次（requestAnimationFrame 里读，和这一帧本来就要做的排版合并）。
+     */
+    let frame = 0;
+    const schedule = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        sync();
+      });
+    };
+    list.addEventListener('scroll', schedule, { capture: true, passive: true });
     return () => {
       handlers.forEach((off) => off());
       list.removeEventListener('touchstart', listStart);
-      list.removeEventListener('scroll', sync, { capture: true });
+      list.removeEventListener('scroll', schedule, { capture: true });
+      window.cancelAnimationFrame(frame);
       detach();
     };
   }, [moveTo, release, animateTo, openY]);

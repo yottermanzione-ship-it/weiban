@@ -299,7 +299,7 @@ function Shell() {
   return (
     <CallProvider>
       <div
-        className={`app-shell ${showTabs ? 'with-tabs' : ''}`}
+        className={`app-shell ${showTabs ? 'with-tabs' : ''} ${location.pathname === '/chat' ? 'on-chat-list' : ''}`}
         key={`${auth.session.user.userId}:${auth.session.session.sessionId}`}
       >
         <FocusCapsule />

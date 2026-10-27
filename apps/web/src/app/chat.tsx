@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -36,6 +37,13 @@ interface ChatContextValue {
   assertOwner(): void;
 }
 const ChatContext = createContext<ChatContextValue | null>(null);
+/**
+ * U8：联系人自定义头像（characterId → mediaId）单独一个 context。
+ * 头像组件以前订阅整个 useChat()：同步状态每变一次（含「正在输入」），列表里每个头像都跟着重渲染；
+ * 现在只有自定义头像真的变了才通知。
+ */
+const EMPTY_AVATARS: ReadonlyMap<string, string | null> = new Map();
+const CustomAvatarContext = createContext<ReadonlyMap<string, string | null>>(EMPTY_AVATARS);
 export function ChatProvider({ children }: { children: ReactNode }) {
   const { session } = useAuth();
   const driver = useRef<ChatDriver | null>(null);
@@ -69,6 +77,26 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [],
   );
   const typing = owned ? rawTyping : {};
+  const avatarKey = useMemo(
+    () =>
+      state.contacts
+        .filter((contact) => contact.customAvatarMediaId)
+        .map((contact) => `${contact.characterId}=${contact.customAvatarMediaId}`)
+        .join(','),
+    [state.contacts],
+  );
+  const customAvatars = useMemo<ReadonlyMap<string, string | null>>(
+    () =>
+      avatarKey
+        ? new Map(
+            avatarKey.split(',').map((pair) => {
+              const [id = '', mediaId = ''] = pair.split('=');
+              return [id, mediaId];
+            }),
+          )
+        : EMPTY_AVATARS,
+    [avatarKey],
+  );
   useEffect(() => {
     if (!session) return;
     let active = true;
@@ -210,9 +238,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         },
       }}
     >
-      {children}
+      <CustomAvatarContext.Provider value={customAvatars}>{children}</CustomAvatarContext.Provider>
     </ChatContext.Provider>
   );
+}
+/** 某个角色的联系人自定义头像 mediaId（没有设置时为 undefined）。 */
+export function useCustomAvatar(characterId: string): string | null | undefined {
+  return useContext(CustomAvatarContext).get(characterId);
 }
 export function useChat() {
   const value = useContext(ChatContext);
