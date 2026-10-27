@@ -522,7 +522,8 @@ export class ModelGateway implements ModelGatewayPort {
                     temperature: input.temperature ?? DEFAULT_TEMPERATURE[input.purpose],
                     responseFormat: input.responseFormat,
                     idempotencyKey: key,
-                    timeoutMs: Math.min(20000, remaining),
+                    // 开思考的后台整理单次常超 20 秒（10-27 生产：记忆整理 3 次 20 秒超时把整条上游判为不可用），放宽到 55 秒。
+                    timeoutMs: Math.min(thinkingBudget > 0 ? 55000 : 20000, remaining),
                     ...(thinkingBudget > 0
                       ? { thinking: 'on' as const, thinkingBudget }
                       : { thinking: 'off' as const }),
