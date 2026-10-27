@@ -167,6 +167,9 @@ const QUANTITY_UNITS: Array<{
   { field: 'ttsChars', unit: 'tts_10k_chars', factor: 300n }, // ÷ 10,000
   { field: 'asrSeconds', unit: 'asr_minute', factor: 50_000n }, // ÷ 60
   { field: 'realtimeSeconds', unit: 'realtime_minute', factor: 50_000n },
+  // 4.5：实时语音 / Omni 的音频 token（÷ 1,000,000），与文字 token 分开计价
+  { field: 'audioInputTokens', unit: 'audio_input_tokens_per_million', factor: 3n },
+  { field: 'audioOutputTokens', unit: 'audio_output_tokens_per_million', factor: 3n },
   { field: 'searchCalls', unit: 'search_call', factor: 3_000_000n },
 ];
 

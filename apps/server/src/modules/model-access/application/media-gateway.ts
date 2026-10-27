@@ -37,6 +37,9 @@ import {
   type ModelGatewayMediaPort,
   type PortResult,
   type RealtimeAsrSession,
+  type OpenRealtimeVoiceInput,
+  type RealtimeVoiceSession,
+  type VoiceCallRoute,
   type StreamingTtsResult,
   type SynthesizeSpeechInput,
   type TranscribeSpeechInput,
@@ -72,6 +75,10 @@ import { probeAudioSeconds } from '../infra/audio-duration.js';
 import { WebToolsStore } from './web-tools-store.js';
 import { privateSearchText, publicWebUrl } from '../domain/web-search.js';
 import { decisionQuestions } from '../infra/jev-adapter.js';
+import type { RealtimeConnection } from '../infra/dashscope-realtime.js';
+import { realtimeResponseEstimate } from './realtime-call.js';
+import { RealtimeVoice } from './realtime-voice-session.js';
+import { RealtimeVoiceStore } from './realtime-voices.js';
 
 type Service = 'speech_synthesis' | 'speech_recognition' | 'image_generation' | 'web_search';
 const SERVICE_SCENARIO: Record<Exclude<Service, 'web_search'>, ModelScenario> = {
@@ -153,6 +160,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     @Inject(CLOCK) private readonly clock: Clock,
     @Optional() @Inject(BillingBoundsService) private readonly bounds?: BillingBoundsService,
     @Optional() @Inject(ScenarioService) private readonly scenarios?: ScenarioService,
+    @Optional() @Inject(RealtimeVoiceStore) private readonly realtimeVoices?: RealtimeVoiceStore,
   ) {}
 
   // ---------- 服务开通 ----------
@@ -650,6 +658,108 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     );
     if (!first.ok) return first;
     return { ok: true, value: new RealtimeAsr(this, input, model.value, first.value) };
+  }
+
+  // ---------- 实时语音 / Omni 通话（批 V，契约 4.5） ----------
+
+  async voiceCallRoute(input: { userId: string; characterId: string }): Promise<VoiceCallRoute> {
+    const plan = this.scenarios
+      ? await this.scenarios.voiceCallPlan(input.userId, input.characterId)
+      : null;
+    if (plan?.kind !== 'realtime') return { kind: 'cascade' };
+    const model = await this.resolveRealtime(plan.facts);
+    return model.ok
+      ? { kind: 'realtime', modelKey: model.value.modelKey }
+      : { kind: 'unavailable', error: model.error };
+  }
+
+  async openRealtimeVoice(
+    input: OpenRealtimeVoiceInput,
+  ): Promise<PortResult<RealtimeVoiceSession, GenerateError>> {
+    const instructions = input.instructions.trim().slice(0, 20_000);
+    if (
+      !instructions ||
+      input.sampleRate !== 16000 ||
+      !Id.safeParse(input.characterId).success ||
+      !(await this.precheck(input))
+    )
+      return { ok: false, error: 'bad_request' };
+    const plan = this.scenarios
+      ? await this.scenarios.voiceCallPlan(input.userId, input.characterId)
+      : null;
+    if (plan?.kind !== 'realtime') return { ok: false, error: 'not_configured' };
+    const model = await this.resolveRealtime(plan.facts);
+    if (!model.ok) return model;
+    const bounds = model.value.billingBounds.realtime!;
+    if (!model.value.fake) {
+      const upstream = await this.upstreams.get(model.value.upstreamId);
+      if (upstream.kind !== 'dashscope') return { ok: false, error: 'model_unavailable' };
+    }
+    const voice = await this.realtimeVoices?.voiceFor(input.characterId, model.value.modelKey);
+    if (!voice) return { ok: false, error: 'not_configured' };
+    const estimate = realtimeResponseEstimate(bounds, instructions.length);
+    const first = await this.reserve(input, model.value, estimate, 0);
+    if (!first.ok) return first;
+    // 握手与会话参数不计费（供应商按回应计费）；冻结段在回应真正开始时才标记已发送。
+    const opened = await this.withTarget(model.value, async (target, adapter) =>
+      adapter.openRealtime
+        ? adapter.openRealtime(target, { instructions, voice })
+        : ({ ok: false, category: 'bad_request', zeroCost: true } as const),
+    ).catch((): MediaAdapterResult<RealtimeConnection> => ({
+      ok: false,
+      category: 'network_error',
+    }));
+    if (!opened.ok) {
+      await this.cancelCharge(first.value);
+      if (opened.category === 'invalid_key' || opened.category === 'quota_exhausted')
+        await this.upstreams
+          .reportStatus(
+            model.value.upstreamId,
+            opened.category === 'invalid_key' ? 'invalid' : 'quota_exhausted',
+            'gateway',
+            opened.category,
+          )
+          .catch(() => undefined);
+      return { ok: false, error: this.mapError(opened.category) };
+    }
+    const session = new RealtimeVoice<Charge>(
+      {
+        reserve: (segment) => this.reserve(input, model.value, estimate, segment),
+        beginCharge: (charge) => this.beginCharge(charge),
+        succeed: (charge, actual, known) => this.succeed(charge, actual, known),
+        failUnknown: (charge) => this.fail(charge, 'provider_error', undefined, false),
+        cancelCharge: (charge) => this.cancelCharge(charge),
+      },
+      { modelKey: model.value.modelKey, bounds },
+      opened.value,
+      first.value,
+    );
+    session.start();
+    return { ok: true, value: session };
+  }
+
+  /** 实时通话模型的线路：目录启用、上游可用、核准了 realtime 计费上限。不换别的模型。 */
+  private async resolveRealtime(facts: ModelFacts): Promise<PortResult<Resolved, GenerateError>> {
+    const reason = unavailableReason(facts.entry, facts.upstreamStatus);
+    if (reason === 'model_removed' || !facts.entry)
+      return { ok: false, error: 'model_unavailable' };
+    if (reason === 'provider_unavailable') return { ok: false, error: 'provider_unavailable' };
+    const billingBounds = await this.bounds?.get(
+      facts.entry.modelKey,
+      facts.entry.upstreamId,
+      facts.entry.upstreamModelId,
+    );
+    if (!billingBounds?.realtime) return { ok: false, error: 'model_unavailable' };
+    return {
+      ok: true,
+      value: {
+        modelKey: facts.entry.modelKey,
+        upstreamId: facts.entry.upstreamId,
+        upstreamModelId: facts.entry.upstreamModelId,
+        fake: isFakeModel(facts.entry.upstreamModelId, this.config.nodeEnv === 'production'),
+        billingBounds,
+      },
+    };
   }
 
   async streamSpeech(

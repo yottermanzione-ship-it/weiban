@@ -35,6 +35,8 @@ await build({
     'import-sticker-assets': 'src/cli/import-sticker-assets.ts',
     'ecology-config': 'src/cli/ecology-config.ts',
     'voice-call-pipeline': 'src/cli/voice-call-pipeline.ts',
+    'voice-catalog': 'src/cli/voice-catalog.ts',
+    'import-legacy-realtime-voices': 'src/cli/import-legacy-realtime-voices.ts',
   },
   outdir: 'dist',
   bundle: true,

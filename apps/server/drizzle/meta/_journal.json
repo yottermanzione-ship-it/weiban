@@ -933,6 +933,13 @@
       "when": 1799338800000,
       "tag": "0144_usage_reasoning_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 145,
+      "version": "7",
+      "when": 1799338900000,
+      "tag": "0145_realtime_voice_bindings",
+      "breakpoints": true
     }
   ]
 }

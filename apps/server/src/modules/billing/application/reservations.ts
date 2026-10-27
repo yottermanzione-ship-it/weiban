@@ -173,6 +173,8 @@ export class ReservationService implements BillingReservationPort {
           'ttsChars',
           'asrSeconds',
           'realtimeSeconds',
+          'audioInputTokens',
+          'audioOutputTokens',
           'searchCalls',
         ] as const;
         if (

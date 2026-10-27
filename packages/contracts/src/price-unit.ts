@@ -12,6 +12,9 @@ export const PriceUnit = z.enum([
   'asr_minute',
   'realtime_minute',
   'search_call',
+  // 4.5：实时语音 / Omni 通话的音频 token（元 / 百万 token）；同一通话的文字 token 仍按 input / output 单位计。
+  'audio_input_tokens_per_million',
+  'audio_output_tokens_per_million',
 ]);
 export type PriceUnit = z.infer<typeof PriceUnit>;
 
@@ -21,5 +24,7 @@ export const ServicePriceUnit = PriceUnit.extract([
   'asr_minute',
   'realtime_minute',
   'search_call',
+  'audio_input_tokens_per_million',
+  'audio_output_tokens_per_million',
 ]);
 export type ServicePriceUnit = z.infer<typeof ServicePriceUnit>;

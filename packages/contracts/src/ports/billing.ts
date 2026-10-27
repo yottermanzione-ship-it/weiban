@@ -29,6 +29,9 @@ export interface UsageQuantities {
   asrSeconds?: number;
   realtimeSeconds?: number;
   searchCalls?: number;
+  /** 4.5：实时语音 / Omni 通话中供应商报告的音频输入 / 输出 token（同次回应的文字 token 记在 inputTokens / outputTokens）。 */
+  audioInputTokens?: number;
+  audioOutputTokens?: number;
 }
 
 export interface ReserveInput {

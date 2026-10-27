@@ -42,3 +42,7 @@ export { evaluateConfiguredDecisions } from './application/decision-evaluation.j
 export { SHARED_WEB_SEARCH_PORT } from './tokens.js';
 /** 旧卡音色导入 CLI：只读当前可用的语音消息模型键。 */
 export { listVoiceMessageModelKeys } from './application/voice-model-registry.js';
+/** 批 V：语音目录登记 / 实时通话音色运维脚本。 */
+export { ModelAdminService } from './application/models.js';
+export { RealtimeVoiceStore, ProviderVoiceKey } from './application/realtime-voices.js';
+export { isRealtimeCallEntry, REALTIME_CALL_TAG } from './application/realtime-call.js';

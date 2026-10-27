@@ -9,9 +9,11 @@ import {
 
 const serviceRates = AdminModelWrite.shape.serviceRates;
 describe('3.36 service-unit pricing contracts', () => {
-  it('keeps all existing price units and only permits the five non-token units', () => {
-    expect(PriceUnit.options).toHaveLength(10);
-    expect(ServicePriceUnit.options).toHaveLength(5);
+  it('keeps all existing price units and only permits the seven non-token units (4.5 adds realtime audio tokens)', () => {
+    expect(PriceUnit.options).toHaveLength(12);
+    expect(ServicePriceUnit.options).toHaveLength(7);
+    expect(ServicePriceUnit.options).toContain('audio_input_tokens_per_million');
+    expect(ServicePriceUnit.options).toContain('audio_output_tokens_per_million');
     for (const unit of ServicePriceUnit.options) {
       expect(ModelServiceRateWrite.parse({ unit, price: 0 })).toEqual({ unit, price: 0 });
       expect(ModelServiceRateWrite.safeParse({ unit, price: 100_000, cost: null }).success).toBe(

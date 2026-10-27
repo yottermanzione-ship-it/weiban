@@ -24,6 +24,7 @@ import {
 import {
   characterOverrides,
   characterScenarioOverrides,
+  realtimeVoiceBindings,
   scenarioSelections,
   selections,
   usageRecords,
@@ -132,6 +133,10 @@ export class ModelAccessLifecycle implements OnModuleInit, UserDataOwner {
       .delete(characterScenarioOverrides)
       .where(eq(characterScenarioOverrides.characterId, characterId));
     await tx.db.delete(characterOverrides).where(eq(characterOverrides.characterId, characterId));
+    // 批 V：角色的实时通话音色（平台数据，随角色删除）
+    await tx.db
+      .delete(realtimeVoiceBindings)
+      .where(eq(realtimeVoiceBindings.characterId, characterId));
   }
 
   /** 角色被彻底删除：删除该用户对该角色的单独模型设置（可重复执行）。 */

@@ -47,6 +47,8 @@ const UNIT_LABELS: Record<string, string> = {
   asr_minute: '每分钟识别',
   realtime_minute: '每分钟通话',
   search_call: '每次搜索',
+  audio_input_tokens_per_million: '音频输入 / 百万 token',
+  audio_output_tokens_per_million: '音频输出 / 百万 token',
 };
 
 interface PriceRow {

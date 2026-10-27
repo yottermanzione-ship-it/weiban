@@ -151,6 +151,8 @@ export type VoiceCallPlanSource = 'user' | 'override';
 /** `voice_call` 场景的解析结果：没选组合模型 / 选到了组合模型 / 组合模型不可用。 */
 export type VoiceCallPlan =
   | { kind: 'not_composite' }
+  /** 批 V：选到实时语音 / Omni 端到端模型（标签 pipeline:rt），整通电话由它听和说。 */
+  | { kind: 'realtime'; source: VoiceCallPlanSource; facts: ModelFacts }
   | {
       kind: 'composite';
       source: VoiceCallPlanSource;
