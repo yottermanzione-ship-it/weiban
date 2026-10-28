@@ -46,8 +46,9 @@ import {
   type UsageQuantities,
   type WebSearchResultItem,
   type RouteBillingBounds,
+  type BillingModelRatePort,
 } from '@weiban/contracts';
-import { APP_CONFIG, CLOCK, type AppConfig, type Clock } from '../../../platform/index.js';
+import { APP_CONFIG, CLOCK, newId, type AppConfig, type Clock } from '../../../platform/index.js';
 import { BILLING_RESERVATION_PORT } from '../../billing/index.js';
 import { IDENTITY_ACCOUNT_STATUS_PORT, IDENTITY_DIRECTORY_PORT } from '../../identity/index.js';
 import { MEDIA_ASSET_READ_PORT, MEDIA_READ_PORT, MEDIA_SYSTEM_PORT } from '../../media/index.js';
@@ -63,6 +64,7 @@ import {
 import {
   MEDIA_ADAPTER,
   MODEL_ACCESS_CHARACTER_VOICE,
+  MODEL_RATE_PORT,
   type ModelAccessCharacterVoice,
 } from '../tokens.js';
 import { CatalogService, type ModelFacts } from './catalog.js';
@@ -80,20 +82,27 @@ import { WebToolsStore } from './web-tools-store.js';
 import { privateSearchText, publicWebUrl } from '../domain/web-search.js';
 import { decisionQuestions } from '../infra/jev-adapter.js';
 import type { RealtimeConnection } from '../infra/dashscope-realtime.js';
-import { realtimeResponseEstimate, REALTIME_VOICE_CLONE_COST_YUAN } from './realtime-call.js';
+import { realtimeResponseEstimate, realtimeVoiceCloneCostYuan } from './realtime-call.js';
 import { RealtimeVoice } from './realtime-voice-session.js';
 import { RealtimeVoiceStore } from './realtime-voices.js';
 import {
   RealtimeVoiceCloner,
+  type CloneCharge,
   type RealtimeCloneSample,
   type RealtimeVoiceChoice,
 } from './realtime-voice-clone.js';
 import { realtimeCloneProtocol } from '../infra/dashscope-voice-clone.js';
 import { prepareCloneSample } from '../infra/realtime-clone-sample.js';
 
-/** V2：拨打前的实时通话音色检查结果（calls 据此给出明确提示，不进入「接通后才失败」）。 */
+/**
+ * V2：拨打前的实时通话音色检查结果（calls 据此给出明确提示，不进入「接通后才失败」）。
+ * V3：insufficient_balance = 角色要先复刻音色、复刻费冻结失败且模型没有默认音色。
+ */
 export type RealtimeCallVoiceCheck =
-  { ok: true } | { ok: false; reason: 'no_voice' | 'clone_failed' };
+  { ok: true } | { ok: false; reason: 'no_voice' | 'clone_failed' | 'insufficient_balance' };
+
+/** V3：复刻费的付款人（触发这通电话的用户；按 voice 用途、用户钱包记账）。 */
+type ClonePayer = Pick<MediaCallBase, 'userId' | 'characterId' | 'conversationId'>;
 
 /** 复刻样本的容器格式：迁入样本是 MP3 / WAV；其余常见音频交给 ffmpeg 识别。 */
 const CLONE_SAMPLE_TYPES = ['audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/x-m4a'];
@@ -183,10 +192,11 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     @Optional()
     @Inject(MODEL_ACCESS_CHARACTER_VOICE)
     private readonly characterVoice?: ModelAccessCharacterVoice,
+    @Optional() @Inject(MODEL_RATE_PORT) private readonly rates?: BillingModelRatePort,
   ) {}
 
   /** V2：按需复刻（单进程内同一角色 + 模型只复刻一次）；首次使用时创建。 */
-  private voiceCloner?: RealtimeVoiceCloner<Resolved>;
+  private voiceCloner?: RealtimeVoiceCloner<Resolved, ClonePayer, Charge>;
 
   // ---------- 服务开通 ----------
 
@@ -721,8 +731,12 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       if (upstream.kind !== 'dashscope') return { ok: false, error: 'model_unavailable' };
     }
     // V2：先定音色（已有绑定 → 按需复刻，最多等 20 秒 → 模型默认音色），再冻结第一段费用；等待与失败都不留冻结。
-    const choice = await this.realtimeVoiceChoice(input.characterId, model.value, 'call');
-    if (!choice.voice) return { ok: false, error: 'not_configured' };
+    const choice = await this.realtimeVoiceChoice(input.characterId, model.value, 'call', input);
+    if (choice.voice === null)
+      return {
+        ok: false,
+        error: choice.reason === 'insufficient_balance' ? 'insufficient_balance' : 'not_configured',
+      };
     const voice = choice.voice;
     const estimate = realtimeResponseEstimate(bounds, instructions.length);
     const first = await this.reserve(input, model.value, estimate, 0);
@@ -803,7 +817,10 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     if (plan?.kind !== 'realtime') return { ok: true };
     const model = await this.resolveRealtime(plan.facts);
     if (!model.ok) return { ok: true };
-    const choice = await this.realtimeVoiceChoice(input.characterId, model.value, 'precheck');
+    const choice = await this.realtimeVoiceChoice(input.characterId, model.value, 'precheck', {
+      userId: input.userId,
+      characterId: input.characterId,
+    });
     return choice.voice !== null ? { ok: true } : { ok: false, reason: choice.reason };
   }
 
@@ -811,25 +828,62 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     characterId: string,
     model: Resolved,
     mode: 'call' | 'precheck',
+    payer: ClonePayer,
   ): Promise<RealtimeVoiceChoice> {
     const store = this.realtimeVoices;
     if (!store) return { voice: null, reason: 'no_voice' };
-    this.voiceCloner ??= new RealtimeVoiceCloner<Resolved>({
+    this.voiceCloner ??= new RealtimeVoiceCloner<Resolved, ClonePayer, Charge>({
       binding: (c, m) => store.binding(c, m),
       defaultVoice: async (m) => (await store.defaults())[m] ?? null,
       sample: (c) => this.realtimeCloneSample(c),
       clone: (m, i) => this.cloneRealtimeVoice(m, i),
-      save: (c, m, voice, sample) =>
+      save: (c, m, voice, sample, bill) =>
         store.saveClone({
           characterId: c,
-          modelKey: m,
+          modelKey: m.modelKey,
           providerVoiceKey: voice,
           sampleMediaId: sample.sampleMediaId,
-          costYuan: REALTIME_VOICE_CLONE_COST_YUAN,
+          costYuan: m.fake ? 0 : realtimeVoiceCloneCostYuan(m.upstreamModelId),
+          ...bill,
         }),
+      authorize: (m, p) => this.authorizeClone(m, p),
+      settle: async (charge) => {
+        const done = await this.succeed(charge, { voiceClones: 1 }, true);
+        return done.ok ? done.value.chargedMicros : 0;
+      },
+      // 失败不扣费：已发出的按 0 个结算解冻；不把复刻失败记成整条实时线路不可用。
+      refund: (charge) =>
+        charge.sent
+          ? this.fail(charge, 'provider_error', { voiceClones: 0 }, false)
+          : this.cancelCharge(charge),
       nowMs: () => this.clock.nowMs(),
     });
-    return this.voiceCloner.choose(characterId, model, mode);
+    return this.voiceCloner.choose(characterId, model, mode, payer);
+  }
+
+  /**
+   * V3（契约 4.6）：复刻前向用户冻结 1 个复刻费。模型当前价目表没有 voice_clone 售价（或为 0）时不收费、平台承担；
+   * 冻结失败（余额 ≤ 0、并发满、单次上限等）返回 unpaid，调用方不复刻、用默认音色。每次复刻用独立幂等键。
+   */
+  private async authorizeClone(model: Resolved, payer: ClonePayer): Promise<CloneCharge<Charge>> {
+    const rates = await this.rates?.getActiveServiceRates?.([model.modelKey]);
+    const price = rates?.get(model.modelKey)?.find((r) => r.unit === 'voice_clone');
+    if (!price || price.priceMicros <= 0) return { kind: 'free' };
+    const base: MediaCallBase = {
+      userId: payer.userId,
+      purpose: 'voice',
+      billingOwner: 'user',
+      ...(payer.characterId ? { characterId: payer.characterId } : {}),
+      ...(payer.conversationId ? { conversationId: payer.conversationId } : {}),
+      idempotencyKey: `realtime-voice-clone:${newId()}`,
+    };
+    const charge = await this.reserve(base, model, { voiceClones: 1 }, 0);
+    if (!charge.ok) return { kind: 'unpaid' };
+    if (!(await this.beginCharge(charge.value))) {
+      await this.cancelCharge(charge.value);
+      return { kind: 'unpaid' };
+    }
+    return { kind: 'charged', ticket: charge.value };
   }
 
   /** 角色自己的声音样本：默认音色（旧卡按供应商音色键找到媒体音色）登记的参考音频；必须仍启用。 */

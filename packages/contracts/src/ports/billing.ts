@@ -32,6 +32,8 @@ export interface UsageQuantities {
   /** 4.5：实时语音 / Omni 通话中供应商报告的音频输入 / 输出 token（同次回应的文字 token 记在 inputTokens / outputTokens）。 */
   audioInputTokens?: number;
   audioOutputTokens?: number;
+  /** 4.6：实时通话按需复刻音色的个数（一次成功复刻 = 1；失败不计）。 */
+  voiceClones?: number;
 }
 
 export interface ReserveInput {

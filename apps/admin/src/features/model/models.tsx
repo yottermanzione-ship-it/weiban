@@ -56,6 +56,7 @@ import {
   UNAVAILABLE_DETAIL_LABELS,
   UPSTREAM_STATE_LABELS,
   VISION_REQUIRED_SCENARIOS,
+  editableServiceRates,
   modelDisplayName,
   toWrite,
   upstreamState,
@@ -389,9 +390,13 @@ export function ModelsTab({
         ) : (
           <span className="cell-main">
             {m.serviceRates?.length ? (
-              m.serviceRates.map((r) => (
-                <span className="cell-sub" key={r.unit}>
-                  {SERVICE_UNIT_LABELS[r.unit]}：{r.price} 元{r.hasTimeBands ? ' · 分时价' : ''}
+              m.serviceRates.map((r, i) => (
+                <span className="cell-sub" key={`${r.unit}:${i}`}>
+                  {/* 4.6：服务器比页面新时可能有页面还不认识的单位（读成 unsupported），提示刷新而不是整行消失 */}
+                  {r.unit === 'unsupported'
+                    ? '新计价单位（刷新页面后显示）'
+                    : SERVICE_UNIT_LABELS[r.unit]}
+                  ：{r.price} 元{r.hasTimeBands ? ' · 分时价' : ''}
                 </span>
               ))
             ) : (
@@ -478,24 +483,40 @@ export function ModelsTab({
                 type="link"
                 size="small"
                 danger
-                onClick={() =>
+                onClick={(e) => {
+                  e.stopPropagation();
                   confirm({
                     title: `下架「${modelDisplayName(m)}」？`,
                     content:
                       '下架后，选了这个模型的场景会显示「暂不可用」，用户需要重新选择（不会自动换成别的模型）。',
                     okText: '下架',
                     onOk: () => setEnabled(m, false),
-                  })
-                }
+                  });
+                }}
               >
                 下架
               </Button>
             ) : (
-              <Button type="link" size="small" onClick={() => void setEnabled(m, true)}>
+              <Button
+                type="link"
+                size="small"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void setEnabled(m, true);
+                }}
+              >
                 上架
               </Button>
             )}
-            <Button type="link" size="small" danger onClick={() => void askDelete([m])}>
+            <Button
+              type="link"
+              size="small"
+              danger
+              onClick={(e) => {
+                e.stopPropagation();
+                void askDelete([m]);
+              }}
+            >
               删除
             </Button>
           </Space>
@@ -568,6 +589,10 @@ export function ModelsTab({
           message={`有 ${invalidModels.length} 个模型的数据不符合契约，暂时没有列出来`}
           description={
             <>
+              <div className="cell-sub">
+                服务器刚更新过时，先刷新页面（Ctrl +
+                F5）再看；刷新后仍有，把下面这几行发给技术负责人。
+              </div>
               {invalidModels.slice(0, 5).map((item) => (
                 <div key={item.modelKey} className="cell-sub">
                   <span className="mono">{item.modelKey}</span>：{item.message}
@@ -1250,11 +1275,11 @@ export function ModelWizard({
             ? 'service'
             : model?.rates
               ? 'token'
-              : model?.serviceRates?.length
+              : editableServiceRates(model?.serviceRates).length
                 ? 'service'
                 : 'token',
-          serviceRates: model?.serviceRates?.length
-            ? model.serviceRates.map((r) => ({ ...r }))
+          serviceRates: editableServiceRates(model?.serviceRates).length
+            ? editableServiceRates(model?.serviceRates).map((r) => ({ ...r }))
             : [{ unit: 'search_call', price: null, cost: null }],
           priceInput: model?.rates?.input ?? null,
           priceOutput: model?.rates?.output ?? null,

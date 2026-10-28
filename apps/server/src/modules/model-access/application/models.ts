@@ -198,11 +198,14 @@ export class ModelAdminService {
         // 4.5：实时语音 / Omni 双向通话模型同时听和说
         audio_input_tokens_per_million: 'voice_input',
         audio_output_tokens_per_million: 'voice_output',
+        // 4.6：实时通话按需复刻音色（只有双向通话模型会复刻）
+        voice_clone: 'voice_output',
       } as const;
       const duplex = [
         'realtime_minute',
         'audio_input_tokens_per_million',
         'audio_output_tokens_per_million',
+        'voice_clone',
       ];
       for (const rate of serviceRates) {
         if (

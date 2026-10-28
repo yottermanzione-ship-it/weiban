@@ -11,6 +11,8 @@ export const SERVICE_UNIT_LABELS = {
   image: '每张图片',
   audio_input_tokens_per_million: '实时通话音频输入 / 百万 token',
   audio_output_tokens_per_million: '实时通话音频输出 / 百万 token',
+  // 4.6：实时通话按需复刻音色（只对成功的复刻收费；Omni 成本 0.01 元/个）
+  voice_clone: '每个复刻音色（实时通话）',
 } as const;
 export type ServiceUnit = keyof typeof SERVICE_UNIT_LABELS;
 export interface ServicePriceDraft {

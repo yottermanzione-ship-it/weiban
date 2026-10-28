@@ -9,16 +9,26 @@
  */
 import type { UsageQuantities, RouteBillingBounds } from '@weiban/contracts';
 import type { RealtimeUsage } from '../infra/dashscope-realtime.js';
+import { realtimeCloneProtocol } from '../infra/dashscope-voice-clone.js';
 
 export const REALTIME_CALL_TAG = 'pipeline:rt';
 /** model_access.settings：{ [modelKey]: 默认系统音色代号 }（没有角色专属音色时使用）。 */
 export const REALTIME_CALL_VOICES_SETTING_KEY = 'realtime_call_voices';
 /**
- * V2：按需复刻一个实时音色的成本（元）。Omni 官方 0.01 元 / 个、失败不计费；Realtime Plus（voice-enrollment）官方页
- * 没写复刻价，按同价保守记。现阶段由平台承担并写审计（计价单位待契约变更，见
- * docs/architecture/2026-10-28-voice-clone-billing-contract-change.md），批准后改为按成本 × 1.3 向用户结算。
+ * 按需复刻一个 Omni 实时音色的供应商成本（元）：官方 0.01 元 / 个、失败不计费
+ * （https://help.aliyun.com/zh/model-studio/qwen-omni-voice-cloning）。V3（契约 4.6）起由用户按售价 0.013 元承担，
+ * 售价登记在模型的 voice_clone 服务单价里（voice-catalog 写入）；这里的成本只用于审计与 --show 对账。
  */
 export const REALTIME_VOICE_CLONE_COST_YUAN = 0.01;
+
+/**
+ * 各实时模型复刻一个音色的供应商成本（元）。Qwen Audio Realtime（voice-enrollment）官方「创建音色免费，使用时按目标模型
+ * 计费」（https://help.aliyun.com/zh/model-studio/voice-cloning-user-guide），记 0；Omni（qwen-voice-enrollment）0.01。
+ */
+export function realtimeVoiceCloneCostYuan(upstreamModelId: string): number {
+  const protocol = realtimeCloneProtocol(upstreamModelId);
+  return protocol === 'qwen-voice-enrollment' ? REALTIME_VOICE_CLONE_COST_YUAN : 0;
+}
 
 export interface RealtimeCatalogEntry {
   tags: readonly string[];

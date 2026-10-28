@@ -171,6 +171,8 @@ const QUANTITY_UNITS: Array<{
   { field: 'audioInputTokens', unit: 'audio_input_tokens_per_million', factor: 3n },
   { field: 'audioOutputTokens', unit: 'audio_output_tokens_per_million', factor: 3n },
   { field: 'searchCalls', unit: 'search_call', factor: 3_000_000n },
+  // 4.6：实时通话音色复刻（元 / 个，× 1）
+  { field: 'voiceClones', unit: 'voice_clone', factor: 3_000_000n },
 ];
 
 /** 没有单独价格时按普通输入价计的单位（缓存读取、3.24 缓存写入）。 */

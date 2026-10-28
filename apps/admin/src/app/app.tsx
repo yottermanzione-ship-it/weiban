@@ -5,6 +5,7 @@ import { App as AntApp, Dropdown, Spin } from 'antd';
 import { LogoutOutlined, UserOutlined } from '@ant-design/icons';
 import { IdentityEndpoints, type AuthResponse } from '@weiban/contracts';
 import { api } from '../data/client.js';
+import { VersionBanner } from './version-banner.js';
 import { LoginPage } from '../features/login.js';
 import { DashboardPage } from '../features/dashboard.js';
 import { UserListPage } from '../features/users/list.js';
@@ -199,6 +200,7 @@ function AdminShell({
       }}
       onMenuHeaderClick={() => onNavigate('/dashboard')}
     >
+      <VersionBanner />
       <Routes>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />

@@ -27,6 +27,10 @@ describe('百炼实时语音协议（纯函数）', () => {
     expect(realtimeUrl('https://ws1.cn-beijing.maas.aliyuncs.com/api/v1/', 'm')).toBe(
       'wss://ws1.cn-beijing.maas.aliyuncs.com/api-ws/v1/realtime?model=m',
     );
+    // V3：旧服北京 workspace 迁入的基址以 /api 结尾
+    expect(realtimeUrl('https://ws1.cn-beijing.maas.aliyuncs.com/api', 'm')).toBe(
+      'wss://ws1.cn-beijing.maas.aliyuncs.com/api-ws/v1/realtime?model=m',
+    );
     expect(realtimeUrl('http://dashscope.aliyuncs.com/api/v1', 'm')).toBeNull();
     expect(realtimeUrl('https://u:p@dashscope.aliyuncs.com/api/v1', 'm')).toBeNull();
   });

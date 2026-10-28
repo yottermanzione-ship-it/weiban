@@ -80,6 +80,13 @@ describe('复刻协议与请求体（对照旧版 prepareRealtimeVoice 与官方
     expect(customizationUrl('https://ws1.cn-beijing.maas.aliyuncs.com')).toBe(
       'https://ws1.cn-beijing.maas.aliyuncs.com/api/v1/services/audio/tts/customization',
     );
+    // V3：北京 workspace 迁入基址以 /api 结尾、兼容模式以 /compatible-mode/v1 结尾，不能拼成 /api/api/v1
+    expect(customizationUrl('https://ws-qsp3p9ofolmfyu6g.cn-beijing.maas.aliyuncs.com/api')).toBe(
+      'https://ws-qsp3p9ofolmfyu6g.cn-beijing.maas.aliyuncs.com/api/v1/services/audio/tts/customization',
+    );
+    expect(customizationUrl('https://dashscope.aliyuncs.com/compatible-mode/v1/')).toBe(
+      'https://dashscope.aliyuncs.com/api/v1/services/audio/tts/customization',
+    );
     expect(customizationUrl('http://dashscope.aliyuncs.com/api/v1')).toBeNull();
     expect(clonedVoiceOf({ output: { voice_id: 'qwen-audio-3.0-realtime-plus-wb1-x' } })).toBe(
       'qwen-audio-3.0-realtime-plus-wb1-x',

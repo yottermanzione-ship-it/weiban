@@ -196,6 +196,19 @@ export function fromLocalInput(value: string): string {
   return new Date(`${value}:00+08:00`).toISOString();
 }
 
+type ServiceRate = NonNullable<AdminModel['serviceRates']>[number];
+export type EditableServiceRate = Omit<ServiceRate, 'unit'> & {
+  unit: Exclude<ServiceRate['unit'], 'unsupported'>;
+};
+
+/**
+ * 4.6：编辑表单里能回写的服务单价。服务器比这个页面新、出现页面还不认识的计价单位时（契约容错读成 'unsupported'），
+ * 这些项不进表单、也不回写（服务单价「只替换传入单位」，不传 = 服务器上原样保留）。
+ */
+export function editableServiceRates(rates: AdminModel['serviceRates']): EditableServiceRate[] {
+  return (rates ?? []).filter((r): r is EditableServiceRate => r.unit !== 'unsupported');
+}
+
 /** 已有模型 → upsertModel 请求体（原样回写，只改调用方覆盖的字段）。 */
 export function toWrite(m: AdminModel) {
   return {
