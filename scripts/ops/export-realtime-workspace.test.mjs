@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
+import { createHash, X509Certificate } from 'node:crypto';
 import {
   accountPlan,
   BEIJING_ENDPOINT_ID,
@@ -68,15 +68,40 @@ test('account 只接受北京 workspace 端点，并要求公开证书与指纹'
     /receiver-cert/,
   );
   const options = { endpointId: BEIJING_ENDPOINT_ID, outDir: 'd' };
-  const pem = Buffer.from('-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n');
-  const fingerprint = createHash('sha256').update(pem).digest('hex');
+  // 一次性自签测试证书（私钥已丢弃）。指纹按 DER 计算，与新服 receiver.json 一致。
+  const pem = Buffer.from(`-----BEGIN CERTIFICATE-----
+MIIBdDCCARmgAwIBAgIUA6sSNnYEEyuxGRKDf0Vams03zncwCgYIKoZIzj0EAwIw
+DzENMAsGA1UEAwwEdGVzdDAeFw0yNjEwMjgwODU3MjhaFw0zNjEwMjUwODU3Mjha
+MA8xDTALBgNVBAMMBHRlc3QwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAStTQod
+fEP1mgaSWWznk/pGvvNn8HUb4TWq8n7FNOWVUCijoiadNLiMThIrldDaHoKjfh0Y
+9qCVMfI1NO4/A+4Zo1MwUTAdBgNVHQ4EFgQUZTREv/InsZ+dE0CwJviz7nxWCk0w
+HwYDVR0jBBgwFoAUZTREv/InsZ+dE0CwJviz7nxWCk0wDwYDVR0TAQH/BAUwAwEB
+/zAKBggqhkjOPQQDAgNJADBGAiEA25YyeiDB70VCQJjtC5cw2DM7TIQKAsNdy7Vq
+0zsb8rgCIQDMLdKDPc1HsMJT5/xl6JSLLWgruRykLmuJQ/7PPtUejA==
+-----END CERTIFICATE-----
+`);
+  const fingerprint = createHash('sha256').update(new X509Certificate(pem).raw).digest('hex');
   assert.equal(
     accountPlan({ ...options, receiverSha256: fingerprint }, pem, Buffer.from('x')).recipientSha256,
     fingerprint,
   );
   assert.throws(
-    () => accountPlan({ ...options, receiverSha256: SHA }, pem, Buffer.from('x')),
+    () =>
+      accountPlan(
+        { ...options, receiverSha256: createHash('sha256').update(pem).digest('hex') },
+        pem,
+        Buffer.from('x'),
+      ),
     /指纹/,
+  );
+  assert.throws(
+    () =>
+      accountPlan(
+        { ...options, receiverSha256: SHA },
+        Buffer.from('-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n'),
+        Buffer.from('x'),
+      ),
+    /无法解析/,
   );
   assert.throws(
     () =>

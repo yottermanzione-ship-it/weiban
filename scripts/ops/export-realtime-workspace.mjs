@@ -30,7 +30,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, X509Certificate } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -342,7 +342,14 @@ function bindings(options) {
 /** 加密导出的计划（不连旧服）：核对公开证书与指纹、导出器指纹。 */
 export function accountPlan(options, certificate, source) {
   if (certificate.includes(Buffer.from('PRIVATE KEY'))) throw new Error('只能给公开证书');
-  const fingerprint = createHash('sha256').update(certificate).digest('hex');
+  // 与新服 receiver.json 和旧服导出器一致：指纹取证书 DER 的 sha256，不是 PEM 文本。
+  let der;
+  try {
+    der = new X509Certificate(certificate).raw;
+  } catch {
+    throw new Error('证书无法解析');
+  }
+  const fingerprint = createHash('sha256').update(der).digest('hex');
   if (fingerprint !== options.receiverSha256)
     throw new Error('证书指纹与 --receiver-sha256 不一致');
   return {
