@@ -1,31 +1,71 @@
-/* 仅渠道弹层：修正嵌套菜单的负边距，并让长角色列表与绑定主操作各自可见。 */
-.channel-sheet-content > .menu-group,
-.channel-character-picker {
+/* 渠道弹层统一内容边距，说明、输入框与角色名单共用同一条对齐线。 */
+.channel-sheet-content {
+  padding: 0 var(--wb-space-5) var(--wb-space-3);
+}
+.channel-sheet-content .menu-group,
+.channel-sheet-content .group-header {
   margin-right: 0;
   margin-left: 0;
 }
-.channel-sheet-content > .group-header {
-  margin-right: 0;
-  margin-left: 0;
-  padding-right: var(--wb-space-5);
-  padding-left: var(--wb-space-5);
+.channel-sheet-content .menu-row,
+.channel-sheet-content .group-header {
+  padding-right: 0;
+  padding-left: 0;
+}
+.channel-sheet-content .page-note {
+  padding: 0;
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-footnote);
+  line-height: var(--wb-line-height-normal);
 }
 .channel-character-picker {
   max-height: min(40dvh, 20rem);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
-.channel-character-picker .menu-row {
-  padding-right: var(--wb-space-5);
-  padding-left: var(--wb-space-5);
-}
-.wechat-bind-toolbar {
+.wechat-bind-toolbar,
+.channel-bound-actions {
   position: sticky;
   top: 0;
   z-index: 1;
-  padding: var(--wb-space-3) var(--wb-space-5);
+  padding: var(--wb-space-3) 0;
   border-bottom: 0.5px solid var(--wb-color-border-hairline);
   background: var(--wb-color-bg-surface);
+}
+.channel-bound-actions,
+.wechat-bind-link-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--wb-space-2);
+}
+/* 本弹层按总经理要求用设置页链接蓝 + 浅底；生成、打开、复制三种操作同色同字重。 */
+.channel-sheet-content .channel-action-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: var(--wb-size-touch-target);
+  padding: var(--wb-space-3) var(--wb-space-2);
+  border: 0.5px solid var(--wb-color-border-hairline);
+  border-radius: var(--wb-radius-md);
+  background: var(--wb-color-bg-page);
+  color: var(--wb-color-text-link);
+  font-size: var(--wb-font-size-body);
+  font-weight: var(--wb-font-weight-medium);
+  line-height: var(--wb-line-height-normal);
+  text-align: center;
+  text-decoration: none;
+}
+.channel-sheet-content .channel-action-button:active {
+  background: var(--wb-color-bg-pressed);
+}
+.channel-sheet-content .channel-action-button:disabled {
+  opacity: 1;
+  color: var(--wb-color-text-placeholder);
+  cursor: default;
+}
+.channel-sheet-content .channel-action-danger {
+  color: var(--wb-color-text-danger);
 }
 .wechat-bind-selection {
   display: flex;
@@ -44,33 +84,7 @@
 .wechat-bind-result {
   display: grid;
   gap: var(--wb-space-3);
-  padding: 0 var(--wb-space-5) var(--wb-space-4);
-}
-.wechat-bind-link-actions {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--wb-space-2);
-}
-.wechat-bind-open,
-.wechat-bind-copy {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 0;
-  min-height: var(--wb-size-touch-target);
-  padding: var(--wb-space-3);
-  border-radius: var(--wb-radius-sm);
-  font-size: var(--wb-font-size-body-small);
-  text-align: center;
-  text-decoration: none;
-}
-.wechat-bind-open {
-  background: var(--wb-color-brand-primary);
-  color: var(--wb-color-text-on-brand);
-}
-.wechat-bind-copy {
-  background: var(--wb-color-brand-soft);
-  color: var(--wb-color-brand-on-soft);
+  padding-bottom: var(--wb-space-4);
 }
 .wechat-bind-url {
   width: 100%;
@@ -85,8 +99,9 @@
 }
 .wechat-bind-result .page-note {
   margin: 0;
-  padding: 0;
-  color: var(--wb-color-text-secondary);
-  font-size: var(--wb-font-size-footnote);
-  line-height: var(--wb-line-height-normal);
+}
+.channel-sheet-content textarea {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
 }

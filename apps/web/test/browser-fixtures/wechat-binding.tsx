@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import { ChannelEndpoints, type ChannelState, type WechatQrAttempt } from '@weiban/contracts';
 import '../../../../docs/design/tokens.css';
+import '../../src/app/tokens.css';
 import '../../src/app/styles.css';
 import '../../src/app/shell.css';
 import '../../src/app/old-ui.css';
@@ -30,6 +31,17 @@ let state: ChannelState = {
   lastError: null,
   pendingExpiresAt: null,
 };
+const query = new URLSearchParams(location.search);
+if (query.get('channel') === 'weibo') state = { ...state, channel: 'weibo', name: '微博接入' };
+if (query.get('bound') === '1')
+  state = {
+    ...state,
+    status: 'active',
+    characterId: characters[0]!.characterId,
+    characterName: characters[0]!.name,
+    accountMasked: 'test****',
+    boundAt: '2026-10-28T12:00:00Z',
+  };
 let attempt: WechatQrAttempt | null = null;
 let status: 'wait' | 'expired' | 'confirmed' = 'wait';
 let serial = 0;
@@ -53,6 +65,18 @@ Object.assign(api, {
   call: async (endpoint: { path: string }, options: { body?: { characterId?: string } } = {}) => {
     fixture.requests.push(endpoint.path);
     if (endpoint === ChannelEndpoints.list) return { items: [state], characters };
+    if (endpoint === ChannelEndpoints.unbind) {
+      state = {
+        ...state,
+        status: 'unbound',
+        characterId: null,
+        characterName: null,
+        accountMasked: null,
+        accountName: null,
+        boundAt: null,
+      };
+      return state;
+    }
     if (endpoint === ChannelEndpoints.wechatQr) {
       serial += 1;
       status = 'wait';

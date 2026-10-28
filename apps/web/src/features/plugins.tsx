@@ -322,6 +322,26 @@ function ChannelSheet({
               <MenuRow label="绑定时间" value={timeText(state.boundAt)} chevron={false} />
               <MenuRow label="最近一次消息" value={timeText(state.lastEventAt)} chevron={false} />
             </MenuGroup>
+            <div className="channel-bound-actions">
+              {live && (
+                <button
+                  className="channel-action-button"
+                  type="button"
+                  disabled={busy || !characterId || characterId === state.characterId}
+                  onClick={() => void saveCharacter()}
+                >
+                  {busy ? '保存中…' : '保存出口角色'}
+                </button>
+              )}
+              <button
+                className="channel-action-button channel-action-danger"
+                type="button"
+                disabled={busy}
+                onClick={() => setConfirming(true)}
+              >
+                解除新站绑定
+              </button>
+            </div>
             {live && (
               <>
                 <GroupHeader>换谁在{channelLabel}里回你</GroupHeader>
@@ -329,15 +349,8 @@ function ChannelSheet({
                   characters={characters}
                   selectedId={characterId}
                   onSelect={setCharacterId}
+                  disabled={busy}
                 />
-                <button
-                  className="primary full"
-                  type="button"
-                  disabled={busy || !characterId || characterId === state.characterId}
-                  onClick={() => void saveCharacter()}
-                >
-                  {busy ? '保存中…' : '保存出口角色'}
-                </button>
               </>
             )}
             <p className="page-note">
@@ -349,14 +362,6 @@ function ChannelSheet({
               解绑只停止新站的接收和回复，不会替你操作旧站。请不要为测试去旧版解绑或重置凭据；
               若要保留旧连接，新站请用旧版未占用的测试授权，同一份平台授权两端使用可能互相挤掉。
             </p>
-            <MenuGroup>
-              <MenuRow
-                label="解除绑定"
-                danger
-                chevron={false}
-                onClick={() => !busy && setConfirming(true)}
-              />
-            </MenuGroup>
           </>
         ) : !live ? (
           <>
@@ -378,7 +383,7 @@ function ChannelSheet({
                 </strong>
               </p>
               <button
-                className="primary full"
+                className="channel-action-button full"
                 type="button"
                 disabled={busy || !characterId}
                 onClick={() => void startBinding()}
@@ -396,7 +401,7 @@ function ChannelSheet({
                   <QrImage text={bindLink.bindUrl} />
                   <div className="wechat-bind-link-actions">
                     <a
-                      className="wechat-bind-open"
+                      className="wechat-bind-open channel-action-button"
                       href={bindLink.href}
                       target="_blank"
                       rel="noopener noreferrer"
@@ -407,7 +412,7 @@ function ChannelSheet({
                       {bindLink.label}
                     </a>
                     <button
-                      className="wechat-bind-copy"
+                      className="wechat-bind-copy channel-action-button"
                       type="button"
                       onClick={() => void copyBindLink()}
                     >
@@ -532,7 +537,7 @@ function ChannelSheet({
                   </label>
                 </div>
                 <button
-                  className="primary full"
+                  className="channel-action-button full"
                   type="button"
                   disabled={busy}
                   onClick={() => void connectWeibo()}
@@ -560,7 +565,7 @@ function ChannelSheet({
       {confirming && (
         <AlertDialog
           title="解除绑定？"
-          message={`解除后微伴不再接收和回复这个${channelLabel}的消息，之后需要重新填写凭据才能绑定。`}
+          message={`只解除当前新站的${channelLabel}连接，不操作旧版服务器或旧绑定。之后可以${channel === 'wechat' ? '重新生成二维码扫码' : '重新填写助手凭据'}，再次测试绑定。`}
           confirmLabel="解除绑定"
           onCancel={() => setConfirming(false)}
           onConfirm={() => void unbind()}

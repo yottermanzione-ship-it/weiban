@@ -38,6 +38,24 @@ test('340px 长名单角色不贴边，生成按钮与链接可见，点击打�
   const launch = page.getByRole('link', { name: '打开绑定链接' });
   await expect(launch).toBeInViewport({ ratio: 1 });
   await expect(page.getByRole('button', { name: '复制绑定链接' })).toBeInViewport({ ratio: 1 });
+  const styles = await page
+    .locator(
+      '.wechat-bind-toolbar .channel-action-button, .wechat-bind-link-actions .channel-action-button',
+    )
+    .evaluateAll((elements) =>
+      elements.map((element) => {
+        const style = getComputedStyle(element);
+        return {
+          color: style.color,
+          background: style.backgroundColor,
+          font: style.fontSize,
+          weight: style.fontWeight,
+        };
+      }),
+    );
+  expect(styles).toHaveLength(3);
+  expect(new Set(styles.map((style) => JSON.stringify(style))).size).toBe(1);
+  expect(styles[0]!.background).not.toBe('rgb(7, 193, 96)');
   await page.screenshot({ path: '.ci-wechat-binding-340.png' });
   await page.getByRole('button', { name: '复制绑定链接' }).click();
   const original = await page.getByRole('textbox', { name: '微信绑定链接' }).inputValue();
@@ -59,7 +77,7 @@ test('320px 深色主题仍保留主操作，二维码过期后旧链接不再�
   await page.setViewportSize({ width: 320, height: 640 });
   await open(page);
   await page.evaluate(() => {
-    document.documentElement.dataset.theme = 'dark';
+    document.documentElement.dataset.scheme = 'dark';
   });
   await create(page);
   await expect(page.getByRole('button', { name: '重新生成二维码' })).toBeInViewport({ ratio: 1 });
@@ -131,4 +149,54 @@ test.describe('微信内浏览器', () => {
       /^https:\/\/liteapp\.weixin\.qq\.com\//,
     );
   });
+});
+
+test('已绑定首屏能解除新站绑定，取消不调用接口，只有本人确认才解绑', async ({ page }) => {
+  await page.setViewportSize({ width: 351, height: 755 });
+  await page.goto(fixture + '?bound=1');
+  await page.getByRole('button', { name: '微信接入', exact: false }).click();
+  const unbind = page.getByRole('button', { name: '解除新站绑定', exact: true });
+  await expect(unbind).toBeInViewport({ ratio: 1 });
+  await page.screenshot({ path: '.ci-channel-bound-polish.png' });
+  const calls = () =>
+    page.evaluate(
+      () =>
+        (window as unknown as FixtureWindow).wechatFixture.requests.filter((path) =>
+          path.endsWith('/:channel/binding'),
+        ).length,
+    );
+  await unbind.click();
+  await expect(page.getByText('只解除当前新站的微信连接', { exact: false })).toBeVisible();
+  expect(await calls()).toBe(0);
+  await page.getByRole('button', { name: '取消', exact: true }).click();
+  expect(await calls()).toBe(0);
+  await unbind.click();
+  await page.getByRole('button', { name: '解除绑定', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: '微信接入' })).toHaveCount(0);
+  expect(await calls()).toBe(1);
+  await page.getByRole('button', { name: '微信接入', exact: false }).click();
+  await expect(page.getByRole('button', { name: '生成绑定二维码' })).toBeVisible();
+});
+
+test('微博凭据、说明和 AppID 输入都有统一内边距，不发生横向溢出', async ({ page }) => {
+  await page.setViewportSize({ width: 339, height: 755 });
+  await page.goto(fixture + '?channel=weibo');
+  await page.getByRole('button', { name: '微博接入', exact: false }).click();
+  const dialog = page.getByRole('dialog', { name: '微博接入' });
+  const box = (await dialog.boundingBox())!;
+  for (const selector of [
+    '.wx-auth-field--credentials > span',
+    '.wx-auth-field--credentials textarea',
+    '.wx-auth-fields .page-note',
+    '.wx-auth-field > span',
+  ]) {
+    for (const item of await dialog.locator(selector).all()) {
+      const current = (await item.boundingBox())!;
+      expect(current.x - box.x).toBeGreaterThanOrEqual(16);
+      expect(box.x + box.width - current.x - current.width).toBeGreaterThanOrEqual(16);
+    }
+  }
+  const overflow = await dialog.evaluate((element) => element.scrollWidth > element.clientWidth);
+  expect(overflow).toBe(false);
+  await page.screenshot({ path: '.ci-channel-weibo-polish.png' });
 });
