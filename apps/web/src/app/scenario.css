@@ -29,6 +29,8 @@
   justify-content: center;
   min-width: 0;
   gap: 4px;
+  /* 省略号由 .wx-chat-name 自己负责；标题不裁切，状态表情按机型上下微移时不被切边 */
+  overflow: visible;
 }
 
 .wx-chat-name {

@@ -1886,7 +1886,7 @@ button.primary.wx-auth-submit {
   font-size: var(--wb-font-size-body);
   font-family: inherit;
 }
-/* U7：状态表情按名字字号等比（1.05em 时表情上下边与汉字墨迹重合），行高 1 + inline-flex 严格居中 */
+/* 状态表情按名字字号等比、行高 1 + inline-flex 居中；机型表情字体差异由 character-status.tsx 实测后 translateY 补齐 */
 .character-status {
   display: inline-flex;
   flex: none;
