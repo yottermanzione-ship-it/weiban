@@ -89,9 +89,10 @@ export const ECOLOGY_ACTIONS: readonly EcologyActionDef[] = [
     key: 'nudge',
     group: 'chat',
     label: '拍一拍你',
-    tool: '在聊天里「拍一拍」对方，轻轻戳一下，不说话。',
+    // 10-28 总经理：拍一拍是夹在聊天里的小动作，不单独发——执行时先发一句话再拍。
+    tool: '在聊天里「拍一拍」对方，并顺带说一句话（拍一拍不单独发）。',
     mode: 'decision',
-    summary: '拍了拍你',
+    summary: '拍了拍你，还说了句话',
   },
   {
     key: 'share_link',
@@ -374,7 +375,7 @@ const JEV_HINT: Partial<Record<EcologyActionKey, string>> = {
   voice: '用一两句语音代替文字。对方可能不方便听时不做。',
   photo: '分享角色微博里的一张公开图片。',
   sticker: '发一个表情包。',
-  nudge: '轻轻拍一拍对方，不说话。',
+  nudge: '拍一拍对方并顺带说一句话。',
   share_link: '分享自己作品库里的一首歌或链接。',
   moment_post: '把已同步的公开微博转到私人朋友圈。',
   moment_interact: '给对方最近的朋友圈点赞。',
@@ -455,9 +456,11 @@ export function interpretJevAnswers(
 }
 
 /**
- * 保底（总经理 10-27「加保底」）：Jev 一项都没通过时，只要此刻不打扰，就取「想做」可能性最高的一项去做，
- * 让活跃程度 ≈ 实际动静次数。可能性：选 act 时 = 把握值，选 defer 时 = 1 − 把握值；缺答案 / 重复 / 非法值不参与。
- * 打扰的情形不保底：深夜、已有 2 条以上未回、对方在用应用却没回。只在聊天类与朋友圈互动里挑（用户看得见的动静）。
+ * 保底（总经理 10-27「加保底」；10-28 改为「起码得有个主动消息」）：Jev 一项都没通过时，只要此刻不打扰、
+ * 且「主动消息」在候选里，就发一条主动消息，让活跃程度 ≈ 实际动静次数。
+ * 10-28 生产上保底按「想做可能性最高」挑中过拍一拍（只拍不说话）、表情包、心愿（都没做成），所以只认主动消息。
+ * 分数只用于运行记录：message 一题选 act = 把握值，选 defer = 1 − 把握值；缺答案 / 重复 / 非法值记 0，照样发。
+ * 打扰的情形不保底：深夜、已有 2 条以上未回、对方在用应用却没回。
  */
 export function ecologyFallback(
   candidates: readonly EcologyActionKey[],
@@ -467,30 +470,22 @@ export function ecologyFallback(
   if (
     context.lateNight ||
     context.unansweredCount >= 2 ||
-    (context.unansweredCount >= 1 && context.userActiveInApp30m)
+    (context.unansweredCount >= 1 && context.userActiveInApp30m) ||
+    !candidates.includes('message')
   )
     return null;
-  let best: { action: EcologyActionKey; score: number } | null = null;
-  for (const action of candidates) {
-    if (!CHAT_FAMILY.has(action) && !FALLBACK_EXTRA.has(action)) continue;
-    const matches = answers.filter((a) => a.questionId === action);
-    const answer = matches[0];
-    if (
-      !answer ||
-      matches.length !== 1 ||
-      !(JEV_OPTIONS as readonly string[]).includes(answer.choice) ||
-      !Number.isFinite(answer.confidence) ||
-      answer.confidence < 0 ||
-      answer.confidence > 1
-    )
-      continue;
-    const score = answer.choice === 'act' ? answer.confidence : 1 - answer.confidence;
-    if (!best || score > best.score) best = { action, score };
-  }
-  return best;
+  const matches = answers.filter((a) => a.questionId === 'message');
+  const answer = matches[0];
+  const valid =
+    !!answer &&
+    matches.length === 1 &&
+    (JEV_OPTIONS as readonly string[]).includes(answer.choice) &&
+    Number.isFinite(answer.confidence) &&
+    answer.confidence >= 0 &&
+    answer.confidence <= 1;
+  const score = !valid ? 0 : answer.choice === 'act' ? answer.confidence : 1 - answer.confidence;
+  return { action: 'message', score };
 }
-
-const FALLBACK_EXTRA: ReadonlySet<EcologyActionKey> = new Set(['moment_interact', 'moment_reply']);
 
 /** 同一轮最多一个「给对方发聊天」的动作（拍一拍也算），避免连发打扰。 */
 const CHAT_FAMILY: ReadonlySet<EcologyActionKey> = new Set([

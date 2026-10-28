@@ -150,6 +150,8 @@ const ACTION_BRIEF: Partial<Record<EcologyActionKey, string>> = {
   greeting: '跟对方道早安或晚安，结合今天的具体情况，不要用套话。',
   voice: '用一两句口语的话给对方发一条语音消息。',
   sticker: '发一个表情包，配一句很短的话。',
+  nudge:
+    '主动给对方发一条私聊消息，结合你们最近的聊天和今天的情况，说一件具体的小事；发完会顺手「拍一拍」对方，话里不用提拍一拍。',
   share_link: '分享一个合适的作品链接，配一句为什么想分享。',
   care_anniversary: '今天是特别的日子，发一条表达心意的消息。',
   care_absence: '对方很久没来聊天，问候一句，不制造愧疚、不追问。',
@@ -444,7 +446,7 @@ export class EcologyService {
     let { selected } = resolved;
     let trace = jevTrace(verdict, dropped);
     if (!selected.length) {
-      // 保底：Jev 一项都没通过但此刻不打扰时，做「想做」可能性最高的一项（详见 ecologyFallback）。
+      // 保底：Jev 一项都没通过但此刻不打扰时，发一条主动消息（详见 ecologyFallback）。
       const fallback = ecologyFallback(candidates, asked.answers, {
         lateNight: snapshot.features.lateNight === true,
         unansweredCount: Number(snapshot.features.unansweredCount ?? 0),
@@ -638,10 +640,12 @@ export class EcologyService {
       case 'share_link':
         return viaChat('link');
       case 'nudge': {
-        const r = await this.proactive.sendNudge(userId, characterId, run.id);
-        return r.ok
-          ? { ok: true, chargedMicros: 0 }
-          : { ok: false, chargedMicros: 0, reason: r.reason };
+        // 10-28 总经理：拍一拍夹在聊天里，不能只拍不说话。先发一句话（发不出去就整项不做），再顺手拍一拍；
+        // 拍一拍没成功不影响这一项（话已经说了）。用户在聊天里点名「拍拍我」走 runRequest，照旧只拍。
+        const said = await viaChat(null);
+        if (!said.ok) return said;
+        await this.proactive.sendNudge(userId, characterId, run.id);
+        return said;
       }
       case 'play_wish': {
         const profile = await this.identity.getProfile(userId);

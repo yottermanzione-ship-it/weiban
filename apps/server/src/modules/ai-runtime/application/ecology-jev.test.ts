@@ -249,7 +249,7 @@ describe('executeWake 接入原生判定', () => {
     );
   });
 
-  it('保底：全部不通过但不打扰时，做「想做」可能性最高的一项，记 fb=', async () => {
+  it('保底：全部不通过但不打扰时，发一条主动消息（不挑拍一拍等小动作），记 fb=', async () => {
     const s = service({
       tools: ['message', 'nudge', 'status'],
       decide: okDecide([
@@ -259,10 +259,31 @@ describe('executeWake 接入原生判定', () => {
       ]),
     });
     await s.wake();
-    // status 不在保底范围（资料改动用户看不见动静）；nudge 0.4 > message 1−0.9。
+    // 10-28：nudge「想做」可能性 0.4 更高也不选；保底只认主动消息，分数 = 1 − 0.9。
     expect(s.perform).toHaveBeenCalledTimes(1);
-    expect(s.perform.mock.calls[0]![1]).toBe('nudge');
-    expect((s.finish.mock.calls[0]![1] as { outcome: string }).outcome).toContain('fb=nudge:0.40');
+    expect(s.perform.mock.calls[0]![1]).toBe('message');
+    expect((s.finish.mock.calls[0]![1] as { outcome: string }).outcome).toContain(
+      'fb=message:0.10',
+    );
+  });
+
+  it('保底：主动消息不在候选里就不保底；message 没有有效答案时照样发、分数记 0', async () => {
+    const without = service({
+      tools: ['nudge', 'sticker'],
+      decide: okDecide([answer('nudge', 'act', 0.5), answer('sticker', 'act', 0.5)]),
+    });
+    await without.wake();
+    expect(without.perform).not.toHaveBeenCalled();
+
+    const missing = service({
+      tools: ['message', 'nudge'],
+      decide: okDecide([answer('nudge', 'defer', 0.9)]),
+    });
+    await missing.wake();
+    expect(missing.perform.mock.calls.map((c) => c[1])).toEqual(['message']);
+    expect((missing.finish.mock.calls[0]![1] as { outcome: string }).outcome).toContain(
+      'fb=message:0.00',
+    );
   });
 
   it('保底不在深夜、对方在用应用却没回时触发', async () => {
