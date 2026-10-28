@@ -63,7 +63,7 @@ describe('3.36 service-unit pricing contracts', () => {
 
 describe('4.6 voice clone pricing and tolerant service-rate responses', () => {
   it('bumps the minor contract version', () => {
-    expect(CONTRACT_VERSION).toBe('4.6');
+    expect(CONTRACT_VERSION).toBe('4.7');
   });
   it('writes voice_clone as 元 / 个 like any other service unit', () => {
     expect(serviceRates.parse([{ unit: 'voice_clone', price: 0.013, cost: 0.01 }])).toEqual([
