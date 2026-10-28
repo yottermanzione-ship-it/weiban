@@ -23,6 +23,8 @@ import {
   type WechatQrAttempt,
   type WeiboConnectRequest,
   type Plugin,
+  type QqConnectRequest,
+  type QqPairing,
 } from '@weiban/contracts';
 import {
   APP_CONFIG,
@@ -58,18 +60,29 @@ import {
   weiboPeerContextAad,
 } from '../domain/weibo-openim.js';
 import { createIlinkClient, describeIlinkError } from '../domain/ilink.js';
+import { QqSessionStore, type QqSessionRow } from './qq-session-store.js';
+import {
+  QQ_CLIENT_FACTORY,
+  QQ_PAIRING_TTL_MS,
+  qqFingerprint,
+  qqPairingCode,
+  qqCodeHash,
+  qqAad,
+  type QqClientFactory,
+} from '../domain/qq-openapi.js';
 
 /** 后台 worker 的任务名（登记在 ChannelsWorker）。 */
 export const CHANNELS_RECONCILE_JOB = 'channels.reconcile';
 export const CHANNELS_DELIVER_JOB = 'channels.deliver';
 
-const CHANNEL_ORDER: readonly ChannelId[] = ['wechat', 'weibo'];
+const CHANNEL_ORDER: readonly ChannelId[] = ['wechat', 'qq', 'weibo'];
 
 const CHANNEL_INFO: Record<ChannelId, { name: string; description: string }> = {
   wechat: {
     name: '微信接入',
     description: '用微信扫一扫，把这个角色接到微信里聊（微信 ClawBot）',
   },
+  qq: { name: 'QQ接入', description: '新建官方QQ机器人，填写凭据后发送绑定码，再用QQ私聊日常角色' },
   weibo: {
     name: '微博接入',
     description: '私信微博龙虾助手获取 AppID / AppSecret，把角色接到助手会话',
@@ -95,6 +108,8 @@ export class ChannelsService {
 
   constructor(
     @Inject(DATABASE) private readonly db: Database,
+    @Inject(QqSessionStore) private readonly qqStore: QqSessionStore,
+    @Inject(QQ_CLIENT_FACTORY) private readonly qqClient: QqClientFactory,
     @Inject(ChannelStore) private readonly store: ChannelStore,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -152,7 +167,15 @@ export class ChannelsService {
     for (const channel of CHANNEL_ORDER) {
       const binding = byChannel.get(channel) ?? null;
       const attempt = channel === 'wechat' ? await this.pendingAttempt(userId, channel, now) : null;
-      items.push(this.toState(channel, binding, attempt, userId));
+      items.push(
+        this.toState(
+          channel,
+          binding,
+          attempt,
+          userId,
+          channel === 'qq' && binding ? await this.qqStore.get(binding.id) : null,
+        ),
+      );
     }
     return { items, characters };
   }
@@ -162,7 +185,13 @@ export class ChannelsService {
       this.store.bindingOf(userId, channel),
       channel === 'wechat' ? this.pendingAttempt(userId, channel, this.clock.now()) : null,
     ]);
-    return this.toState(channel, binding, attempt, userId);
+    return this.toState(
+      channel,
+      binding,
+      attempt,
+      userId,
+      channel === 'qq' && binding ? await this.qqStore.get(binding.id) : null,
+    );
   }
 
   private async pendingAttempt(
@@ -183,10 +212,11 @@ export class ChannelsService {
     binding: BindingRow | null,
     attempt: AttemptRow | null,
     userId: string,
+    qq: QqSessionRow | null = null,
   ): ChannelState {
     const cfg = this.runtime(channel, userId);
     const active = binding?.status === 'active';
-    const pending = !active && Boolean(attempt);
+    const pending = !active && Boolean(attempt || qq);
     const status: ChannelState['status'] = active
       ? 'active'
       : pending
@@ -207,7 +237,9 @@ export class ChannelsService {
       boundAt: active && binding.bound_at ? binding.bound_at.toISOString() : null,
       lastEventAt: binding?.last_event_at ? binding.last_event_at.toISOString() : null,
       lastError: binding?.last_error ?? attempt?.last_error ?? null,
-      pendingExpiresAt: pending && attempt ? attempt.expires_at.toISOString() : null,
+      pendingExpiresAt: pending
+        ? ((attempt?.expires_at ?? qq?.pairing_expires_at)?.toISOString() ?? null)
+        : null,
     };
   }
 
@@ -553,6 +585,133 @@ export class ChannelsService {
     return this.toState('weibo', binding, null, userId);
   }
 
+  async qqConnect(userId: string, input: QqConnectRequest): Promise<QqPairing> {
+    this.assertLive(this.runtime('qq', userId));
+    await assertChannelProPlus(this.membership, userId, 'bind');
+    const character = await this.resolveCharacter(userId, input.characterId);
+    const fingerprint = qqFingerprint(input.appId);
+    await this.db.transaction((tx) => this.qqStore.assertAvailable(tx, fingerprint, userId));
+    try {
+      await this.qqClient({ appId: input.appId, appSecret: input.appSecret }, () =>
+        this.clock.nowMs(),
+      ).gateway();
+    } catch {
+      throw new AppError(
+        'upstream_test_failed',
+        'QQ官方鉴权或事件网关校验失败，请核对新机器人的凭据及平台权限；未发送聊天消息',
+      );
+    }
+    const now = this.clock.now(),
+      expiresAt = new Date(now.getTime() + QQ_PAIRING_TTL_MS),
+      code = qqPairingCode();
+    await this.db.transaction(async (tx) => {
+      await this.qqStore.assertAvailable(tx, fingerprint, userId);
+      const existing = await this.store.bindingOf(userId, 'qq');
+      const id = existing?.id ?? newId();
+      const appIdSealed = await this.crypto.seal(userId, qqAad(id, 'appid'), input.appId, tx);
+      const secretSealed = await this.crypto.seal(userId, qqAad(id, 'secret'), input.appSecret, tx);
+      const binding = await this.store.saveBinding(tx, {
+        id,
+        userId,
+        channel: 'qq',
+        characterId: character.characterId,
+        characterName: character.name,
+        accountId: fingerprint,
+        accountName: 'QQ机器人 · ' + input.appId.slice(-4),
+        botId: null,
+        baseUrl: '',
+        botTokenSealed: null,
+        weiboAppIdSealed: null,
+        weiboAppSecretSealed: null,
+        now,
+      });
+      await this.qqStore.save(tx, binding, {
+        fingerprint,
+        appIdSealed,
+        secretSealed,
+        hash: qqCodeHash(binding.id, binding.generation, code),
+        expiresAt,
+        now,
+      });
+    });
+    await this.safeSend(CHANNELS_RECONCILE_JOB, { reason: 'qq_pairing' });
+    return {
+      binding: await this.stateOf(userId, 'qq'),
+      pairingCode: code,
+      expiresAt: expiresAt.toISOString(),
+    };
+  }
+
+  async qqPairing(userId: string, characterId: string): Promise<QqPairing> {
+    this.assertLive(this.runtime('qq', userId));
+    await assertChannelProPlus(this.membership, userId, 'bind');
+    const character = await this.resolveCharacter(userId, characterId);
+    const binding = await this.store.bindingOf(userId, 'qq');
+    if (!binding || binding.status === 'active' || !(await this.qqStore.get(binding.id)))
+      throw new AppError(
+        'conflict',
+        '请先填写新QQ机器人的凭据；已绑定时可直接换角色，不需要重发绑定码',
+      );
+    const code = qqPairingCode(),
+      now = this.clock.now(),
+      expiresAt = new Date(now.getTime() + QQ_PAIRING_TTL_MS);
+    await this.db.transaction((tx) =>
+      this.qqStore.refresh(
+        tx,
+        binding,
+        character,
+        (generation) => qqCodeHash(binding.id, generation, code),
+        expiresAt,
+        now,
+      ),
+    );
+    await this.safeSend(CHANNELS_RECONCILE_JOB, { reason: 'qq_pairing_refresh' });
+    return {
+      binding: await this.stateOf(userId, 'qq'),
+      pairingCode: code,
+      expiresAt: expiresAt.toISOString(),
+    };
+  }
+
+  async qqSecret(binding: BindingRow): Promise<{ appId: string; appSecret: string }> {
+    const credentials = await this.qqStore.get(binding.id);
+    if (binding.channel !== 'qq' || !credentials || credentials.generation !== binding.generation)
+      return { appId: '', appSecret: '' };
+    const appId = await this.crypto.open(
+      binding.user_id,
+      qqAad(binding.id, 'appid'),
+      credentials.app_id_sealed,
+    );
+    try {
+      const secret = await this.crypto.open(
+        binding.user_id,
+        qqAad(binding.id, 'secret'),
+        credentials.app_secret_sealed,
+      );
+      try {
+        return { appId: appId.toString('utf8'), appSecret: secret.toString('utf8') };
+      } finally {
+        secret.fill(0);
+      }
+    } finally {
+      appId.fill(0);
+    }
+  }
+
+  async qqReplyPeer(binding: BindingRow): Promise<string> {
+    if (binding.channel !== 'qq' || !binding.context_token_sealed) return '';
+    const peer = await this.crypto.open(
+      binding.user_id,
+      qqAad(binding.id, 'peer'),
+      binding.context_token_sealed,
+    );
+    try {
+      return peer.toString('utf8');
+    } finally {
+      peer.fill(0);
+    }
+  }
+
   /** 解绑：幂等；清空凭据与账号，停掉后台任务。**不需要 PRO+**（会员到期也必须能解绑）。 */
   async unbind(userId: string, channel: ChannelId): Promise<ChannelState> {
     await this.db.transaction((tx) => this.store.unbind(tx, userId, channel, this.clock.now()));
@@ -581,8 +740,8 @@ export class ChannelsService {
         {
           pluginId: 'qq',
           name: 'QQ接入',
-          description: '在QQ中与角色聊天，外部接入暂未开放',
-          status: 'coming_soon',
+          description: CHANNEL_INFO.qq.description,
+          status: statusOf('qq'),
         },
         {
           pluginId: 'weibo',

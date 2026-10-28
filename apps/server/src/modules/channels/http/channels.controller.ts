@@ -16,6 +16,7 @@ import {
   type ChannelCharacterRequest,
   type WechatQrRequest,
   type WeiboConnectRequest,
+  type QqConnectRequest,
 } from '@weiban/contracts';
 import {
   ContractPipe,
@@ -29,6 +30,7 @@ const channelParams = new ContractPipe(E.unbind.params!);
 const attemptParams = new ContractPipe(E.wechatQrStatus.params!);
 const qrBody = new ContractPipe(E.wechatQr.body!);
 const characterBody = new ContractPipe(E.setCharacter.body!);
+const qqBody = new ContractPipe(E.qqConnect.body!);
 const weiboBody = new ContractPipe(E.weiboConnect.body!);
 
 @Controller('api/v1/channels')
@@ -68,6 +70,21 @@ export class ChannelsController {
   @HttpCode(200)
   weiboConnect(@CurrentPrincipal() p: AuthPrincipal, @Body(weiboBody) body: WeiboConnectRequest) {
     return this.channels.weiboConnect(p.userId, body);
+  }
+
+  @Post('qq/binding')
+  @HttpCode(200)
+  qqConnect(@CurrentPrincipal() p: AuthPrincipal, @Body(qqBody) body: QqConnectRequest) {
+    return this.channels.qqConnect(p.userId, body);
+  }
+
+  @Post('qq/pairing')
+  @HttpCode(200)
+  qqPairing(
+    @CurrentPrincipal() p: AuthPrincipal,
+    @Body(characterBody) body: ChannelCharacterRequest,
+  ) {
+    return this.channels.qqPairing(p.userId, body.characterId);
   }
 
   @Delete(':channel/binding')

@@ -37,7 +37,7 @@ import { API_PREFIX, Id, Timestamp, defineEndpoint, tolerantEnum } from '../comm
 export const WECHAT_BIND_URL_HOST = 'liteapp.weixin.qq.com';
 
 /** 已接入的外部渠道。QQ 仍是「暂未开放」，不在本契约内。 */
-export const ChannelId = z.enum(['wechat', 'weibo']);
+export const ChannelId = z.enum(['wechat', 'weibo', 'qq']);
 export type ChannelId = z.infer<typeof ChannelId>;
 
 /** unbound 未绑定；pending 等对方确认（微信已出码 / 微博凭据已保存）；active 已绑定；revoked 被外部解除或账号改绑。 */
@@ -127,6 +127,23 @@ export const WeiboConnectRequest = z.object({
 });
 export type WeiboConnectRequest = z.infer<typeof WeiboConnectRequest>;
 
+/** QQ 官方机器人：凭据只由本人通过 HTTPS 表单提交，不接收个人 QQ 密码或 Cookie。 */
+export const QqConnectRequest = z.object({
+  characterId: Id,
+  appId: z
+    .string()
+    .trim()
+    .regex(/^\d{5,32}$/),
+  appSecret: z.string().trim().min(8).max(256),
+});
+export type QqConnectRequest = z.infer<typeof QqConnectRequest>;
+/** 绑定码只在生成时返回，数据库只存摘要；未完成私聊配对前不能收发角色消息。 */
+export const QqPairing = z.object({
+  binding: ChannelState,
+  pairingCode: z.string().regex(/^[A-F0-9]{10}$/),
+  expiresAt: Timestamp,
+});
+export type QqPairing = z.infer<typeof QqPairing>;
 const channelParams = z.object({ channel: ChannelId });
 const attemptParams = z.object({ attemptId: Id });
 
@@ -178,6 +195,22 @@ export const ChannelEndpoints = {
     response: ChannelState,
     summary:
       '3.42：微博连入（用 AppID / AppSecret 真实换 ws_token 校验后加密保存；校验失败 422；未开通 422）',
+  }),
+  qqConnect: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/channels/qq/binding`,
+    auth: 'user',
+    body: QqConnectRequest,
+    response: QqPairing,
+    summary: '校验新QQ机器人凭据并生成一次性私聊绑定码；不代表已完成本人配对',
+  }),
+  qqPairing: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/channels/qq/pairing`,
+    auth: 'user',
+    body: ChannelCharacterRequest,
+    response: QqPairing,
+    summary: '仅本人刷新QQ绑定码；旧码立即失效，凭据不重新下发',
   }),
   unbind: defineEndpoint({
     method: 'DELETE',

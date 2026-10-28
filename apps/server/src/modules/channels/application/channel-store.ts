@@ -252,7 +252,7 @@ export class ChannelStore {
               cursor='', bot_token_sealed=NULL, weibo_app_id_sealed=NULL,
               weibo_app_secret_sealed=NULL, context_token_sealed=NULL,
               unbound_at=$3, last_error=$4, updated_at=$3
-        WHERE channel=$1 AND channel<>'weibo' AND account_id=$2 AND status='active' AND user_id<>$5`,
+        WHERE channel=$1 AND channel='wechat' AND account_id=$2 AND status='active' AND user_id<>$5`,
       [input.channel, input.accountId, input.now, '对面账号已改绑到其他微伴账号', input.userId],
     );
     const { rows } = await tx.query<BindingRow>(
@@ -351,6 +351,11 @@ export class ChannelStore {
 
   /** 解绑：清空凭据与账号（tombstone），丢掉排队消息；待扫码会话一并作废。 */
   async unbind(tx: DbTx, userId: string, channel: ChannelId, now: Date): Promise<void> {
+    if (channel === 'qq')
+      await tx.query(
+        "DELETE FROM channels.qq_sessions WHERE binding_id IN (SELECT id FROM channels.bindings WHERE user_id=$1 AND channel='qq')",
+        [userId],
+      );
     await tx.query(
       `UPDATE channels.bind_attempts
           SET status='expired', last_error='已解除绑定', updated_at=$3
@@ -369,7 +374,7 @@ export class ChannelStore {
               cursor='', bot_token_sealed=NULL, weibo_app_id_sealed=NULL,
               weibo_app_secret_sealed=NULL, context_token_sealed=NULL,
               generation=generation+1, bound_at=NULL, unbound_at=$3, last_error=NULL, updated_at=$3
-        WHERE user_id=$1 AND channel=$2 AND status<>'unbound'`,
+        WHERE user_id=$1 AND channel=$2 AND (status<>'unbound' OR channel='qq')`,
       [userId, channel, now],
     );
   }
@@ -623,7 +628,11 @@ export class ChannelStore {
   /** 注销：物理删除该用户的全部渠道数据（可重复调用）。 */
   async purgeUser(userId: string): Promise<number> {
     return this.db.transaction(async (tx) => {
-      const removed: number[] = [];
+      const qqRemoved = await tx.query(
+        'DELETE FROM channels.qq_sessions WHERE binding_id IN (SELECT id FROM channels.bindings WHERE user_id=$1)',
+        [userId],
+      );
+      const removed: number[] = [qqRemoved.rowCount ?? 0];
       for (const table of [
         'channels.outbound_messages',
         'channels.inbound_messages',
@@ -640,6 +649,7 @@ export class ChannelStore {
   async countUserData(userId: string): Promise<number> {
     const { rows } = await this.db.query<{ count: string }>(
       `SELECT (
+         (SELECT count(*) FROM channels.qq_sessions q JOIN channels.bindings b ON b.id=q.binding_id WHERE b.user_id=$1) +
          (SELECT count(*) FROM channels.bindings WHERE user_id=$1) +
          (SELECT count(*) FROM channels.bind_attempts WHERE user_id=$1) +
          (SELECT count(*) FROM channels.inbound_messages WHERE user_id=$1) +

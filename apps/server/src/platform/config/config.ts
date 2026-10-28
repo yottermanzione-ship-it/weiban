@@ -133,6 +133,8 @@ export const EnvSchema = z.object({
     ),
   /** 微博通道默认「未联调」；实网联调通过后才由运维显式打开。 */
   CHANNEL_WEIBO_ENABLED: booleanFlag,
+  CHANNEL_QQ_ENABLED: booleanFlag,
+  CHANNEL_QQ_ALLOWED_USER_IDS: userIdList,
   CHANNEL_WEIBO_TOKEN_ENDPOINT: z.url().optional(),
   CHANNEL_WEIBO_WS_ENDPOINT: z
     .url()
@@ -207,6 +209,7 @@ export interface AppConfig {
   readonly channels: {
     readonly wechat: WechatChannelConfig;
     readonly weibo: WeiboChannelConfig;
+    readonly qq?: { readonly enabled: boolean; readonly allowedUserIds: readonly string[] };
   };
   readonly billing: {
     readonly platformDailyCapMicros: number;
@@ -294,6 +297,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     // 生产环境无论怎么配置都关闭
     debugLlmPayload: production ? false : e.DEBUG_LLM_PAYLOAD,
     channels: {
+      qq: { enabled: e.CHANNEL_QQ_ENABLED, allowedUserIds: e.CHANNEL_QQ_ALLOWED_USER_IDS ?? [] },
       wechat: {
         enabled: e.CHANNEL_WECHAT_ENABLED,
         ilinkBaseUrl: e.CHANNEL_WECHAT_ILINK_BASE_URL ?? 'https://ilinkai.weixin.qq.com',

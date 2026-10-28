@@ -151,6 +151,9 @@ export const outboundMessages = channelsSchema.table(
     attempts: integer('attempts').notNull().default(0),
     nextAttemptAt: tz('next_attempt_at').notNull(),
     lastError: text('last_error'),
+    qqReplyIdSealed: bytea('qq_reply_id_sealed'),
+    qqReplySeq: integer('qq_reply_seq'),
+    qqReplyExpiresAt: tz('qq_reply_expires_at'),
     sentAt: tz('sent_at'),
     createdAt: tz('created_at').notNull(),
     updatedAt: tz('updated_at').notNull(),
@@ -161,4 +164,25 @@ export const outboundMessages = channelsSchema.table(
       .on(t.nextAttemptAt)
       .where(sql`status IN ('pending','retry')`),
   ],
+);
+
+/** QQ 专属凭据与一次性配对：均按绑定用户的 DEK 加密，配对码只存摘要。 */
+export const qqSessions = channelsSchema.table(
+  'qq_sessions',
+  {
+    bindingId: uuid('binding_id')
+      .primaryKey()
+      .references(() => bindings.id, { onDelete: 'cascade' }),
+    generation: integer('generation').notNull(),
+    appFingerprint: text('app_fingerprint').notNull(),
+    appIdSealed: bytea('app_id_sealed').notNull(),
+    appSecretSealed: bytea('app_secret_sealed').notNull(),
+    pairingHash: bytea('pairing_hash'),
+    pairingExpiresAt: tz('pairing_expires_at'),
+    pairingFailures: integer('pairing_failures').notNull().default(0),
+    replyIdSealed: bytea('reply_id_sealed'),
+    replyExpiresAt: tz('reply_expires_at'),
+    replySeq: integer('reply_seq').notNull().default(0),
+  },
+  (t) => [uniqueIndex('qq_sessions_app_fingerprint_key').on(t.appFingerprint)],
 );

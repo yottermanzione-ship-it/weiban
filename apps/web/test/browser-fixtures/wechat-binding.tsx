@@ -32,6 +32,7 @@ let state: ChannelState = {
   pendingExpiresAt: null,
 };
 const query = new URLSearchParams(location.search);
+if (query.get('channel') === 'qq') state = { ...state, channel: 'qq', name: 'QQ接入' };
 if (query.get('channel') === 'weibo') state = { ...state, channel: 'weibo', name: '微博接入' };
 if (query.get('bound') === '1')
   state = {
@@ -64,7 +65,27 @@ Object.defineProperty(navigator, 'clipboard', {
 Object.assign(api, {
   call: async (endpoint: { path: string }, options: { body?: { characterId?: string } } = {}) => {
     fixture.requests.push(endpoint.path);
-    if (endpoint === ChannelEndpoints.list) return { items: [state], characters };
+    if (endpoint === ChannelEndpoints.list) {
+      if (state.channel === 'qq' && status === 'confirmed')
+        state = { ...state, status: 'active', accountName: '测试QQ机器人' };
+      return { items: [state], characters };
+    }
+    if (endpoint === ChannelEndpoints.qqConnect || endpoint === ChannelEndpoints.qqPairing) {
+      serial++;
+      const character = characters.find((item) => item.characterId === options.body?.characterId)!;
+      state = {
+        ...state,
+        status: 'pending',
+        characterId: character.characterId,
+        characterName: character.name,
+        pendingExpiresAt: new Date(Date.now() + 300000).toISOString(),
+      };
+      return {
+        binding: state,
+        pairingCode: serial.toString(16).toUpperCase().padStart(10, '0'),
+        expiresAt: state.pendingExpiresAt,
+      };
+    }
     if (endpoint === ChannelEndpoints.unbind) {
       state = {
         ...state,

@@ -44,6 +44,8 @@ services:
       # 不在这里传的变量容器里根本看不到。默认全关：不打开时页面显示「未联调」，
       # worker 不连微信也不连微博、不发送任何东西。
       # *ALLOWED_USER_IDS 是内测白名单（逗号分隔用户 UUID）；留空 = 谁都不能用。
+      CHANNEL_QQ_ENABLED: ${CHANNEL_QQ_ENABLED:-0}
+      CHANNEL_QQ_ALLOWED_USER_IDS: ${CHANNEL_QQ_ALLOWED_USER_IDS:-}
       CHANNEL_WECHAT_ENABLED: ${CHANNEL_WECHAT_ENABLED:-0}
       CHANNEL_WECHAT_ALLOWED_USER_IDS: ${CHANNEL_WECHAT_ALLOWED_USER_IDS:-}
       CHANNEL_WECHAT_ILINK_BASE_URL: ${CHANNEL_WECHAT_ILINK_BASE_URL:-https://ilinkai.weixin.qq.com}

@@ -36,6 +36,8 @@ import { ChannelStore, type BindingRow } from './channel-store.js';
 import { channelRuntimeConfig } from './channel-config.js';
 import { isOwnPeer } from '../domain/peer.js';
 import { weiboPeerContextAad } from '../domain/weibo-openim.js';
+import { QqSessionStore } from './qq-session-store.js';
+import { qqAad, qqCodeHash, readQqPairingCode, QQ_REPLY_TTL_MS } from '../domain/qq-openapi.js';
 
 export interface InboundInput {
   externalId: string;
@@ -45,6 +47,7 @@ export interface InboundInput {
   createdAt: Date | null;
   /** 仅由完成 AppID/AppSecret 鉴权的微博 WSS runtime 提供，不是 HTTP 请求字段。 */
   weiboSession?: { bindingId: string; generation: number };
+  qqSession?: { bindingId: string; generation: number };
 }
 
 export type IngestOutcome = 'accepted' | 'duplicate' | 'rejected' | 'failed';
@@ -53,6 +56,7 @@ export type IngestOutcome = 'accepted' | 'duplicate' | 'rejected' | 'failed';
 export class ChannelBridge {
   constructor(
     @Inject(ChannelStore) private readonly store: ChannelStore,
+    @Inject(QqSessionStore) private readonly qqStore: QqSessionStore,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(LOGGER) private readonly logger: Logger,
     @Inject(ENVELOPE_CRYPTO) private readonly crypto: EnvelopeCrypto,
@@ -69,7 +73,9 @@ export class ChannelBridge {
   async ingest(candidate: BindingRow, input: InboundInput): Promise<IngestOutcome> {
     // 长连接无需因换角色重建；每次入站读取当前选择，同时拒绝旧凭据代际的迟到事件。
     const binding =
-      candidate.channel === 'weibo' ? await this.store.bindingById(candidate.id) : candidate;
+      candidate.channel === 'weibo' || candidate.channel === 'qq'
+        ? await this.store.bindingById(candidate.id)
+        : candidate;
     if (
       !binding ||
       binding.status !== 'active' ||
@@ -85,6 +91,25 @@ export class ChannelBridge {
       return 'rejected';
     }
     if (!input.externalId) return 'rejected';
+    if (binding.channel === 'qq') {
+      if (
+        input.qqSession?.bindingId !== binding.id ||
+        input.qqSession?.generation !== binding.generation ||
+        !binding.context_token_sealed ||
+        readQqPairingCode(input.text)
+      )
+        return 'rejected';
+      const peer = await this.crypto.open(
+        binding.user_id,
+        qqAad(binding.id, 'peer'),
+        binding.context_token_sealed,
+      );
+      try {
+        if (peer.toString('utf8') !== input.senderId) return 'rejected';
+      } finally {
+        peer.fill(0);
+      }
+    }
     if (
       binding.channel === 'weibo' &&
       (input.weiboSession?.bindingId !== binding.id ||
@@ -166,6 +191,19 @@ export class ChannelBridge {
         plaintext.fill(0);
       }
     }
+    if (binding.channel === 'qq') {
+      const expiresAt = new Date(
+        Math.min(now.getTime(), input.createdAt?.getTime() ?? now.getTime()) + QQ_REPLY_TTL_MS,
+      );
+      if (expiresAt <= now) return reject('qq_reply_window_expired');
+      const sealed = await this.crypto.seal(
+        binding.user_id,
+        qqAad(binding.id, 'reply'),
+        input.externalId,
+      );
+      if (!(await this.qqStore.setReply(binding, sealed, expiresAt)))
+        return reject('stale_binding');
+    }
     try {
       const ack = await this.chatUser.sendMessage(binding.user_id, conversation.conversationId, {
         clientMsgId: row.clientMsgId,
@@ -189,6 +227,57 @@ export class ChannelBridge {
       await this.store.finishInbound(row.id, 'failed', String(code), null, this.clock.now());
       return 'failed';
     }
+  }
+
+  /** 一次性配对只建立本人 peer，不作为聊天记录，不调用模型、记忆或计费。 */
+  async pairQq(candidate: BindingRow, input: InboundInput): Promise<boolean> {
+    if (
+      candidate.channel !== 'qq' ||
+      input.qqSession?.bindingId !== candidate.id ||
+      input.qqSession?.generation !== candidate.generation
+    )
+      return false;
+    const code = readQqPairingCode(input.text);
+    if (!code || !input.senderId || !input.externalId) return false;
+    const binding = await this.store.bindingById(candidate.id);
+    if (
+      !binding ||
+      binding.channel !== 'qq' ||
+      binding.status !== 'unbound' ||
+      binding.generation !== candidate.generation ||
+      binding.user_id !== candidate.user_id ||
+      !binding.character_id
+    )
+      return false;
+    if (
+      channelRuntimeConfig(this.config, 'qq', binding.user_id).integration !== 'live' ||
+      !(await this.membership.isProPlus(binding.user_id))
+    )
+      return false;
+    const conversation = await this.chatRead.findDirectConversation(
+      binding.user_id,
+      binding.character_id,
+    );
+    if (!conversation || conversation.contentScope !== 'normal') return false;
+    const now = this.clock.now();
+    const expiresAt = new Date(
+      Math.min(now.getTime(), input.createdAt?.getTime() ?? now.getTime()) + QQ_REPLY_TTL_MS,
+    );
+    if (expiresAt <= now) return false;
+    const peer = await this.crypto.seal(binding.user_id, qqAad(binding.id, 'peer'), input.senderId);
+    const reply = await this.crypto.seal(
+      binding.user_id,
+      qqAad(binding.id, 'reply'),
+      input.externalId,
+    );
+    return this.qqStore.consume(
+      binding,
+      qqCodeHash(binding.id, binding.generation, code),
+      peer,
+      reply,
+      expiresAt,
+      now,
+    );
   }
 
   /**

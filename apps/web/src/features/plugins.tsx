@@ -5,11 +5,12 @@ import {
   type ChannelId,
   type ChannelState,
   type WechatQrAttempt,
+  type QqPairing,
 } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { friendlyError } from '../data/use-remote.js';
 import { AlertDialog, showToast } from './toast.js';
-import { GroupHeader, MenuGroup, MenuRow, NavBar, Sheet, showComingSoon } from './shell-kit.js';
+import { GroupHeader, MenuGroup, MenuRow, NavBar, Sheet } from './shell-kit.js';
 import { encodeQr } from './qr-code.js';
 import { parseWeiboCredentials, wechatBindLink } from '@weiban/client-core';
 import { copyText } from './copy-text.js';
@@ -38,7 +39,7 @@ const CHANNEL_ROWS: ReadonlyArray<{ id: 'wechat' | 'qq' | 'weibo'; label: string
 function statusText(state: ChannelState | null): string {
   if (!state) return '未绑定';
   if (state.status === 'active') return '已绑定';
-  if (state.status === 'pending') return '待扫码';
+  if (state.status === 'pending') return state.channel === 'qq' ? '待QQ确认' : '待扫码';
   if (state.status === 'revoked') return '已失效';
   if (state.integration === 'not_configured') return '尚未配置';
   if (state.integration === 'not_integrated') return '未联调';
@@ -48,9 +49,12 @@ function statusText(state: ChannelState | null): string {
 function subtitleOf(state: ChannelState): string {
   if (state.status === 'active') {
     const who = state.characterName ?? state.accountMasked ?? '已绑定';
-    return `${who} · ${state.channel === 'wechat' ? '微信' : '微博'}`;
+    return `${who} · ${state.channel === 'wechat' ? '微信' : state.channel === 'qq' ? 'QQ' : '微博'}`;
   }
-  if (state.status === 'pending') return '已生成二维码，等微信扫码确认';
+  if (state.status === 'pending')
+    return state.channel === 'qq'
+      ? '凭据已保存，等待你在QQ发送绑定码'
+      : '已生成二维码，等微信扫码确认';
   if (state.integration === 'not_configured') return '服务器缺少接入配置，请联系管理员';
   if (state.integration === 'not_integrated') return '通道尚未开通（默认关闭），暂不能绑定';
   return state.description;
@@ -65,7 +69,7 @@ export function PluginsPage() {
   const [items, setItems] = useState<ChannelState[] | null>(null);
   const [characters, setCharacters] = useState<ChannelCharacter[]>([]);
   const [error, setError] = useState('');
-  const [open, setOpen] = useState<'wechat' | 'weibo' | null>(null);
+  const [open, setOpen] = useState<ChannelId | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -98,17 +102,6 @@ export function PluginsPage() {
       <GroupHeader>外部渠道</GroupHeader>
       <MenuGroup>
         {CHANNEL_ROWS.map((row) => {
-          if (row.id === 'qq') {
-            return (
-              <MenuRow
-                key="qq"
-                label="QQ接入"
-                subtitle="在QQ中与角色聊天"
-                value="暂未开放"
-                onClick={showComingSoon}
-              />
-            );
-          }
           const state = items?.find((item) => item.channel === row.id) ?? null;
           const channel = row.id;
           const text = statusText(state);
@@ -118,7 +111,7 @@ export function PluginsPage() {
               label={row.label}
               subtitle={state ? subtitleOf(state) : '正在读取接入状态…'}
               value={
-                text === '已绑定' || text === '待扫码' ? (
+                text === '已绑定' || text === '待扫码' || text === '待QQ确认' ? (
                   <span className="ink-brand">{text}</span>
                 ) : (
                   text
@@ -134,7 +127,7 @@ export function PluginsPage() {
       </MenuGroup>
       <p className="page-note">
         微信接入用微信扫一扫把角色接到微信里；微博接入用龙虾助手私信发放的 AppID / AppSecret。 QQ
-        暂未开放。
+        接入请新建官方测试机器人，填写凭据后在QQ私聊里发送一次性绑定码。
       </p>
       {open && current && (
         <ChannelSheet
@@ -168,6 +161,7 @@ function ChannelSheet({
   const [appId, setAppId] = useState('');
   const [appSecret, setAppSecret] = useState('');
   const [credentials, setCredentials] = useState('');
+  const [qqPair, setQqPair] = useState<QqPairing | null>(null);
   const live = state.integration === 'live';
   const contentRef = useRef<HTMLDivElement>(null);
   const linkFieldRef = useRef<HTMLInputElement>(null);
@@ -194,7 +188,9 @@ function ChannelSheet({
   }
   // 契约里 channel 是容错枚举（未来可能出现不认识的渠道）：这里只认微信 / 微博两种。
   const channel: ChannelId | null =
-    state.channel === 'wechat' || state.channel === 'weibo' ? state.channel : null;
+    state.channel === 'wechat' || state.channel === 'weibo' || state.channel === 'qq'
+      ? state.channel
+      : null;
 
   // 二维码状态：只在等扫码时每 2.5 秒问一次；服务器那边是真实 get_qrcode_status。
   useEffect(() => {
@@ -224,6 +220,44 @@ function ChannelSheet({
       window.clearTimeout(timer);
     };
   }, [attempt, onChanged]);
+
+  useEffect(() => {
+    if (state.channel !== 'qq' || state.status !== 'pending') return;
+    let pending = false;
+    const timer = window.setInterval(() => {
+      if (pending) return;
+      pending = true;
+      void onChanged().finally(() => {
+        pending = false;
+      });
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [state.channel, state.status, onChanged]);
+
+  async function connectQq(refresh = false) {
+    if (!characterId || (!refresh && (!appId.trim() || !appSecret.trim()))) {
+      setError('先选日常角色，再填写QQ官方机器人 AppID / AppSecret');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const result = refresh
+        ? await api.call(ChannelEndpoints.qqPairing, { body: { characterId } })
+        : await api.call(ChannelEndpoints.qqConnect, {
+            body: { characterId, appId: appId.trim(), appSecret: appSecret.trim() },
+          });
+      setQqPair(result);
+      setAppId('');
+      setAppSecret('');
+      await onChanged();
+      contentRef.current?.closest('.sheet-body')?.scrollTo({ top: 0 });
+    } catch (error) {
+      setError(friendlyError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function startBinding() {
     if (!characterId) {
@@ -305,7 +339,7 @@ function ChannelSheet({
     }
   }
 
-  const channelLabel = state.channel === 'wechat' ? '微信' : '微博';
+  const channelLabel = state.channel === 'wechat' ? '微信' : state.channel === 'qq' ? 'QQ' : '微博';
 
   return (
     <Sheet title={state.name} onClose={onClose} closeDisabled={busy}>
@@ -471,6 +505,136 @@ function ChannelSheet({
             </p>
             {state.lastError && <p className="page-note">{state.lastError}</p>}
           </>
+        ) : state.channel === 'qq' ? (
+          <>
+            <p className="page-note">
+              使用QQ官方平台新建的独立测试机器人，不是个人QQ密码或Cookie；不要复用旧版正在使用的机器人。只接收本人配对后的私聊日常文字，不接群聊、图片或语音。
+            </p>
+            {state.status === 'pending' ? (
+              <>
+                <div className="channel-bound-actions">
+                  <button
+                    className="channel-action-button"
+                    type="button"
+                    disabled={busy || !characterId}
+                    onClick={() => void connectQq(true)}
+                  >
+                    重新生成绑定码
+                  </button>
+                  <button
+                    className="channel-action-button channel-action-danger"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setConfirming(true)}
+                  >
+                    清除QQ凭据重填
+                  </button>
+                </div>
+                {qqPair ? (
+                  <>
+                    <label className="wx-auth-field wx-auth-field--credentials">
+                      <span>在QQ私聊原样发送这一行</span>
+                      <input
+                        className="wechat-bind-url"
+                        aria-label="QQ绑定命令"
+                        readOnly
+                        autoComplete="off"
+                        value={'绑定 ' + qqPair.pairingCode}
+                        onFocus={(event) => event.currentTarget.select()}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="channel-action-button full"
+                      onClick={() => void copyText('绑定 ' + qqPair.pairingCode)}
+                    >
+                      复制QQ绑定命令
+                    </button>
+                    <p className="page-note">
+                      此码在 {timeText(qqPair.expiresAt)}{' '}
+                      前有效；不要发给他人，旧码会在重新生成后失效。
+                    </p>
+                  </>
+                ) : (
+                  <p className="page-note">
+                    凭据已加密保存。为保护安全，刷新页面后不会重新显示旧绑定码；请点上方重新生成。
+                  </p>
+                )}
+                <p className="page-note">
+                  到QQ官方管理页点「扫码聊天」，用你自己的QQ添加这只机器人，把绑定命令发到它的私聊，然后返回本页等待「已绑定」。绑定码不会送给AI，也不计聊天费用；确认前的普通消息不会触发角色回复。
+                </p>
+                <a
+                  className="channel-action-button"
+                  href="https://q.qq.com/qqbot/openclaw/index.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  前往QQ官方管理页
+                </a>
+              </>
+            ) : (
+              <>
+                <div className="wechat-bind-toolbar">
+                  <p className="wechat-bind-selection">
+                    出口角色：
+                    <strong>
+                      {characters.find((item) => item.characterId === characterId)?.name ??
+                        '请先选择角色'}
+                    </strong>
+                  </p>
+                  <button
+                    className="channel-action-button full"
+                    type="button"
+                    disabled={busy || !characterId || !appId.trim() || !appSecret.trim()}
+                    onClick={() => void connectQq()}
+                  >
+                    {busy ? '正在校验…' : '连接QQ并生成绑定码'}
+                  </button>
+                </div>
+                <div className="wx-auth-fields">
+                  <label className="wx-auth-field">
+                    <span>AppID</span>
+                    <input
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={appId}
+                      placeholder="QQ官方机器人的AppID"
+                      onChange={(event) => setAppId(event.target.value)}
+                    />
+                  </label>
+                  <label className="wx-auth-field">
+                    <span>AppSecret</span>
+                    <input
+                      type="password"
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={appSecret}
+                      placeholder="只在本页填写新密钥，不要发到聊天里"
+                      onChange={(event) => setAppSecret(event.target.value)}
+                    />
+                  </label>
+                </div>
+              </>
+            )}
+            <GroupHeader>选择在QQ里回复你的角色</GroupHeader>
+            <CharacterPicker
+              characters={characters}
+              selectedId={characterId}
+              disabled={busy}
+              onSelect={(id) => {
+                setCharacterId(id);
+                if (id !== characterId) setQqPair(null);
+              }}
+            />
+            <p className="page-note">
+              更换待配对角色后请重新生成绑定码。QQ使用最近私聊的被动回复窗口，不尝试主动群发；长时间未说话时请先在QQ发一句日常文字。
+            </p>
+            {state.lastError && (
+              <p className="page-note" role="alert">
+                {state.lastError}
+              </p>
+            )}
+          </>
         ) : (
           <>
             <p className="page-note">
@@ -565,7 +729,7 @@ function ChannelSheet({
       {confirming && (
         <AlertDialog
           title="解除绑定？"
-          message={`只解除当前新站的${channelLabel}连接，不操作旧版服务器或旧绑定。之后可以${channel === 'wechat' ? '重新生成二维码扫码' : '重新填写助手凭据'}，再次测试绑定。`}
+          message={`只解除当前新站的${channelLabel}连接，不操作旧版服务器或旧绑定。之后可以${channel === 'wechat' ? '重新生成二维码扫码' : channel === 'qq' ? '重新填写QQ凭据并发送绑定码' : '重新填写助手凭据'}，再次测试绑定。`}
           confirmLabel="解除绑定"
           onCancel={() => setConfirming(false)}
           onConfirm={() => void unbind()}

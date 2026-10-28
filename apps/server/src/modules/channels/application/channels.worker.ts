@@ -38,6 +38,7 @@ import {
 } from './channels.service.js';
 import { WechatRuntime } from './wechat-runtime.js';
 import { WeiboRuntime } from './weibo-runtime.js';
+import { QqRuntime } from './qq-runtime.js';
 import {
   IlinkHttpError,
   createIlinkClient,
@@ -63,6 +64,7 @@ export class ChannelsWorker implements OnModuleInit, UserDataOwner {
     @Inject(ChannelBridge) private readonly bridge: ChannelBridge,
     @Inject(WechatRuntime) private readonly wechat: WechatRuntime,
     @Inject(WeiboRuntime) private readonly weibo: WeiboRuntime,
+    @Inject(QqRuntime) private readonly qq: QqRuntime,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(LOGGER) private readonly logger: Logger,
@@ -106,6 +108,11 @@ export class ChannelsWorker implements OnModuleInit, UserDataOwner {
       await this.wechat.reconcile();
     } catch (error) {
       this.logger.warn({ err: error }, '微信渠道对齐失败');
+    }
+    try {
+      await this.qq.reconcile();
+    } catch {
+      this.logger.warn({ channel: 'qq' }, 'QQ渠道对齐失败');
     }
     try {
       await this.weibo.reconcile();
@@ -173,6 +180,29 @@ export class ChannelsWorker implements OnModuleInit, UserDataOwner {
         lastError: '正文无法解密',
         now: this.clock.now(),
       });
+      return;
+    }
+    if (row.channel === 'qq') {
+      if (!(await this.store.isOutboundCurrent(row.id, binding.id, binding.generation))) return;
+      let result: 'sent' | 'no_window' | 'not_ready';
+      try {
+        result = await this.qq.send(binding, row.id, text);
+      } catch {
+        if (await this.store.isOutboundCurrent(row.id, binding.id, binding.generation))
+          await this.retryOrFail(row, 'QQ官方回复接口暂不可用');
+        return;
+      }
+      if (!(await this.store.isOutboundCurrent(row.id, binding.id, binding.generation))) return;
+      if (result === 'sent') {
+        await this.store.finishOutbound(row.id, { status: 'sent', now: this.clock.now() });
+        await this.store.touchEvent(binding.id, this.clock.now());
+      } else if (result === 'no_window')
+        await this.store.finishOutbound(row.id, {
+          status: 'skipped',
+          lastError: 'QQ只支持近期会话内的被动回复，请先在QQ向机器人发一句日常文字',
+          now: this.clock.now(),
+        });
+      else await this.retryOrFail(row, 'QQ事件连接未就绪');
       return;
     }
     if (row.channel === 'weibo') {

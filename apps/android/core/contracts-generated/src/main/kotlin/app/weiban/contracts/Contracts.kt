@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 4.6. Regenerate: pnpm android:generate
+// Contract 4.7. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "4.6"
+const val CONTRACT_VERSION: String = "4.7"
 
 @Serializable
 data class AccountAlias(
@@ -8913,6 +8913,27 @@ data class PushEndpointsGetVapidPublicKeyResponse(
 @Serializable
 data class PushEndpointsUnregisterDeviceParams(
     @SerialName("pushDeviceId") val `pushDeviceId`: Id,
+)
+
+@Serializable
+data class QqConnectRequest(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("appId") val `appId`: String,
+    @SerialName("appSecret") val `appSecret`: String,
+)
+
+@Serializable
+data class QqConnectRequestInput(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("appId") val `appId`: String,
+    @SerialName("appSecret") val `appSecret`: String,
+)
+
+@Serializable
+data class QqPairing(
+    @SerialName("binding") val `binding`: ChannelState,
+    @SerialName("pairingCode") val `pairingCode`: String,
+    @SerialName("expiresAt") val `expiresAt`: Timestamp,
 )
 
 @Serializable

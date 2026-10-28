@@ -34,6 +34,7 @@ export interface ChannelRuntimeConfig {
 
 /** 某渠道的内测白名单（空数组 = 谁都不行）。 */
 export function channelAllowedUsers(config: AppConfig, channel: ChannelId): readonly string[] {
+  if (channel === 'qq') return config.channels.qq?.allowedUserIds ?? [];
   const settings = channel === 'wechat' ? config.channels.wechat : config.channels.weibo;
   return settings.allowedUserIds;
 }
@@ -61,6 +62,13 @@ export function channelRuntimeConfig(
   userId?: string,
 ): ChannelRuntimeConfig {
   const userAllowed = userId === undefined ? true : isChannelUserAllowed(config, channel, userId);
+  if (channel === 'qq')
+    return {
+      channel,
+      integration: config.channels.qq?.enabled && userAllowed ? 'live' : 'not_integrated',
+      ilinkBaseUrl: '',
+      weibo: null,
+    };
   if (channel === 'wechat') {
     const settings = config.channels.wechat;
     const integration: ChannelIntegrationStatus =

@@ -4,3 +4,7 @@ export { ChannelsService } from './application/channels.service.js';
 export { ChannelBridge } from './application/channel-bridge.js';
 export { ChannelsWorker } from './application/channels.worker.js';
 export { WeiboRuntime } from './application/weibo-runtime.js';
+
+export { QqSessionStore } from './application/qq-session-store.js';
+export { QqRuntime } from './application/qq-runtime.js';
+export { QQ_CLIENT_FACTORY, QQ_WS_FACTORY, createQqClient, qqAad } from './domain/qq-openapi.js';

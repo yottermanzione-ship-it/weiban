@@ -6,6 +6,10 @@
  * 依赖其他模块的**端口**（chat / contacts / characters / identity），不读别人的表。
  */
 import { Module } from '@nestjs/common';
+import WebSocket from 'ws';
+import { QqRuntime } from './application/qq-runtime.js';
+import { QqSessionStore } from './application/qq-session-store.js';
+import { QQ_CLIENT_FACTORY, QQ_WS_FACTORY, createQqClient } from './domain/qq-openapi.js';
 import { ChatModule } from '../chat/index.js';
 import { CharactersModule } from '../characters/index.js';
 import { ContactsModule } from '../contacts/index.js';
@@ -24,6 +28,18 @@ import { PluginsController } from './http/plugins.controller.js';
   controllers: [ChannelsController, PluginsController],
   providers: [
     ChannelStore,
+    QqSessionStore,
+    QqRuntime,
+    { provide: QQ_CLIENT_FACTORY, useValue: createQqClient },
+    {
+      provide: QQ_WS_FACTORY,
+      useValue: (url: string) =>
+        new WebSocket(url, {
+          maxPayload: 64_000,
+          handshakeTimeout: 10_000,
+          followRedirects: false,
+        }),
+    },
     ChannelsService,
     ChannelBridge,
     WechatRuntime,
