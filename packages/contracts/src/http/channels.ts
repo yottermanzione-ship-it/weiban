@@ -33,6 +33,9 @@
 import { z } from 'zod';
 import { API_PREFIX, Id, Timestamp, defineEndpoint, tolerantEnum } from '../common.js';
 
+/** 微信官方绑定链接的唯一主机，服务端验证与客户端唤起共用。 */
+export const WECHAT_BIND_URL_HOST = 'liteapp.weixin.qq.com';
+
 /** 已接入的外部渠道。QQ 仍是「暂未开放」，不在本契约内。 */
 export const ChannelId = z.enum(['wechat', 'weibo']);
 export type ChannelId = z.infer<typeof ChannelId>;

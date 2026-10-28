@@ -1,0 +1,92 @@
+/* 仅渠道弹层：修正嵌套菜单的负边距，并让长角色列表与绑定主操作各自可见。 */
+.channel-sheet-content > .menu-group,
+.channel-character-picker {
+  margin-right: 0;
+  margin-left: 0;
+}
+.channel-sheet-content > .group-header {
+  margin-right: 0;
+  margin-left: 0;
+  padding-right: var(--wb-space-5);
+  padding-left: var(--wb-space-5);
+}
+.channel-character-picker {
+  max-height: min(40dvh, 20rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.channel-character-picker .menu-row {
+  padding-right: var(--wb-space-5);
+  padding-left: var(--wb-space-5);
+}
+.wechat-bind-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--wb-space-3) var(--wb-space-5);
+  border-bottom: 0.5px solid var(--wb-color-border-hairline);
+  background: var(--wb-color-bg-surface);
+}
+.wechat-bind-selection {
+  display: flex;
+  gap: var(--wb-space-2);
+  margin: 0 0 var(--wb-space-2);
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-footnote);
+}
+.wechat-bind-selection strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--wb-color-text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wechat-bind-result {
+  display: grid;
+  gap: var(--wb-space-3);
+  padding: 0 var(--wb-space-5) var(--wb-space-4);
+}
+.wechat-bind-link-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--wb-space-2);
+}
+.wechat-bind-open,
+.wechat-bind-copy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: var(--wb-size-touch-target);
+  padding: var(--wb-space-3);
+  border-radius: var(--wb-radius-sm);
+  font-size: var(--wb-font-size-body-small);
+  text-align: center;
+  text-decoration: none;
+}
+.wechat-bind-open {
+  background: var(--wb-color-brand-primary);
+  color: var(--wb-color-text-on-brand);
+}
+.wechat-bind-copy {
+  background: var(--wb-color-brand-soft);
+  color: var(--wb-color-brand-on-soft);
+}
+.wechat-bind-url {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--wb-size-touch-target);
+  padding: var(--wb-space-2) var(--wb-space-3);
+  border: 0.5px solid var(--wb-color-border-hairline);
+  border-radius: var(--wb-radius-sm);
+  background: var(--wb-color-bg-page);
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-footnote);
+}
+.wechat-bind-result .page-note {
+  margin: 0;
+  padding: 0;
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-footnote);
+  line-height: var(--wb-line-height-normal);
+}

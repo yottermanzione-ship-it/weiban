@@ -18,6 +18,7 @@
  * 扫码状态轮询不带 token，允许的主机放宽到 *.weixin.qq.com（normalizeQrPollBaseUrl）。
  */
 import { createHash, randomBytes } from 'node:crypto';
+import { WECHAT_BIND_URL_HOST } from '@weiban/contracts';
 
 export const DEFAULT_ILINK_BASE_URL = 'https://ilinkai.weixin.qq.com';
 
@@ -34,7 +35,7 @@ export const ILINK_QR_STATUS_TIMEOUT_MS = 8_000;
 export const ILINK_API_TIMEOUT_MS = 15_000;
 
 /** 微信返回的绑定链接只允许这一个官方主机（和旧版 BIND_URL_HOST 一致）。 */
-export const BIND_URL_HOST = 'liteapp.weixin.qq.com';
+export const BIND_URL_HOST = WECHAT_BIND_URL_HOST;
 
 export class IlinkHttpError extends Error {
   readonly status: number;

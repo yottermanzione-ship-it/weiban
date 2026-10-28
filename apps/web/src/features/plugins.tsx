@@ -11,7 +11,9 @@ import { friendlyError } from '../data/use-remote.js';
 import { AlertDialog, showToast } from './toast.js';
 import { GroupHeader, MenuGroup, MenuRow, NavBar, Sheet, showComingSoon } from './shell-kit.js';
 import { encodeQr } from './qr-code.js';
-import { parseWeiboCredentials } from '@weiban/client-core';
+import { parseWeiboCredentials, wechatBindLink } from '@weiban/client-core';
+import { copyText } from './copy-text.js';
+import './channel-binding.css';
 
 /**
  * 插件（设置 › 插件）：外部渠道接入。
@@ -167,6 +169,29 @@ function ChannelSheet({
   const [appSecret, setAppSecret] = useState('');
   const [credentials, setCredentials] = useState('');
   const live = state.integration === 'live';
+  const contentRef = useRef<HTMLDivElement>(null);
+  const linkFieldRef = useRef<HTMLInputElement>(null);
+  const bindLink = attempt ? wechatBindLink(attempt.bindUrl, navigator.userAgent) : null;
+
+  useEffect(() => {
+    if (attempt?.attemptId) contentRef.current?.closest('.sheet-body')?.scrollTo({ top: 0 });
+  }, [attempt?.attemptId]);
+
+  function selectCharacter(id: string) {
+    setCharacterId(id);
+    if (state.channel === 'wechat' && attempt && id !== attempt.characterId) setAttempt(null);
+  }
+
+  async function copyBindLink() {
+    if (busy || !bindLink || attempt?.status !== 'wait') return;
+    const copied = await copyText(bindLink.bindUrl);
+    if (copied) showToast('链接已复制，到微信文件传输助手粘贴并点开', 3000, 'success');
+    else {
+      linkFieldRef.current?.focus();
+      linkFieldRef.current?.select();
+      showToast('请长按下方链接手动复制，再到微信中打开', 3000, 'warning');
+    }
+  }
   // 契约里 channel 是容错枚举（未来可能出现不认识的渠道）：这里只认微信 / 微博两种。
   const channel: ChannelId | null =
     state.channel === 'wechat' || state.channel === 'weibo' ? state.channel : null;
@@ -207,6 +232,7 @@ function ChannelSheet({
     }
     setBusy(true);
     setError('');
+    setAttempt(null); // 用户要求换新码后，不再展示或复制上一张可能已失效的授权票。
     try {
       const result = await api.call(ChannelEndpoints.wechatQr, { body: { characterId } });
       setAttempt(result);
@@ -283,7 +309,7 @@ function ChannelSheet({
 
   return (
     <Sheet title={state.name} onClose={onClose} closeDisabled={busy}>
-      <div>
+      <div className="channel-sheet-content" ref={contentRef}>
         {state.status === 'active' ? (
           <>
             <MenuGroup>
@@ -320,8 +346,8 @@ function ChannelSheet({
               。图片、语音、表情暂时不在{channelLabel}里收发。
             </p>
             <p className="page-note">
-              解除绑定或重新绑定会让{channelLabel}里那条旧会话失效。如果你在旧版微伴里也接过同一个
-              {channelLabel}，请先在旧版解绑——两个版本不能同时接管同一个账号。
+              解绑只停止新站的接收和回复，不会替你操作旧站。请不要为测试去旧版解绑或重置凭据；
+              若要保留旧连接，新站请用旧版未占用的测试授权，同一份平台授权两端使用可能互相挤掉。
             </p>
             <MenuGroup>
               <MenuRow
@@ -343,56 +369,101 @@ function ChannelSheet({
           </>
         ) : state.channel === 'wechat' ? (
           <>
-            <p className="page-note">
-              绑定后，你在微信里发给这个 ClawBot 的文字会由选中的角色回复。
-              二维码用微信「扫一扫」，约 2 分钟有效；重新生成会让上一张码立刻作废。
-            </p>
-            <p className="page-note">
-              注意：如果你在旧版微伴里接过同一个微信，请先在旧版解绑，否则两边会互相抢会话。
-            </p>
+            <div className="wechat-bind-toolbar">
+              <p className="wechat-bind-selection">
+                出口角色：
+                <strong>
+                  {characters.find((item) => item.characterId === characterId)?.name ??
+                    '请先选择角色'}
+                </strong>
+              </p>
+              <button
+                className="primary full"
+                type="button"
+                disabled={busy || !characterId}
+                onClick={() => void startBinding()}
+              >
+                {busy
+                  ? '正在生成…'
+                  : attempt?.status === 'wait'
+                    ? '重新生成二维码'
+                    : '生成绑定二维码'}
+              </button>
+            </div>
+            {attempt?.status === 'wait' ? (
+              bindLink ? (
+                <section className="wechat-bind-result" aria-label="微信绑定方式">
+                  <QrImage text={bindLink.bindUrl} />
+                  <div className="wechat-bind-link-actions">
+                    <a
+                      className="wechat-bind-open"
+                      href={bindLink.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() =>
+                        showToast('请在微信内完成绑定，返回本页等待确认', 3000, 'info')
+                      }
+                    >
+                      {bindLink.label}
+                    </a>
+                    <button
+                      className="wechat-bind-copy"
+                      type="button"
+                      onClick={() => void copyBindLink()}
+                    >
+                      复制绑定链接
+                    </button>
+                  </div>
+                  <input
+                    ref={linkFieldRef}
+                    className="wechat-bind-url"
+                    aria-label="微信绑定链接"
+                    readOnly
+                    value={bindLink.bindUrl}
+                    autoComplete="off"
+                    spellCheck={false}
+                    onFocus={(event) => event.currentTarget.select()}
+                  />
+                  <p className="page-note">
+                    不能扫码时，把链接粘贴到自己的微信「文件传输助手」后点开；安卓会优先尝试微信，系统不支持时退回官方网页。此链接是临时授权凭证，请勿分享给他人；操作后返回本页等待确认，打开微信不等于已绑定。
+                  </p>
+                  <p className="page-note">
+                    等待微信确认… 此码在{' '}
+                    {new Date(attempt.expiresAt).toLocaleTimeString('zh-CN', { hour12: false })}{' '}
+                    前有效。
+                  </p>
+                  {attempt.lastError && (
+                    <p className="page-note" role="alert">
+                      {attempt.lastError}
+                    </p>
+                  )}
+                </section>
+              ) : (
+                <p className="page-note" role="alert">
+                  微信返回的绑定链接不正确，请重新生成。
+                </p>
+              )
+            ) : (
+              <p className="page-note">
+                {attempt?.status === 'expired'
+                  ? (attempt.lastError ?? '二维码已过期，请重新生成。')
+                  : '先选一个日常聊天模式的角色，再点上方生成二维码；生成后也可以直接打开或复制绑定链接。'}
+              </p>
+            )}
+            <GroupHeader>选择在微信里回复你的角色</GroupHeader>
             <CharacterPicker
               characters={characters}
               selectedId={characterId}
-              onSelect={setCharacterId}
+              onSelect={selectCharacter}
+              disabled={busy}
             />
-            {attempt && attempt.status === 'wait' ? (
-              <>
-                <QrImage text={attempt.bindUrl} />
-                <p className="page-note">
-                  打开微信 → 右上角「+」→ 扫一扫 → 扫上面的二维码
-                  {attempt.characterName ? `（出口角色：${attempt.characterName}）` : ''}。
-                  同一部手机可以先截图，再从微信扫一扫右下角相册选这张图。
-                </p>
-                <p className="page-note">
-                  等扫码确认中…（这张码在{' '}
-                  {new Date(attempt.expiresAt).toLocaleTimeString('zh-CN', { hour12: false })}{' '}
-                  前有效）
-                </p>
-                {attempt.lastError && <p className="page-note">{attempt.lastError}</p>}
-                <button
-                  className="primary full"
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void startBinding()}
-                >
-                  {busy ? '正在重新生成…' : '重新生成二维码'}
-                </button>
-              </>
-            ) : (
-              <>
-                {attempt?.status === 'expired' && (
-                  <p className="page-note">{attempt.lastError ?? '二维码已过期，请重新生成。'}</p>
-                )}
-                <button
-                  className="primary full"
-                  type="button"
-                  disabled={busy || !characterId}
-                  onClick={() => void startBinding()}
-                >
-                  {busy ? '正在生成…' : '生成绑定二维码'}
-                </button>
-              </>
-            )}
+            <p className="page-note">
+              二维码可用微信「扫一扫」扫描，同一部手机也可截图后从相册识别，约 2
+              分钟有效；重新生成会让上一张码作废，换角色后也需要重新生成。
+            </p>
+            <p className="page-note">
+              保留旧连接时，请用新测试微信号；不要去旧版解绑。同一个微信号在新站重新授权，平台可能让旧授权失效。
+            </p>
             {state.lastError && <p className="page-note">{state.lastError}</p>}
           </>
         ) : (
@@ -503,21 +574,24 @@ function CharacterPicker({
   characters,
   selectedId,
   onSelect,
+  disabled = false,
 }: {
   characters: ChannelCharacter[];
   selectedId: string;
   onSelect(id: string): void;
+  disabled?: boolean;
 }) {
   if (!characters.length)
     return <p className="page-note">通讯录里还没有可用好友。请先添加好友，再回来选出口角色。</p>;
   return (
-    <MenuGroup>
+    <MenuGroup className="channel-character-picker">
       {characters.map((item) => (
         <MenuRow
           key={item.characterId}
           label={item.name}
           chevron={false}
           value={item.characterId === selectedId ? '已选择' : ''}
+          disabled={disabled}
           onClick={() => onSelect(item.characterId)}
         />
       ))}

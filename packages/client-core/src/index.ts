@@ -15,3 +15,5 @@ export {
 } from './persona-text.js';
 
 export { parseWeiboCredentials } from './channel-credentials.js';
+
+export { wechatBindLink } from './wechat-bind-link.js';
