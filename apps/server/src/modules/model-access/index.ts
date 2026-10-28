@@ -49,6 +49,7 @@ export {
   isRealtimeCallEntry,
   REALTIME_CALL_TAG,
   REALTIME_VOICE_CLONE_COST_YUAN,
+  realtimeVoiceCloneCostYuan,
 } from './application/realtime-call.js';
 /** V2：实时通话按需复刻——角色声音来源（装配入口绑定）与拨打前的音色检查（calls 经 CALL_SERVICE_STATUS 调用）。 */
 export { MODEL_ACCESS_CHARACTER_VOICE, type ModelAccessCharacterVoice } from './tokens.js';

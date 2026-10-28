@@ -87,7 +87,11 @@ export function realtimeCloneBody(
   return null;
 }
 
-/** `https://host/api/v1` → `https://host/api/v1/services/audio/tts/customization`；非 https 返回 null。 */
+/**
+ * `https://host/api/v1` → `https://host/api/v1/services/audio/tts/customization`；非 https 返回 null。
+ * V3：旧服北京 workspace 迁入的基址是 `https://ws-….cn-beijing.maas.aliyuncs.com/api`，兼容模式账号是
+ * `…/compatible-mode/v1`，都先去掉再拼 `/api/v1/…`（原先会拼成 `/api/api/v1/…`）。
+ */
 export function customizationUrl(baseUrl: string): string | null {
   let base: URL;
   try {
@@ -96,10 +100,10 @@ export function customizationUrl(baseUrl: string): string | null {
     return null;
   }
   if (base.protocol !== 'https:' || base.username || base.password) return null;
-  const path = base.pathname.replace(/\/+$/u, '');
-  base.pathname = /\/api\/v1$/iu.test(path)
-    ? `${path}/services/audio/tts/customization`
-    : `${path}/api/v1/services/audio/tts/customization`;
+  const path = base.pathname
+    .replace(/\/+$/u, '')
+    .replace(/\/(?:api(?:\/v1)?|compatible-mode\/v1)$/iu, '');
+  base.pathname = `${path}/api/v1/services/audio/tts/customization`;
   base.search = '';
   base.hash = '';
   return base.href;

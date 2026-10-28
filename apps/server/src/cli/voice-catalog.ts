@@ -8,9 +8,14 @@
  *     [--enable-realtime] [--enable-unverified] [--tts-flash-cost 1.4] [--realtime-voice Cherry] \
  *     [--omni-model <百炼型号> --omni-cost 文字入,音频入,文字出,音频出 [--omni-voice <音色>]]
  *   node dist/voice-catalog.js --fix-omni [--apply --operator-id <管理员 UUID>]   # V2：只改 Omni 显示名 / 补默认音色
+ *   node dist/voice-catalog.js --omni-clone-price [--apply --operator-id <管理员 UUID>]   # V3：Omni 补登记复刻价 0.013
+ *   node dist/voice-catalog.js --attach-workspace <北京 workspace 上游 UUID> \
+ *     [--workspace-models qwen/qwen-audio-3.0-realtime-plus[,qwen/qwen-audio-3.1-realtime-plus]] [--drop-stale-clones] \
+ *     [--apply --operator-id <管理员 UUID>]   # V3：Realtime Plus 路由改挂迁入的北京 workspace
  *
  * 上游账号：TeleSpeech / MiMo ASR / 3.1 TTS Flash / 实时 / Omni 不给就沿用 sensevoice / MiMo TTS / 百炼 TTS Plus
  * 所在账号；V2 起实时通话全部走公共百炼账号（--realtime-upstream 可显式指定，kind 必须是 dashscope）。
+ * V3：已有条目重跑时沿用它当前的上游账号（不把已改挂北京 workspace 的条目挂回去），除非显式给 --realtime-upstream 等。
  * 价格与默认启用规则见 voice-catalog-options.ts 顶部。
  */
 import 'reflect-metadata';
@@ -21,7 +26,7 @@ import { isActiveMaintenanceAdmin } from '../modules/identity/index.js';
 import {
   CatalogService,
   ModelAdminService,
-  REALTIME_VOICE_CLONE_COST_YUAN,
+  realtimeVoiceCloneCostYuan,
   RealtimeVoiceStore,
   UpstreamService,
 } from '../modules/model-access/index.js';
@@ -31,8 +36,11 @@ import { createLogger, DATABASE, loadConfig, type Database } from '../platform/i
 import {
   completeWrite,
   parseVoiceCatalogCommand,
+  planOmniClonePrice,
   planOmniFix,
   planVoiceCatalog,
+  planWorkspaceAttach,
+  REALTIME_ITEMS,
   type PlannedEntry,
   type VoiceCatalogCommand,
 } from './voice-catalog-options.js';
@@ -75,8 +83,11 @@ function resolveUpstream(
   upstreams: readonly Upstream[],
 ): { upstreamId: string } | { problem: string } {
   const explicit = command.upstreams[planned.upstream.flag];
+  // V3：已有条目沿用当前上游（例 已改挂北京 workspace 的 3.0 Plus），只有显式给了账号才换。
+  const current = models.find((m) => m.modelKey === planned.modelKey && !m.deletedAt)?.upstreamId;
   const id =
     explicit ??
+    current ??
     (planned.upstream.reference
       ? models.find((m) => m.modelKey === planned.upstream.reference && !m.deletedAt)?.upstreamId
       : undefined);
@@ -88,10 +99,7 @@ function resolveUpstream(
     };
   const upstream = upstreams.find((u) => u.upstreamId === id);
   if (!upstream) return { problem: `上游账号 ${id} 不存在或已删除` };
-  if (
-    (planned.item === 'qwen-realtime' || planned.item === 'omni') &&
-    upstream.kind !== 'dashscope'
-  )
+  if (REALTIME_ITEMS.includes(planned.item) && upstream.kind !== 'dashscope')
     return { problem: `实时通话账号必须是百炼（dashscope），当前是 ${upstream.kind}` };
   if (planned.item === 'qwen-tts-flash' && upstream.kind !== 'dashscope')
     return { problem: `千问 TTS 账号必须是百炼（dashscope），当前是 ${upstream.kind}` };
@@ -148,6 +156,160 @@ async function fixOmni(
   out({ ok: true, fixed: done });
 }
 
+type App = Awaited<ReturnType<typeof NestFactory.createApplicationContext>>;
+
+async function requireAdmin(app: App, operatorId: string) {
+  const database = app.get<Database>(DATABASE, { strict: false });
+  if (!(await isActiveMaintenanceAdmin(database, operatorId)))
+    throw new VoiceCatalogCliError(
+      'ACTIVE_ADMIN_REQUIRED',
+      '--operator-id 必须是启用状态的管理员用户 ID（写审计用）',
+    );
+}
+
+/** 只改服务单价 / 路由时的最小写入体：rates = null 不改 token 价，其余可改项不传（= 不改）。 */
+function minimalWrite(current: AdminModel, patch: Record<string, unknown>) {
+  return AdminModelWrite.parse({
+    ...current,
+    rates: null,
+    costRates: undefined,
+    serviceRates: undefined,
+    routes: undefined,
+    displayMultiplierManual: undefined,
+    discount: undefined,
+    ...patch,
+  });
+}
+
+/**
+ * V3 --omni-clone-price：现有 Omni 条目补登记复刻价（voice_clone 0.013 / 成本 0.01）。只传这一项服务单价，
+ * 经 ModelAdminService.upsert 发布新价目表并写审计（catalog.updated、价目发布）。默认只预演。
+ */
+async function omniClonePrice(
+  command: VoiceCatalogCommand,
+  app: App,
+  models: readonly AdminModel[],
+) {
+  const changes = planOmniClonePrice(models);
+  if (command.kind !== 'apply') {
+    out({ ok: true, dryRun: true, changes });
+    return;
+  }
+  await requireAdmin(app, command.operatorId!);
+  const admin = app.get(ModelAdminService, { strict: false });
+  for (const change of changes) {
+    const current = models.find((m) => m.modelKey === change.modelKey && !m.deletedAt);
+    if (!current) continue;
+    await admin.upsert(
+      command.operatorId!,
+      change.modelKey,
+      minimalWrite(current, { serviceRates: [change.to] }),
+    );
+  }
+  out({ ok: true, changed: changes });
+}
+
+/**
+ * V3 --attach-workspace：Realtime Plus 条目改挂迁入的北京 workspace（校验见 planWorkspaceAttach）。正式执行顺序：
+ * 1. 上游协议 / 基址修正（UpstreamService.update，审计 upstream.updated；改地址会清空暂停，需要在后台重新测试）；
+ * 2. 每个条目的路由整体换成这一个上游（沿用上游型号、核准的 realtime 计费上限、启用状态），审计 catalog.updated /
+ *    catalog.routes_replaced；按需复刻因此也走这个上游（媒体网关复刻用目录主线路的账号）；
+ * 3. 删掉旧账号上按需复刻的绑定（--drop-stale-clones，审计 realtime_voice.clones_dropped）；
+ * 4. 默认音色不合法时改成官方值（审计 realtime_voice.default_set）。
+ * 上游的「启用」与连通测试仍由管理员在后台「上游账号」页完成（迁入的账号默认停用）。默认只预演。
+ */
+async function attachWorkspace(
+  command: VoiceCatalogCommand,
+  app: App,
+  models: readonly AdminModel[],
+  upstreams: readonly Upstream[],
+  defaults: Readonly<Record<string, string>>,
+) {
+  const attach = command.attachWorkspace!;
+  const voices = app.get(RealtimeVoiceStore, { strict: false });
+  const bindings: Record<string, Record<string, number>> = {};
+  for (const key of attach.models) bindings[key] = await voices.countBySource(key);
+  const upstream = upstreams.find((u) => u.upstreamId === attach.upstreamId) ?? null;
+  const plan = planWorkspaceAttach({
+    upstream: upstream
+      ? {
+          upstreamId: upstream.upstreamId,
+          name: upstream.name,
+          kind: upstream.kind,
+          baseUrl: upstream.baseUrl,
+          enabled: upstream.enabled,
+          status: upstream.status,
+        }
+      : null,
+    modelKeys: attach.models,
+    models,
+    bindings,
+    defaults,
+    dropStaleClones: attach.dropStaleClones,
+  });
+  const nextSteps = [
+    '后台「上游账号」页：找到这个账号 → 测试 → 启用（迁入的账号默认停用）',
+    '再跑 import-legacy-realtime-voices 迁入北京 workspace 的旧绑定',
+  ];
+  if (command.kind !== 'apply' || plan.problems.length) {
+    out({
+      ok: plan.problems.length === 0,
+      dryRun: true,
+      plan: { ...plan, bindings },
+      nextSteps,
+    });
+    if (plan.problems.length && command.kind === 'apply')
+      throw new VoiceCatalogCliError('ATTACH_REJECTED', '有问题未解决，未写入任何内容', {
+        problems: plan.problems,
+      });
+    return;
+  }
+  if (!('upstream' in plan)) return;
+  await requireAdmin(app, command.operatorId!);
+  const service = app.get(UpstreamService, { strict: false });
+  const admin = app.get(ModelAdminService, { strict: false });
+  if (plan.upstream.kind || plan.upstream.baseUrl)
+    await service.update(command.operatorId!, attach.upstreamId, {
+      ...(plan.upstream.kind ? { kind: plan.upstream.kind.to } : {}),
+      ...(plan.upstream.baseUrl ? { baseUrl: plan.upstream.baseUrl.to } : {}),
+    });
+  const written: unknown[] = [];
+  for (const item of plan.models) {
+    const current = models.find((m) => m.modelKey === item.modelKey && !m.deletedAt)!;
+    const primary = current.routes?.length
+      ? [...current.routes].sort((a, b) => a.priority - b.priority)[0]!
+      : null;
+    const saved = await admin.upsert(
+      command.operatorId!,
+      item.modelKey,
+      minimalWrite(current, {
+        upstreamId: attach.upstreamId,
+        billingBounds: item.billingBounds,
+        routes: [
+          {
+            upstreamId: attach.upstreamId,
+            upstreamModelId: item.upstreamModelId,
+            priority: 0,
+            weight: 1,
+            enabled: primary?.enabled ?? true,
+            billingBounds: item.billingBounds,
+          },
+        ],
+      }),
+    );
+    const dropped =
+      item.staleClones > 0 ? await voices.deleteClones(command.operatorId!, item.modelKey) : 0;
+    if (item.defaultVoice)
+      await voices.setDefault(command.operatorId!, item.modelKey, item.defaultVoice.to);
+    written.push({
+      ...summary(saved, upstreams),
+      droppedClones: dropped,
+      defaultVoice: item.defaultVoice,
+    });
+  }
+  out({ ok: true, upstream: plan.upstream, written, nextSteps });
+}
+
 async function run(
   command: VoiceCatalogCommand,
   app: Awaited<ReturnType<typeof NestFactory.createApplicationContext>>,
@@ -170,7 +332,7 @@ async function run(
             models.find((m) => m.modelKey === e.modelKey && !m.deletedAt),
             upstreams,
           ),
-          ...(e.item === 'qwen-realtime' || e.item === 'omni'
+          ...(REALTIME_ITEMS.includes(e.item)
             ? {
                 defaultVoice: defaults[e.modelKey] ?? null,
                 characterVoices: await voices.count(e.modelKey),
@@ -179,20 +341,25 @@ async function run(
         })),
       ),
       skipped,
-      // V2：目录里全部实时 / Omni 条目的音色情况（clone 条数 × 0.01 元 ≈ 平台已承担的复刻费）。
+      // 目录里全部实时 / Omni 条目的音色情况、所在上游、复刻售价（V3 起由用户付；clone 条数 × 成本 ≈ 复刻的供应商成本）。
       realtime: await Promise.all(
         models
           .filter((m) => !m.deletedAt && m.tags.includes('pipeline:rt'))
           .map(async (m) => {
             const bySource = await voices.countBySource(m.modelKey);
+            const upstream = upstreams.find((u) => u.upstreamId === m.upstreamId);
             return {
               modelKey: m.modelKey,
               displayName: m.displayName,
               enabled: m.enabled,
+              upstream: upstream ? { name: upstream.name, status: upstream.status } : null,
               defaultVoice: defaults[m.modelKey] ?? null,
               characterVoices: bySource,
-              clonePlatformCostYuan:
-                Math.round((bySource.clone ?? 0) * REALTIME_VOICE_CLONE_COST_YUAN * 100) / 100,
+              clonePriceYuan: m.serviceRates?.find((r) => r.unit === 'voice_clone')?.price ?? null,
+              cloneSupplierCostYuan:
+                Math.round(
+                  (bySource.clone ?? 0) * realtimeVoiceCloneCostYuan(m.upstreamModelId) * 100,
+                ) / 100,
             };
           }),
       ),
@@ -202,6 +369,14 @@ async function run(
 
   if (command.fixOmni) {
     await fixOmni(command, app, models, defaults);
+    return;
+  }
+  if (command.omniClonePrice) {
+    await omniClonePrice(command, app, models);
+    return;
+  }
+  if (command.attachWorkspace) {
+    await attachWorkspace(command, app, models, upstreams, defaults);
     return;
   }
 

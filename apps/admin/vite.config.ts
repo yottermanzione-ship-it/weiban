@@ -4,7 +4,11 @@ import react from '@vitejs/plugin-react';
 // 脚本仍然只允许本站文件（不允许 inline script / eval）。
 const csp =
   "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'";
-const proxy = { '/api': { target: 'http://127.0.0.1:3000', changeOrigin: false } };
+const proxy = {
+  '/api': { target: 'http://127.0.0.1:3000', changeOrigin: false },
+  // V3：页面顶部比对服务器契约版本（GET /health）
+  '/health': { target: 'http://127.0.0.1:3000', changeOrigin: false },
+};
 export default defineConfig({
   plugins: [
     react(),

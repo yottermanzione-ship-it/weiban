@@ -150,6 +150,8 @@ import { PlatformModule, type PlatformOptions } from './platform/index.js';
         voiceCallBlocker: async (userId, characterId) => {
           const check = await media.realtimeCallVoiceCheck?.({ userId, characterId });
           if (!check || check.ok) return null;
+          if (check.reason === 'insufficient_balance')
+            return '积分不足，暂时不能为这个角色准备实时通话声音，充值后再打';
           return check.reason === 'no_voice'
             ? '这个角色还没有能用于实时通话的声音，可以在「模型」设置的「语音通话」里换一个通话模型再打'
             : '这个角色的实时通话声音还没准备好，请稍后再试，或在「模型」设置的「语音通话」里换一个通话模型';

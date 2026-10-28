@@ -95,6 +95,12 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 4.6（2026-10-28，V3：实时通话复刻费由用户承担）
+
+- 计价单位 `PriceUnit` / `ServicePriceUnit` 新增 `voice_clone`（元 / 个），用量 `UsageQuantities` 新增可选 `voiceClones`（一次成功复刻 = 1）。后台服务单价表单可登记「音色复刻」价；没登记价格的模型复刻不向用户收费（平台承担）。
+- 响应里的服务单价 `ModelServiceRate.unit` 改为 `tolerantEnum(ServicePriceUnit)`（不认识的新单位读成 `unsupported`），`AdminModel.serviceRates` 响应上限由 5 放宽到 32。请求体 `ModelServiceRateWrite` / `AdminModelWrite.serviceRates` 仍严格，`unsupported` 不能写回。
+- 理由：总经理 10-28 拍板复刻费由用户承担（成本 0.01 元 / 个，售价 × 1.3），变更申请见 `docs/architecture/2026-10-28-voice-clone-billing-contract-change.md`（总负责人代架构批准）；4.5 新增音频单位时响应里的服务单价仍是严格枚举，没刷新的旧后台页面会把带新单位的模型整行判为「不符合契约」藏起来（V3 任务卡第 4 项）。均为新增枚举值 / 可选字段 / 响应侧放宽，按规则升次版本；Android 生成产物同步版本号与枚举。
+
 ### 4.5（2026-10-27，批 V：语音链路补齐与实时通话）
 
 - 计价单位 `PriceUnit` / `ServicePriceUnit` 新增 `audio_input_tokens_per_million`、`audio_output_tokens_per_million`（元 / 百万 token），用量 `UsageQuantities` 新增可选 `audioInputTokens`、`audioOutputTokens`。实时语音 / Omni 通话的文字 token 仍记在 `inputTokens` / `outputTokens`。

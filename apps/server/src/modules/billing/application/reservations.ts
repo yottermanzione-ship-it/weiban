@@ -176,6 +176,7 @@ export class ReservationService implements BillingReservationPort {
           'audioInputTokens',
           'audioOutputTokens',
           'searchCalls',
+          'voiceClones',
         ] as const;
         if (
           existing.limitSnapshot.evidence !== input.ceiling.evidence ||

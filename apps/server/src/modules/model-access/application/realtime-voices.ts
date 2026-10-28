@@ -59,9 +59,9 @@ export class RealtimeVoiceStore {
   }
 
   /**
-   * V2：按需复刻成功后写入绑定（source = clone）并审计。复刻费 0.01 元 / 个目前由平台承担（计价单位待契约变更，
-   * 见 docs/architecture/2026-10-28-voice-clone-billing-contract-change.md），审计里记成本便于对账。
-   * 已有绑定（并发 / 其他实例 / 管理员刚登记）时不覆盖，返回已有的音色。
+   * V2：按需复刻成功后写入绑定（source = clone）并审计。V3（契约 4.6）：模型登记了 voice_clone 售价时复刻费由
+   * 触发通话的用户承担（billedTo = user，chargedMicros = 实际扣费微元），没登记时平台承担（billedTo = platform）；
+   * 审计里同时记供应商成本 costYuan 便于对账。已有绑定（并发 / 其他实例 / 管理员刚登记）时不覆盖，返回已有的音色。
    */
   async saveClone(input: {
     characterId: string;
@@ -69,6 +69,8 @@ export class RealtimeVoiceStore {
     providerVoiceKey: string;
     sampleMediaId: string;
     costYuan: number;
+    billedTo?: 'user' | 'platform';
+    chargedMicros?: number;
   }): Promise<string> {
     if (!ProviderVoiceKey.safeParse(input.providerVoiceKey).success)
       throw new Error('REALTIME_VOICE_INVALID');
@@ -99,7 +101,8 @@ export class RealtimeVoiceStore {
             sampleMediaId: input.sampleMediaId,
             saved: inserted.length > 0,
             costYuan: input.costYuan,
-            billedTo: 'platform',
+            billedTo: input.billedTo ?? 'platform',
+            chargedMicros: input.chargedMicros ?? 0,
           },
         },
         tx,
@@ -118,7 +121,7 @@ export class RealtimeVoiceStore {
     });
   }
 
-  /** 各来源的绑定条数（--show 用；clone 条数 × 0.01 元 ≈ 平台已承担的复刻费）。 */
+  /** 各来源的绑定条数（--show 用；clone 条数 × 0.01 元 ≈ 复刻的供应商成本）。 */
   async countBySource(modelKey: string): Promise<Record<string, number>> {
     const rows = await this.database.db
       .select({ source: realtimeVoiceBindings.source, n: sql<number>`count(*)::int` })
@@ -197,6 +200,37 @@ export class RealtimeVoiceStore {
         tx,
       );
       return inserted;
+    });
+  }
+
+  /**
+   * V3：模型改挂另一个上游账号（例 北京 workspace）时，删掉在旧账号上按需复刻的绑定（source = clone；
+   * 复刻音色只在创建它的账号有效）。旧站迁入 / 管理员登记的不动。返回删除条数，写审计。
+   */
+  async deleteClones(operatorUserId: string, modelKey: string): Promise<number> {
+    return this.database.transaction(async (tx) => {
+      const removed = await tx.db
+        .delete(realtimeVoiceBindings)
+        .where(
+          and(
+            eq(realtimeVoiceBindings.modelKey, modelKey),
+            eq(realtimeVoiceBindings.source, 'clone'),
+          ),
+        )
+        .returning({ characterId: realtimeVoiceBindings.characterId });
+      await this.audit.record(
+        {
+          module: 'model_access',
+          action: 'realtime_voice.clones_dropped',
+          actorType: 'admin',
+          actorId: operatorUserId,
+          targetType: 'model',
+          targetId: null,
+          details: { modelKey, removed: removed.length },
+        },
+        tx,
+      );
+      return removed.length;
     });
   }
 

@@ -49,6 +49,7 @@ const UNIT_LABELS: Record<string, string> = {
   search_call: '每次搜索',
   audio_input_tokens_per_million: '音频输入 / 百万 token',
   audio_output_tokens_per_million: '音频输出 / 百万 token',
+  voice_clone: '每个复刻音色',
 };
 
 interface PriceRow {

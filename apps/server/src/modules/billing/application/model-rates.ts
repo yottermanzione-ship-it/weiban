@@ -295,6 +295,7 @@ export class ModelRateService implements BillingModelRatePort {
             'search_call',
             'audio_input_tokens_per_million',
             'audio_output_tokens_per_million',
+            'voice_clone',
           ]),
         ),
       );
@@ -326,6 +327,7 @@ export class ModelRateService implements BillingModelRatePort {
       'search_call',
       'audio_input_tokens_per_million',
       'audio_output_tokens_per_million',
+      'voice_clone',
     ];
     if (
       input.rates.length < 1 ||

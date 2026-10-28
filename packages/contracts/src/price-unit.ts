@@ -15,6 +15,8 @@ export const PriceUnit = z.enum([
   // 4.5：实时语音 / Omni 通话的音频 token（元 / 百万 token）；同一通话的文字 token 仍按 input / output 单位计。
   'audio_input_tokens_per_million',
   'audio_output_tokens_per_million',
+  // 4.6：实时通话按需复刻音色（元 / 个；只对成功的复刻计费）。
+  'voice_clone',
 ]);
 export type PriceUnit = z.infer<typeof PriceUnit>;
 
@@ -26,5 +28,6 @@ export const ServicePriceUnit = PriceUnit.extract([
   'search_call',
   'audio_input_tokens_per_million',
   'audio_output_tokens_per_million',
+  'voice_clone',
 ]);
 export type ServicePriceUnit = z.infer<typeof ServicePriceUnit>;

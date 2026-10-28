@@ -858,7 +858,12 @@ export const ModelServiceRateWrite = z.strictObject({
   cost: z.number().nonnegative().max(100_000).nullable().optional(),
 });
 export type ModelServiceRateWrite = z.infer<typeof ModelServiceRateWrite>;
+/**
+ * 响应里的服务单价。4.6：`unit` 改为接收端容错（不认识的新单位变成 'unsupported'），
+ * 旧后台页面遇到新计价单位时这一行仍能列出、上架 / 下架；编辑保存时不回写 'unsupported' 项。
+ */
 export const ModelServiceRate = ModelServiceRateWrite.extend({
+  unit: tolerantEnum(ServicePriceUnit),
   hasTimeBands: z.boolean().optional(),
 });
 export type ModelServiceRate = z.infer<typeof ModelServiceRate>;
@@ -878,7 +883,8 @@ const ServiceRatesWrite = z
  * 用户端接口不受影响。
  */
 export const AdminModel = AdminCatalogEntry.extend({
-  serviceRates: z.array(ModelServiceRate).max(5).optional(),
+  /** 4.6：响应上限由 5 放宽到 32（5 已小于计价单位总数；新单位不能让整行不符合契约而被后台藏起来）。 */
+  serviceRates: z.array(ModelServiceRate).max(32).optional(),
   /** 售价倍率（用户被扣的钱）；当前生效价目表里没有该模型的 token 价格时为 null（例：语音、图片模型）。 */
   rates: ModelRates.nullable(),
   /** 成本倍率（上游收平台的钱，对账用）；默认与售价相同（个人测试阶段加价系数 1.00）。 */
