@@ -161,6 +161,7 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           pnpm android:generate:check
+          node --test apps/android/tools/verify-legacy-upgrade.test.mjs
           git diff --exit-code
       - name: 安卓静态检查、真实 Room 与共享协议 JUnit、APK
         working-directory: apps/android

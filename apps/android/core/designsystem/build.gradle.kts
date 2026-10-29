@@ -7,7 +7,7 @@ plugins {
 android {
     namespace = "app.weiban.core.designsystem"
     compileSdk = 36
-    defaultConfig { minSdk = 26 }
+    defaultConfig { minSdk = rootProject.extra["weibanMinimumSdk"] as Int }
     testOptions { unitTests.isIncludeAndroidResources = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
