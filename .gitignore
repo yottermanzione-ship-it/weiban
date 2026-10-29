@@ -47,6 +47,8 @@ apps/server/uploads/
 *.pfx
 *.jks
 *.keystore
+**/key.properties
+**/signing.properties
 secrets/
 local.properties
 

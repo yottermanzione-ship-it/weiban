@@ -8,7 +8,7 @@ android {
     namespace = "app.weiban.feature.me"
     compileSdk = 36
     testOptions { unitTests.isIncludeAndroidResources = true }
-    defaultConfig { minSdk = 26 }
+    defaultConfig { minSdk = rootProject.extra["weibanMinimumSdk"] as Int }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

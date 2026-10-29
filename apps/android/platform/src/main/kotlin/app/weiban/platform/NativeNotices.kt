@@ -1,6 +1,7 @@
 package app.weiban.platform
 
 import android.Manifest
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -38,9 +39,11 @@ internal class NativeNotices(
     ) {
         val sound = envelope.sound
         val channelId = if (sound) "weiban.messages.sound" else "weiban.messages.silent"
-        val channel = NotificationChannel(channelId, if (sound) "新消息" else "静默消息", NotificationManager.IMPORTANCE_DEFAULT)
-        if (!sound) channel.setSound(null, null)
-        manager.createNotificationChannel(channel)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(channelId, if (sound) "新消息" else "静默消息", NotificationManager.IMPORTANCE_DEFAULT)
+            if (!sound) channel.setSound(null, null)
+            manager.createNotificationChannel(channel)
+        }
         val tap = envelope.copy(title = "微伴", body = "", count = 1)
         val intent =
             Intent(context, activity).apply {
@@ -63,6 +66,8 @@ internal class NativeNotices(
                 .setContentIntent(pending)
                 .setAutoCancel(true)
                 .setOnlyAlertOnce(true)
+                .setDefaults(if (sound) Notification.DEFAULT_SOUND else 0)
+                .setSilent(!sound)
                 .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
                 .build()
         manager.notify(prefix(owner) + envelope.collapseKey, 1, notification)

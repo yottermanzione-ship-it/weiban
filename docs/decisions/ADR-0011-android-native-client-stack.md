@@ -63,7 +63,7 @@ React Native 的最大好处是**同步引擎（发件队列、缺口补拉）�
    - 网络 OkHttp（HTTP + WebSocket），JSON 用 kotlinx.serialization；
    - 后台发送与重试 WorkManager（App 被杀后待发消息仍会发出）；
    - 会话令牌存加密存储（Android Keystore 保护），不写日志；
-   - minSdk 26（Android 8.0，系统通知渠道从这一版开始），targetSdk 跟随当年谷歌要求（2026 年为 36）。
+   - 原底座 minSdk 26；2026-10-29 总经理要求接续旧 APK 原地升级后，最低系统兼容调整为 minSdk 24（Android 7.0，与已分发旧包一致），配套时间 API desugaring 和 Android 8+ 通知渠道保护；targetSdk 仍跟随当年要求（2026 年为 36）。
 2. **契约**：仍以 `packages/contracts`（Zod）为唯一源头。构建时导出 JSON Schema，再由脚本生成 Kotlin 数据类放在 `apps/android` 的独立目录；**生成代码不手改**，CI 检查「重新生成后无差异」。生成工具由 Android 负责人在骨架任务中选定并记录。
 3. **协议与网页端完全相同**：同一套 HTTP 接口、WebSocket 帧、`seq` / `clientMsgId` / `updateSeq` 规则。服务器不区分客户端是网页还是安卓（只在设备信息里记录平台）。
 4. **协议一致性测试**：契约包新增 `test-vectors/`（JSON 格式的场景用例：断网连发、重复 ack、缺口补拉、游标过期、未知消息类型降级等），网页端和安卓端的同步引擎都必须跑通同一套用例。由架构负责人定义格式，两端负责人各自接入（dev-plan 任务）。

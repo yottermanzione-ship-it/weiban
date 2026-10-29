@@ -65,6 +65,7 @@ object CallNotices {
     private fun manager(context: Context) = context.getSystemService(NotificationManager::class.java)
 
     private fun channels(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = manager(context)
         val incoming = NotificationChannel(CHANNEL_INCOMING, "来电", NotificationManager.IMPORTANCE_HIGH)
         incoming.setSound(
@@ -156,6 +157,7 @@ object CallNotices {
                 .setContentText("邀请你语音通话")
                 .setCategory(NotificationCompat.CATEGORY_CALL)
                 .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE))
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setOngoing(true)
                 .setAutoCancel(true)
@@ -198,6 +200,7 @@ object CallNotices {
                 .setContentTitle(name)
                 .setContentText("未接来电")
                 .setCategory(NotificationCompat.CATEGORY_MISSED_CALL)
+                .setDefaults(Notification.DEFAULT_SOUND)
                 .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
                 .setAutoCancel(true)
                 .setContentIntent(activity(context, activity, ACTION_CHAT, owner.sessionId, null, conversationId))
@@ -223,6 +226,7 @@ object CallNotices {
                 .setCategory(NotificationCompat.CATEGORY_CALL)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
+                .setSilent(true)
                 .setContentIntent(activity(context, activity, ACTION_OPEN, sessionId, callId))
         if (connectedAtMs != null) {
             builder.setWhen(connectedAtMs).setUsesChronometer(true).setShowWhen(true)

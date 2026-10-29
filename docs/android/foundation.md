@@ -22,7 +22,7 @@ OkHttp 关闭跳转和自动重试，HTTPS 为默认；仅 debug 对指定本机
 
 ## 构建与验证
 
-版本集中在 gradle/libs.versions.toml，Gradle wrapper 8.13 附发行包 SHA256，SDK36/min26/JDK21/字节码17。提交各模块 Gradle 依赖锁；更新依赖后用完整检查命令加 --write-locks 显式更新，再正常检查。全部 Kotlin 编译警告视为错误，ktlint 管格式、detekt 管复杂度等；仅对完整协议分派、明确拒绝边界等做带理由的局部豁免，不使用静态检查 baseline 隐藏问题。
+版本集中在 gradle/libs.versions.toml，Gradle wrapper 8.13 附发行包 SHA256，SDK36/min24/JDK21/字节码17（2026-10-29 接续旧 APP；时间 API desugaring、通知渠道版本保护）。提交各模块 Gradle 依赖锁；更新依赖后用完整检查命令加 --write-locks 显式更新，再正常检查。全部 Kotlin 编译警告视为错误，ktlint 管格式、detekt 管复杂度等；仅对完整协议分派、明确拒绝边界等做带理由的局部豁免，不使用静态检查 baseline 隐藏问题。
 
 2026-10-06本机完整Gradle检查/构建通过：41条JUnit、零跳过，其中19共享协议；原生登录成功/失败与首次资料保存、账号主题均有Compose回归（MockWebServer真实HTTP + Room，并非供应商或真机端到端验证）。根pnpm check含真实PG的31文件334测试及格式/lint/类型/tokens通过，生成无差异与debug签名校验通过。CI发布后读取结果，不以本机测试代替。
 

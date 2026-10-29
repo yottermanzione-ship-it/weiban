@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.ktlint)
     alias(libs.plugins.detekt)
@@ -10,7 +12,28 @@ plugins {
     alias(libs.plugins.kotlin.compose) apply false
 }
 
+val legacyIdentity =
+    Properties().apply {
+        rootProject.file("legacy-upgrade.properties").inputStream().use { load(it) }
+    }
+extra["weibanLegacyIdentity"] = legacyIdentity
+extra["weibanMinimumSdk"] = legacyIdentity.getProperty("minimumSdk").toInt()
+val desugaringLibrary = libs.desugar.jdk
+
 subprojects {
+    plugins.withId("com.android.application") {
+        extensions.configure<com.android.build.api.dsl.ApplicationExtension> {
+            compileOptions.isCoreLibraryDesugaringEnabled = true
+        }
+        dependencies.add("coreLibraryDesugaring", desugaringLibrary)
+    }
+    plugins.withId("com.android.library") {
+        extensions.configure<com.android.build.api.dsl.LibraryExtension> {
+            compileOptions.isCoreLibraryDesugaringEnabled = true
+        }
+        dependencies.add("coreLibraryDesugaring", desugaringLibrary)
+    }
+
     tasks.withType<Test>().configureEach {
         systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2")
         // Local managed-network settings propagate only when present; CI uses standard TLS verification.

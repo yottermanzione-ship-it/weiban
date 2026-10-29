@@ -6,7 +6,7 @@ plugins {
 android {
     namespace = "app.weiban.core.testvectors"
     compileSdk = 36
-    defaultConfig { minSdk = 26 }
+    defaultConfig { minSdk = rootProject.extra["weibanMinimumSdk"] as Int }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
