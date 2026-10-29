@@ -12,6 +12,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useChat } from '../app/chat.js';
 import { Name } from './chat.js';
 import { GuidedTour, type GuidedTourStep } from './guided-tour.js';
+import { isGuideBlockingDialog } from './guided-tour-policy.js';
 import { GroupHeader, MenuGroup, MenuRow, NavBar, Sheet } from './shell-kit.js';
 import { Dialog, showToast } from './toast.js';
 import './onboarding-guide.css';
@@ -251,10 +252,7 @@ export function OnboardingGuideProvider({
     let frame = 0;
     function check() {
       const foreign = [...document.querySelectorAll<HTMLElement>('[role="dialog"]')].find(
-        (element) =>
-          element.getClientRects().length &&
-          !element.classList.contains('guided-tour-card') &&
-          !(current!.allowedDialog && element.matches(current!.allowedDialog)),
+        (element) => isGuideBlockingDialog(element, current!.allowedDialog),
       );
       if (foreign) {
         pause();
