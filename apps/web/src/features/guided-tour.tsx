@@ -152,6 +152,9 @@ export function GuidedTour({
     document.addEventListener('click', guard, true);
     document.addEventListener('pointerdown', guard, true);
     document.addEventListener('keydown', keydown, true);
+    // A transformed ancestor can move fixed controls without resizing them (the miniapp entrance animation).
+    document.addEventListener('animationend', schedule, true);
+    document.addEventListener('transitionend', schedule, true);
     window.addEventListener('resize', schedule);
     window.addEventListener('scroll', schedule, true);
     window.visualViewport?.addEventListener('resize', schedule);
@@ -164,6 +167,8 @@ export function GuidedTour({
       document.removeEventListener('click', guard, true);
       document.removeEventListener('pointerdown', guard, true);
       document.removeEventListener('keydown', keydown, true);
+      document.removeEventListener('animationend', schedule, true);
+      document.removeEventListener('transitionend', schedule, true);
       window.removeEventListener('resize', schedule);
       window.removeEventListener('scroll', schedule, true);
       window.visualViewport?.removeEventListener('resize', schedule);
@@ -233,10 +238,10 @@ export function GuidedTour({
         </div>
         <p className="guided-tour-instruction" role="status">
           {!bounds
-            ? '正在寻找当前控件，你也可以先退出。'
+            ? '页面还没准备好，可以稍后再学。'
             : step.kind === 'action'
-              ? '请点击亮起的真实控件继续'
-              : '这一步只作说明，不会替你改变设置'}
+              ? '点一下亮起的位置继续'
+              : '读完说明，点下方按钮继续'}
         </p>
         <div className="guided-tour-actions">
           <button type="button" onClick={onBack} disabled={!backLabel && index === 0}>
@@ -253,7 +258,7 @@ export function GuidedTour({
               disabled={!bounds}
               onClick={onNext}
             >
-              {step.nextLabel ?? '知道了，继续'}
+              {step.nextLabel ?? '继续'}
             </button>
           )}
         </div>

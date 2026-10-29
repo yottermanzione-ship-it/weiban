@@ -1,6 +1,9 @@
 /** Real production pages and CSS. Only transport/account data are synthetic; no copied phone UI. */
 import { createRoot } from 'react-dom/client';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { RouteMotion } from '../../src/features/route-motion.js';
+import { NavBar } from '../../src/features/shell-kit.js';
 import { freshSyncState } from '@weiban/client-core';
 import {
   Conversation,
@@ -39,7 +42,7 @@ import {
 } from '../../src/features/onboarding-guide.js';
 import { ConversationListPage } from '../../src/features/conversation-list.js';
 import { ConversationPage } from '../../src/features/chat.js';
-import { DiscoverPage } from '../../src/features/contacts.js';
+import { ContactsPage, DiscoverPage } from '../../src/features/contacts.js';
 import { MePage, ServicesPage } from '../../src/features/me.js';
 import { EcologyPage } from '../../src/features/ecology.js';
 import { MiniAppFrame, MiniAppsHomePage, miniAppFor } from '../../src/features/miniapps.js';
@@ -50,6 +53,19 @@ const sessionId = '01920000-0000-7000-8000-000000000015';
 const characterId = '01920000-0000-7000-8000-000000000031';
 const conversationId = '01920000-0000-7000-8000-000000000041';
 const time = '2026-10-29T12:00:00.000Z';
+const tabMode = new URLSearchParams(location.search).get('page') === 'tabs';
+const contacts = tabMode
+  ? Array.from({ length: 80 }, (_, i) => ({
+      characterId: `01920000-0000-7000-8000-${String(100 + i).padStart(12, '0')}`,
+      status: 'active' as const,
+      remark: `A朋友${String(i + 1).padStart(2, '0')}`,
+      customAvatarMediaId: null,
+      addressAs: null,
+      knownSince: '2026-10-29',
+      conversationId: null,
+      addedAt: time,
+    }))
+  : [];
 const auth: AuthResponse = {
   user: {
     userId,
@@ -89,7 +105,18 @@ const conversation = Conversation.parse({
   createdAt: time,
   updatedAt: time,
 });
-const state = { ...freshSyncState(), initialized: true, conversations: [conversation] };
+const state = {
+  ...freshSyncState(),
+  initialized: true,
+  contacts,
+  conversations: tabMode
+    ? Array.from({ length: 40 }, (_, i) => ({
+        ...conversation,
+        conversationId: `01920000-0000-7000-8000-${String(300 + i).padStart(12, '0')}`,
+        title: `会话${i + 1}`,
+      }))
+    : [conversation],
+};
 await api.authenticate(auth);
 await localStore.setOwned({ userId, sessionId }, `sync-state:${userId}:${sessionId}`, state);
 const calls: Array<{ path: string; method: string }> = [];
@@ -229,13 +256,27 @@ class InertSocket extends EventTarget {
 Object.defineProperty(window, 'WebSocket', { value: InertSocket, configurable: true });
 function FixtureShell() {
   const { pathname } = useLocation();
-  const tabs = ['/chat', '/discover', '/me'].includes(pathname);
+  const navigate = useNavigate();
+  useEffect(() => {
+    Object.assign(window, { tabFixtureBack: () => navigate(-1) });
+  }, [navigate]);
+  const tabs = ['/chat', '/contacts', '/discover', '/me'].includes(pathname);
   const miniApp = miniAppFor(pathname);
   const routes = (
     <Routes>
       <Route path="/help/guide" element={<OnboardingGuidePage />} />
       <Route path="/chat" element={<ConversationListPage />} />
       <Route path="/chat/:conversationId" element={<ConversationPage />} />
+      <Route path="/contacts" element={<ContactsPage />} />
+      <Route
+        path="/characters/:characterId"
+        element={
+          <main>
+            <NavBar title="角色资料" fallback="/contacts" />
+            <div style={{ height: 1800 }}>二级页返回位置测试</div>
+          </main>
+        }
+      />
       <Route path="/discover" element={<DiscoverPage />} />
       <Route path="/me" element={<MePage />} />
       <Route path="/services" element={<ServicesPage />} />
@@ -250,7 +291,9 @@ function FixtureShell() {
         <div
           className={`app-shell ${tabs ? 'with-tabs' : ''} ${pathname === '/chat' ? 'on-chat-list' : ''}`}
         >
-          {miniApp ? (
+          {tabMode ? (
+            <RouteMotion>{routes}</RouteMotion>
+          ) : miniApp ? (
             <MiniAppFrame key={miniApp.id} app={miniApp}>
               {routes}
             </MiniAppFrame>
@@ -264,8 +307,11 @@ function FixtureShell() {
     </CallProvider>
   );
 }
+// MiniAppFrame uses BrowserRouter's nonzero history index to close back to its entry page.
+// Give the memory-router guide fixture the same one-level-back baseline; tab tests keep their own history.
+if (!tabMode) window.history.replaceState({ ...window.history.state, idx: 1 }, '');
 createRoot(document.getElementById('root')!).render(
-  <MemoryRouter initialEntries={['/help/guide']}>
+  <MemoryRouter initialEntries={tabMode ? ['/contacts'] : ['/chat', '/help/guide']}>
     <AuthProvider>
       <ChatProvider>
         <FixtureShell />

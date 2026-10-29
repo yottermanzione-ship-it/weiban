@@ -44,7 +44,7 @@ export const onboardingChapters: Record<ChapterId, Chapter> = {
         present: target('scenario-entry'),
         kind: 'action',
         title: '更多聊天功能，在这里',
-        description: '点开真实聊天页面的「＋」。这里只认识入口，不会发送消息。',
+        description: '点一下聊天框旁的「＋」，看看还有哪些聊天功能。',
       },
       {
         id: 'live-scenario-open',
@@ -53,7 +53,7 @@ export const onboardingChapters: Record<ChapterId, Chapter> = {
         allowedDialog: scenarioDialog,
         kind: 'action',
         title: '打开「情景预设」',
-        description: '想换一种聊天情景，就从这个按钮进入。切换情景不是更换角色。',
+        description: '想换一种聊天氛围，就来这里选情景。聊天的还是同一位 TA。',
       },
       {
         id: 'live-scenario-options',
@@ -61,9 +61,8 @@ export const onboardingChapters: Record<ChapterId, Chapter> = {
         allowedDialog: scenarioDialog,
         kind: 'read',
         title: '同一个 TA，不同的聊天情景',
-        description:
-          '你看到的是当前角色真实可用的选项。这一步只作介绍，保持原来的选择，不替你切换模式。',
-        nextLabel: '明白了，保持原设置',
+        description: '不同情景会带来不同的表达方式。先认识这些选项，当前选择会保留。',
+        nextLabel: '了解了',
       },
       {
         id: 'live-scenario-close',
@@ -103,7 +102,7 @@ export const onboardingChapters: Record<ChapterId, Chapter> = {
         present: target('miniapp-close'),
         kind: 'action',
         title: '先打开「卡册」看看',
-        description: '只查看已有页面，不领取、不购买，没有卡片也能完成这节引导。',
+        description: '和 TA 相处的纪念，可以在卡册里收藏。还没有卡片也没关系，先看看它在哪儿。',
       },
       {
         id: 'live-miniapps-close',
@@ -117,7 +116,7 @@ export const onboardingChapters: Record<ChapterId, Chapter> = {
   },
   ecology: {
     title: '角色生态',
-    description: '认识入口、开关与花费，不强迫开启',
+    description: '认识入口和花费，了解 TA 的日常',
     icon: 'wechat/star',
     steps: [
       {
@@ -142,15 +141,15 @@ export const onboardingChapters: Record<ChapterId, Chapter> = {
         present: target('ecology-master'),
         kind: 'action',
         title: '找到「角色生态」',
-        description: '看看 TA 的日常如何运行。这里只打开设置页面，不会替你打开开关。',
+        description: '想让 TA 主动找你聊天、分享生活，可以来这里了解。',
       },
       {
         id: 'live-ecology-master',
         target: target('ecology-master'),
         kind: 'read',
-        title: '认识开关，不等于必须开启',
+        title: '想用时，再打开这个开关',
         description:
-          '角色生态属于 PRO+ 服务，运行会消耗积分。没有会员或暂不开启，都可以完成了解型引导。现有开关状态不会被修改。',
+          '角色生态是 PRO+ 会员功能，运行时会消耗积分。先看看开关在哪里，不开启也不影响日常聊天。',
       },
       {
         id: 'live-ecology-cost',
@@ -158,8 +157,8 @@ export const onboardingChapters: Record<ChapterId, Chapter> = {
         kind: 'read',
         title: '先了解花费，再自己决定',
         description:
-          '每次「想一想」和实际行动都会产生积分消耗。启用后可看预计每日积分、活跃程度和参与角色；本次引导不替你开启或调整这些设置。',
-        nextLabel: '了解了，不改变设置',
+          '角色「想一想」和采取行动都会消耗积分。开启后，可以查看预计每日花费，并调整活跃程度和参与角色。',
+        nextLabel: '了解了',
       },
     ],
   },
@@ -256,7 +255,7 @@ export function OnboardingGuideProvider({
       );
       if (foreign) {
         pause();
-        showToast('请先处理当前弹窗，之后可从新手引导继续', 2500, 'info');
+        showToast('先处理这个提示，稍后可以回来继续学', 2500, 'info');
         return;
       }
       if (!active!.armed || current!.kind !== 'action') return;
@@ -318,7 +317,7 @@ export function OnboardingGuideProvider({
           total={onboardingChapters[active.chapter].steps.length}
           onNext={() => advance(active)}
           onPause={pause}
-          backLabel="回引导页"
+          backLabel="返回目录"
           onBack={() => {
             pause();
             navigate('/help/guide');
@@ -334,11 +333,11 @@ export function OnboardingGuideProvider({
       )}
       {done && (
         <Dialog
-          title="这一节学会了"
+          title="这一节完成了"
           actions={[
-            { label: '留在当前页面', onClick: () => setDone(null) },
+            { label: '我自己试试', onClick: () => setDone(null) },
             {
-              label: '看看其他章节',
+              label: '再学一个',
               tone: 'primary',
               onClick: () => {
                 setDone(null);
@@ -347,8 +346,7 @@ export function OnboardingGuideProvider({
             },
           ]}
         >
-          <p>已了解「{onboardingChapters[done].title}」的真实入口。</p>
-          <p>引导没有发送消息、切换聊天情景或改变角色生态设置。</p>
+          <p>下次想用「{onboardingChapters[done].title}」，就从刚才的入口进去。</p>
         </Dialog>
       )}
     </Context.Provider>
@@ -373,19 +371,19 @@ export function OnboardingGuidePage() {
     <main className="onboarding-guide-page">
       <NavBar title="新手引导" fallback="/settings" />
       <div className="onboarding-guide-intro">
-        <h2>在真实页面里，带你点一次。</h2>
-        <p>亮起哪里，就点哪里。每次只教一个功能，随时可以退出，不会替你开启收费功能。</p>
+        <h2>跟着点几下，认识微伴。</h2>
+        <p>想学哪个就点哪个。跟着提示走一遍，下次就知道去哪里找了。</p>
       </div>
       {guide.paused && (
         <MenuGroup>
           <MenuRow
-            label={`继续了解：${onboardingChapters[guide.paused].title}`}
-            subtitle="从本章入口重新开始，不自动恢复或修改设置"
+            label={`继续学习：${onboardingChapters[guide.paused].title}`}
+            subtitle="从入口开始，带你再走一遍"
             onClick={() => choose(guide.paused!)}
           />
         </MenuGroup>
       )}
-      <GroupHeader>认识新版微伴</GroupHeader>
+      <GroupHeader>挑一个想了解的功能</GroupHeader>
       <MenuGroup>
         {(Object.keys(onboardingChapters) as ChapterId[]).map((id) => (
           <MenuRow
@@ -401,21 +399,19 @@ export function OnboardingGuidePage() {
           />
         ))}
       </MenuGroup>
-      <p className="hint page-note">
-        直接使用你现在的网页、角色和页面尺寸，不是模拟界面。学习进度仅保存在当前账号的本设备上，暂不跨设备同步。
-      </p>
+      <p className="hint page-note">学习记录保存在这台设备上，随时可以回来再看。</p>
       <MenuGroup>
-        <MenuRow label="重置本机学习进度" onClick={guide.reset} />
+        <MenuRow label="重新学习全部教程" onClick={guide.reset} />
       </MenuGroup>
       {picking && (
-        <Sheet title="选择一段角色私聊" onClose={() => setPicking(false)}>
+        <Sheet title="选择一个聊天" onClose={() => setPicking(false)}>
           {conversations.length ? (
             <MenuGroup>
               {conversations.map((conversation) => (
                 <MenuRow
                   key={conversation.conversationId}
                   label={<Name conversation={conversation} />}
-                  subtitle="只打开这段聊天，不发送消息"
+                  subtitle="打开聊天，认识情景预设的入口"
                   onClick={() => {
                     setPicking(false);
                     guide.start('scenario', conversation.conversationId);
@@ -424,7 +420,7 @@ export function OnboardingGuidePage() {
               ))}
             </MenuGroup>
           ) : (
-            <p className="empty">还没有可用的角色私聊。可以先添加一位角色，或者先学其他章节。</p>
+            <p className="empty">还没有可以打开的聊天。先去添加一位角色，或看看其他教程吧。</p>
           )}
         </Sheet>
       )}

@@ -103,6 +103,7 @@ export const EnvSchema = z.object({
    * 微博走 OpenIM：AppID / AppSecret 由用户本人填、加密存库，这里只有开关和两个端点。
    */
   CHANNEL_WECHAT_ENABLED: booleanFlag,
+  CHANNEL_WECHAT_PUBLIC_ACCESS: booleanFlag,
   CHANNEL_WECHAT_ILINK_BASE_URL: z
     .url()
     .optional()
@@ -133,7 +134,9 @@ export const EnvSchema = z.object({
     ),
   /** 微博通道默认「未联调」；实网联调通过后才由运维显式打开。 */
   CHANNEL_WEIBO_ENABLED: booleanFlag,
+  CHANNEL_WEIBO_PUBLIC_ACCESS: booleanFlag,
   CHANNEL_QQ_ENABLED: booleanFlag,
+  CHANNEL_QQ_PUBLIC_ACCESS: booleanFlag,
   CHANNEL_QQ_ALLOWED_USER_IDS: userIdList,
   CHANNEL_WEIBO_TOKEN_ENDPOINT: z.url().optional(),
   CHANNEL_WEIBO_WS_ENDPOINT: z
@@ -144,7 +147,7 @@ export const EnvSchema = z.object({
       '微博长连必须是 wss:// 地址',
     ),
   /**
-   * 内测白名单（3.42，2026-10-25）：只有列在这里的用户才能发起绑定、被 worker 轮询 / 收发。
+   * 内测白名单：未显式开启该渠道 PUBLIC_ACCESS 时，只有名单内用户可绑定、轮询和收发。
    * 逗号分隔的用户 UUID；**空 = 谁都不行**（默认空，普通用户继续「未开放」）。
    * 服务端在每个入口都校验（绑定、扫码状态、worker 轮询、入站投递），不是只在前端隐藏。
    */
@@ -157,6 +160,8 @@ export const DEV_PLATFORM_DAILY_CAP_MICROS = 20_000_000;
 
 /** 微信接入的服务器侧配置：开关、服务节点与内测白名单（bot_token 来自扫码，加密存库）。 */
 export interface WechatChannelConfig {
+  /** Explicit public release: any authenticated account may bind and use this channel. */
+  readonly publicAccess?: boolean;
   /** 运维显式打开后才允许用户发起绑定；默认 false。 */
   readonly enabled: boolean;
   /** iLink 服务节点，只允许官方 HTTPS 节点；默认 https://ilinkai.weixin.qq.com。 */
@@ -167,6 +172,7 @@ export interface WechatChannelConfig {
 
 /** 微博接入的服务器侧配置：AppID / AppSecret 由用户本人填并加密存库，这里只有开关、端点与白名单。 */
 export interface WeiboChannelConfig {
+  readonly publicAccess?: boolean;
   readonly enabled: boolean;
   readonly tokenEndpoint: string | null;
   readonly wsEndpoint: string | null;
@@ -209,7 +215,11 @@ export interface AppConfig {
   readonly channels: {
     readonly wechat: WechatChannelConfig;
     readonly weibo: WeiboChannelConfig;
-    readonly qq?: { readonly enabled: boolean; readonly allowedUserIds: readonly string[] };
+    readonly qq?: {
+      readonly enabled: boolean;
+      readonly publicAccess?: boolean;
+      readonly allowedUserIds: readonly string[];
+    };
   };
   readonly billing: {
     readonly platformDailyCapMicros: number;
@@ -297,14 +307,20 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     // 生产环境无论怎么配置都关闭
     debugLlmPayload: production ? false : e.DEBUG_LLM_PAYLOAD,
     channels: {
-      qq: { enabled: e.CHANNEL_QQ_ENABLED, allowedUserIds: e.CHANNEL_QQ_ALLOWED_USER_IDS ?? [] },
+      qq: {
+        enabled: e.CHANNEL_QQ_ENABLED,
+        publicAccess: e.CHANNEL_QQ_PUBLIC_ACCESS,
+        allowedUserIds: e.CHANNEL_QQ_ALLOWED_USER_IDS ?? [],
+      },
       wechat: {
         enabled: e.CHANNEL_WECHAT_ENABLED,
+        publicAccess: e.CHANNEL_WECHAT_PUBLIC_ACCESS,
         ilinkBaseUrl: e.CHANNEL_WECHAT_ILINK_BASE_URL ?? 'https://ilinkai.weixin.qq.com',
         allowedUserIds: e.CHANNEL_WECHAT_ALLOWED_USER_IDS ?? [],
       },
       weibo: {
         enabled: e.CHANNEL_WEIBO_ENABLED,
+        publicAccess: e.CHANNEL_WEIBO_PUBLIC_ACCESS,
         tokenEndpoint: e.CHANNEL_WEIBO_TOKEN_ENDPOINT ?? null,
         wsEndpoint: e.CHANNEL_WEIBO_WS_ENDPOINT ?? null,
         allowedUserIds: e.CHANNEL_WEIBO_ALLOWED_USER_IDS ?? [],

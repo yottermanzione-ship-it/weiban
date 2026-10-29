@@ -644,11 +644,11 @@ export function ModelSetupGuide({
     try {
       const next = await api.call(ModelAccessEndpoints.applyRecommendedScenarios, { body: {} });
       if (next.needsSetup) {
-        showToast('平台还没给文本聊天指定推荐模型，请自己选一个');
+        showToast('暂时没有推荐模型，你也可以自己选择');
         navigate('/models/scenario/chat');
         return;
       }
-      showToast('已按推荐配置好，可以开始聊天了', 2000, 'success');
+      showToast('选好啦，可以开始聊天了', 2000, 'success');
       onDone();
     } catch (e) {
       showToast(friendlyError(e));
@@ -658,19 +658,19 @@ export function ModelSetupGuide({
   }
   return (
     <Dialog
-      title="先选好模型"
+      title="选择聊天模型"
       actions={[
         { label: '稍后', onClick: onClose },
         { label: '自己选', onClick: () => navigate('/models') },
         {
-          label: pending ? '配置中…' : '一键选推荐',
+          label: pending ? '选择中…' : '一键选推荐',
           tone: 'primary',
           onClick: () => void recommend(),
         },
       ]}
     >
       <p className="setup-guide-text">
-        每个场景用哪个模型由你决定，选好「文本聊天」后才能发消息。一键选推荐会填入：
+        先选一个聊天模型，就能开始和 TA 聊天。点「一键选推荐」，会帮你选择下列模型：
       </p>
       <ul className="setup-guide-list">
         {picks.map((r) => (
@@ -679,7 +679,7 @@ export function ModelSetupGuide({
             <b>{nameOf(models.data?.items, r.recommendedModelKey)}</b>
           </li>
         ))}
-        {picks.length === 0 && <li>平台暂未指定推荐模型，请点「自己选」</li>}
+        {picks.length === 0 && <li>暂时没有推荐模型，可以点「自己选」看看</li>}
       </ul>
     </Dialog>
   );
