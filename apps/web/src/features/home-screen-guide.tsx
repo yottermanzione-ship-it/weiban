@@ -97,9 +97,7 @@ export function HomeScreenGuide({
                 </li>
               ))}
             </ol>
-            <p className="hint">
-              以上为操作示意图。部分 Safari 布局可直接点分享按钮；添加后从主屏幕打开微伴。
-            </p>
+            <p className="hint">如果能直接看到分享按钮，就从分享按钮开始。</p>
             <p className="hint">添加后，从主屏幕打开微伴，再到设置中开启此设备通知。</p>
           </>
         )}

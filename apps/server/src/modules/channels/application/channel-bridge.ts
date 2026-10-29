@@ -34,6 +34,7 @@ import { CHAT_READ_PORT, CHAT_USER_PORT } from '../../chat/index.js';
 import { IDENTITY_MEMBERSHIP_READ_PORT } from '../../identity/index.js';
 import { ChannelStore, type BindingRow } from './channel-store.js';
 import { channelRuntimeConfig } from './channel-config.js';
+import { hasChannelAccess } from './channel-access.js';
 import { isOwnPeer } from '../domain/peer.js';
 import { weiboPeerContextAad } from '../domain/weibo-openim.js';
 import { QqSessionStore } from './qq-session-store.js';
@@ -158,7 +159,8 @@ export class ChannelBridge {
       return reject('foreign_sender');
     }
     if (!binding.character_id) return reject('no_character');
-    if (!(await this.membership.isProPlus(binding.user_id))) return reject('pro_required');
+    if (!(await hasChannelAccess(this.config, binding.channel, this.membership, binding.user_id)))
+      return reject('pro_required');
     const conversation = await this.chatRead.findDirectConversation(
       binding.user_id,
       binding.character_id,
@@ -251,7 +253,7 @@ export class ChannelBridge {
       return false;
     if (
       channelRuntimeConfig(this.config, 'qq', binding.user_id).integration !== 'live' ||
-      !(await this.membership.isProPlus(binding.user_id))
+      !(await hasChannelAccess(this.config, 'qq', this.membership, binding.user_id))
     )
       return false;
     const conversation = await this.chatRead.findDirectConversation(

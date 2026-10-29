@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useLocation, useNavigationType } from 'react-router-dom';
+import { useRouteViewportScroll } from './route-scroll.js';
 
 /** Capture only on a pathname change; the outgoing page is inert DOM, never a second React tree. */
 export function RouteMotion({ children }: { children: ReactNode }) {
@@ -10,6 +11,7 @@ export function RouteMotion({ children }: { children: ReactNode }) {
   const outgoing = useRef<HTMLElement | null>(null);
   const timer = useRef(0);
   const [rendered, setRendered] = useState({ path: location.pathname, children });
+  useRouteViewportScroll(rendered.path);
   useEffect(
     () => () => {
       window.clearTimeout(timer.current);

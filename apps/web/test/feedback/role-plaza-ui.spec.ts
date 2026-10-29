@@ -54,6 +54,10 @@ test('两个 tab 在 335 / 356 宽都等宽铺满顶栏、下划线贴着文字�
       '.role-plaza-tabs > button[aria-selected="true"] .role-plaza-tab-label',
     );
     const labelBox = await box(label);
+    // The official label/underline move left by one 8px spacing token, without changing either tab's hit area.
+    expect(labelBox.x + labelBox.width / 2 - (second.x + second.width / 2)).toBeCloseTo(-8, 0);
+    const customLabel = await box(tabs.nth(0).locator('.role-plaza-tab-label'));
+    expect(customLabel.x + customLabel.width / 2).toBeCloseTo(first.x + first.width / 2, 0);
     const underline = await label.evaluate((element) => {
       const style = getComputedStyle(element, '::after');
       return {

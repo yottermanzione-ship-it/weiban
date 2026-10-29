@@ -28,7 +28,7 @@ test('真实小程序页面与导航：不套手机框，真实点击后才前�
   await page.locator('[data-guide="miniapp-cards"]').first().click();
   await at(page, 'live-miniapps-close');
   await page.locator('[data-guide="miniapp-close"]').click();
-  await expect(page.getByRole('dialog', { name: '这一节学会了' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: '这一节完成了' })).toBeVisible();
   await noWrites(page);
 });
 test('真实生态页面：免费用户可以完成了解，全程不改变开关或收费设置', async ({ page }) => {
@@ -40,36 +40,36 @@ test('真实生态页面：免费用户可以完成了解，全程不改变开�
   await page.locator('[data-guide="ecology-entry"]').click();
   await at(page, 'live-ecology-master');
   await expect(page.getByRole('switch', { name: '角色生态', exact: true })).not.toBeChecked();
-  await page.getByRole('button', { name: '知道了，继续' }).click();
+  await page.getByRole('button', { name: '继续' }).click();
   await at(page, 'live-ecology-cost');
-  await page.getByRole('button', { name: '了解了，不改变设置' }).click();
-  await expect(page.getByRole('dialog', { name: '这一节学会了' })).toBeVisible();
+  await page.getByRole('button', { name: '了解了' }).click();
+  await expect(page.getByRole('dialog', { name: '这一节完成了' })).toBeVisible();
   await expect(page.getByRole('switch', { name: '角色生态', exact: true })).not.toBeChecked();
   await noWrites(page);
 });
 test('真实私聊与情景面板：本人选择会话，不发送消息也不切换模式', async ({ page }) => {
   await page.goto(fixture);
   await page.getByRole('button', { name: /情景预设 认识聊天/ }).click();
-  await page.getByRole('button', { name: /引导测试角色 只打开这段聊天/ }).click();
+  await page.getByRole('button', { name: /引导测试角色 打开聊天/ }).click();
   await at(page, 'live-scenario-plus');
   await page.locator('[data-guide="chat-plus"]').click();
   await at(page, 'live-scenario-open');
   await page.locator('[data-guide="scenario-entry"]').click();
   await at(page, 'live-scenario-options');
   await expect(page.getByRole('button', { name: /日常聊天/ })).toBeVisible();
-  await page.getByRole('button', { name: '明白了，保持原设置' }).click();
+  await page.getByRole('button', { name: '了解了' }).click();
   await at(page, 'live-scenario-close');
   await page
     .getByRole('dialog', { name: '情景预设', exact: true })
     .getByRole('button', { name: '关闭', exact: true })
     .click();
-  await expect(page.getByRole('dialog', { name: '这一节学会了' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: '这一节完成了' })).toBeVisible();
   await noWrites(page);
 });
 test('退出、进度和必要弹窗：不锁死页面，数据按账号命名隔离', async ({ page }) => {
   await page.goto(fixture);
   await page.getByRole('button', { name: /角色生态 认识入口/ }).click();
-  await page.getByRole('button', { name: '回引导页' }).click();
+  await page.getByRole('button', { name: '返回目录' }).click();
   await expect(page.getByRole('heading', { name: '新手引导' })).toBeVisible();
   const keys = await page.evaluate(() =>
     Object.keys(localStorage).filter((key) => key.startsWith('weiban:guided-tour:')),

@@ -65,6 +65,10 @@
 .role-plaza-hub .role-plaza-tabs > button[aria-selected='true'] {
   color: var(--wb-color-text-primary);
 }
+/* Only move the official label and its underline; preserve both full-width hit areas and the list below. */
+.role-plaza-hub .role-plaza-tabs > button:nth-child(2) .role-plaza-tab-label {
+  transform: translateX(calc(-1 * var(--wb-space-3)));
+}
 /* 下划线跟文字同宽、离文字 4px，不再贴着顶栏底边 */
 .role-plaza-tab-label {
   position: relative;

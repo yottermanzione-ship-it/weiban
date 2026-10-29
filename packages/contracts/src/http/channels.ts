@@ -27,8 +27,8 @@
  * - 微信出码拿到的 qrcode 本身能换 bot_token，按凭据处理：加密存库，只在本进程内解密后换 token。
  * - 本契约只服务「本新站用户主动新绑的账号」：没有任何导入旧站凭据的入口，也不会去轮询旧站记录。
  *
- * 权限：发起绑定 / 查询二维码状态是 PRO+ 权益（403 membership_required）；**解绑与查看状态不需要 PRO+**
- * （降级后仍必须能解绑、仍能看到当前绑定），它们只要求已登录。
+ * 权限：公开运行的渠道面向所有已登录账号（含免费账号）；未公开的内测模式保留 PRO+ 规则。
+ * 查看状态与解绑始终只要求已登录。开放入口不等于免费模型回复，仍走原有聊天与积分链路。
  */
 import { z } from 'zod';
 import { API_PREFIX, Id, Timestamp, defineEndpoint, tolerantEnum } from '../common.js';
@@ -36,7 +36,7 @@ import { API_PREFIX, Id, Timestamp, defineEndpoint, tolerantEnum } from '../comm
 /** 微信官方绑定链接的唯一主机，服务端验证与客户端唤起共用。 */
 export const WECHAT_BIND_URL_HOST = 'liteapp.weixin.qq.com';
 
-/** 已接入的外部渠道。QQ 仍是「暂未开放」，不在本契约内。 */
+/** 已接入的三个外部渠道；实际可用性以服务器运行配置为准。 */
 export const ChannelId = z.enum(['wechat', 'weibo', 'qq']);
 export type ChannelId = z.infer<typeof ChannelId>;
 

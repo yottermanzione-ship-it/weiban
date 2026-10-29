@@ -51,7 +51,7 @@ import type {
   IdentityMembershipReadPort,
 } from '@weiban/contracts';
 import { channelRuntimeConfig, type ChannelRuntimeConfig } from './channel-config.js';
-import { assertChannelProPlus } from './channel-access.js';
+import { assertChannelAccess } from './channel-access.js';
 import { ChannelStore, type AttemptRow, type BindingRow } from './channel-store.js';
 import {
   fetchWeiboToken,
@@ -121,7 +121,7 @@ export class ChannelsService {
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
   ) {}
 
-  /** 传 userId 时按「这个用户」判定（内测白名单）；worker 侧的判定用 isChannelUserAllowed。 */
+  /** 按公开/内测策略判定当前用户；不读取、迁移或复用旧站绑定。 */
   private runtime(channel: ChannelId, userId?: string): ChannelRuntimeConfig {
     return channelRuntimeConfig(this.config, channel, userId);
   }
@@ -293,7 +293,7 @@ export class ChannelsService {
   async wechatQr(userId: string, characterId: string): Promise<WechatQrAttempt> {
     const cfg = this.runtime('wechat', userId);
     this.assertLive(cfg);
-    await assertChannelProPlus(this.membership, userId, 'new_qr');
+    await assertChannelAccess(this.config, 'wechat', this.membership, userId, 'new_qr');
     const character = await this.resolveCharacter(userId, characterId);
     const client = createIlinkClient({ baseUrl: cfg.ilinkBaseUrl });
     let qrcode: { qrcode: string; bindUrl: string };
@@ -361,7 +361,7 @@ export class ChannelsService {
   private async pollWechatQr(userId: string, attempt: AttemptRow): Promise<WechatQrAttempt> {
     const cfg = this.runtime('wechat', userId);
     this.assertLive(cfg);
-    await assertChannelProPlus(this.membership, userId, 'new_qr');
+    await assertChannelAccess(this.config, 'wechat', this.membership, userId, 'new_qr');
     const now = this.clock.now();
     if (attempt.expires_at.getTime() <= now.getTime()) {
       await this.db.transaction((tx) =>
@@ -507,7 +507,7 @@ export class ChannelsService {
   ): Promise<ChannelState> {
     const cfg = this.runtime(channel, userId);
     this.assertLive(cfg);
-    await assertChannelProPlus(this.membership, userId, 'switch_character');
+    await assertChannelAccess(this.config, channel, this.membership, userId, 'switch_character');
     const binding = await this.store.bindingOf(userId, channel);
     if (!binding || binding.status !== 'active')
       throw new AppError('conflict', `还没有绑定${CHANNEL_INFO[channel].name.replace('接入', '')}`);
@@ -528,7 +528,7 @@ export class ChannelsService {
   async weiboConnect(userId: string, input: WeiboConnectRequest): Promise<ChannelState> {
     const cfg = this.runtime('weibo', userId);
     this.assertLive(cfg);
-    await assertChannelProPlus(this.membership, userId, 'bind');
+    await assertChannelAccess(this.config, 'weibo', this.membership, userId, 'bind');
     const character = await this.resolveCharacter(userId, input.characterId);
     let token: { token: string; uid: string };
     try {
@@ -587,7 +587,7 @@ export class ChannelsService {
 
   async qqConnect(userId: string, input: QqConnectRequest): Promise<QqPairing> {
     this.assertLive(this.runtime('qq', userId));
-    await assertChannelProPlus(this.membership, userId, 'bind');
+    await assertChannelAccess(this.config, 'qq', this.membership, userId, 'bind');
     const character = await this.resolveCharacter(userId, input.characterId);
     const fingerprint = qqFingerprint(input.appId);
     await this.db.transaction((tx) => this.qqStore.assertAvailable(tx, fingerprint, userId));
@@ -644,7 +644,7 @@ export class ChannelsService {
 
   async qqPairing(userId: string, characterId: string): Promise<QqPairing> {
     this.assertLive(this.runtime('qq', userId));
-    await assertChannelProPlus(this.membership, userId, 'bind');
+    await assertChannelAccess(this.config, 'qq', this.membership, userId, 'bind');
     const character = await this.resolveCharacter(userId, characterId);
     const binding = await this.store.bindingOf(userId, 'qq');
     if (!binding || binding.status === 'active' || !(await this.qqStore.get(binding.id)))

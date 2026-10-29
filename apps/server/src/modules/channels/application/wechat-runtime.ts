@@ -28,6 +28,7 @@ import {
 import { IDENTITY_MEMBERSHIP_READ_PORT } from '../../identity/index.js';
 import { ChannelBridge } from './channel-bridge.js';
 import { channelRuntimeConfig, isChannelUserAllowed } from './channel-config.js';
+import { hasChannelAccess } from './channel-access.js';
 import { ChannelStore, type BindingRow } from './channel-store.js';
 import { ChannelsService } from './channels.service.js';
 import {
@@ -163,8 +164,8 @@ export class WechatRuntime implements OnApplicationShutdown {
         );
         return;
       }
-      // 会员到期就停轮询（页面仍可解绑）；恢复后下一轮 reconcile 会重新起循环。
-      if (!(await this.membership.isProPlus(binding.user_id))) {
+      // 公开渠道不设会员门槛；受限模式仍按原会员规则检查。
+      if (!(await hasChannelAccess(this.config, 'wechat', this.membership, binding.user_id))) {
         await this.store.touchPollError(
           bindingId,
           'PRO+ 已到期，暂停接收微信消息',
