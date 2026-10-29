@@ -165,6 +165,7 @@ export function Chevron() {
  * - tile：彩色方块 + 白图标。
  */
 export function MenuRow({
+  guideId,
   to,
   onClick,
   icon,
@@ -186,6 +187,7 @@ export function MenuRow({
   center = false,
   disabled = false,
 }: {
+  guideId?: string;
   to?: string;
   onClick?: () => void;
   icon?: IconSource;
@@ -247,24 +249,42 @@ export function MenuRow({
   const className = `menu-row ${subtitle != null ? 'two-line' : ''} ${danger ? 'danger' : ''}`;
   if (!to && !onClick)
     return (
-      <div className={className} aria-disabled={disabled || undefined}>
+      <div className={className} data-guide={guideId} aria-disabled={disabled || undefined}>
         {body}
       </div>
     );
   return to && !disabled ? (
-    <Link className={className} to={to}>
+    <Link className={className} data-guide={guideId} to={to}>
       {body}
     </Link>
   ) : (
-    <button type="button" className={className} onClick={onClick} disabled={disabled}>
+    <button
+      type="button"
+      className={className}
+      data-guide={guideId}
+      onClick={onClick}
+      disabled={disabled}
+    >
       {body}
     </button>
   );
 }
 
 /** 分组（规格 3.4）：通栏白卡，组间 8 灰缝。 */
-export function MenuGroup({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={`menu-group ${className ?? ''}`}>{children}</div>;
+export function MenuGroup({
+  children,
+  className,
+  guideId,
+}: {
+  children: ReactNode;
+  className?: string;
+  guideId?: string;
+}) {
+  return (
+    <div className={`menu-group ${className ?? ''}`} data-guide={guideId}>
+      {children}
+    </div>
+  );
 }
 
 /** 分组标题（规格 3.5）：高 35.7，文字贴底。 */
@@ -310,6 +330,7 @@ export function Switch({
 
 /** 开关行（规格 3.6）。 */
 export function SwitchRow({
+  guideId,
   label,
   ariaLabel,
   subtitle,
@@ -319,13 +340,14 @@ export function SwitchRow({
 }: {
   label: ReactNode;
   ariaLabel?: string;
+  guideId?: string;
   subtitle?: ReactNode;
   checked: boolean;
   disabled?: boolean;
   onChange(value: boolean): void;
 }) {
   return (
-    <div className={`switch-row ${subtitle ? 'with-subtitle' : ''}`}>
+    <div className={`switch-row ${subtitle ? 'with-subtitle' : ''}`} data-guide={guideId}>
       <span className="switch-text">
         <span>{label}</span>
         {subtitle && <small>{subtitle}</small>}

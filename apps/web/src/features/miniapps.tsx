@@ -296,11 +296,24 @@ export function MiniAppCell({
   const className = `miniapp-cell ${wiggle ? 'wiggle' : ''}`;
   const handlers = onMenu ? press : {};
   return onPick ? (
-    <button type="button" className={className} data-app={app.id} onClick={onPick} {...handlers}>
+    <button
+      type="button"
+      className={className}
+      data-app={app.id}
+      data-guide={app.id === 'cards' ? 'miniapp-cards' : undefined}
+      onClick={onPick}
+      {...handlers}
+    >
       {body}
     </button>
   ) : (
-    <Link className={className} data-app={app.id} to={to ?? app.home} {...handlers}>
+    <Link
+      className={className}
+      data-app={app.id}
+      data-guide={app.id === 'cards' ? 'miniapp-cards' : undefined}
+      to={to ?? app.home}
+      {...handlers}
+    >
       {body}
     </Link>
   );
@@ -483,7 +496,7 @@ export function MiniAppFrame({ app, children }: { app: MiniApp; children: ReactN
           <OldIcon name="wechat/more" size={20} />
         </button>
         <i aria-hidden />
-        <button type="button" aria-label="关闭小程序" onClick={close}>
+        <button type="button" aria-label="关闭小程序" data-guide="miniapp-close" onClick={close}>
           <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden>
             <circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" strokeWidth="1.6" />
             <circle cx="10" cy="10" r="2.8" fill="currentColor" />

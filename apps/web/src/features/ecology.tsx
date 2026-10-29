@@ -138,6 +138,7 @@ export function EcologyPage() {
           <MenuGroup>
             <SwitchRow
               label="角色生态"
+              guideId="ecology-master"
               subtitle={
                 !data.eligible
                   ? 'PRO+ 会员专属'
