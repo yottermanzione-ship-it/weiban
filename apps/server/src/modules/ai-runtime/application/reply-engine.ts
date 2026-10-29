@@ -33,7 +33,13 @@ import { MediaAiService } from './media-ai.js';
 import { PlannerService } from './planner.js';
 import { QuirkService } from './quirk-service.js';
 import { typoCorrection } from '../domain/quirks.js';
-import { outputAllowed, replyDelay, splitReply } from '../domain/reply-rules.js';
+import {
+  outputAllowed,
+  replyDelay,
+  splitReply,
+  stripHabits,
+  takeAfterFinalMarker,
+} from '../domain/reply-rules.js';
 import { withoutImages } from '../domain/prompt-assembly.js';
 import {
   captionPhrase,
@@ -168,7 +174,7 @@ export class ReplyEngine {
           captionModel ??= result.value.modelKey;
         }
       });
-      return { ...result, value: { ...result.value, text: parts.reply } };
+      return { ...result, value: { ...result.value, text: takeAfterFinalMarker(parts.reply) } };
     };
     // 重写调用：已解析出全部描述就换成文字（不再花钱看一次图），否则照旧附图。
     const retryMessages = () =>
@@ -222,7 +228,11 @@ export class ReplyEngine {
     let bubbles: string[] = [];
     let fallbackReason: string | null = null;
     if (answer.ok && outputAllowed(answer.value.text, snapshot.policy, snapshot.scope === 'adult'))
-      bubbles = splitReply(answer.value.text, snapshot.splitBubbles);
+      // 2026-10-30 双兜底出站过滤：只清本轮检出的习惯词，删完为空时 stripHabits 原样返回，绝不发空。
+      bubbles = splitReply(
+        stripHabits(answer.value.text, snapshot.habits ?? []),
+        snapshot.splitBubbles,
+      );
     if (!bubbles.length) {
       if (inCare) {
         bubbles = careFallback(snapshot.careFallback, snapshot.careVariant, snapshot.addressAs);
@@ -272,7 +282,10 @@ export class ReplyEngine {
         const again =
           retried.ok &&
           outputAllowed(retried.value.text, snapshot.policy, snapshot.scope === 'adult')
-            ? splitReply(retried.value.text, snapshot.splitBubbles)
+            ? splitReply(
+                stripHabits(retried.value.text, snapshot.habits ?? []),
+                snapshot.splitBubbles,
+              )
             : [];
         bubbles =
           again.length &&

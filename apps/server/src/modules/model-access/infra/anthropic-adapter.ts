@@ -234,6 +234,14 @@ export function classifyAnthropicError(
   return { category: 'bad_request', retryable: false };
 }
 
+/**
+ * 2026-10-29 关思考：Claude Opus 5（老款，不含 5.5）接受 thinking disabled（档位须在 high 及以下，
+ * 聊天已发 effort low，满足条件）；Opus 5.5 / Sonnet 5.5 / Fable 5 传 disabled 会报 400，故不进此分支。
+ */
+export function supportsThinkingDisabled(model: string): boolean {
+  return /claude-opus-5(?![-.]\d)/i.test(model);
+}
+
 export class AnthropicTextAdapter implements TextAdapter {
   async generate(input: Parameters<TextAdapter['generate']>[0]): Promise<TextResult> {
     const startedAt = performance.now();
@@ -246,9 +254,11 @@ export class AnthropicTextAdapter implements TextAdapter {
       stream: true,
       ...(input.thinking === 'on'
         ? anthropicThinkingOn(input.model, input.maxOutputTokens, input.thinkingBudget ?? 0)
-        : input.thinking !== 'default' && supportsEffort(input.model)
-          ? { output_config: { effort: 'low' } }
-          : {}),
+        : input.thinking !== 'default' && supportsThinkingDisabled(input.model)
+          ? { thinking: { type: 'disabled' }, output_config: { effort: 'low' } }
+          : input.thinking !== 'default' && supportsEffort(input.model)
+            ? { output_config: { effort: 'low' } }
+            : {}),
     };
     const inputEstimate = estimateInputTokens(input.messages);
     try {

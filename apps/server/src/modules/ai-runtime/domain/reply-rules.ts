@@ -23,8 +23,173 @@ export function unescapeModelText(text: string): string {
       return code < 32 || (code >= 0xd800 && code <= 0xdfff) ? '' : String.fromCharCode(code);
     });
 }
+/**
+ * 2026-10-29 标记法（测试验证）：私聊提示词要求模型先想、再单独写一行【正文】、然后写正文。
+ * 只取以【正文】开头的行之后的内容；行内提到【正文】不算。
+ * 无标记时原样返回；标记后为空时去掉标记行后返回，绝不发空回复。
+ */
+export function takeAfterFinalMarker(text: string): string {
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!.trim();
+    if (!line.startsWith('【正文】')) continue;
+    const rest = [line.slice('【正文】'.length).replace(/^[：:、\s]+/, ''), ...lines.slice(i + 1)]
+      .join('\n')
+      .trim();
+    if (rest) return rest;
+  }
+  // 标记后为空：不发空回复，退回去掉标记行后的原文（至少不露结构标记）。
+  const withoutMarker = lines
+    .filter((l) => !l.trim().startsWith('【正文】'))
+    .join('\n')
+    .trim();
+  return withoutMarker || text;
+}
+/**
+ * 2026-10-30 双兜底（晓楠批准，阈值放保守）：防跟风不是事先列清单，而是动态算。
+ * - 窗口：最近 20 条角色回复；阈值：同一候选出现在 11 条以上（过半）才算刚染上的习惯。
+ * - 候选只限三类：2–4 个字母的短外文词、单个表情、单个中文语气字；名词、话题词不在此列。
+ * - 卡里本来就有的不在此列：候选出现在角色资料（含说话方式、例句）里就豁免，不误杀本人口头禅。
+ * - 记录本身不删：历史清洗只在喂给模型的那份原文里清掉习惯词，出站过滤只在发给用户前清掉；
+ *   两处都只删词不删整条，删完为空就原样返回，绝不发空回复。
+ * - 外文常用功能词（the、and、you 等）不算候选，避免正常英文句子被误判。
+ */
+const HABIT_WINDOW = 20;
+const HABIT_MIN_BUBBLES = 11;
+const HABIT_STOPWORDS = new Set([
+  'the',
+  'and',
+  'for',
+  'you',
+  'your',
+  'are',
+  'with',
+  'this',
+  'that',
+  'have',
+  'has',
+  'was',
+  'were',
+  'can',
+  'will',
+  'would',
+  'should',
+  'from',
+  'about',
+  'into',
+  'over',
+  'after',
+  'before',
+  'when',
+  'where',
+  'what',
+  'how',
+  'why',
+  'who',
+  'she',
+  'her',
+  'his',
+  'him',
+  'its',
+  'our',
+  'they',
+  'them',
+  'then',
+  'than',
+  'too',
+  'very',
+  'just',
+  'like',
+  'get',
+  'got',
+  'one',
+  'two',
+  'all',
+  'any',
+  'out',
+  'up',
+  'down',
+  'off',
+  'not',
+  'but',
+  'also',
+  'more',
+  'most',
+  'some',
+  'time',
+  'good',
+  'know',
+  'think',
+]);
+const HABIT_FILLER_CHARS = '嗯啊哦哈额呃嘿哼唉呀哇';
+
+function habitCandidates(text: string): Set<string> {
+  const out = new Set<string>();
+  // 外文词只在中文为主的消息里算候选：纯英文句子里的 love、good 这类正常词不能算习惯；
+  // 中文对话里夹的外文短词（如 OK）才是插入式口头禅。整词匹配，避免 brown 被切成 brow。
+  const chineseCount = (text.match(/[\u4e00-\u9fa5]/g) ?? []).length;
+  if (chineseCount >= 5) {
+    for (const m of text.match(/\b[A-Za-z]{2,4}\b/g) ?? []) {
+      const lower = m.toLowerCase();
+      if (!HABIT_STOPWORDS.has(lower)) out.add(lower);
+    }
+  }
+  for (const m of text.match(/\p{Extended_Pictographic}/gu) ?? []) out.add(m);
+  for (const ch of text) if (HABIT_FILLER_CHARS.includes(ch)) out.add(ch);
+  return out;
+}
+
+export function detectHabits(roleTexts: string[], cardText: string): string[] {
+  const window = roleTexts.slice(-HABIT_WINDOW);
+  if (window.length < HABIT_MIN_BUBBLES) return [];
+  const cardLower = cardText.toLowerCase();
+  const counts = new Map<string, number>();
+  for (const text of window) {
+    for (const candidate of habitCandidates(text)) {
+      counts.set(candidate, (counts.get(candidate) ?? 0) + 1);
+    }
+  }
+  const habits: string[] = [];
+  for (const [candidate, count] of counts) {
+    if (count < HABIT_MIN_BUBBLES) continue;
+    // 卡里写明的口头禅、表情、说话方式一律豁免。
+    if (
+      /^[a-z]{2,4}$/.test(candidate) ? cardLower.includes(candidate) : cardText.includes(candidate)
+    )
+      continue;
+    habits.push(candidate);
+  }
+  return habits.sort();
+}
+
+export function stripHabits(text: string, habits: string[]): string {
+  if (!habits.length) return text;
+  let out = text;
+  for (const habit of habits) {
+    if (/^[a-z]{2,4}$/.test(habit)) {
+      out = out.replace(new RegExp(`\\b${habit}\\b`, 'gi'), '');
+    } else if (HABIT_FILLER_CHARS.includes(habit)) {
+      // 中文语气字：只清整行重复（如“嗯嗯”）和前后不是汉字的孤立出现，不碰“哈哈大笑”这类词里的字。
+      out = out
+        .split('\n')
+        .map((line) => {
+          if (new RegExp(`^${habit}+$`).test(line.trim())) return '';
+          return line.replace(
+            new RegExp(`(?<![\\u4e00-\\u9fa5])${habit}(?![\\u4e00-\\u9fa5])`, 'g'),
+            '',
+          );
+        })
+        .join('\n');
+    } else {
+      out = out.split(habit).join('');
+    }
+  }
+  out = out.replace(/[ \t]{2,}/g, ' ');
+  return out.trim() ? out : text;
+}
+
 export function splitReply(text: string, split: boolean): string[] {
-  const clean = unescapeModelText(text).trim();
+  const clean = takeAfterFinalMarker(unescapeModelText(text)).trim();
   if (!clean || clean.length > 16000) return [];
   if (!split) return clean.length <= 4000 ? [clean] : [];
   const lines = clean

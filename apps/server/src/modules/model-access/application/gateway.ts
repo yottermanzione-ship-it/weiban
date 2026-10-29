@@ -70,6 +70,8 @@ function usesModelOutputLimit(input: GenerateTextInput): boolean {
 
 type GatewayInternal = {
   fallbackModelKey?: string;
+  /** 2026-10-30 用户定：日常聊天失败后静默换模型用的备用模型，仅 chat_reply + modelRole=chat。 */
+  chatFallbackModelKey?: string;
   billingPlan?: TextCeiling;
   priceVersionId?: string;
   retry?: boolean;
@@ -85,6 +87,20 @@ const THINKING_KEPT_PURPOSES: readonly GenerateTextInput['purpose'][] = ['memory
 export function thinkingBudgetFor(purpose: GenerateTextInput['purpose'], body: number): number {
   if (!THINKING_KEPT_PURPOSES.includes(purpose)) return 0;
   return Math.min(2048, Math.max(1024, Math.round(body)));
+}
+/**
+ * 2026-10-30 空输出根因修：私密模型（Abliteration）做记忆整理时，全部输出 token 都耗在思考上、
+ * 正文为 0，连续 400 多次空输出、成功 0 次。记忆整理要的是 JSON 正文，不是思考，
+ * 所以私密模型做记忆整理时直接关思考（与聊天一致），把全部额度留给 JSON 正文。
+ * 私密范围不走备用模型，仍只用私密模型本身，不外泄私密内容。
+ */
+export function thinkingBudgetForModel(
+  purpose: GenerateTextInput['purpose'],
+  body: number,
+  modelKey: string,
+): number {
+  if (purpose === 'memory' && modelKey.toLowerCase().includes('abliterat')) return 0;
+  return thinkingBudgetFor(purpose, body);
 }
 
 const DEFAULT_TOKENS: Partial<Record<GenerateTextInput['purpose'], number>> = {
@@ -187,9 +203,64 @@ export class ModelGateway implements ModelGatewayPort {
     );
   }
   /**
-   * internal 只供网关自己的降级使用（不属于契约）：fallbackModelKey = 空输出后改用的备用模型。
+   * 2026-10-30 用户定：日常聊天失败后不给用户弹错误，静默换模型继续，直到成功为止。
+   * 链路：先 DeepSeek，再按典型聊天成本从低到高——MiMo、Qwen、MiniMax，最后是场景推荐模型；
+   * 价目见现行价版：MiMo 输入 1.008/输出 2.016、Qwen 1.152/3.384、MiniMax 1.08/4.32、DeepSeek 2.16/8.64（元/百万 token）。
+   * 只用于 purpose=chat_reply 且 modelRole=chat（日常范围）；私密（adult）绝不走这条，私密内容不出私密模型。
+   * 失败那次不扣费（0 token），成功那次按备用模型的价格正常扣积分，用户只看到一次正常回复。
+   * 全部备用都失败时才返回原错误，由调用方按原逻辑处理。
    */
   async generateText(input: GenerateTextInput, internal?: GatewayInternal): Promise<CachedResult> {
+    const first = await this.generateOnce(input, internal);
+    if (first.ok) return first;
+    if (input.purpose !== 'chat_reply' || input.modelRole !== 'chat') return first;
+    if (internal?.chatFallbackModelKey || internal?.fallbackModelKey) return first;
+    if (!['provider_unavailable', 'model_unavailable'].includes(first.error)) return first;
+    const chain = [
+      'deepseek/deepseek-v4.1-flash',
+      'xiaomi/mimo-v2.6-flash',
+      'qwen/Qwen3.8-Flash',
+      'minimax/minimax-m3.1-flash',
+    ];
+    const recommended = await this.catalog.recommendedModel('chat').catch(() => null);
+    const recommendedKey = recommended?.entry?.modelKey;
+    if (recommendedKey && !chain.includes(recommendedKey)) chain.push(recommendedKey);
+    const primary = await this.resolver
+      .pick(input.userId, 'chat', input.characterId ?? null, { purpose: 'chat_reply' })
+      .catch(() => null);
+    const primaryKey = primary?.facts?.modelKey;
+    for (const candidate of chain) {
+      if (primaryKey && candidate === primaryKey) continue;
+      // 幂等键要新（否则会重放原失败结果），且尾巴仍保持 :reply 等后缀，
+      // 否则回复引擎的扣费统计记不到这次成功调用的用量记录 ID。
+      const fallbackKey = /:(reply|reply-blind|guard|names)$/.test(input.idempotencyKey)
+        ? input.idempotencyKey.replace(
+            /:(reply|reply-blind|guard|names)$/,
+            `:chatfallback-${candidate}:$1`,
+          )
+        : `chatfallback:${input.idempotencyKey}:${candidate}`;
+      const result = await this.generateOnce(
+        { ...input, idempotencyKey: fallbackKey },
+        { ...internal, chatFallbackModelKey: candidate },
+      );
+      if (result.ok) {
+        this.logger.log(
+          `chat silent fallback: ${primaryKey ?? 'unknown'} -> ${candidate} for user ${input.userId}`,
+        );
+        return result;
+      }
+      if (['bad_request', 'policy_denied'].includes(result.error)) break;
+    }
+    return first;
+  }
+  /**
+   * internal 只供网关自己的降级使用（不属于契约）：fallbackModelKey = 空输出后改用的备用模型。
+   * generateOnce = 原 generateText 的全部流程；generateText 是在其外包一层日常聊天静默换模型。
+   */
+  private async generateOnce(
+    input: GenerateTextInput,
+    internal?: GatewayInternal,
+  ): Promise<CachedResult> {
     if (
       !this.valid(input, internal?.trustedPlatform === true) ||
       (await this.accounts.getAccountStatus(input.userId)) !== 'active'
@@ -257,6 +328,9 @@ export class ModelGateway implements ModelGatewayPort {
       platformTask: internal?.trustedPlatform === true,
       hasImages: imageCount > 0,
       ...(internal?.fallbackModelKey ? { fallbackModelKey: internal.fallbackModelKey } : {}),
+      ...(internal?.chatFallbackModelKey
+        ? { chatFallbackModelKey: internal.chatFallbackModelKey }
+        : {}),
     });
     if (!resolved.ok) {
       await this.cache.save(row, resolved, 'complete');
@@ -297,7 +371,7 @@ export class ModelGateway implements ModelGatewayPort {
       candidates,
       imageCount,
       usesModelOutputLimit(input) ? null : requested,
-      thinkingBudgetFor(input.purpose, requested),
+      thinkingBudgetForModel(input.purpose, requested, model.modelKey),
     );
     if (!verified) {
       const result: CachedResult = { ok: false, error: 'model_unavailable' };
@@ -394,7 +468,8 @@ export class ModelGateway implements ModelGatewayPort {
     ).toISOString();
     const budgetMs = Math.max(0, Date.parse(deadlineAt) - this.clock.nowMs());
     // 批 EJ：后台整理任务的思考预算（另加在正文之上；其余用途为 0 = 照旧关思考）。
-    const thinkingBudget = thinkingBudgetFor(input.purpose, maximum);
+    // 2026-10-30：私密模型做记忆整理时关思考，见 thinkingBudgetForModel。
+    const thinkingBudget = thinkingBudgetForModel(input.purpose, maximum, model.modelKey);
     let outputBudget = maximum,
       emptyRetried = false,
       index = 0;
@@ -601,7 +676,9 @@ export class ModelGateway implements ModelGatewayPort {
             ttftMs: answer.ttftMs ?? null,
             retryCount: ordinal,
           });
-          await this.scheduler.recordSuccess(route.upstreamId).catch(() => undefined);
+          await this.scheduler
+            .recordSuccess(route.upstreamId, model.modelKey)
+            .catch(() => undefined);
           return await this.finalize((await this.cache.get(row.id))!, result);
         }
         const released = await this.billing.release({
@@ -649,7 +726,7 @@ export class ModelGateway implements ModelGatewayPort {
         // 3.26：缺用量不再等于「线路暂停、必须换线路」；只按错误类别决定是否切换线路。
         if (FAILOVER_CATEGORIES.includes(answer.category)) {
           await this.scheduler
-            .recordFailure(route.upstreamId, answer.category)
+            .recordFailure(route.upstreamId, answer.category, model.modelKey)
             .catch(() => undefined);
           index++;
           if (index < candidates.length) continue;

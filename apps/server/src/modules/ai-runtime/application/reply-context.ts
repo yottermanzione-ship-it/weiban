@@ -40,6 +40,7 @@ import { PlayContinuityStore } from './play-continuity.js';
 import { DEFAULT_LOREBOOK, lorebook, lorebookText } from '../domain/knowledge.js';
 import {
   assemblePrompt,
+  renderSections,
   takeWithin,
   type ChatTurnMessage,
   type DepthInsert,
@@ -81,7 +82,12 @@ import { localHourIn, nowLine } from '../domain/time-sense.js';
 import { CompanionSettingsService } from './settings.js';
 import { GroupChatService } from './group-chat.js';
 import { ReplyPlanStore, type ReplyPlan } from './plan-store.js';
-import { highRisk, REPLY_TEMPLATE_VERSION } from '../domain/reply-rules.js';
+import {
+  detectHabits,
+  highRisk,
+  stripHabits,
+  REPLY_TEMPLATE_VERSION,
+} from '../domain/reply-rules.js';
 import { HealthCareService } from './health-care.js';
 import { SocialService } from './social.js';
 import { MediaAiService, imageBudget, type RenderedMedia } from './media-ai.js';
@@ -188,6 +194,8 @@ export const ReplySnapshot = z.object({
   timeZone: z.string().default('Asia/Shanghai'),
   quirk: QuirkAction.default(NO_QUIRK),
   trial: z.boolean().default(false),
+  /** 2026-10-30 双兜底：本轮动态检出的习惯词（卡里没有、最近 20 条角色回复里出现 11 条以上），出站过滤用；无则空。 */
+  habits: z.array(z.string()).default([]),
   /** 0091：请求开头预计可命中前缀缓存的字符数（写入用量记录，docs/refactor/09 第 6 节）。 */
   stablePrefixChars: z.number().int().nonnegative().default(0),
 });
@@ -662,7 +670,7 @@ export class ReplyContext {
       { title: '相关经历', text: episodes.relevant },
       {
         title: '私聊场景',
-        text: '现在以角色口吻与用户私聊。只输出聊天纯文本，短句换行，不输出JSON或括号动作。',
+        text: '现在以角色口吻与用户私聊。只输出聊天纯文本，短句换行，不输出JSON或括号动作。回答前可以先想，想完先单独写一行【正文】，然后只写正文聊天内容；【正文】这行本身不发给用户，正文不能为空。',
       },
       {
         title: '这轮可能用得上的记忆',
@@ -735,11 +743,32 @@ export class ReplyContext {
         title: '角色作者的补充要求',
         text: prompting?.postHistoryInstructions ?? '',
       },
+      // 2026-10-30 双兜底尾部短提醒（正向，不点名任何具体词，离输出最近防衰减）。
+      { title: '', text: '按卡里的说话方式回，每轮换着说法。' },
     ];
+    // 2026-10-30 双兜底：
+    // ① 正向版通用提示词（开头第一段，所有角色共用，不写进单个角色卡，不点名具体词）。
+    const antiMimicHead: PromptSection[] = [
+      {
+        title: '',
+        text: '说话方式以角色卡为准，只用卡里写明的口头禅、表情和说话方式。每轮用你自己的说法，换着开头、换着表达，同一轮、连续几轮都用不同的说法。聊天记录只用来参考你们聊过的事，不用来学说话方式。',
+      },
+      ...head,
+    ];
+    // ② 历史清洗：动态检出最近 20 条角色回复里过半出现、卡里没有的习惯词，只在喂给模型的那份原文里清掉，记录本身不删。
+    const habits = detectHabits(
+      chat.filter((m) => m.role === 'assistant').map((m) => m.content),
+      renderSections(head),
+    );
+    const cleanedChat: ChatTurnMessage[] = habits.length
+      ? chat.map((m) =>
+          m.role === 'assistant' ? { ...m, content: stripHabits(m.content, habits) } : m,
+        )
+      : chat;
     const assembled = assemblePrompt({
       macros: { user: userName, char: role.profile.name },
-      head,
-      history: chat,
+      head: antiMimicHead,
+      history: cleanedChat,
       inserts,
       tail,
     });
@@ -802,6 +831,7 @@ export class ReplyContext {
       typoStyle: roleTypoStyle(view),
       timeZone: profile.timeZone,
       stablePrefixChars: assembled.stats.stablePrefixChars,
+      habits,
     });
   }
   /**
