@@ -1,0 +1,4 @@
+{
+  "extends": "../tsconfig.json",
+  "include": ["../src/features/guided-tour.tsx", "./browser-fixtures/onboarding-tour.tsx"]
+}
