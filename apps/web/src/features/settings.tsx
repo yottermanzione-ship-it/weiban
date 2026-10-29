@@ -282,6 +282,7 @@ export function SettingsPage() {
       </MenuGroup>
       <GroupHeader>关于</GroupHeader>
       <MenuGroup>
+        <MenuRow to="/help/guide" label="新手引导" />
         <SupportRow />
         <MenuRow to="/settings/about" label="关于微伴" dot={announcements > 0} />
       </MenuGroup>

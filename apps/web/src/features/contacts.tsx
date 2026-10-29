@@ -407,6 +407,7 @@ export function DiscoverPage() {
         <ComingSoonRow id="games" />
         <MenuRow
           to="/miniapps"
+          guideId="miniapps-entry"
           icon="wechat/discover_mini_program"
           tint="purple"
           label="小程序"

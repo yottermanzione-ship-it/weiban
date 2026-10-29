@@ -1512,6 +1512,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
         { label: '拍摄', icon: 'wechat/camera', onClick: () => cameraInput.current?.click() },
         {
           label: '情景预设',
+          guideId: 'scenario-entry',
           icon: 'drawn/scenario_sparkle',
           dot: !!preset.mode && preset.mode !== 'auto',
           onClick: () => setPresetOpen(true),
@@ -1878,6 +1879,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
               type="button"
               className="wx-input-icon"
               aria-label={panel === 'plus' ? '切换到键盘' : '更多功能'}
+              data-guide={!group ? 'chat-plus' : undefined}
               aria-pressed={panel === 'plus'}
               onClick={() => {
                 if (panel === 'plus') {
@@ -2039,6 +2041,7 @@ function UploadFailed({ onRetry, onDrop }: { onRetry(): void; onDrop(): void }) 
 
 interface PlusCell {
   label: string;
+  guideId?: string;
   icon: string;
   dot?: boolean;
   /** 3.28（H2）：置灰（仍可点，点了说明原因）。 */
@@ -2072,9 +2075,10 @@ function PlusPanel({
       >
         {pages.map((list, index) => (
           <div className="wx-plus-page" key={index}>
-            {list.map(({ label, icon, dot, muted, onClick }) => (
+            {list.map(({ label, icon, dot, muted, onClick, guideId }) => (
               <button
                 key={label}
+                data-guide={guideId}
                 type="button"
                 className={muted ? 'wx-plus-cell is-muted' : 'wx-plus-cell'}
                 aria-disabled={muted || undefined}

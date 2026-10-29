@@ -285,7 +285,9 @@ export function ScenarioSheet({
         </div>
       )}
       {/* 私密和普通预设同一张列表、同一种行样式（图标 / 标题 / 副标题 / 选中勾）。 */}
-      <MenuGroup className="preset-list">{items.map((option) => row(option))}</MenuGroup>
+      <MenuGroup className="preset-list" guideId="scenario-options">
+        {items.map((option) => row(option))}
+      </MenuGroup>
       <MenuGroup className="scenario-display-pref">
         <SwitchRow
           label="显示情景模式"

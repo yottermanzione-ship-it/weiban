@@ -4,6 +4,7 @@ import { UserStatusPage } from '../features/user-status.js';
 import { PluginsPage } from '../features/plugins.js';
 import { EcologyInsufficientNotice } from '../features/ecology-insufficient-notice.js';
 import { EcologyPage } from '../features/ecology.js';
+import { OnboardingGuidePage, OnboardingGuideProvider } from '../features/onboarding-guide.js';
 import { MurmursPage } from '../features/murmurs.js';
 import { useCallback, useEffect, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
@@ -140,6 +141,7 @@ import {
 } from '../features/play.js';
 /** 这些页面自带返回按钮，不显示通用顶栏。 */
 const ownHeader = [
+  /^\/help\/guide$/,
   /^\/(sticker-store|support)(\/|$)/,
   /^\/me\/status$/,
   /^\/settings\/plugins$/,
@@ -217,7 +219,7 @@ function TabGlyph({ index }: { index: number }) {
   );
 }
 /** 底部标签栏（规格 4.1）：单色线条图标随选中变色，10 号字，角标。 */
-function TabBar({ hidden }: { hidden: boolean }) {
+export function TabBar({ hidden }: { hidden: boolean }) {
   const badge = useMomentsBadge();
   const friends = useNewFriendsDot();
   const roleRequests = useRoleRequestBadge();
@@ -241,7 +243,13 @@ function TabBar({ hidden }: { hidden: boolean }) {
   return (
     <nav className={`tabbar ${hidden ? 'hidden' : ''}`} aria-label="主导航">
       {tabs.map((tab) => (
-        <NavLink key={tab.to} to={tab.to}>
+        <NavLink
+          key={tab.to}
+          to={tab.to}
+          data-guide={
+            tab.to === '/discover' ? 'nav-discover' : tab.to === '/me' ? 'nav-me' : undefined
+          }
+        >
           {() => (
             <>
               <span className="tab-icon">
@@ -297,223 +305,235 @@ function Shell() {
   const showTabs = !onboarding && !miniApp && roots.includes(location.pathname);
   return (
     <CallProvider>
-      <div
-        className={`app-shell ${showTabs ? 'with-tabs' : ''} ${location.pathname === '/chat' ? 'on-chat-list' : ''}`}
+      <OnboardingGuideProvider
         key={`${auth.session.user.userId}:${auth.session.session.sessionId}`}
+        userId={auth.session.user.userId}
       >
-        <FocusCapsule />
-        {offline && (
-          <div role="status" className="offline">
-            网络暂不可用，正在显示本机保存的内容
-          </div>
-        )}
-        <RouteMotion>
-          {!onboarding &&
-            !miniApp &&
-            !roots.includes(location.pathname) &&
-            !location.pathname.startsWith('/chat/') &&
-            !ownHeader.some((pattern) => pattern.test(location.pathname)) && (
-              <header className="topbar">
-                <TopBack
-                  fallback={
-                    [
-                      '/wallet',
-                      '/models',
-                      '/ledger',
-                      '/prices',
-                      '/leaderboard',
-                      '/usage',
-                      '/services/proactive',
-                      '/services/familiarity',
-                    ].includes(location.pathname)
-                      ? '/services'
-                      : ['/settings/security', '/settings/privacy', '/settings/general'].includes(
-                            location.pathname,
-                          )
-                        ? '/settings'
-                        : '/me'
-                  }
-                />
-              </header>
-            )}
-          {(() => {
-            const routes = (
-              <Routes location={location}>
-                <Route
-                  path="/"
-                  element={
-                    <Navigate
-                      to={auth.session.user.profileCompleted ? '/chat' : '/profile'}
-                      replace
-                    />
-                  }
-                />
-                <Route path="/me" element={<MePage />} />
-                <Route path="/profile" element={<ProfilePage />} />
-                {/* 10-21 G2：个人信息各项编辑改为整页推入的二级页面 */}
-                <Route path="/profile/nickname" element={<ProfileNicknamePage />} />
-                <Route path="/profile/gender" element={<ProfileGenderPage />} />
-                <Route path="/profile/birthday" element={<ProfileBirthdayPage />} />
-                <Route path="/profile/region" element={<ProfileRegionPage />} />
-                <Route path="/profile/region/:group" element={<ProfileRegionGroupPage />} />
-                <Route path="/profile/about" element={<ProfileAboutPage />} />
-                <Route path="/profile/nudge" element={<ProfileNudgePage />} />
-                <Route path="/profile/alias" element={<AliasInfoPage />} />
-                <Route path="/profile/alias/edit" element={<AliasEditPage />} />
-                <Route path="/settings" element={<SettingsPage />} />
-                <Route path="/services" element={<ServicesPage />} />
-                <Route path="/wallet" element={<WalletPage />} />
-                <Route path="/membership" element={<MembershipPage />} />
-                <Route path="/wallet/recharge" element={<RechargePage />} />
-                <Route path="/ledger" element={<LedgerPage />} />
-                <Route path="/prices" element={<PricesPage />} />
-                <Route path="/models" element={<ModelsPage />} />
-                <Route path="/models/scenario/:scenario" element={<ScenarioModelPage />} />
-                <Route path="/leaderboard" element={<LeaderboardPage />} />
-                <Route path="/usage" element={<UsagePage />} />
-                <Route path="/characters/custom/new" element={<CreateCustomCharacterPage />} />
-                <Route
-                  path="/characters/custom/:characterId/edit"
-                  element={<EditCustomCharacterPage />}
-                />
-                <Route path="/settings/security" element={<AccountSecurityPage />} />
-                <Route path="/settings/privacy" element={<PrivacySettingsPage />} />
-                <Route path="/settings/general" element={<GeneralSettingsPage />} />
-                {/* v5 角色生态：「主动消息与免打扰」由角色生态代替（17 号 §3 不做免打扰）。 */}
-                <Route
-                  path="/services/proactive"
-                  element={<Navigate to="/services/ecology" replace />}
-                />
-                <Route path="/services/ecology" element={<EcologyPage />} />
-                <Route path="/services/period" element={<PeriodPage />} />
-                <Route path="/services/period/day/:date" element={<PeriodDayPage />} />
-                <Route path="/services/period/history" element={<PeriodHistoryPage />} />
-                <Route
-                  path="/services/period/authorization"
-                  element={<PeriodAuthorizationPage />}
-                />
-                <Route path="/services/period/settings" element={<PeriodSettingsPage />} />
-                <Route path="/chat" element={<ConversationListPage />} />
-                <Route path="/chat/:conversationId" element={<ConversationPage />} />
-                <Route path="/chat/:conversationId/settings" element={<ChatSettingsPage />} />
-                <Route path="/chat/:conversationId/background" element={<ChatBackgroundPage />} />
-                <Route path="/characters/:characterId/memories" element={<MemoriesPage />} />
-                <Route path="/characters/:characterId/timeline" element={<TimelinePage />} />
-                <Route path="/characters/:characterId/murmurs" element={<MurmursPage />} />
-                <Route path="/characters/:characterId/moments" element={<CharacterMomentsPage />} />
-                <Route path="/characters/:characterId/relations" element={<RelationsPage />} />
-                <Route path="/characters/:characterId/remark" element={<CharacterRemarkPage />} />
-                {/* 3.27（H1）：关系类型页已删除，旧链接回到角色资料 */}
-                <Route
-                  path="/characters/:characterId/relationship"
-                  element={<Navigate to=".." relative="path" replace />}
-                />
-                <Route path="/contacts/new" element={<NewFriendsPage />} />
-                <Route path="/contacts/groups" element={<GroupListPage />} />
-                <Route path="/groups/new" element={<SelectMembersPage />} />
-                <Route path="/chat/:conversationId/group" element={<GroupSettingsPage />} />
-                <Route path="/moments" element={<MomentsFeedPage />} />
-                <Route path="/moments/new" element={<ComposeMomentPage />} />
-                <Route path="/moments/notifications" element={<MomentsNotificationsPage />} />
-                <Route path="/moments/posts/:postId" element={<MomentDetailPage />} />
-                <Route path="/me/moments" element={<MyMomentsPage />} />
-                <Route
-                  path="/characters/:characterId/anniversaries"
-                  element={<AnniversariesPage />}
-                />
-                <Route path="/sticker-store" element={<StickerStorePage />} />
-                <Route path="/sticker-store/mine" element={<StickerStorePage />} />
-                <Route path="/sticker-store/:packId" element={<StickerStoreDetailPage />} />
-                <Route path="/support" element={<SupportPage />} />
-                <Route path="/support/new" element={<SupportCreatePage />} />
-                <Route path="/support/tickets/:ticketId" element={<SupportDetailPage />} />
-                <Route path="/me/status" element={<UserStatusPage />} />
-                <Route path="/settings/plugins" element={<PluginsPage />} />
-                <Route path="/me/stickers" element={<MyStickersPage />} />
-                <Route path="/me/favorites" element={<FavoritesPage />} />
-                <Route path="/me/favorites/:favoriteId" element={<FavoriteDetailPage />} />
-                <Route path="/services/cards" element={<CardAlbumsPage />} />
-                <Route path="/services/achievements" element={<AchievementsPage />} />
-                <Route path="/services/familiarity" element={<FamiliarityOverviewPage />} />
-                <Route path="/characters/:characterId/cards" element={<CardAlbumPage />} />
-                <Route path="/search" element={<GlobalSearchPage />} />
-                <Route path="/search/:conversationId" element={<ConversationHitsPage />} />
-                <Route path="/chat/:conversationId/search" element={<ConversationSearchPage />} />
-                <Route path="/share" element={<ShareEditorPage />} />
-                <Route path="/imports" element={<ImportListPage />} />
-                <Route path="/imports/new" element={<ImportPage />} />
-                <Route path="/imports/:jobId" element={<ImportPage />} />
-                <Route path="/characters/:characterId/supplement" element={<SupplementPage />} />
-                <Route path="/characters/:characterId/persona" element={<CharacterPersonaPage />} />
-                <Route path="/settings/delete-account" element={<AccountDeletionPage />} />
-                <Route path="/services/pets" element={<PetsPage />} />
-                <Route path="/pets/adopt" element={<AdoptPage />} />
-                <Route path="/pets/:petId" element={<PetPage />} />
-                <Route path="/play/daily" element={<DailyQuestionPage />} />
-                <Route path="/play/daily/history" element={<DailyHistoryPage />} />
-                <Route path="/play/wishlists" element={<WishlistsPage />} />
-                <Route path="/play/wishlists/:characterId" element={<WishlistPage />} />
-                <Route path="/play/letters" element={<LettersPage />} />
-                <Route path="/play/letters/new" element={<WriteLetterPage />} />
-                <Route path="/play/letters/:letterId" element={<LetterPage />} />
-                <Route path="/play/focus" element={<FocusPage />} />
-                <Route path="/play/reminders" element={<RemindersPage />} />
-                <Route path="/play/reminders/:reminderId" element={<ReminderEditPage />} />
-                <Route path="/plaza/works/:workId" element={<WorkPage />} />
-                <Route path="/plaza/authors/:authorId" element={<AuthorPage />} />
-                <Route path="/plaza/me" element={<MyWorksPage />} />
-                <Route path="/plaza/profile" element={<PlazaProfilePage />} />
-                <Route path="/plaza/publish" element={<PublishPage />} />
-                <Route path="/plaza/report" element={<ReportPage />} />
-                <Route path="/characters/:characterId/voice" element={<VoicePickerPage />} />
-                <Route path="/calls/:callId" element={<CallLinkPage />} />
-                <Route path="/coming-soon/:feature" element={<ComingSoonPage />} />
-                <Route path="/miniapps" element={<MiniAppsHomePage />} />
-                <Route path="/discover/plaza" element={<Navigate to="/plaza" replace />} />
-                <Route path="/contacts/add" element={<RolePlazaPage />} />
-                <Route path="/plaza" element={<RolePlazaHubPage />} />
-                <Route path="/plaza/official/:characterId" element={<OfficialRolePage />} />
-                <Route path="/roles/create" element={<RoleCreatePage />} />
-                <Route path="/role-requests" element={<RoleRequestListPage />} />
-                <Route path="/role-requests/new" element={<RoleRequestFormPage />} />
-                <Route path="/role-requests/:requestId" element={<RoleRequestDetailPage />} />
-                <Route path="/pets/with/:characterId" element={<PetWithPage />} />
-                <Route path="/characters/:characterId/model" element={<CharacterModelPage />} />
-                <Route
-                  path="/characters/:characterId/model/:scenario"
-                  element={<CharacterScenarioPickerPage />}
-                />
-                <Route path="/settings/about" element={<AboutPage />} />
-                <Route path="/settings/announcements" element={<AnnouncementsPage />} />
-                <Route path="/settings/release-notes" element={<ReleaseNotesPage />} />
-                <Route path="/contacts" element={<ContactsPage />} />
-                <Route path="/discover" element={<DiscoverPage />} />
-                <Route path="/characters/:characterId" element={<CharacterPage />} />
-                <Route path="*" element={<Navigate to="/me" replace />} />
-              </Routes>
-            );
-            return miniApp ? (
-              <MiniAppFrame key={miniApp.id} app={miniApp}>
-                {routes}
-              </MiniAppFrame>
-            ) : (
-              routes
-            );
-          })()}
-        </RouteMotion>
-        {showTabs && <TabBar hidden={false} />}
-        <AchievementWatcher />
-        {!firstProfile && <ReleaseCenter />}
-        {!firstProfile && <RecapAutoShow />}
-        <ToastHost />
-        <SnackbarHost />
-        {!firstProfile && !onboarding && (
-          <EcologyInsufficientNotice
-            userId={auth.session.user.userId}
-            sessionId={auth.session.session.sessionId}
-          />
-        )}
-      </div>
+        <div
+          className={`app-shell ${showTabs ? 'with-tabs' : ''} ${location.pathname === '/chat' ? 'on-chat-list' : ''}`}
+          key={`${auth.session.user.userId}:${auth.session.session.sessionId}`}
+        >
+          <FocusCapsule />
+          {offline && (
+            <div role="status" className="offline">
+              网络暂不可用，正在显示本机保存的内容
+            </div>
+          )}
+          <RouteMotion>
+            {!onboarding &&
+              !miniApp &&
+              !roots.includes(location.pathname) &&
+              !location.pathname.startsWith('/chat/') &&
+              !ownHeader.some((pattern) => pattern.test(location.pathname)) && (
+                <header className="topbar">
+                  <TopBack
+                    fallback={
+                      [
+                        '/wallet',
+                        '/models',
+                        '/ledger',
+                        '/prices',
+                        '/leaderboard',
+                        '/usage',
+                        '/services/proactive',
+                        '/services/familiarity',
+                      ].includes(location.pathname)
+                        ? '/services'
+                        : ['/settings/security', '/settings/privacy', '/settings/general'].includes(
+                              location.pathname,
+                            )
+                          ? '/settings'
+                          : '/me'
+                    }
+                  />
+                </header>
+              )}
+            {(() => {
+              const routes = (
+                <Routes location={location}>
+                  <Route
+                    path="/"
+                    element={
+                      <Navigate
+                        to={auth.session.user.profileCompleted ? '/chat' : '/profile'}
+                        replace
+                      />
+                    }
+                  />
+                  <Route path="/me" element={<MePage />} />
+                  <Route path="/profile" element={<ProfilePage />} />
+                  {/* 10-21 G2：个人信息各项编辑改为整页推入的二级页面 */}
+                  <Route path="/profile/nickname" element={<ProfileNicknamePage />} />
+                  <Route path="/profile/gender" element={<ProfileGenderPage />} />
+                  <Route path="/profile/birthday" element={<ProfileBirthdayPage />} />
+                  <Route path="/profile/region" element={<ProfileRegionPage />} />
+                  <Route path="/profile/region/:group" element={<ProfileRegionGroupPage />} />
+                  <Route path="/profile/about" element={<ProfileAboutPage />} />
+                  <Route path="/profile/nudge" element={<ProfileNudgePage />} />
+                  <Route path="/profile/alias" element={<AliasInfoPage />} />
+                  <Route path="/profile/alias/edit" element={<AliasEditPage />} />
+                  <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="/help/guide" element={<OnboardingGuidePage />} />
+                  <Route path="/services" element={<ServicesPage />} />
+                  <Route path="/wallet" element={<WalletPage />} />
+                  <Route path="/membership" element={<MembershipPage />} />
+                  <Route path="/wallet/recharge" element={<RechargePage />} />
+                  <Route path="/ledger" element={<LedgerPage />} />
+                  <Route path="/prices" element={<PricesPage />} />
+                  <Route path="/models" element={<ModelsPage />} />
+                  <Route path="/models/scenario/:scenario" element={<ScenarioModelPage />} />
+                  <Route path="/leaderboard" element={<LeaderboardPage />} />
+                  <Route path="/usage" element={<UsagePage />} />
+                  <Route path="/characters/custom/new" element={<CreateCustomCharacterPage />} />
+                  <Route
+                    path="/characters/custom/:characterId/edit"
+                    element={<EditCustomCharacterPage />}
+                  />
+                  <Route path="/settings/security" element={<AccountSecurityPage />} />
+                  <Route path="/settings/privacy" element={<PrivacySettingsPage />} />
+                  <Route path="/settings/general" element={<GeneralSettingsPage />} />
+                  {/* v5 角色生态：「主动消息与免打扰」由角色生态代替（17 号 §3 不做免打扰）。 */}
+                  <Route
+                    path="/services/proactive"
+                    element={<Navigate to="/services/ecology" replace />}
+                  />
+                  <Route path="/services/ecology" element={<EcologyPage />} />
+                  <Route path="/services/period" element={<PeriodPage />} />
+                  <Route path="/services/period/day/:date" element={<PeriodDayPage />} />
+                  <Route path="/services/period/history" element={<PeriodHistoryPage />} />
+                  <Route
+                    path="/services/period/authorization"
+                    element={<PeriodAuthorizationPage />}
+                  />
+                  <Route path="/services/period/settings" element={<PeriodSettingsPage />} />
+                  <Route path="/chat" element={<ConversationListPage />} />
+                  <Route path="/chat/:conversationId" element={<ConversationPage />} />
+                  <Route path="/chat/:conversationId/settings" element={<ChatSettingsPage />} />
+                  <Route path="/chat/:conversationId/background" element={<ChatBackgroundPage />} />
+                  <Route path="/characters/:characterId/memories" element={<MemoriesPage />} />
+                  <Route path="/characters/:characterId/timeline" element={<TimelinePage />} />
+                  <Route path="/characters/:characterId/murmurs" element={<MurmursPage />} />
+                  <Route
+                    path="/characters/:characterId/moments"
+                    element={<CharacterMomentsPage />}
+                  />
+                  <Route path="/characters/:characterId/relations" element={<RelationsPage />} />
+                  <Route path="/characters/:characterId/remark" element={<CharacterRemarkPage />} />
+                  {/* 3.27（H1）：关系类型页已删除，旧链接回到角色资料 */}
+                  <Route
+                    path="/characters/:characterId/relationship"
+                    element={<Navigate to=".." relative="path" replace />}
+                  />
+                  <Route path="/contacts/new" element={<NewFriendsPage />} />
+                  <Route path="/contacts/groups" element={<GroupListPage />} />
+                  <Route path="/groups/new" element={<SelectMembersPage />} />
+                  <Route path="/chat/:conversationId/group" element={<GroupSettingsPage />} />
+                  <Route path="/moments" element={<MomentsFeedPage />} />
+                  <Route path="/moments/new" element={<ComposeMomentPage />} />
+                  <Route path="/moments/notifications" element={<MomentsNotificationsPage />} />
+                  <Route path="/moments/posts/:postId" element={<MomentDetailPage />} />
+                  <Route path="/me/moments" element={<MyMomentsPage />} />
+                  <Route
+                    path="/characters/:characterId/anniversaries"
+                    element={<AnniversariesPage />}
+                  />
+                  <Route path="/sticker-store" element={<StickerStorePage />} />
+                  <Route path="/sticker-store/mine" element={<StickerStorePage />} />
+                  <Route path="/sticker-store/:packId" element={<StickerStoreDetailPage />} />
+                  <Route path="/support" element={<SupportPage />} />
+                  <Route path="/support/new" element={<SupportCreatePage />} />
+                  <Route path="/support/tickets/:ticketId" element={<SupportDetailPage />} />
+                  <Route path="/me/status" element={<UserStatusPage />} />
+                  <Route path="/settings/plugins" element={<PluginsPage />} />
+                  <Route path="/me/stickers" element={<MyStickersPage />} />
+                  <Route path="/me/favorites" element={<FavoritesPage />} />
+                  <Route path="/me/favorites/:favoriteId" element={<FavoriteDetailPage />} />
+                  <Route path="/services/cards" element={<CardAlbumsPage />} />
+                  <Route path="/services/achievements" element={<AchievementsPage />} />
+                  <Route path="/services/familiarity" element={<FamiliarityOverviewPage />} />
+                  <Route path="/characters/:characterId/cards" element={<CardAlbumPage />} />
+                  <Route path="/search" element={<GlobalSearchPage />} />
+                  <Route path="/search/:conversationId" element={<ConversationHitsPage />} />
+                  <Route path="/chat/:conversationId/search" element={<ConversationSearchPage />} />
+                  <Route path="/share" element={<ShareEditorPage />} />
+                  <Route path="/imports" element={<ImportListPage />} />
+                  <Route path="/imports/new" element={<ImportPage />} />
+                  <Route path="/imports/:jobId" element={<ImportPage />} />
+                  <Route path="/characters/:characterId/supplement" element={<SupplementPage />} />
+                  <Route
+                    path="/characters/:characterId/persona"
+                    element={<CharacterPersonaPage />}
+                  />
+                  <Route path="/settings/delete-account" element={<AccountDeletionPage />} />
+                  <Route path="/services/pets" element={<PetsPage />} />
+                  <Route path="/pets/adopt" element={<AdoptPage />} />
+                  <Route path="/pets/:petId" element={<PetPage />} />
+                  <Route path="/play/daily" element={<DailyQuestionPage />} />
+                  <Route path="/play/daily/history" element={<DailyHistoryPage />} />
+                  <Route path="/play/wishlists" element={<WishlistsPage />} />
+                  <Route path="/play/wishlists/:characterId" element={<WishlistPage />} />
+                  <Route path="/play/letters" element={<LettersPage />} />
+                  <Route path="/play/letters/new" element={<WriteLetterPage />} />
+                  <Route path="/play/letters/:letterId" element={<LetterPage />} />
+                  <Route path="/play/focus" element={<FocusPage />} />
+                  <Route path="/play/reminders" element={<RemindersPage />} />
+                  <Route path="/play/reminders/:reminderId" element={<ReminderEditPage />} />
+                  <Route path="/plaza/works/:workId" element={<WorkPage />} />
+                  <Route path="/plaza/authors/:authorId" element={<AuthorPage />} />
+                  <Route path="/plaza/me" element={<MyWorksPage />} />
+                  <Route path="/plaza/profile" element={<PlazaProfilePage />} />
+                  <Route path="/plaza/publish" element={<PublishPage />} />
+                  <Route path="/plaza/report" element={<ReportPage />} />
+                  <Route path="/characters/:characterId/voice" element={<VoicePickerPage />} />
+                  <Route path="/calls/:callId" element={<CallLinkPage />} />
+                  <Route path="/coming-soon/:feature" element={<ComingSoonPage />} />
+                  <Route path="/miniapps" element={<MiniAppsHomePage />} />
+                  <Route path="/discover/plaza" element={<Navigate to="/plaza" replace />} />
+                  <Route path="/contacts/add" element={<RolePlazaPage />} />
+                  <Route path="/plaza" element={<RolePlazaHubPage />} />
+                  <Route path="/plaza/official/:characterId" element={<OfficialRolePage />} />
+                  <Route path="/roles/create" element={<RoleCreatePage />} />
+                  <Route path="/role-requests" element={<RoleRequestListPage />} />
+                  <Route path="/role-requests/new" element={<RoleRequestFormPage />} />
+                  <Route path="/role-requests/:requestId" element={<RoleRequestDetailPage />} />
+                  <Route path="/pets/with/:characterId" element={<PetWithPage />} />
+                  <Route path="/characters/:characterId/model" element={<CharacterModelPage />} />
+                  <Route
+                    path="/characters/:characterId/model/:scenario"
+                    element={<CharacterScenarioPickerPage />}
+                  />
+                  <Route path="/settings/about" element={<AboutPage />} />
+                  <Route path="/settings/announcements" element={<AnnouncementsPage />} />
+                  <Route path="/settings/release-notes" element={<ReleaseNotesPage />} />
+                  <Route path="/contacts" element={<ContactsPage />} />
+                  <Route path="/discover" element={<DiscoverPage />} />
+                  <Route path="/characters/:characterId" element={<CharacterPage />} />
+                  <Route path="*" element={<Navigate to="/me" replace />} />
+                </Routes>
+              );
+              return miniApp ? (
+                <MiniAppFrame key={miniApp.id} app={miniApp}>
+                  {routes}
+                </MiniAppFrame>
+              ) : (
+                routes
+              );
+            })()}
+          </RouteMotion>
+          {showTabs && <TabBar hidden={false} />}
+          <AchievementWatcher />
+          {!firstProfile && <ReleaseCenter />}
+          {!firstProfile && <RecapAutoShow />}
+          <ToastHost />
+          <SnackbarHost />
+          {!firstProfile && !onboarding && (
+            <EcologyInsufficientNotice
+              userId={auth.session.user.userId}
+              sessionId={auth.session.session.sessionId}
+            />
+          )}
+        </div>
+      </OnboardingGuideProvider>
     </CallProvider>
   );
 }

@@ -1,0 +1,15 @@
+.onboarding-guide-intro {
+  padding: var(--wb-space-5);
+}
+.onboarding-guide-intro h2 {
+  margin: 0 0 var(--wb-space-3);
+  font-size: var(--wb-font-size-title3);
+  font-weight: var(--wb-font-weight-medium);
+  line-height: var(--wb-line-height-tight);
+}
+.onboarding-guide-intro p {
+  margin: 0;
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-footnote);
+  line-height: var(--wb-line-height-relaxed);
+}

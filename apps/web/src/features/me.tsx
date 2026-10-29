@@ -54,6 +54,7 @@ export function MePage() {
       <MenuGroup>
         <MenuRow
           to="/services"
+          guideId="services-entry"
           image="wechat/profile_service.webp"
           iconSize={23}
           label="服务"
@@ -142,7 +143,13 @@ export function ServicesPage() {
       </MenuGroup>
       <GroupHeader>偏好</GroupHeader>
       <MenuGroup>
-        <MenuRow to="/services/ecology" icon="wechat/star" tint="green" label="角色生态" />
+        <MenuRow
+          to="/services/ecology"
+          guideId="ecology-entry"
+          icon="wechat/star"
+          tint="green"
+          label="角色生态"
+        />
         <MenuRow to="/settings/plugins" icon="wechat/grid" tint="indigo" label="插件" />
         <MenuRow to="/services/familiarity" icon="wechat/heart" tint="red" label="好感度总览" />
       </MenuGroup>
