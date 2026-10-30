@@ -1,5 +1,6 @@
 /**
- * 分段稳定窗口 + 摘要边界（docs/refactor/09-chat-pipeline.md 第 8 节；来自爱语「混合模式」与旧版「摘要边界」）。纯函数。
+ * 旧分段格式兼容与稳定记忆渲染；正式主聊改由模型容量预算和独立滚动总结控制。
+ * 旧分段稳定窗口 + 摘要边界（docs/refactor/09-chat-pipeline.md 第 8 节；来自爱语「混合模式」与旧版「摘要边界」）。纯函数。
  *
  * 聊天原文不是「每轮往前滑」，而是：
  * - 窗口从「摘要边界」之后开始，原样追加，直到超过 30 个用户轮（或原文超过字数上限）；
@@ -185,4 +186,16 @@ export function renderStableMemory(input: {
     );
   if (recent) parts.push(`再往前一点的聊天回顾（摘要，接在下面的聊天记录之前）：\n${recent}`);
   return parts.join('\n\n');
+}
+
+/** 达到读取保护上限不代表更早原文不存在；只返回未读取范围，不推进任何覆盖游标。 */
+export function uncoveredHistoryEnd(
+  history: readonly { seq: number }[],
+  rawFromSeq: number,
+  readLimit = 600,
+): number | null {
+  const first = history[0]?.seq;
+  return history.length >= readLimit && first !== undefined && first > rawFromSeq + 1
+    ? first - 1
+    : null;
 }

@@ -27,6 +27,8 @@ import {
 import { AppModule } from '../src/app.module.js';
 import {
   DATABASE,
+  ENVELOPE_CRYPTO,
+  type EnvelopeCrypto,
   JOB_QUEUE,
   EVENT_DISPATCHER,
   TestClock,
@@ -70,7 +72,19 @@ async function setupTestApp(clock: TestClock, response: { current: string }) {
       return {
         ok: true,
         value: {
-          text: response.current,
+          text:
+            response.current === '__ROLLING_SUMMARY__'
+              ? JSON.stringify({
+                  items: [
+                    {
+                      text: 'ROLLING_SUMMARY_CANARY 用户与角色讨论了日常安排。',
+                      sourceIds: (
+                        JSON.parse(input.messages[1]!.content) as { messages: { id: string }[] }
+                      ).messages.map((m) => m.id),
+                    },
+                  ],
+                })
+              : response.current,
           modelKey: 'test/model',
           usage: { inputTokens: 10, cachedInputTokens: 0, outputTokens: 10, estimated: false },
           chargedMicros: 1,
@@ -173,6 +187,7 @@ async function setupTestApp(clock: TestClock, response: { current: string }) {
     characterId,
     conversationId: cid,
     urgent: true,
+    force: true,
     epoch: (await new ContactsTestQueries(db).row(userId, characterId))!.request_id,
   });
   const dispatch = async () => {
@@ -322,87 +337,170 @@ describeDb('T-046 向量检索与分层摘要', () => {
     expect(result.items.some((i) => i.memoryId === newMem.memoryId)).toBe(true);
   });
 
-  it('分层摘要：日摘要在 extract 后写入，24 小时后触发新条目', async () => {
-    const { memory, jobFor, db, userId, cid, dispatch } = ctx;
-    // 发一条消息并 extract，带摘要
-    await app.get<ChatUserPort>(CHAT_USER_PORT).sendMessage(userId, cid, {
+  it('重要事实新增后刷新常驻块，不必等下一次大总结', async () => {
+    const { memory, jobFor, userId, characterId, cid, dispatch } = ctx;
+    await memory().context(userId, characterId, 'normal', '', undefined, { brain: true });
+    const manual = await memory().create(userId, characterId, {
+      clientMemoryId: newId(),
+      category: 'basic',
+      importance: 10,
+      content: 'MANUAL_RESIDENT_REFRESH_CANARY 我叫小林。',
+    });
+    expect(
+      (await memory().context(userId, characterId, 'normal', '', undefined, { brain: true }))
+        .stableBlock,
+    ).toContain(manual.content);
+    const sent = await app.get<ChatUserPort>(CHAT_USER_PORT).sendMessage(userId, cid, {
       clientMsgId: newId(),
-      content: { type: 'text', text: '分层摘要测试消息 DAILY_ROLLUP_CANARY' },
+      content: { type: 'text', text: '请记住我的称呼是阿晴。' },
     });
     await dispatch();
-    const msgRows = await db.query<{ id: string }>(
-      'SELECT id FROM chat.messages WHERE conversation_id=$1 AND sender_kind=$2 ORDER BY seq DESC LIMIT 1',
-      [cid, 'user'],
-    );
-    const msgId = msgRows.rows[0]?.id;
-    if (!msgId) throw new Error('消息未找到');
     response.current = JSON.stringify({
-      operations: [],
-      summary: 'DAILY_ROLLUP_CANARY 分段摘要内容。',
+      operations: [
+        {
+          action: 'ADD',
+          content: 'FACT_RESIDENT_REFRESH_CANARY 称呼阿晴。',
+          category: 'basic',
+          importance: 10,
+          sourceMessageIds: [sent.message.messageId],
+        },
+      ],
     });
+    await memory().extract({ ...(await jobFor()), force: false });
+    expect(
+      (await memory().context(userId, characterId, 'normal', '', undefined, { brain: true }))
+        .stableBlock,
+    ).toContain('FACT_RESIDENT_REFRESH_CANARY');
+    response.current = JSON.stringify({ operations: [] });
+  });
+
+  it('事实整理不再顺带生成日月摘要', async () => {
+    const { memory, jobFor, db, userId, cid, dispatch } = ctx;
+    await app.get<ChatUserPort>(CHAT_USER_PORT).sendMessage(userId, cid, {
+      clientMsgId: newId(),
+      content: { type: 'text', text: '请记住我一直喜欢喝绿茶。' },
+    });
+    await dispatch();
+    response.current = JSON.stringify({ operations: [], summary: '不应被当作滚动覆盖。' });
     await memory().extract(await jobFor());
-    // 验证日摘要列已写入（daily_summaries_ciphertext 非空）
-    const stateRow = await db.query<{
+    const state = await db.query<{
       daily_summaries_ciphertext: Buffer | null;
-      last_daily_at: Date | null;
+      monthly_summaries_ciphertext: Buffer | null;
     }>(
-      'SELECT daily_summaries_ciphertext, last_daily_at FROM ai_runtime.memory_states WHERE user_id=$1 AND character_id=$2',
-      [userId, ctx.characterId],
+      'SELECT daily_summaries_ciphertext,monthly_summaries_ciphertext FROM ai_runtime.memory_states WHERE user_id=$1',
+      [userId],
     );
-    expect(stateRow.rows[0]?.daily_summaries_ciphertext).not.toBeNull();
-    expect(stateRow.rows[0]?.last_daily_at).not.toBeNull();
-    // 验证日摘要加密（不包含明文）
-    const raw = stateRow.rows[0]!.daily_summaries_ciphertext!.toString('utf8');
-    expect(raw).not.toContain('DAILY_ROLLUP_CANARY');
+    expect(state.rows[0]?.daily_summaries_ciphertext).toBeNull();
+    expect(state.rows[0]?.monthly_summaries_ciphertext).toBeNull();
   });
-
-  it('月摘要：将 lastMonthlyAt 设为 31 天前再 extract，触发月汇总', async () => {
+  it('旧日月档案保留，事实整理不能覆盖它们', async () => {
     const { memory, jobFor, db, userId, cid, dispatch } = ctx;
-    // 强制 lastMonthlyAt 为 31 天前，触发月汇总
-    await db.query(
-      'UPDATE ai_runtime.memory_states SET last_monthly_at=$1 WHERE user_id=$2 AND character_id=$3',
-      [new Date(clock.nowMs() - 32 * 24 * 3600 * 1000), userId, ctx.characterId],
+    const row = (
+      await db.query<{ id: string }>('SELECT id FROM ai_runtime.memory_states WHERE user_id=$1', [
+        userId,
+      ])
+    ).rows[0]!;
+    const crypto = app.get<EnvelopeCrypto>(ENVELOPE_CRYPTO);
+    const today = clock.now().toISOString().slice(0, 10);
+    const daily = await crypto.seal(
+      userId,
+      'ai:daily:' + row.id,
+      JSON.stringify([{ period: today, normal: 'LEGACY_DAILY_CANARY', adult: '' }]),
     );
-    // 需要 daily_summaries_ciphertext 存在才触发月汇总，已在上一个测试写入
+    const monthly = await crypto.seal(
+      userId,
+      'ai:monthly:' + row.id,
+      JSON.stringify([{ period: today.slice(0, 7), normal: 'LEGACY_MONTHLY_CANARY', adult: '' }]),
+    );
+    await db.query(
+      'UPDATE ai_runtime.memory_states SET daily_summaries_ciphertext=$1,monthly_summaries_ciphertext=$2 WHERE id=$3',
+      [daily, monthly, row.id],
+    );
     await app.get<ChatUserPort>(CHAT_USER_PORT).sendMessage(userId, cid, {
       clientMsgId: newId(),
-      content: { type: 'text', text: '月摘要测试 MONTHLY_ROLLUP_CANARY' },
+      content: { type: 'text', text: '旧档案保留测试，今天继续讨论日常安排。' },
     });
     await dispatch();
-    const msgRows = await db.query<{ id: string }>(
-      'SELECT id FROM chat.messages WHERE conversation_id=$1 AND sender_kind=$2 ORDER BY seq DESC LIMIT 1',
-      [cid, 'user'],
-    );
-    const msgId = msgRows.rows[0]?.id;
-    if (!msgId) throw new Error('消息未找到');
-    response.current = JSON.stringify({
-      operations: [],
-      summary: 'MONTHLY_ROLLUP_CANARY 分段摘要。',
-    });
+    response.current = JSON.stringify({ operations: [] });
     await memory().extract(await jobFor());
-    const stateRow = await db.query<{
-      monthly_summaries_ciphertext: Buffer | null;
-      last_monthly_at: Date | null;
-    }>(
-      'SELECT monthly_summaries_ciphertext, last_monthly_at FROM ai_runtime.memory_states WHERE user_id=$1 AND character_id=$2',
-      [userId, ctx.characterId],
+    const saved = (
+      await db.query<{ daily_summaries_ciphertext: Buffer; monthly_summaries_ciphertext: Buffer }>(
+        'SELECT daily_summaries_ciphertext,monthly_summaries_ciphertext FROM ai_runtime.memory_states WHERE id=$1',
+        [row.id],
+      )
+    ).rows[0]!;
+    expect(saved.daily_summaries_ciphertext.equals(daily)).toBe(true);
+    expect(saved.monthly_summaries_ciphertext.equals(monthly)).toBe(true);
+    expect(daily.toString()).not.toContain('LEGACY_DAILY_CANARY');
+  });
+  it('滚动总结独立推进、加密保存，默认不再叠加旧日月全文', async () => {
+    const { memory, db, userId, characterId, cid, dispatch } = ctx;
+    await app.get<ChatUserPort>(CHAT_USER_PORT).sendMessage(userId, cid, {
+      clientMsgId: newId(),
+      content: { type: 'text', text: '周末我们一起去散步。'.repeat(100) },
+    });
+    await dispatch();
+    const before = (
+      await db.query<{ cursor_seq: string }>(
+        'SELECT cursor_seq FROM ai_runtime.memory_states WHERE user_id=$1',
+        [userId],
+      )
+    ).rows[0]!.cursor_seq;
+    const target = (await app.get(CHAT_READ_PORT).getConversation(cid)).lastSeq;
+    response.current = '__ROLLING_SUMMARY__';
+    await memory().compactWindow(userId, characterId, 'normal', target);
+    const context = await memory().context(userId, characterId, 'normal', '', undefined, {
+      brain: true,
+    });
+    expect(context.stableBlock).toContain('ROLLING_SUMMARY_CANARY');
+    expect(context.summary).toContain('ROLLING_SUMMARY_CANARY');
+    expect(context.summary).not.toContain('LEGACY_DAILY_CANARY');
+    expect(context.summary).not.toContain('LEGACY_MONTHLY_CANARY');
+    const after = (
+      await db.query<{ cursor_seq: string }>(
+        'SELECT cursor_seq FROM ai_runtime.memory_states WHERE user_id=$1',
+        [userId],
+      )
+    ).rows[0]!.cursor_seq;
+    expect(after).toBe(before);
+    const states = await db.query<{ ciphertext: Buffer; covered_seq: string }>(
+      'SELECT ciphertext,covered_seq FROM ai_runtime.chat_summary_states WHERE parent_id=(SELECT id FROM ai_runtime.memory_states WHERE user_id=$1) AND scope=$2',
+      [userId, 'normal'],
     );
-    expect(stateRow.rows[0]?.monthly_summaries_ciphertext).not.toBeNull();
-    expect(stateRow.rows[0]?.last_monthly_at).not.toBeNull();
-    // 月摘要加密（不包含明文）
-    const raw = stateRow.rows[0]!.monthly_summaries_ciphertext!.toString('utf8');
-    expect(raw).not.toContain('MONTHLY_ROLLUP_CANARY');
+    expect(states.rows[0]!.ciphertext.toString()).not.toContain('ROLLING_SUMMARY_CANARY');
+    expect(Number(states.rows[0]!.covered_seq)).toBeGreaterThan(0);
+    response.current = JSON.stringify({ operations: [] });
   });
 
-  it('分层摘要注入：context() summary 包含分段+日+月三层内容', async () => {
-    const { memory, userId, characterId } = ctx;
-    const result = await memory().context(userId, characterId, 'normal', '');
-    // 分段摘要已在之前 extract 中写入；日/月摘要也已写入
-    // summary 不为空（至少包含一层）
-    expect(result.summary).toBeTruthy();
-    expect(result.summary.length).toBeGreaterThan(0);
-    // 验证加密正确（摘要解密后为字符串，不含密文乱码）
-    expect(() => result.summary).not.toThrow();
+  it('总结失败保留覆盖位置，冷却期间重复任务不再请求模型', async () => {
+    const { memory, db, userId, characterId, cid, dispatch, calls } = ctx;
+    const before = (
+      await db.query<{ covered_seq: string }>(
+        'SELECT covered_seq FROM ai_runtime.chat_summary_states WHERE parent_id=(SELECT id FROM ai_runtime.memory_states WHERE user_id=$1) AND scope=$2',
+        [userId, 'normal'],
+      )
+    ).rows[0]!.covered_seq;
+    await app.get<ChatUserPort>(CHAT_USER_PORT).sendMessage(userId, cid, {
+      clientMsgId: newId(),
+      content: { type: 'text', text: '失败后这些原文仍然保留。'.repeat(80) },
+    });
+    await dispatch();
+    const target = (await app.get(CHAT_READ_PORT).getConversation(cid)).lastSeq;
+    response.current = 'not-json';
+    await memory().compactWindow(userId, characterId, 'normal', target);
+    const callCount = calls.length;
+    await memory().compactWindow(userId, characterId, 'normal', target);
+    expect(calls.length).toBe(callCount);
+    const after = (
+      await db.query<{ covered_seq: string; retry_after: Date; lease_id: string | null }>(
+        'SELECT covered_seq,retry_after,lease_id FROM ai_runtime.chat_summary_states WHERE parent_id=(SELECT id FROM ai_runtime.memory_states WHERE user_id=$1) AND scope=$2',
+        [userId, 'normal'],
+      )
+    ).rows[0]!;
+    expect(after.covered_seq).toBe(before);
+    expect(after.retry_after.getTime()).toBeGreaterThan(clock.nowMs());
+    expect(after.lease_id).toBeNull();
+    response.current = JSON.stringify({ operations: [] });
   });
 
   it('normal/adult 摘要隔离：adult 内容不出现在 normal context 的摘要', async () => {

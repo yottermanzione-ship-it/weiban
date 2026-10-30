@@ -71,7 +71,8 @@ it('描述存档拒绝注销账号，以及已撤回消息的迟到模型结果'
 });
 
 it('回复还在生成图片描述时，记忆抽取等待并保留原游标', async () => {
-  const state = { cursorSeq: 0, barrierSeq: 0, retryAfter: null };
+  // 该图片批次已被明确记忆候选选中；普通图片消息不再自动触发事实提炼。
+  const state = { cursorSeq: 0, barrierSeq: 0, factTriggerSeq: 20, retryAfter: null };
   const defer = vi.fn();
   const generateText = vi.fn();
   const service = Object.create(MemoryService.prototype) as MemoryService;

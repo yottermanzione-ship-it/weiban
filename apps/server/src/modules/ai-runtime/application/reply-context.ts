@@ -1,7 +1,7 @@
 import { EcologySettingsService } from './ecology-settings.js';
 import { brainPrefix } from '../domain/brain.js';
 import { SharedEpisodesService } from './shared-episodes.js';
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { readableMessageText } from './content-text.js';
 import { userNickname, userNamingContext } from '../domain/user-naming.js';
 import type { PetReadPort, UserStatusReadPort } from '@weiban/contracts';
@@ -36,6 +36,8 @@ import { IDENTITY_READ_PORT, IDENTITY_USER_STATUS_PORT } from '../../identity/in
 import { userStatusLine } from '../domain/user-status.js';
 import { POLICY_PORT } from '../../policy/index.js';
 import { MemoryService } from './memory.js';
+import { uncoveredHistoryEnd } from '../domain/memory-window.js';
+import { contextTokens } from '../../model-access/index.js';
 import { PlayContinuityStore } from './play-continuity.js';
 import { DEFAULT_LOREBOOK, lorebook, lorebookText } from '../domain/knowledge.js';
 import {
@@ -292,10 +294,12 @@ export class ReplyContext {
       forceCareFallback = true;
     }
     // H2（总经理 10-21 C14，20 号 §2.4 第 2 条）：只有私密模式私聊读 normal + adult；日常范围只读 normal，
-    // 私密期间的经历改由切出时生成的「干净整理」记忆（日常范围）代替。资格收紧后同样不提交成人原文。
+    // 私密来源不降为日常；资格收紧后同样不提交成人原文。
     const privateScope = conversation.contentScope === 'adult' && policy.adultModeEligible;
     // 0091：分段稳定窗口——至少读到原文起点（摘要边界），最多 600 条（docs/refactor/09 第 8 节）。
-    const floor = await this.memory.windowFloor(row.userId, row.characterId).catch(() => 0);
+    const floor = await this.memory
+      .windowFloor(row.userId, row.characterId, privateScope ? 'adult' : 'normal')
+      .catch(() => 0);
     const historyScopes: ContentScope[] = privateScope ? ['normal', 'adult'] : ['normal'];
     const history = await this.readHistory(
       row.conversationId,
@@ -366,7 +370,7 @@ export class ReplyContext {
       "SELECT count(*) n FROM ai_runtime.reply_plans WHERE conversation_id=$1 AND care_until IS NOT NULL AND status IN ('done','sending')",
       [row.conversationId],
     );
-    const remembered = await this.memory.context(
+    let remembered = await this.memory.context(
       row.userId,
       row.characterId,
       privateScope ? 'adult' : 'normal',
@@ -522,9 +526,11 @@ export class ReplyContext {
     });
 
     // ② 聊天记录：摘要边界之后的原文，只在尾部追加
-    const chat: ChatTurnMessage[] = [];
+    const chat: (ChatTurnMessage & { sourceSeq?: number; sourceScope?: ContentScope })[] = [];
     const recent = history.filter(
-      (m) => m.seq > remembered.rawFromSeq && m.senderKind !== 'system',
+      (m) =>
+        m.seq > (remembered.rawFromSeqByScope?.[m.scope] ?? remembered.rawFromSeq) &&
+        m.senderKind !== 'system',
     );
     for (const m of recent) {
       if (m.status !== 'normal' || !m.content || m.labels?.includes('quirk_draft')) continue;
@@ -544,6 +550,8 @@ export class ReplyContext {
       chat.push({
         role: m.senderKind === 'user' ? 'user' : 'assistant',
         content: text.slice(0, limit),
+        sourceSeq: m.seq,
+        sourceScope: m.scope,
         ...(m.senderKind === 'user' && current?.images?.length
           ? {
               images: current.images,
@@ -760,18 +768,132 @@ export class ReplyContext {
       chat.filter((m) => m.role === 'assistant').map((m) => m.content),
       renderSections(head),
     );
-    const cleanedChat: ChatTurnMessage[] = habits.length
+    let cleanedChat: ChatTurnMessage[] = habits.length
       ? chat.map((m) =>
           m.role === 'assistant' ? { ...m, content: stripHabits(m.content, habits) } : m,
         )
       : chat;
-    const assembled = assemblePrompt({
+    let assembled = assemblePrompt({
       macros: { user: userName, char: role.profile.name },
       head: antiMimicHead,
       history: cleanedChat,
       inserts,
       tail,
     });
+    const modelBudget = await this.memory.gateway?.getContextBudget?.({
+      userId: row.userId,
+      characterId: row.characterId,
+      modelRole: privateScope ? 'adult' : 'chat',
+      purpose: 'chat_reply',
+    });
+    if (this.memory.chatSummaries) {
+      for (let pass = 0; pass < 2; pass++) {
+        const historyGap = uncoveredHistoryEnd(history, remembered.rawFromSeq);
+        const chars = assembled.messages.reduce((n, m) => n + m.content.length, 0);
+        if (
+          (!modelBudget || contextTokens(assembled.messages) < modelBudget.triggerTokens) &&
+          historyGap === null &&
+          assembled.messages.length < 420 &&
+          chars < 160000
+        )
+          break;
+        const visible = history.filter(
+          (m) =>
+            m.senderKind !== 'system' &&
+            m.status === 'normal' &&
+            m.seq > (remembered.rawFromSeqByScope?.[m.scope] ?? remembered.rawFromSeq),
+        );
+        let tokens = 0,
+          users = 0,
+          kept = 0,
+          cutoff = 0;
+        const retain = Math.min(48000, Math.floor((modelBudget?.inputTokens ?? 60000) * 0.4));
+        for (let i = visible.length - 1; i >= 0; i--) {
+          const m = visible[i]!;
+          tokens += contextTokens([{ content: readableMessageText(m, captions) }]);
+          users += m.senderKind === 'user' ? 1 : 0;
+          kept++;
+          if (users >= 12 && (tokens >= retain || kept >= 160)) {
+            cutoff = m.seq - 1;
+            break;
+          }
+        }
+        cutoff = Math.max(cutoff, historyGap ?? 0);
+        if (!cutoff) break;
+        const before = JSON.stringify(remembered.rawFromSeqByScope);
+        for (const s of historyScopes)
+          await this.memory.compactWindow(row.userId, row.characterId, s, cutoff);
+        remembered = await this.memory.context(
+          row.userId,
+          row.characterId,
+          privateScope ? 'adult' : 'normal',
+          userText,
+          undefined,
+          { brain: true },
+        );
+        if (JSON.stringify(remembered.rawFromSeqByScope) === before) break;
+        for (const section of head)
+          if (section.title === '记忆') section.text = remembered.stableBlock;
+        const retained = chat.filter(
+          (m) =>
+            m.sourceSeq === undefined ||
+            m.sourceScope === undefined ||
+            m.sourceSeq > (remembered.rawFromSeqByScope?.[m.sourceScope] ?? remembered.rawFromSeq),
+        );
+        cleanedChat = habits.length
+          ? retained.map((m) =>
+              m.role === 'assistant' ? { ...m, content: stripHabits(m.content, habits) } : m,
+            )
+          : retained;
+        assembled = assemblePrompt({
+          macros: { user: userName, char: role.profile.name },
+          head: antiMimicHead,
+          history: cleanedChat,
+          inserts,
+          tail,
+        });
+      }
+    }
+    // 整理暂时失败时不阻塞聊天；只裁本次发送副本，覆盖游标不动，原文仍可恢复。
+    const tooLarge = () =>
+      assembled.messages.length > 500 ||
+      assembled.messages.reduce((n, m) => n + m.content.length, 0) > 200000 ||
+      (!!modelBudget && contextTokens(assembled.messages) > modelBudget.inputTokens);
+    const historyGap = uncoveredHistoryEnd(history, remembered.rawFromSeq);
+    if (tooLarge() || historyGap !== null) {
+      tail.unshift({
+        title: '历史覆盖提示',
+        text: '部分较早聊天尚未完成整理，本轮只提供近期原文和已有回顾；没有给出的细节不要猜测或编造。',
+      });
+      assembled = assemblePrompt({
+        macros: { user: userName, char: role.profile.name },
+        head: antiMimicHead,
+        history: cleanedChat,
+        inserts,
+        tail,
+      });
+      let lastUser = cleanedChat.length - 1;
+      while (lastUser >= 0 && cleanedChat[lastUser]?.role !== 'user') lastUser--;
+      while (lastUser > 0 && cleanedChat[lastUser - 1]?.role === 'user') lastUser--;
+      let removed = 0;
+      while (tooLarge() && removed < lastUser) {
+        removed++;
+        while (removed < lastUser && cleanedChat[removed]?.role !== 'user') removed++;
+        assembled = assemblePrompt({
+          macros: { user: userName, char: role.profile.name },
+          head: antiMimicHead,
+          history: cleanedChat.slice(removed),
+          inserts,
+          tail,
+        });
+      }
+      new Logger(ReplyContext.name).warn({
+        code: 'ai_context_uncovered_gap',
+        conversationId: row.conversationId,
+        omittedMessages: removed,
+        uncoveredThroughSeq: historyGap,
+      });
+    }
     const messages: ReplySnapshot['messages'] = assembled.messages;
     const deliveredAt = new Date(source?.createdAt ?? row.createdAt);
     // 停机时无法遵守原60秒；恢复后仍必须回复，重新给一次有界预算，而不是永久waiting。
