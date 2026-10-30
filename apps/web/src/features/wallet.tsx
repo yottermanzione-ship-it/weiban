@@ -435,8 +435,8 @@ export { multiplierText } from './points.js';
 export function PricesPage() {
   const models = useRemote(ModelAccessEndpoints.listModels);
   const items = (models.data?.items ?? []).filter(isUserPriceModel);
+  // 2026-10-30 用户定：私密模型不再展示给用户，价目表只列聊天模型，不再分私密模式模型一节。
   const chat = items.filter((m) => !m.capabilities.includes('adult_content'));
-  const adult = items.filter((m) => m.capabilities.includes('adult_content'));
   const section = (title: string, list: ModelInfo[]) =>
     list.length > 0 && (
       <>
@@ -462,8 +462,7 @@ export function PricesPage() {
     <main>
       <NavBar title="AI 模型价格" fallback="/wallet" />
       {section('聊天模型', chat)}
-      {section('私密模式模型', adult)}
-      {items.some((model) => model.scenarios?.includes('voice_call')) && (
+      {chat.some((model) => model.scenarios?.includes('voice_call')) && (
         <p className="hint page-note">
           通话为每分钟估算；实际按语音识别、文本和合成用量结算，不按固定分钟价扣费。
         </p>

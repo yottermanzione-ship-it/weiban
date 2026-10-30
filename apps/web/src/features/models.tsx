@@ -558,27 +558,29 @@ function CharacterScenarioPicker({
         />
       </MenuGroup>
       <MenuGroup>
-        {models.data?.items.map((model) => (
-          <MenuRow
-            key={model.modelKey}
-            label={
-              <>
-                {model.displayName}
-                {!model.available && <UnavailableTag />}
-              </>
-            }
-            subtitle={
-              <>
-                <ModelPriceLine model={model} scenario={meta.key} />
-                {model.capabilities.includes('adult_content') && ' · 允许成人内容'}
-              </>
-            }
-            chevron={false}
-            disabled={pending || !model.available}
-            right={current === model.modelKey ? <Tick /> : undefined}
-            onClick={() => void choose(model.modelKey)}
-          />
-        ))}
+        {/* 2026-10-30 用户定：私密模型不再展示给用户，按角色选模型时也滤掉成人内容模型，与按场景选模型一致。 */}
+        {models.data?.items
+          .filter((model) => !model.capabilities.includes('adult_content'))
+          .map((model) => (
+            <MenuRow
+              key={model.modelKey}
+              label={
+                <>
+                  {model.displayName}
+                  {!model.available && <UnavailableTag />}
+                </>
+              }
+              subtitle={
+                <>
+                  <ModelPriceLine model={model} scenario={meta.key} />
+                </>
+              }
+              chevron={false}
+              disabled={pending || !model.available}
+              right={current === model.modelKey ? <Tick /> : undefined}
+              onClick={() => void choose(model.modelKey)}
+            />
+          ))}
       </MenuGroup>
       {row?.selection && !row.selection.available && (
         <p className="error page-note">TA 用的模型暂时用不了，回复时会提示你临时改用场景设置</p>

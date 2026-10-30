@@ -126,7 +126,7 @@ export interface TextAdapter {
  * 厂商思考开关的写法（docs/refactor/03 第 2.2 B 节）。按上游地址优先判断（同一模型在不同平台字段不同），
  * 判断不出时按模型名；都不认识就不发任何字段，避免别家报 400。
  */
-export type ThinkingControl = 'deepseek' | 'qwen' | 'openrouter' | 'none';
+export type ThinkingControl = 'deepseek' | 'qwen' | 'openrouter' | 'reasoning_none' | 'none';
 export function thinkingControlFor(baseUrl: string, model: string): ThinkingControl {
   const url = baseUrl.toLowerCase();
   const id = model.toLowerCase();
@@ -135,6 +135,10 @@ export function thinkingControlFor(baseUrl: string, model: string): ThinkingCont
   if (url.includes('dashscope') || url.includes('aliyuncs.com')) return 'qwen';
   if (id.startsWith('deepseek')) return 'deepseek';
   if (id.startsWith('qwen') || id.startsWith('qwq')) return 'qwen';
+  // 2026-10-29 关思考：GPT 5.6 系列与 Abliteration 基础款/大闪款厂商均接受 reasoning_effort none；
+  // Abliteration large-v2 除外（它会把 none 映射为低档隐藏思考，不是真正关掉），故排除。
+  if (/^gpt-5\.6(-|$)/.test(id)) return 'reasoning_none';
+  if (id.startsWith('abliterated-model') && !id.includes('large-v2')) return 'reasoning_none';
   return 'none';
 }
 export function thinkingOffFields(control: ThinkingControl): Record<string, unknown> {
@@ -145,6 +149,8 @@ export function thinkingOffFields(control: ThinkingControl): Record<string, unkn
       return { enable_thinking: false };
     case 'openrouter':
       return { reasoning: { enabled: false } };
+    case 'reasoning_none':
+      return { reasoning_effort: 'none' };
     default:
       return {};
   }

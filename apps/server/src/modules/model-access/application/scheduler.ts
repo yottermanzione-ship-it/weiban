@@ -11,6 +11,15 @@
  * 3. recordSuccess / recordFailure：成功清零连续失败；可切换的失败累加，达到阈值 → 暂停（cooldown）并标「不可用」；
  *    密钥失效 / 额度耗尽直接标对应状态。恢复靠 GatewayMaintenance 的探测（连通即恢复）。
  *
+ * 2026-10-30 按模型区分（两层健康）：
+ * - 账号级硬失败（密钥失效 / 额度耗尽）仍按原法：整个上游账号标对应状态并暂停，因为它确实影响该账号下所有模型。
+ * - 模型级软失败（供应商报错 / 限流 / 超时 / 网络错误）只记到（模型，线路）上，不再记到上游账号上。
+ *   连续失败达到阈值时只冷却这一条线路，其他走同一上游的模型不受影响；成功只清零这一条线路。
+ * - 线路级冷却存在进程内存里（与本调度器已有的每账号限流同法，单实例部署）；
+ *   重启后清零，模型若仍坏会在 3 次失败后再次冷却；硬失败仍以数据库为准，重启不丢。
+ * - 探针只测上游连通（模型列表），不证明某个模型能生成，所以探针通过不清除线路级冷却；
+ *   线路冷却到期后由真实调用试探，成功才清零。
+ *
  * 每用户、每账号的并发与每分钟计数放在进程内存（单实例部署；多实例需改为共享存储，ADR-0032「代价」）。
  */
 import { Inject, Injectable } from '@nestjs/common';
@@ -58,6 +67,28 @@ export class UpstreamScheduler {
   private readonly userInFlight = new Map<string, number>();
   private readonly accountHits = new Map<string, number[]>();
   private readonly userHits = new Map<string, number[]>();
+  /** 线路级失败：key = 模型|上游，值 = {连续失败数，冷却到期毫秒}。 */
+  private readonly routeFailures = new Map<string, { count: number; cooldownUntil: number }>();
+
+  private routeKey(modelKey: string, upstreamId: string): string {
+    return `${modelKey}|${upstreamId}`;
+  }
+
+  /** 该线路是否在冷却中（到期后自动清掉，恢复为可试探；未冷却的计数不清除）。 */
+  private routeCoolingUntil(modelKey: string, upstreamId: string): number | null {
+    const entry = this.routeFailures.get(this.routeKey(modelKey, upstreamId));
+    if (!entry || entry.cooldownUntil === 0) return null;
+    if (entry.cooldownUntil <= this.clock.nowMs()) {
+      this.routeFailures.delete(this.routeKey(modelKey, upstreamId));
+      return null;
+    }
+    return entry.cooldownUntil;
+  }
+
+  /** Legacy primary-route fallback must respect the same per-model cooldown as route planning. */
+  isRouteCooling(modelKey: string, upstreamId: string): boolean {
+    return this.routeCoolingUntil(modelKey, upstreamId) !== null;
+  }
 
   constructor(
     @Inject(DATABASE) private readonly database: Database,
@@ -87,6 +118,8 @@ export class UpstreamScheduler {
         const healthy = upstream.status === 'active' && !cooling;
         const probing = upstream.status === 'unavailable' && !cooling;
         if (!healthy && !probing) return null;
+        // 线路级冷却：只跳过这一条线路，不影响同一上游的其他模型。
+        if (this.routeCoolingUntil(modelKey, upstream.id) !== null) return null;
         const weight = Math.max(1, route.weight) * Math.max(1, upstream.weight);
         const u = stickyKey
           ? unit(`${stickyKey}|${modelKey}|${upstream.id}`)
@@ -158,7 +191,8 @@ export class UpstreamScheduler {
 
   // ---------- 健康 ----------
 
-  async recordSuccess(upstreamId: string): Promise<void> {
+  async recordSuccess(upstreamId: string, modelKey?: string): Promise<void> {
+    if (modelKey) this.routeFailures.delete(this.routeKey(modelKey, upstreamId));
     const now = this.clock.now();
     const [row] = await this.database.db
       .update(upstreams)
@@ -170,13 +204,23 @@ export class UpstreamScheduler {
   }
 
   /**
-   * 记一次失败。密钥失效 / 额度耗尽立即标对应状态并暂停；其他可切换的失败累加，达到阈值暂停并标「不可用」。
+   * 记一次失败。密钥失效 / 额度耗尽立即标对应状态并暂停整个账号；
+   * 其他可切换的失败只记到（模型，线路），达到阈值只冷却这一条线路，不动上游账号。
    * 内容被拒、请求错误、空输出等不算账号故障，调用方不要传进来。
+   * 未传模型时退回旧法（按账号记），调用方应一律传模型。
    */
-  async recordFailure(upstreamId: string, category: string): Promise<void> {
+  async recordFailure(upstreamId: string, category: string, modelKey?: string): Promise<void> {
     const limits = await this.limits.get();
     const now = this.clock.nowMs();
     const until = new Date(now + limits.cooldownSeconds * 1000);
+    if (category !== 'invalid_key' && category !== 'quota_exhausted' && modelKey) {
+      const key = this.routeKey(modelKey, upstreamId);
+      const entry = this.routeFailures.get(key) ?? { count: 0, cooldownUntil: 0 };
+      entry.count += 1;
+      if (entry.count >= limits.failureThreshold) entry.cooldownUntil = until.getTime();
+      this.routeFailures.set(key, entry);
+      return;
+    }
     const [row] = await this.database.db
       .update(upstreams)
       .set({

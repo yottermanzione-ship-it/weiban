@@ -18,12 +18,12 @@ import { modelAccessSettings } from '../infra/db/schema.js';
 const KEY = 'gateway_limits';
 const CACHE_MS = 10_000;
 
-/** 默认值：每用户不限；连续失败 3 次暂停 5 分钟（ADR-0032 第 4 条）。 */
+/** 默认值：每用户不限；连续失败 3 次暂停 1 分钟（2026-10-30 用户定，原 5 分钟改 1 分钟）。 */
 export const DEFAULT_GATEWAY_LIMITS: GatewayLimits = {
   perUserConcurrency: null,
   perUserRpm: null,
   failureThreshold: 3,
-  cooldownSeconds: 300,
+  cooldownSeconds: 60,
   searchCandidatesPerUserDay: 20,
   searchCandidatesGlobalDay: 5000,
 };

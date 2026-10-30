@@ -143,6 +143,8 @@ export class ModelResolver implements AdultModelReadPort {
     modelKeyOverride?: string;
     /** 网关内部：空输出降级用的备用模型（docs/refactor/03 第 1.4 B），不经契约传入。 */
     fallbackModelKey?: string;
+    /** 2026-10-30 用户定：日常聊天失败后静默换模型用的备用模型，仅 chat_reply + modelRole=chat 可用，私密（adult）绝不走这条。 */
+    chatFallbackModelKey?: string;
     /** 仅可信平台能力经网关内部传入，绕过用户选择且拒绝成人模型。 */
     platformTask?: boolean;
     /** 3.22：按哪个场景解析（只对 chat 角色有意义）。 */
@@ -177,6 +179,14 @@ export class ModelResolver implements AdultModelReadPort {
     } else if (input.fallbackModelKey) {
       if (input.modelRole !== 'background') return { ok: false, error: 'bad_request' };
       picked = { facts: await this.catalog.fact(input.fallbackModelKey) };
+    } else if (input.chatFallbackModelKey) {
+      if (input.modelRole !== 'chat' || input.purpose !== 'chat_reply')
+        return { ok: false, error: 'bad_request' };
+      const facts = await this.catalog.fact(input.chatFallbackModelKey);
+      // 2026-10-30 用户定：静默换模型绝不能调用未上架的模型——已停用、已删除、不是聊天场景的，一律跳过。
+      if (!facts.entry?.enabled || facts.entry.deletedAt || !facts.entry.scenarios.includes('chat'))
+        return { ok: false, error: 'model_unavailable' };
+      picked = { facts };
     } else if (input.modelKeyOverride) {
       if (input.purpose !== 'behavior_planning') return { ok: false, error: 'bad_request' };
       picked = { facts: await this.catalog.fact(input.modelKeyOverride) };
