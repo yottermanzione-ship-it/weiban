@@ -36,6 +36,7 @@ import { IDENTITY_READ_PORT, IDENTITY_USER_STATUS_PORT } from '../../identity/in
 import { userStatusLine } from '../domain/user-status.js';
 import { POLICY_PORT } from '../../policy/index.js';
 import { MemoryService } from './memory.js';
+import { uncoveredHistoryEnd } from '../domain/memory-window.js';
 import { contextTokens } from '../../model-access/index.js';
 import { PlayContinuityStore } from './play-continuity.js';
 import { DEFAULT_LOREBOOK, lorebook, lorebookText } from '../domain/knowledge.js';
@@ -787,9 +788,11 @@ export class ReplyContext {
     });
     if (this.memory.chatSummaries) {
       for (let pass = 0; pass < 2; pass++) {
+        const historyGap = uncoveredHistoryEnd(history, remembered.rawFromSeq);
         const chars = assembled.messages.reduce((n, m) => n + m.content.length, 0);
         if (
           (!modelBudget || contextTokens(assembled.messages) < modelBudget.triggerTokens) &&
+          historyGap === null &&
           assembled.messages.length < 420 &&
           chars < 160000
         )
@@ -815,6 +818,7 @@ export class ReplyContext {
             break;
           }
         }
+        cutoff = Math.max(cutoff, historyGap ?? 0);
         if (!cutoff) break;
         const before = JSON.stringify(remembered.rawFromSeqByScope);
         for (const s of historyScopes)
@@ -855,10 +859,18 @@ export class ReplyContext {
       assembled.messages.length > 500 ||
       assembled.messages.reduce((n, m) => n + m.content.length, 0) > 200000 ||
       (!!modelBudget && contextTokens(assembled.messages) > modelBudget.inputTokens);
-    if (tooLarge()) {
+    const historyGap = uncoveredHistoryEnd(history, remembered.rawFromSeq);
+    if (tooLarge() || historyGap !== null) {
       tail.unshift({
         title: '历史覆盖提示',
         text: '部分较早聊天尚未完成整理，本轮只提供近期原文和已有回顾；没有给出的细节不要猜测或编造。',
+      });
+      assembled = assemblePrompt({
+        macros: { user: userName, char: role.profile.name },
+        head: antiMimicHead,
+        history: cleanedChat,
+        inserts,
+        tail,
       });
       let lastUser = cleanedChat.length - 1;
       while (lastUser >= 0 && cleanedChat[lastUser]?.role !== 'user') lastUser--;
@@ -879,6 +891,7 @@ export class ReplyContext {
         code: 'ai_context_uncovered_gap',
         conversationId: row.conversationId,
         omittedMessages: removed,
+        uncoveredThroughSeq: historyGap,
       });
     }
     const messages: ReplySnapshot['messages'] = assembled.messages;

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { uncoveredHistoryEnd } from './memory-window.js';
 import { importantMemoryIntent, renderChatSummary, validateSummaryAnswer } from './chat-summary.js';
 
 describe('滚动总结的来源与权益', () => {
@@ -53,4 +54,11 @@ describe('滚动总结的来源与权益', () => {
   ])('闲聊或明确不记不触发：%s', (text) => {
     expect(importantMemoryIntent(text)).toBe(false);
   });
+});
+
+it('600条读取保护必须留下显式缺口，而不是假装模型容量或摘要已覆盖', () => {
+  const history = Array.from({ length: 600 }, (_, i) => ({ seq: 1000 + i }));
+  expect(uncoveredHistoryEnd(history, 0)).toBe(999);
+  expect(uncoveredHistoryEnd(history, 999)).toBeNull();
+  expect(uncoveredHistoryEnd(history.slice(1), 0)).toBeNull();
 });

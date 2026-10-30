@@ -354,8 +354,6 @@ describeDb('T-046 向量检索与分层摘要', () => {
       clientMsgId: newId(),
       content: { type: 'text', text: '请记住我的称呼是阿晴。' },
     });
-    expect(sent.ok).toBe(true);
-    if (!sent.ok) throw Error('fixture send failed');
     await dispatch();
     response.current = JSON.stringify({
       operations: [
@@ -364,7 +362,7 @@ describeDb('T-046 向量检索与分层摘要', () => {
           content: 'FACT_RESIDENT_REFRESH_CANARY 称呼阿晴。',
           category: 'basic',
           importance: 10,
-          sourceMessageIds: [sent.value.messageId],
+          sourceMessageIds: [sent.message.messageId],
         },
       ],
     });
