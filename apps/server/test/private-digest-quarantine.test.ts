@@ -36,8 +36,8 @@ describeDb('旧私密概括升级隔离：正式迁移与缓存边界', () => {
       [parent, user, character, conversation, opaque],
     );
     await db.query(
-      'INSERT INTO ai_runtime.private_digests(id,user_id,character_id,conversation_id,event_key,to_seq,memory_id,status,next_attempt_at,created_at,updated_at) VALUES($1,$2,$3,$4,$1::text,1,$5,$6,now(),now(),now())',
-      [newId(), user, character, conversation, memory, 'done'],
+      'INSERT INTO ai_runtime.private_digests(id,user_id,character_id,conversation_id,event_key,to_seq,memory_id,status,next_attempt_at,created_at,updated_at) VALUES($1,$2,$3,$4,$7,1,$5,$6,now(),now(),now())',
+      [newId(), user, character, conversation, memory, 'done', newId()],
     );
     for (const [id, next] of [
       [plan, 0],

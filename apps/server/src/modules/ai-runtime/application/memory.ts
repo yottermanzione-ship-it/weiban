@@ -1494,14 +1494,28 @@ export class MemoryService {
     });
     if (state.retryAfter && state.retryAfter > this.clock.now()) return;
     if (!job.force && state.factTriggerSeq <= state.cursorSeq) return;
-    const availableHistory = await this.chat.readMessages({
+    const fetchedHistory = await this.chat.readMessages({
       conversationId: job.conversationId,
       scopes: ['normal', 'adult'],
       afterSeq: Math.max(state.cursorSeq, state.barrierSeq),
-      ...(!job.force ? { beforeSeq: state.factTriggerSeq + 1 } : {}),
       limit: 100,
     });
-    if (!availableHistory.length) return;
+    const availableHistory = job.force
+      ? fetchedHistory
+      : fetchedHistory.filter((m) => m.seq <= state.factTriggerSeq);
+    if (!availableHistory.length) {
+      if (!job.force)
+        await this.db.transaction(async (tx) => {
+          await this.lock(tx, job);
+          const current = await this.state(tx, job);
+          if (current.revision === state.revision && current.cursorSeq === state.cursorSeq)
+            await tx.db
+              .update(memoryStates)
+              .set({ cursorSeq: state.factTriggerSeq })
+              .where(eq(memoryStates.id, current.id));
+        });
+      return;
+    }
     const batchScope = availableHistory[0]!.scope;
     const boundary = availableHistory.findIndex((m) => m.scope !== batchScope);
     const sameScope = boundary < 0 ? availableHistory : availableHistory.slice(0, boundary);

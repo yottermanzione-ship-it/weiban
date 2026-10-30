@@ -575,7 +575,8 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
     // H2（20 号 §2.4 第 2 条）：日常范围不再读私密模式原文与私密记忆（以切出时的「干净整理」代替）。
     expect(JSON.stringify(normalSnapshot?.messages)).not.toContain('ADULT_SOURCE_CANARY');
     expect(JSON.stringify(normalSnapshot?.messages)).not.toContain('ADULT_UPDATED_MEMORY_CANARY');
-    expect(JSON.stringify(normalSnapshot?.messages)).toContain('私密模式期间的经历整理');
+    expect(JSON.stringify(normalSnapshot?.messages)).not.toContain('私密模式期间的经历整理');
+    expect(JSON.stringify(normalSnapshot?.messages)).toContain('本次没有提供私密范围资料');
     response = JSON.stringify({ operations: [], summary: '本批次摘要。' });
     const before = calls.length;
     for (let i = 0; i < 4; i++) await memory().extract(await job());
@@ -766,8 +767,8 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
       expect(await count()).toBe(before);
       const digestId = newId();
       await db.query(
-        "INSERT INTO ai_runtime.private_digests(id,user_id,character_id,conversation_id,event_key,to_seq,status,next_attempt_at,created_at,updated_at) VALUES($1,$2,$3,$4,$1::text,0,'pending',$5,$5,$5)",
-        [digestId, userId, characterId, cid, clock.now()],
+        "INSERT INTO ai_runtime.private_digests(id,user_id,character_id,conversation_id,event_key,to_seq,status,next_attempt_at,created_at,updated_at) VALUES($1,$2,$3,$4,$6,0,'pending',$5,$5,$5)",
+        [digestId, userId, characterId, cid, clock.now(), digestId],
       );
       const callsBefore = calls.length;
       await app.get(PrivateDigestService).run(digestId);

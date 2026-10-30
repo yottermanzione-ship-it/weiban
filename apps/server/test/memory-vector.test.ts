@@ -366,7 +366,7 @@ describeDb('T-046 向量检索与分层摘要', () => {
         },
       ],
     });
-    await memory().extract(await jobFor());
+    await memory().extract({ ...(await jobFor()), force: false });
     expect(
       (await memory().context(userId, characterId, 'normal', '', undefined, { brain: true }))
         .stableBlock,

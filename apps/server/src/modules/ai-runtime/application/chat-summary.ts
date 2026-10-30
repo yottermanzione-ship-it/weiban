@@ -1,4 +1,4 @@
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { and, eq, gt, lte, or, isNull } from 'drizzle-orm';
 import { z } from 'zod';
@@ -272,13 +272,14 @@ export class ChatSummaryService {
               ChatSummaryItems,
             )
           : [];
-        const history = await this.chat.readMessages({
-          conversationId: row.p.conversationId,
-          scopes: [scope],
-          afterSeq: claimed.coveredSeq,
-          beforeSeq: claimed.targetSeq + 1,
-          limit: 80,
-        });
+        const history = (
+          await this.chat.readMessages({
+            conversationId: row.p.conversationId,
+            scopes: [scope],
+            afterSeq: claimed.coveredSeq,
+            limit: 80,
+          })
+        ).filter((m) => m.seq <= claimed.targetSeq);
         const loaded =
           (await this.captions?.forMessages(row.p.userId, history, [scope]).catch(() => null)) ??
           NO_CAPTIONS;
@@ -466,6 +467,12 @@ export class ChatSummaryService {
       });
     } catch (error) {
       const code = error instanceof Error ? error.message : '';
+      new Logger(ChatSummaryService.name).warn({
+        code: 'ai_chat_summary_failed',
+        stateId: id,
+        attempt: claimed.attempts,
+        reason: /^summary_[a-z_]+$/.test(code) ? code : 'invalid_or_unavailable_input',
+      });
       const wait = /insufficient_balance|budget_exceeded/.test(code)
         ? 86400000
         : [300000, 1800000, 7200000, 86400000][Math.min(claimed.attempts - 1, 3)]!;
