@@ -19,6 +19,7 @@ import { BILLING_SHARED_SEARCH_PORT } from '../src/modules/billing/index.js';
 import { WEIBO_PUBLICATION_PORT } from '../src/modules/characters/index.js';
 import {
   UpstreamService,
+  UpstreamScheduler,
   CatalogService,
   ScenarioService,
   GATEWAY_RETRY_WAIT,
@@ -257,13 +258,14 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
     requests = [];
     await resetUpstream();
   });
-  /** ADR-0032 账号池：失败计数与冷却记在上游行上，用例之间清零，免得上一条的故障把账号暂停。 */
+  /** Reset both account-level hard failures and the per-model soft-failure cooldown between cases. */
   async function resetUpstream(): Promise<void> {
     await db.query(
       'UPDATE model_access.upstreams SET consecutive_failures = 0, cooldown_until = NULL WHERE id = $1',
       [upstreamId],
     );
     await app.get(UpstreamService).reportStatus(upstreamId, 'active', 'probe');
+    await app.get(UpstreamScheduler).recordSuccess(upstreamId, modelKey);
   }
   afterAll(async () => {
     await app?.close();
@@ -447,13 +449,13 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
     ).rows[0];
     expect(after?.balance_micros).toBe(before);
     expect(Number(after?.held_micros)).toBe(0);
-    // 限流一次不暂停账号（连续失败达阈值 3 次才标「不可用」）
+    // Soft failures do not pause the shared upstream account; only this model route cools at the threshold.
     expect((await app.get(UpstreamService).get(upstreamId)).status).toBe('active');
   });
   it('上游持续故障、失效密钥和额度不足正确分类；失败解冻、不向用户扣款', async () => {
-    // 持续故障：每次调用只打一次该账号，连续 3 次失败后标为不可用。
+    // Soft failures cool only the model route; invalid keys/quota still disable the whole account.
     for (const [failure, status, attempts] of [
-      ['down', 'unavailable', 3],
+      ['down', 'active', 3],
       ['invalid', 'invalid', 1],
       ['quota', 'quota_exhausted', 1],
     ] as const) {
@@ -473,6 +475,13 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
         });
       expect(calls).toBe(attempts);
       expect((await app.get(UpstreamService).get(upstreamId)).status).toBe(status);
+      if (failure === 'down') {
+        const scheduler = app.get(UpstreamScheduler);
+        expect(scheduler.isRouteCooling(modelKey, upstreamId)).toBe(true);
+        expect(await scheduler.plan(modelKey, null)).toEqual([]);
+        expect((await gateway.generateText(input())).ok).toBe(false);
+        expect(calls).toBe(attempts); // The legacy primary fallback cannot bypass the model cooldown.
+      }
       const after = (
         await db.query<{ balance_micros: string; held_micros: string }>(
           'SELECT balance_micros,held_micros FROM billing.accounts WHERE user_id=$1',

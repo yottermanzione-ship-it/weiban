@@ -351,6 +351,7 @@ export class ModelGateway implements ModelGatewayPort {
         primary &&
         primary.enabled &&
         primary.status === 'active' &&
+        !this.scheduler.isRouteCooling(model.modelKey, primary.id) &&
         !(primary.cooldownUntil && primary.cooldownUntil.getTime() > now)
       )
         candidates = [

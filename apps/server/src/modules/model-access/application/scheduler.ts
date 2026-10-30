@@ -85,6 +85,11 @@ export class UpstreamScheduler {
     return entry.cooldownUntil;
   }
 
+  /** Legacy primary-route fallback must respect the same per-model cooldown as route planning. */
+  isRouteCooling(modelKey: string, upstreamId: string): boolean {
+    return this.routeCoolingUntil(modelKey, upstreamId) !== null;
+  }
+
   constructor(
     @Inject(DATABASE) private readonly database: Database,
     @Inject(CLOCK) private readonly clock: Clock,

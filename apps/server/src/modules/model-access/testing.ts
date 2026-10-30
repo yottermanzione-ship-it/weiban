@@ -12,6 +12,7 @@ export {
 export { ChargeQueryUnavailableError } from './application/defaults.js';
 export { OpenAiCompatibleProbe } from './infra/upstream-probe.js';
 export { UpstreamService } from './application/upstreams.js';
+export { UpstreamScheduler } from './application/scheduler.js';
 export { ModelResolver, ModelStatusService } from './application/resolver.js';
 export { UsageRecorder, AdminUsageService } from './application/usage.js';
 export { UsageReconciliationService } from './application/reconciliation.js';
