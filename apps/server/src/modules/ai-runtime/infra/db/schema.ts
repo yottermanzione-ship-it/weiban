@@ -296,6 +296,8 @@ export const memoryStates = aiRuntimeSchema.table(
     revision: integer('revision').notNull().default(0),
     pendingCount: integer('pending_count').notNull().default(0),
     retryAfter: timestamp('retry_after', { withTimezone: true }),
+    factTriggerSeq: bigint('fact_trigger_seq', { mode: 'number' }).notNull().default(0),
+    factAttempts: integer('fact_attempts').notNull().default(0),
     barrierSeq: bigint('barrier_seq', { mode: 'number' }).notNull().default(0),
     cursorSeq: bigint('cursor_seq', { mode: 'number' }).notNull().default(0),
     /** 分段摘要（最近批次滚动，normal/adult 分开，保留 4000 字）。 */
@@ -324,6 +326,48 @@ export const memoryStates = aiRuntimeSchema.table(
       sql`${t.pendingCount} >= 0 AND ${t.revision} >= 0 AND ${t.barrierSeq} >= 0 AND ${t.cursorSeq} >= 0`,
     ),
   ],
+);
+/** 滚动总结独立于事实游标；删除父记忆状态时一并清理。 */
+export const chatSummaryStates = aiRuntimeSchema.table(
+  'chat_summary_states',
+  {
+    id: uuid('id').primaryKey(),
+    parentId: uuid('parent_id')
+      .notNull()
+      .references(() => memoryStates.id, { onDelete: 'cascade' }),
+    scope: text('scope').notNull(),
+    coveredSeq: bigint('covered_seq', { mode: 'number' }).notNull().default(0),
+    targetSeq: bigint('target_seq', { mode: 'number' }).notNull().default(0),
+    partialOffset: integer('partial_offset').notNull().default(0),
+    partialMessageId: uuid('partial_message_id'),
+    version: integer('version').notNull().default(0),
+    ciphertext: bytes('ciphertext'),
+    preparedCiphertext: bytes('prepared_ciphertext'),
+    attempts: integer('attempts').notNull().default(0),
+    retryAfter: timestamp('retry_after', { withTimezone: true }),
+    leaseId: uuid('lease_id'),
+    leaseUntil: timestamp('lease_until', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    unique('chat_summary_parent_scope_idx').on(t.parentId, t.scope),
+    check('chat_summary_scope_check', sql`${t.scope} IN ('normal','adult')`),
+  ],
+);
+export const chatSummaryVersions = aiRuntimeSchema.table(
+  'chat_summary_versions',
+  {
+    id: uuid('id').primaryKey(),
+    stateId: uuid('state_id')
+      .notNull()
+      .references(() => chatSummaryStates.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    fromSeq: bigint('from_seq', { mode: 'number' }).notNull(),
+    toSeq: bigint('to_seq', { mode: 'number' }).notNull(),
+    ciphertext: bytes('ciphertext').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [unique('chat_summary_version_idx').on(t.stateId, t.version)],
 );
 /** T-051 推演引擎：每用户每角色的推演控制状态。 */
 export const simulationStates = aiRuntimeSchema.table(

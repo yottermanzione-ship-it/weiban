@@ -29,6 +29,8 @@ import {
 import { GENERATE_REPLY_JOB, ReplyPlanStore } from './plan-store.js';
 import { MemoryService, EXTRACT_MEMORY_JOB, type MemoryJob } from './memory.js';
 import { PrivateDigestService, PRIVATE_DIGEST_JOB } from './private-digest.js';
+import { CHAT_SUMMARY_JOB } from './chat-summary.js';
+import { importantMemoryIntent } from '../domain/chat-summary.js';
 import { ImageCaptionStore } from './image-captions.js';
 import { ReplyEngine } from './reply-engine.js';
 import { HealthCareService, HEALTH_CARE_CHECK_JOB, HEALTH_CARE_SWEEP_JOB } from './health-care.js';
@@ -152,7 +154,14 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       pollingIntervalSeconds: 0.5,
       localConcurrency: 2,
     });
-    // H2：切出私密模式时的干净整理（失败由对账按 next_attempt_at 重投）。
+    await this.jobs.work<{ id: string }>(
+      CHAT_SUMMARY_JOB,
+      async (j) => {
+        await this.memory.chatSummaries?.run(j.data.id);
+      },
+      { pollingIntervalSeconds: 2, localConcurrency: 1 },
+    );
+    // 旧私密降为日常任务只作取消兼容，不再生成或降范围。
     await this.jobs.work<{ digestId: string }>(
       PRIVATE_DIGEST_JOB,
       (j) => this.privateDigest.run(j.data.digestId),
@@ -609,10 +618,7 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
         if (!role || !user) return;
         const epoch = await this.contacts.getActiveContactEpoch(user.refId, role.refId);
         if (!epoch || new Date(event.occurredAt) < new Date(epoch.acceptAfter)) return;
-        const message =
-          p.senderKind === 'character'
-            ? await this.chat.getMessage(p.messageId, ['normal', 'adult'])
-            : null;
+        const message = await this.chat.getMessage(p.messageId, ['normal', 'adult']);
         if (message?.labels?.includes('quirk_draft')) return;
         const promise =
           message?.content?.type === 'text' &&
@@ -628,6 +634,9 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
           p.senderKind === 'user',
           !!promise,
           p.seq,
+          p.senderKind === 'user' &&
+            message?.content?.type === 'text' &&
+            importantMemoryIntent(message.content.text),
         );
       },
     });

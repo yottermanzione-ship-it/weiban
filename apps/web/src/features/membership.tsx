@@ -99,23 +99,22 @@ export function MembershipPage() {
     { label: '语音通话', free: true, pro: true },
     { label: '切换模型', free: true, pro: true },
     {
-      label: '常驻记忆',
+      label: '常驻重要事实',
       free: `${mf.residentLimit} 条`,
       pro: `${mp.residentLimit} 条`,
     },
     {
-      label: '记忆库容量 /角色',
+      label: '重要事实库 /角色',
       free: mf.libraryLimit === null ? '不限' : `${mf.libraryLimit} 条`,
-      pro: mp.libraryLimit === null ? '不限' : `${mp.libraryLimit} 条`,
+      pro: mp.libraryLimit === null ? '全部已存条目' : `${mp.libraryLimit} 条`,
     },
     {
-      label: '聊天摘要',
+      label: '历史往事回顾',
       free: days(mf.summaryDays, '全部'),
-      // 「年度回忆」后端只留了上下文口子、暂无数据来源（memory-window annual 传空）。
-      pro: days(mp.summaryDays, '长期、年度回忆'),
+      pro: days(mp.summaryDays, '不限时间范围'),
     },
     {
-      label: '按话题回忆往事',
+      label: '每次补充相关事实',
       free: `${mf.retrieveLimit} 条`,
       pro: `${mp.retrieveLimit} 条`,
     },

@@ -95,7 +95,19 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
         : {
             ok: true,
             value: {
-              text: answer,
+              text:
+                answer === '__PRIVATE_SUMMARY__'
+                  ? JSON.stringify({
+                      items: [
+                        {
+                          text: 'PRIVATE_ROLLING_SUMMARY_CANARY 用户与角色约定一起看晚霞。',
+                          sourceIds: (
+                            JSON.parse(input.messages[1]!.content) as { messages: { id: string }[] }
+                          ).messages.map((m) => m.id),
+                        },
+                      ],
+                    })
+                  : answer,
               modelKey: 'test/model',
               usage: { inputTokens: 10, cachedInputTokens: 0, outputTokens: 10, estimated: false },
               chargedMicros: 1,
@@ -112,6 +124,7 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
     characterId,
     conversationId: cid,
     urgent: true,
+    force: true,
     epoch: (await new ContactsTestQueries(db).row(userId, characterId))!.request_id,
   });
   const http = () => request(app.getHttpServer());
@@ -362,7 +375,7 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
       'SELECT summary_ciphertext FROM ai_runtime.memory_states WHERE user_id=$1',
       [userId],
     );
-    expect(summaries.rows[0]!.summary_ciphertext.toString('utf8')).not.toContain('咖啡');
+    expect(summaries.rows[0]!.summary_ciphertext?.toString('utf8') ?? '').not.toContain('咖啡');
     response = '我听着呢\n今天过得怎么样？';
   });
   it('删除阻止旧来源复活并清除生成缓存；20轮无旧事实，新消息再次提起才可抽取', async () => {
@@ -686,7 +699,7 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
     expect((await app.get(CHAT_READ_PORT).getConversation(cid)).contentScope).toBe('normal');
     adultAvailability = 'not_configured';
   });
-  it('H2：切出私密模式由私密模型生成干净整理且只一次；日常不读私密原文；私密模式拒绝语音', async () => {
+  it('私密切出不再降范围；旧日常概括按来源隔离；私密模式拒绝语音', async () => {
     const path = `/api/v1/characters/${characterId}/companion-settings`;
     adultAvailability = null;
     const original = response;
@@ -705,6 +718,30 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
       ).rejects.toThrow('私密模式只支持文字和图片');
       const row = await user('PRIVATE_RAW_CANARY 今晚想抱着你');
       await finish(row.id);
+      const summarySource = await user('PRIVATE_SUMMARY_SOURCE 约定一起看晚霞。'.repeat(60));
+      response = '__PRIVATE_SUMMARY__';
+      const summaryBefore = calls.length;
+      await memory().compactWindow(userId, characterId, 'adult', summarySource.triggerSeq);
+      expect(
+        calls
+          .slice(summaryBefore)
+          .filter((c) => c.meta?.promptTemplateVersion === 'chat-summary-v2'),
+      ).toHaveLength(1);
+      expect(calls.at(-1)).toMatchObject({
+        modelRole: 'adult',
+        purpose: 'memory',
+        meta: { scenarioMode: 'adult' },
+      });
+      expect(
+        JSON.stringify(
+          await memory().context(userId, characterId, 'adult', '', undefined, { brain: true }),
+        ),
+      ).toContain('PRIVATE_ROLLING_SUMMARY_CANARY');
+      expect(
+        JSON.stringify(
+          await memory().context(userId, characterId, 'normal', '', undefined, { brain: true }),
+        ),
+      ).not.toContain('PRIVATE_ROLLING_SUMMARY_CANARY');
       const count = async () =>
         Number(
           (
@@ -726,58 +763,55 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
         .set('Authorization', auth())
         .send({ scenarioMode: 'daily', personaFit: 4 })
         .expect(200);
-      expect(await count()).toBe(before + 1);
-      const digest = (
-        await db.query<{ id: string }>(
-          'SELECT id FROM ai_runtime.private_digests WHERE conversation_id=$1 ORDER BY created_at DESC LIMIT 1',
-          [cid],
-        )
-      ).rows[0]!;
-      response = JSON.stringify({
-        summary: '用户和角色在私密模式里很亲密，有过亲密行为；用户说今晚想抱着角色。',
-      });
+      expect(await count()).toBe(before);
+      const digestId = newId();
+      await db.query(
+        "INSERT INTO ai_runtime.private_digests(id,user_id,character_id,conversation_id,event_key,to_seq,status,next_attempt_at,created_at,updated_at) VALUES($1,$2,$3,$4,$1,0,'pending',$5,$5,$5)",
+        [digestId, userId, characterId, cid, clock.now()],
+      );
       const callsBefore = calls.length;
-      await app.get(PrivateDigestService).run(digest.id);
-      const digestCalls = calls.slice(callsBefore);
-      expect(digestCalls).toHaveLength(1);
-      expect(digestCalls[0]).toMatchObject({
-        purpose: 'memory',
-        modelRole: 'adult',
-        billingOwner: 'user',
+      await app.get(PrivateDigestService).run(digestId);
+      await app.get(PrivateDigestService).run(digestId);
+      expect(calls.length).toBe(callsBefore);
+      const done = await db.query<{ status: string }>(
+        'SELECT status FROM ai_runtime.private_digests WHERE id=$1',
+        [digestId],
+      );
+      expect(done.rows[0]?.status).toBe('skipped');
+      const legacyId = await memory().addPrivateDigest({
+        userId,
+        characterId,
+        conversationId: cid,
+        clientId: digestId,
+        content: 'LEGACY_PRIVATE_DIGEST_CANARY',
+        demoteIds: [],
       });
-      expect(JSON.stringify(digestCalls[0]!.messages)).toContain('PRIVATE_RAW_CANARY');
-      // 同一次切出再跑：不再调用模型、不再写记忆。
-      await app.get(PrivateDigestService).run(digest.id);
-      expect(calls.length).toBe(callsBefore + 1);
-      const done = await db.query<{ status: string; memory_id: string | null }>(
-        'SELECT status, memory_id FROM ai_runtime.private_digests WHERE id=$1',
-        [digest.id],
-      );
-      expect(done.rows[0]).toMatchObject({ status: 'done' });
+      expect(legacyId).not.toBeNull();
       const written = await db.query<{ scope: string }>(
-        'SELECT scope FROM ai_runtime.memories WHERE client_id=$1',
-        [digest.id],
+        'SELECT scope FROM ai_runtime.memories WHERE id=$1',
+        [legacyId],
       );
-      expect(written.rows).toEqual([{ scope: 'normal' }]);
-      let entry: { content: string } | undefined;
-      let afterId: string | undefined;
-      for (let page = 0; page < 20 && !entry; page++) {
-        const list = await memory().list(userId, characterId, {
-          limit: 50,
-          ...(afterId ? { afterId } : {}),
-        });
-        entry = list.items.find((m) => m.memoryId === done.rows[0]!.memory_id);
-        if (!list.nextCursor) break;
-        afterId = list.nextCursor;
-      }
-      expect(entry?.content).toContain('私密模式期间的经历整理');
-      expect(entry?.content).not.toContain('PRIVATE_RAW_CANARY');
+      expect(written.rows[0]?.scope).toBe('adult');
+      // 模拟升级前已经写成 normal 的旧条目；必须由任务来源映射隔离，不能靠文本敏感词猜测。
+      await db.query("UPDATE ai_runtime.memories SET scope='normal' WHERE id=$1", [legacyId]);
+      await db.query('UPDATE ai_runtime.private_digests SET memory_id=$1 WHERE id=$2', [
+        legacyId,
+        digestId,
+      ]);
+      expect(
+        JSON.stringify(await memory().context(userId, characterId, 'normal', '')),
+      ).not.toContain('LEGACY_PRIVATE_DIGEST_CANARY');
+      expect(JSON.stringify(await memory().context(userId, characterId, 'adult', ''))).toContain(
+        'LEGACY_PRIVATE_DIGEST_CANARY',
+      );
       // 日常范围的回复上下文不含私密原文。
       response = original;
       const daily = await user('还记得我们之前很亲密吗');
       const snapshot = await app.get(ReplyContext).build(daily);
       expect(JSON.stringify(snapshot?.messages)).not.toContain('PRIVATE_RAW_CANARY');
+      expect(JSON.stringify(snapshot?.messages)).not.toContain('LEGACY_PRIVATE_DIGEST_CANARY');
       expect(snapshot?.scope).toBe('normal');
+      expect(JSON.stringify(snapshot?.messages)).not.toContain('PRIVATE_ROLLING_SUMMARY_CANARY');
     } finally {
       response = original;
       adultAvailability = 'not_configured';

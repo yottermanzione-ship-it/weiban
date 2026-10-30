@@ -1,4 +1,5 @@
 import { MemoryService } from './application/memory.js';
+import { ChatSummaryService } from './application/chat-summary.js';
 import { PrivateDigestService } from './application/private-digest.js';
 import { ImageCaptionStore } from './application/image-captions.js';
 import { ImagePublicSearch } from './application/image-public-search.js';
@@ -145,6 +146,7 @@ import {
     MomentCardService,
     CompanionSettingsService,
     MemoryService,
+    ChatSummaryService,
     // H2：切出私密模式时的干净整理。
     PrivateDigestService,
     // H3：图片描述存档。

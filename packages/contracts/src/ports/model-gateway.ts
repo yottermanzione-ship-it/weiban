@@ -189,8 +189,23 @@ export type GenerateError =
   | 'content_rejected' // 被上游内容审核拦截（不扣费）
   | 'bad_request';
 
+/** 仅服务器使用的只读容量信息；不代表额度、报价或厂商分词实测。 */
+export interface ModelContextBudget {
+  modelKey: string;
+  contextTokens: number;
+  reservedOutputTokens: number;
+  inputTokens: number;
+  triggerTokens: number;
+}
 export interface ModelGatewayPort {
   generateText(input: GenerateTextInput): Promise<PortResult<GenerateTextOutput, GenerateError>>;
+  /** 可选以兼容独立测试网关；正式网关始终实现，不调用上游、不收费。 */
+  getContextBudget?(
+    input: Pick<
+      GenerateTextInput,
+      'userId' | 'modelRole' | 'purpose' | 'characterId' | 'scenario' | 'maxOutputTokens'
+    >,
+  ): Promise<ModelContextBudget | null>;
   /**
    * 用户当前能否和某角色聊天（模型已选且可用、余额充足）。ai-runtime 安排后台任务前、
    * 界面横条（GET /model/status）都用它；上游恢复由网关自己探测并发布 model_access.model_status_changed。
