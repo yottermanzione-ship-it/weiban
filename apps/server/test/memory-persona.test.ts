@@ -766,7 +766,7 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
       expect(await count()).toBe(before);
       const digestId = newId();
       await db.query(
-        "INSERT INTO ai_runtime.private_digests(id,user_id,character_id,conversation_id,event_key,to_seq,status,next_attempt_at,created_at,updated_at) VALUES($1,$2,$3,$4,$1,0,'pending',$5,$5,$5)",
+        "INSERT INTO ai_runtime.private_digests(id,user_id,character_id,conversation_id,event_key,to_seq,status,next_attempt_at,created_at,updated_at) VALUES($1,$2,$3,$4,$1::text,0,'pending',$5,$5,$5)",
         [digestId, userId, characterId, cid, clock.now()],
       );
       const callsBefore = calls.length;

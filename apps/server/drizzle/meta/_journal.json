@@ -961,6 +961,13 @@
       "when": 1799339200000,
       "tag": "0148_chat_summary_compaction",
       "breakpoints": true
+    },
+    {
+      "idx": 149,
+      "version": "7",
+      "when": 1799339300000,
+      "tag": "0149_private_digest_quarantine",
+      "breakpoints": true
     }
   ]
 }

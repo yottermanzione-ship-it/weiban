@@ -350,12 +350,10 @@ describeDb('T-046 向量检索与分层摘要', () => {
       (await memory().context(userId, characterId, 'normal', '', undefined, { brain: true }))
         .stableBlock,
     ).toContain(manual.content);
-    const sent = await app
-      .get<ChatUserPort>(CHAT_USER_PORT)
-      .sendMessage(userId, cid, {
-        clientMsgId: newId(),
-        content: { type: 'text', text: '请记住我的称呼是阿晴。' },
-      });
+    const sent = await app.get<ChatUserPort>(CHAT_USER_PORT).sendMessage(userId, cid, {
+      clientMsgId: newId(),
+      content: { type: 'text', text: '请记住我的称呼是阿晴。' },
+    });
     expect(sent.ok).toBe(true);
     if (!sent.ok) throw Error('fixture send failed');
     await dispatch();
