@@ -38,6 +38,12 @@ export const conversations = chatSchema.table(
     ownerUserId: uuid('owner_user_id').notNull(),
     type: text('type').notNull(),
     characterId: uuid('character_id'),
+    /**
+     * 官方身份标记：小V同学官方会话为 'official:xiaov'，其余会话为 null。
+     * 官方会话一定是 direct 且 character_id 为空；每用户最多一个（部分唯一索引）。
+     * 迁移 0150。回退见 0150 的 .down.sql（删列即回退，官方会话随之不可再建）。
+     */
+    officialIdentityKey: text('official_identity_key'),
     title: text('title'),
     groupAvatarMediaId: uuid('group_avatar_media_id'),
     systemParticipantId: uuid('system_participant_id').notNull(),
@@ -56,10 +62,22 @@ export const conversations = chatSchema.table(
   },
   (t) => [
     uniqueIndex('direct_user_character_idx').on(t.ownerUserId, t.characterId),
+    // 官方会话按 (owner, identityKey) 去重；NULL 行不参与（Postgres 唯一索引 NULL 互不相等）。
+    uniqueIndex('official_user_identity_idx')
+      .on(t.ownerUserId, t.officialIdentityKey)
+      .where(sql`${t.officialIdentityKey} IS NOT NULL`),
     index('conversations_owner_idx').on(t.ownerUserId),
     check('conversation_type', sql`${t.type} IN ('direct','group')`),
     check('conversation_scope', sql`${t.contentScope} IN ('normal','adult')`),
     check('conversation_seq', sql`${t.lastSeq} >= 0 AND ${t.lastSeq} <= 9007199254740991`),
+    check(
+      'conversation_official_identity',
+      sql`${t.officialIdentityKey} IS NULL OR ${t.officialIdentityKey} = 'official:xiaov'`,
+    ),
+    check(
+      'conversation_official_direct',
+      sql`${t.officialIdentityKey} IS NULL OR (${t.type} = 'direct' AND ${t.characterId} IS NULL)`,
+    ),
   ],
 );
 export const participants = chatSchema.table(
@@ -78,7 +96,7 @@ export const participants = chatSchema.table(
   },
   (t) => [
     uniqueIndex('participant_ref_idx').on(t.conversationId, t.kind, t.refId),
-    check('participant_kind', sql`${t.kind} IN ('user','character')`),
+    check('participant_kind', sql`${t.kind} IN ('user','character','official')`),
     check('participant_read_seq', sql`${t.readSeq} >= 0 AND ${t.readSeq} <= 9007199254740991`),
   ],
 );
@@ -118,7 +136,10 @@ export const messages = chatSchema.table(
       t.senderParticipantId,
       t.clientMsgId,
     ),
-    check('message_sender_kind', sql`${t.senderKind} IN ('user','character','system')`),
+    check(
+      'message_sender_kind',
+      sql`${t.senderKind} IN ('user','character','system','official')`,
+    ),
     check('message_scope', sql`${t.scope} IN ('normal','adult')`),
     check('message_status', sql`${t.status} IN ('normal','recalled')`),
     check('message_seq', sql`${t.seq} > 0 AND ${t.seq} <= 9007199254740991`),

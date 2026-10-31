@@ -180,7 +180,7 @@ export class ChatWriteService {
       content = {
         type: 'nudge',
         targetParticipantId: content.targetParticipantId,
-        targetKind: target.kind === 'user' ? 'user' : 'character',
+        targetKind: target.kind === 'user' ? 'user' : target.kind === 'official' ? 'official' : 'character',
         ...(suffix ? { suffix: suffix.slice(0, 15) } : {}),
       };
     }
@@ -314,7 +314,7 @@ export class ChatWriteService {
       messageId: id,
       seq: current.lastSeq,
       senderParticipantId: input.senderParticipantId,
-      senderKind: system ? 'system' : (sender!.kind as 'user' | 'character'),
+      senderKind: system ? 'system' : (sender!.kind as 'user' | 'character' | 'official'),
       senderRefId: sender?.refId ?? null,
       contentType: content.type,
       scope: current.contentScope as 'normal' | 'adult',

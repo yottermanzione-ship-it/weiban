@@ -1,4 +1,5 @@
 import type { Database } from '../../platform/index.js';
+export { ChatAdminService } from './application/admin.js';
 export { ChatLifecycle } from './application/lifecycle.js';
 export { ChatStore } from './application/store.js';
 export class ChatTestQueries {

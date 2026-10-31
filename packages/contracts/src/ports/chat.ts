@@ -33,6 +33,11 @@ export interface ChatReadPort {
   getParticipants(conversationId: string): Promise<Participant[]>;
   /** 找到用户与某角色的私聊会话。 */
   findDirectConversation(userId: string, characterId: string): Promise<Conversation | null>;
+  /**
+   * 找到用户的小V同学官方会话（按 official_identity_key）。没有则返回 null，
+   * 不创建（创建走 ChatAdminPort.ensureOfficialConversation）。
+   */
+  findOfficialConversation(userId: string): Promise<Conversation | null>;
   /** 结果按 seq 升序；不含正文被撤回的内容。 */
   readMessages(input: ReadMessagesInput): Promise<Message[]>;
   /** 可选事务用于派生资料写入前锁定并核对来源，防止撤回与迟到写入交错。 */
@@ -106,6 +111,12 @@ export interface ChatParticipantPort {
 
 /** 会话管理：供 contacts（添加角色后建私聊）、ai-runtime（设置内容范围）等模块使用。 */
 export interface ChatAdminPort {
+  /**
+   * 创建或找回用户与小V同学的官方会话（幂等：已存在则返回原会话，含已归档的恢复）。
+   * 官方会话永不删重建（旧版占位卡误删归档的教训）：已归档只恢复、保留全部历史。
+   * 不发欢迎语——欢迎语由官方模块在首次创建后单独发（幂等键去重），避免多触发点重复发。
+   */
+  ensureOfficialConversation(tx: Tx, input: { userId: string }): Promise<Conversation>;
   /**
    * 创建或找回用户与角色的私聊（幂等：已存在则返回原会话）。
    * restoreHistory = false 时（重新认识）旧会话的消息不再显示。
@@ -255,7 +266,7 @@ export interface ChatNotificationReadPort {
     conversationType: 'direct' | 'group';
     seq: number;
     scope: ContentScope;
-    senderKind: 'user' | 'character' | 'system';
+    senderKind: 'user' | 'character' | 'official' | 'system';
     senderRefId: string | null;
     recipientParticipantId: string;
     muted: boolean;

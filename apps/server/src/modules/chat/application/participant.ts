@@ -95,7 +95,7 @@ export class ChatParticipantService implements ChatParticipantPort {
       await this.outbox.publish(tx, 'chat.read_cursor_moved', 'chat', {
         conversationId: row.id,
         participantId: participant.id,
-        participantKind: participant.kind as 'character',
+        participantKind: participant.kind as 'character' | 'official',
         readSeq: input.readSeq,
       });
     });

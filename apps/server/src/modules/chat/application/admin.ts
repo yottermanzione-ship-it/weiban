@@ -3,6 +3,8 @@ import { and, eq, isNull } from 'drizzle-orm';
 import {
   ContentScope,
   Id,
+  OFFICIAL_IDENTITY_KEY,
+  OFFICIAL_REF_ID,
   Timestamp,
   SystemContent,
   type ChatAdminPort,
@@ -123,6 +125,107 @@ export class ChatAdminService implements ChatAdminPort {
         conversationId: id,
         kind: 'character',
         refId: input.characterId,
+        joinedAt: at,
+        readSeq: 0,
+      },
+    ]);
+    await tx.db.insert(userConversationStates).values({ conversationId: id, userId: input.userId });
+    const conversation = await this.store.conversation(tx, row);
+    await this.sync.appendUpdate(tx, input.userId, {
+      type: 'conversation.created',
+      data: { conversation },
+    });
+    await this.outbox.publish(tx, 'chat.conversation_created', 'chat', {
+      conversationId: id,
+      type: 'direct',
+      participants: conversation.participants.map((p) => ({
+        participantId: p.participantId,
+        kind: p.kind,
+        refId: p.refId,
+      })),
+    });
+    return conversation;
+  }
+  /**
+   * 小V同学官方会话（方向 B）：按 official_identity_key 查找/创建，幂等。
+   * 与角色私聊不同：已归档只恢复、永不删重建（删重建会级联删掉用户与客服的全部历史，
+   * 旧版占位卡迁移已吃过这个亏）；欢迎语不在这里发，由官方模块在首次创建后单独发。
+   */
+  async ensureOfficialConversation(
+    transaction: Tx,
+    input: { userId: string },
+  ): Promise<Conversation> {
+    const tx = asDbTx(transaction);
+    parseContract(Id, input.userId);
+    await tx.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended('chat:official:' || $1,0))",
+      [input.userId],
+    );
+    await this.store.requireActive(tx, input.userId);
+    const [existing] = await tx.db
+      .select()
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.ownerUserId, input.userId),
+          eq(conversations.officialIdentityKey, OFFICIAL_IDENTITY_KEY),
+          eq(conversations.type, 'direct'),
+        ),
+      )
+      .for('update');
+    if (existing) {
+      if (existing.archivedAt) {
+        await tx.db
+          .update(conversations)
+          .set({ archivedAt: null, contentScope: 'normal', updatedAt: this.clock.now() })
+          .where(eq(conversations.id, existing.id));
+        await tx.db
+          .update(userConversationStates)
+          .set({ hidden: false })
+          .where(eq(userConversationStates.conversationId, existing.id));
+        const row = await this.store.load(tx, existing.id, input.userId);
+        const conversation = await this.store.conversation(tx, row);
+        await this.sync.appendUpdate(tx, input.userId, {
+          type: 'conversation.updated',
+          data: { conversation },
+        });
+        return conversation;
+      }
+      return this.store.conversation(tx, existing);
+    }
+    const at = this.clock.now();
+    const id = newId();
+    const [row] = await tx.db
+      .insert(conversations)
+      .values({
+        id,
+        ownerUserId: input.userId,
+        type: 'direct',
+        characterId: null,
+        officialIdentityKey: OFFICIAL_IDENTITY_KEY,
+        title: null,
+        systemParticipantId: newId(),
+        contentScope: 'normal',
+        lastSeq: 0,
+        createdAt: at,
+        updatedAt: at,
+      })
+      .returning();
+    if (!row) throw new AppError('internal_error', '会话未能创建');
+    await tx.db.insert(participants).values([
+      {
+        id: newId(),
+        conversationId: id,
+        kind: 'user',
+        refId: input.userId,
+        joinedAt: at,
+        readSeq: 0,
+      },
+      {
+        id: newId(),
+        conversationId: id,
+        kind: 'official',
+        refId: OFFICIAL_REF_ID,
         joinedAt: at,
         readSeq: 0,
       },

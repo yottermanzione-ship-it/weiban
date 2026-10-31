@@ -258,7 +258,9 @@ export class ChatStore {
       state: view.state,
       unreadCount: count?.n ?? 0,
       peerReadSeq:
-        row.type === 'direct' ? (members.find((p) => p.kind === 'character')?.readSeq ?? 0) : null,
+        row.type === 'direct'
+          ? (members.find((p) => p.kind === 'character' || p.kind === 'official')?.readSeq ?? 0)
+          : null,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
       group:
