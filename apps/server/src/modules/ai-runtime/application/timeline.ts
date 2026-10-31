@@ -6,7 +6,7 @@
  * - T-066 回改 P-18：「距上次进入该私聊 ≥ 12 小时且期间有日常事件；最多 5 条」。
  *   「上次进入」由服务器记录（chat_visits，每次请求本接口 = 进入一次私聊），取它与客户端 lastActiveAt 较晚者；
  *   不足 12 小时 summary 与 events 都为空（客户端不显示卡片）。5 分钟内重复请求视为同一次进入。
- * - T-066 契约 3.0 listTimeline：日常事件、朋友圈、和其他角色的互动、公开动态，时间倒序分页。
+ * - T-066 契约 3.0 listTimeline：日常事件、和其他角色的互动、公开动态，时间倒序分页。
  * - 摘要生成走后台网关（behavior_planning 用途，countAsBackground=true）。
  * - 后台预算耗尽时返回空摘要，不报错（SIM-11 第 3 条）。
  * - 幂等键按用户、会话及缺席起点区分，不同缺席窗口不复用旧摘要。
@@ -23,11 +23,9 @@ import {
   type TimelineSummaryResponse,
   type TimelineEntry,
   type ContactsReadPort,
-  type MomentsReadPort,
   type PublicUpdateReadPort,
 } from '@weiban/contracts';
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
-import { MOMENTS_READ_PORT } from '../../moments/index.js';
 import { PUBLIC_UPDATE_READ_PORT } from '../../characters/index.js';
 import { SocialService } from './social.js';
 import { SharedEpisodesService } from './shared-episodes.js';
@@ -245,8 +243,8 @@ ${eventLines}
 const TIMELINE_DAYS = 90;
 
 /**
- * 合并四种来源后按时间倒序分页：推演日常事件、角色朋友圈、和其他角色的互动（共同事件）、公开动态。
- * 只含对当前用户可见的内容：角色须在通讯录；朋友圈经 moments 端口（已按通讯录过滤）；
+ * 合并三种来源后按时间倒序分页：推演日常事件、和其他角色的互动（共同事件）、公开动态。
+ * 只含对当前用户可见的内容：角色须在通讯录；
  * 推演与共同事件的素材本身不含成人模式与经期内容。游标 = base64url(时间|条目ID)。
  */
 @Injectable()
@@ -255,7 +253,6 @@ export class TimelineListService {
     @Inject(DATABASE) private readonly db: Database,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(CONTACTS_READ_PORT) private readonly contacts: ContactsReadPort,
-    @Inject(MOMENTS_READ_PORT) private readonly moments: MomentsReadPort,
     @Inject(SocialService) private readonly social: SocialService,
     @Inject(SharedEpisodesService) private readonly episodes: SharedEpisodesService,
     @Optional()
@@ -345,23 +342,7 @@ export class TimelineListService {
         ref: null,
       });
 
-    // 3. 角色朋友圈。
-    const posts = await this.moments
-      .listCharacterPosts(userId, characterId, since.toISOString())
-      .catch(() => []);
-    for (const p of posts)
-      items.push({
-        entryId: p.postId,
-        source: 'moments_post',
-        occurredAt: p.createdAt,
-        kind: null,
-        summary: (p.text.trim() || (p.images.length ? '[图片]' : '[动态]')).slice(0, 200),
-        moodAfter: null,
-        withCharacterIds: [],
-        ref: { kind: 'moments_post', id: p.postId },
-      });
-
-    // 4. 公开动态（管理员审核生效，D-L3-02）。
+    // 3. 公开动态（管理员审核生效，D-L3-02）。
     const updates =
       (await this.publicUpdates
         ?.listEffective(characterId, now.toISOString().slice(0, 10), {

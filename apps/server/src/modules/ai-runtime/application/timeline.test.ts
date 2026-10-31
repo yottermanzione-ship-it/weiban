@@ -4,12 +4,17 @@ import {
   Conversation,
   TimelineEndpoints,
   TimelineSummaryResponse,
-  type ModelGatewayPort,
   type ChatReadPort,
+  type ContactsReadPort,
+  type ModelGatewayPort,
+  type PublicUpdateReadPort,
+  type TimelineEntry,
 } from '@weiban/contracts';
-import { TimelineSummaryService } from './timeline.js';
+import { TimelineListService, TimelineSummaryService } from './timeline.js';
 import { type SimulationReadPort, type DailyEventEntry } from './simulation.js';
-import { TestClock, newId } from '../../../platform/index.js';
+import type { JointEventView, SocialService } from './social.js';
+import type { SharedEpisodesService } from './shared-episodes.js';
+import { TestClock, newId, type Database } from '../../../platform/index.js';
 
 const userId = newId();
 const characterId = newId();
@@ -181,4 +186,106 @@ it('缺失/非法查询与未来时间被拒绝，不能把NaN写进响应', asy
     f.service.getSummary(userId, characterId, conversationId, '2026-10-10T00:00:00Z'),
   ).rejects.toThrow('上次活跃时间不能晚于现在');
   expect(f.generateText).not.toHaveBeenCalled();
+});
+
+// ---------------------------------------------------------------------------
+// TimelineListService.list：朋友圈一源已去掉，其余三源与共同经历保留
+// ---------------------------------------------------------------------------
+
+const listNow = new Date('2026-10-09T18:00:00Z');
+const otherCharacterId = newId();
+
+function listFixture(active = true) {
+  const dailyRow = {
+    id: newId(),
+    userId,
+    characterId,
+    eventDate: '2026-10-09',
+    seq: 0,
+    kind: 'work',
+    summary: '日常事件',
+    moodAfter: null,
+    createdAt: new Date('2026-10-09T12:00:00Z'),
+  };
+  const chain = {
+    from: () => ({
+      where: () => ({
+        orderBy: () => ({ limit: async () => [dailyRow] }),
+      }),
+    }),
+  };
+  const db = { db: { select: () => chain } } as unknown as Database;
+  const contacts = {
+    getActiveContact: async () => (active ? { characterId } : null),
+    listActiveContacts: async () => [{ characterId }, { characterId: otherCharacterId }],
+  } as unknown as ContactsReadPort;
+  const joint: JointEventView = {
+    id: newId(),
+    eventDate: '2026-10-09',
+    otherCharacterId,
+    kind: 'social' as JointEventView['kind'],
+    summary: '共同事件',
+    detail: null,
+    createdAt: new Date('2026-10-09T13:00:00Z'),
+  };
+  const social = {
+    listJointEvents: async () => [joint],
+  } as unknown as SocialService;
+  const episode: TimelineEntry = {
+    entryId: newId(),
+    source: 'shared_episode',
+    occurredAt: '2026-10-09T14:00:00.000Z',
+    kind: null,
+    summary: '共同经历',
+    moodAfter: null,
+    withCharacterIds: [],
+    ref: null,
+  };
+  const episodes = { list: async () => [episode] } as unknown as SharedEpisodesService;
+  const publicUpdates = {
+    listEffective: async () => [
+      {
+        updateId: newId(),
+        characterId,
+        kind: 'event',
+        content: '公开动态',
+        startDate: '2026-10-08',
+        endDate: null,
+        effectiveDate: '2026-10-08',
+        sourceUrl: '',
+        phase: 'past',
+      },
+    ],
+  } as unknown as PublicUpdateReadPort;
+  const service = new TimelineListService(
+    db,
+    new TestClock(listNow),
+    contacts,
+    social,
+    episodes,
+    publicUpdates,
+  );
+  return { service, episode, joint, dailyRow };
+}
+
+it('时间线列表不再含朋友圈一源，其余三源与共同经历保留', async () => {
+  const f = listFixture();
+  const result = await f.service.list(userId, characterId, { limit: 20 });
+  expect(result.items.map((i) => i.source).sort()).toEqual([
+    'character_interaction',
+    'daily_event',
+    'public_update',
+    'shared_episode',
+  ]);
+  expect(result.items.some((i) => i.source === 'moments_post')).toBe(false);
+  expect(result.items[0]?.source).toBe('shared_episode');
+  expect(result.items.map((i) => i.entryId)).toContain(f.episode.entryId);
+  expect(result.items.map((i) => i.entryId)).toContain(f.joint.id);
+  expect(result.items.map((i) => i.entryId)).toContain(f.dailyRow.id);
+  expect(TimelineEndpoints.listTimeline.response!.safeParse(result).success).toBe(true);
+});
+
+it('时间线列表在好友不存在时拒绝', async () => {
+  const f = listFixture(false);
+  await expect(f.service.list(userId, characterId, { limit: 20 })).rejects.toThrow('好友不存在');
 });

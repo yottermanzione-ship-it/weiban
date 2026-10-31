@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Camera, ChatCircle, Megaphone } from './old-icons.js';
+import { ChatCircle, Megaphone } from './old-icons.js';
 import {
   CompanionEndpoints,
   DailyEventEndpoints,
@@ -25,13 +25,7 @@ interface Item {
   time: string;
   summary: string;
   kind: string;
-  source:
-    | 'daily_event'
-    | 'moments_post'
-    | 'character_interaction'
-    | 'public_update'
-    | 'shared_episode'
-    | 'other';
+  source: 'daily_event' | 'character_interaction' | 'public_update' | 'shared_episode' | 'other';
   withCharacterIds: string[];
   ref: TimelineEntry['ref'];
 }
@@ -41,13 +35,7 @@ function localDate(d: Date): string {
 }
 function fromEntry(entry: TimelineEntry): Item {
   const at = new Date(entry.occurredAt);
-  const known = [
-    'daily_event',
-    'moments_post',
-    'character_interaction',
-    'public_update',
-    'shared_episode',
-  ];
+  const known = ['daily_event', 'character_interaction', 'public_update', 'shared_episode'];
   return {
     id: entry.entryId,
     date: localDate(at),
@@ -105,7 +93,6 @@ function dayLabel(date: string): string {
 }
 
 function SourceIcon({ item }: { item: Item }) {
-  if (item.source === 'moments_post') return <Camera size={16} aria-hidden />;
   if (item.source === 'character_interaction') return <ChatCircle size={16} aria-hidden />;
   if (item.source === 'public_update') return <Megaphone size={16} aria-hidden />;
   return <KindIcon kind={item.kind} />;

@@ -20,7 +20,7 @@ import app.weiban.designsystem.tokens.WbSpace
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
-/** 「TA 的近况」时间线（SIM-11 第 3、4 条）：契约 3.0 listTimeline，90 天内日常事件、朋友圈、角色互动、公开动态，倒序分页。 */
+/** 「TA 的近况」时间线（SIM-11 第 3、4 条）：契约 3.0 listTimeline，90 天内日常事件、角色互动、公开动态，倒序分页。 */
 private class TimelinePager(
     private val repository: SessionRepository,
     private val owner: OwnerRecord,
@@ -159,7 +159,6 @@ private class TimelinePager(
         val source =
             when (entry.source) {
                 "public_update" -> "公开资料"
-                "moments_post" -> "朋友圈"
                 "character_interaction" -> "和其他角色"
                 "shared_episode" -> "我们一起"
                 else -> null
