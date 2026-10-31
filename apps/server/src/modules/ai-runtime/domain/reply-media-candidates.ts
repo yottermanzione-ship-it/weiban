@@ -36,6 +36,11 @@ export interface StickerOption {
   stickerId: string;
   mediaId: string;
   description: string;
+  /**
+   * 离线标签文本（library_sticker_labels 读出，见 listStickersForCharacter）。
+   * 本分支只负责读出、不改选图口径：selectReplySticker 暂不消费 tags，仍按 description 匹配。
+   */
+  tags?: readonly string[];
 }
 export interface ReplyStickerCandidate {
   sticker: StickerOption;
