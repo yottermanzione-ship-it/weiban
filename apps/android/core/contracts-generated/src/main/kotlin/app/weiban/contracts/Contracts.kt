@@ -7802,6 +7802,65 @@ data class NudgeContentInput(
 )
 
 @Serializable
+data class OfficialAssistantEndpointsEnsureConversationResponse(
+    @SerialName("conversationId") val `conversationId`: Id,
+)
+
+typealias OfficialBroadcastAudience = JsonElement
+
+typealias OfficialBroadcastAudienceInput = JsonElement
+
+@Serializable
+data class OfficialBroadcastRequest(
+    @SerialName("broadcastId") val `broadcastId`: Id,
+    @SerialName("title") val `title`: String? = null,
+    @SerialName("body") val `body`: String,
+    @SerialName("audience") val `audience`: OfficialBroadcastAudience,
+)
+
+@Serializable
+data class OfficialBroadcastRequestInput(
+    @SerialName("broadcastId") val `broadcastId`: Id,
+    @SerialName("title") val `title`: String? = null,
+    @SerialName("body") val `body`: String,
+    @SerialName("audience") val `audience`: OfficialBroadcastAudienceInput,
+)
+
+@Serializable
+data class OfficialBroadcastResponse(
+    @SerialName("broadcastId") val `broadcastId`: Id,
+    @SerialName("delivered") val `delivered`: Long,
+    @SerialName("skipped") val `skipped`: Long,
+)
+
+@Serializable
+data class OfficialContact(
+    @EncodeDefault
+    @SerialName("kind") val `kind`: String = "official",
+    @EncodeDefault
+    @SerialName("refId") val `refId`: String = "a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1",
+    @EncodeDefault
+    @SerialName("name") val `name`: String = "小V同学",
+    @SerialName("signature") val `signature`: String,
+    @SerialName("avatarPath") val `avatarPath`: String?,
+    @SerialName("conversationId") val `conversationId`: Id?,
+)
+
+@Serializable
+data class OfficialProfile(
+    @EncodeDefault
+    @SerialName("kind") val `kind`: String = "official",
+    @EncodeDefault
+    @SerialName("identityKey") val `identityKey`: String = "official:xiaov",
+    @EncodeDefault
+    @SerialName("refId") val `refId`: String = "a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1",
+    @EncodeDefault
+    @SerialName("name") val `name`: String = "小V同学",
+    @SerialName("signature") val `signature`: String,
+    @SerialName("avatarPath") val `avatarPath`: String?,
+)
+
+@Serializable
 data class Participant(
     @SerialName("participantId") val `participantId`: Id,
     @SerialName("kind") val `kind`: ParticipantKind,

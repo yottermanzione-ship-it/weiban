@@ -292,7 +292,7 @@ export class ChannelBridge {
       conversationId: string;
       conversationType: 'direct' | 'group';
       messageId: string;
-      senderKind: 'user' | 'character' | 'system';
+      senderKind: 'user' | 'character' | 'official' | 'system';
       senderRefId: string | null;
       contentType: string;
       scope: 'normal' | 'adult';

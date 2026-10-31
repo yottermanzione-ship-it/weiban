@@ -16,6 +16,7 @@ import type {
   SyncPort,
   CharacterTrialCleanupPort,
 } from '@weiban/contracts';
+import { OFFICIAL_NAME, OFFICIAL_REF_ID } from '@weiban/contracts';
 import {
   ContactsModule,
   CONTACTS_READ_PORT,
@@ -115,6 +116,7 @@ import { SupportModule } from './modules/support/index.js';
 import { ClientLogsModule } from './modules/client-logs/index.js';
 import { ChannelsModule } from './modules/channels/index.js';
 import { RecapModule } from './modules/recap/index.js';
+import { OfficialAssistantModule } from './modules/official-assistant/index.js';
 import {
   PlazaModule,
   PLAZA_CHARACTERS,
@@ -276,6 +278,8 @@ class ChatGroupDirectoryCompositionModule {}
         current: (userId, messageId, tx) => chat.getNotificationContext(userId, messageId, tx),
         name: async (userId, characterId, tx) => {
           if (!characterId) return '微伴';
+          // 官方身份不是角色：固定 refId 直接认名字，不走联系人/角色名查询。
+          if (characterId === OFFICIAL_REF_ID) return OFFICIAL_NAME;
           const contact = await contacts.getActiveContact(userId, characterId, tx);
           if (contact?.remark) return contact.remark;
           return (await characters.getDisplayName(userId, characterId, tx)) ?? '微伴';
@@ -525,6 +529,7 @@ export class AppModule {
         ClientLogsModule,
         ChannelsModule,
         RecapModule,
+        OfficialAssistantModule,
       ],
     };
   }
