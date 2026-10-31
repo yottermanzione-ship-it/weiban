@@ -7692,6 +7692,8 @@ data class MomentsPost(
     @SerialName("images") val `images`: List<MomentsImage>,
     @SerialName("link") val `link`: MomentsPostLink?,
     @SerialName("visibility") val `visibility`: MomentsVisibility?,
+    @SerialName("sourceKind") val `sourceKind`: String? = null,
+    @SerialName("forwardedPublic") val `forwardedPublic`: Boolean? = null,
     @SerialName("likes") val `likes`: List<MomentsActor>,
     @SerialName("likedByMe") val `likedByMe`: Boolean,
     @SerialName("comments") val `comments`: List<MomentsComment>,
