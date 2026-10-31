@@ -55,6 +55,11 @@ export interface MomentsCharacterPort {
       link: MomentsLinkInput | null;
       /** 对应的日常事件 / 公开动态 / 节日 / 宠物（SOC-07 验收：每条都能对应来源）。 */
       sourceRef: { kind: 'daily_event' | 'public_update' | 'holiday' | 'pet'; id: string };
+      /**
+       * 原文转发的公开内容（迁移 0151）：仅 postForEcology 与微博同步投递传 true；
+       * maybePost 生成的私人动态一律不传。读脑分流与写回 recheck 只认此标记。
+       */
+      forwardedPublic?: boolean;
       idempotencyKey: string;
     },
   ): Promise<PortResult<MomentsPost, 'character_not_in_contacts'>>;

@@ -34,6 +34,12 @@ export const posts = momentsSchema.table('posts', {
   visibilityKind: text('visibility_kind'),
   sourceKind: text('source_kind'),
   sourceId: text('source_id'),
+  /**
+   * 原文转发的公开内容标记（迁移 0151）：仅 postForEcology 与微博同步投递
+   * 两条原文转发路径写入 true；maybePost 生成的私人动态一律 false。
+   * 读脑分流与写回 recheck 只认此标记，不认 sourceKind。
+   */
+  forwardedPublic: boolean('forwarded_public').notNull().default(false),
   createKey: text('create_key').notNull(),
   createdAt: time('created_at').notNull(),
 });

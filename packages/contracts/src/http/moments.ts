@@ -61,6 +61,17 @@ export const MomentsPost = z.object({
   link: LinkContent.omit({ type: true }).nullable(),
   /** 只有用户自己的动态有值。 */
   visibility: MomentsVisibility.nullable(),
+  /**
+   * 角色动态的来源（DB posts.source_kind）：daily_event / public_update / holiday / pet；
+   * 用户动态为 null，旧数据/替身可缺省。仅作信息展示，不作读脑/写回分流依据。
+   */
+  sourceKind: z.enum(['daily_event', 'public_update', 'holiday', 'pet']).nullable().optional(),
+  /**
+   * 原文转发的公开内容（DB posts.forwarded_public，迁移 0151）：仅 postForEcology
+   * 与微博同步投递为 true；maybePost 生成的私人动态一律 false/缺省。读脑分流与
+   * 写回 recheck 只认此标记，不认 sourceKind。
+   */
+  forwardedPublic: z.boolean().optional(),
   likes: z.array(MomentsActor),
   likedByMe: z.boolean(),
   comments: z.array(MomentsComment),

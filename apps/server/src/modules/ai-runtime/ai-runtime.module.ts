@@ -21,6 +21,7 @@ import { MemoryTierService } from './application/memory-tier.js';
 import { BrainContextService } from './application/brain.js';
 import { SharedEpisodesService } from './application/shared-episodes.js';
 import { ConversationMemoryService } from './application/conversation-memory.js';
+import { MomentsMemoryService } from './application/moments-memory.js';
 import { Module } from '@nestjs/common';
 import { ChatModule } from '../chat/index.js';
 import { CharactersModule } from '../characters/index.js';
@@ -169,6 +170,7 @@ import {
     TimelineListService,
     SocialService,
     MomentsAiService,
+    MomentsMemoryService,
     MediaAiService,
     // T-072：P-45「不方便」静默的真实提供方。
     QuietStateService,
