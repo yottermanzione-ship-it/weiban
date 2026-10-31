@@ -163,6 +163,56 @@ describe('official Dataset Viewer adapter', () => {
     await expect(fetchArenaDataset(fetcher, noDelay)).rejects.toThrow('HTTP 403');
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
+  it('retries a page whose fetch throws (connection reset) and recovers', async () => {
+    const fetcher = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce(Response.json(page(0, 1, (i) => raw(i, 'overall'))));
+    const result = await fetchArenaDataset(fetcher, {
+      ...noDelay,
+      transientRetryBackoffMs: [0, 0],
+    });
+    expect(result.entries).toHaveLength(1);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+  it('retries HTTP 500 like other 5xx and recovers', async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('boom', { status: 500 }))
+      .mockResolvedValueOnce(Response.json(page(0, 1, (i) => raw(i, 'overall'))));
+    const result = await fetchArenaDataset(fetcher, {
+      ...noDelay,
+      transientRetryBackoffMs: [0, 0],
+    });
+    expect(result.entries).toHaveLength(1);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+  it('bounds fetch-throw retries and records the failing page in the error', async () => {
+    const fetcher = vi.fn(async () => {
+      throw new TypeError('socket hangup');
+    });
+    await expect(
+      fetchArenaDataset(fetcher, { ...noDelay, transientRetryBackoffMs: [0, 0] }),
+    ).rejects.toThrow(/连接失败.*offset=0.*socket hangup/);
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+  it('bounds HTTP 500 retries and records the failing page in the error', async () => {
+    const fetcher = vi.fn(async () => new Response('boom', { status: 500 }));
+    await expect(
+      fetchArenaDataset(fetcher, { ...noDelay, transientRetryBackoffMs: [0, 0] }),
+    ).rejects.toThrow(/HTTP 500.*offset=0.*已重试2次/);
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+  it('records the failing page offset for invalid pages', async () => {
+    const fetcher = vi.fn(async (url: string) => {
+      const offset = Number(new URL(url).searchParams.get('offset'));
+      const value = page(offset, 201, (i) => raw(i, 'overall'));
+      if (offset === 100) value.rows = [];
+      return Response.json(value);
+    });
+    await expect(fetchArenaDataset(fetcher, noDelay)).rejects.toThrow('offset=100');
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
   it('bounds a stalled page using an abort signal', async () => {
     const fetcher = vi.fn(
       (_url: string, init: RequestInit) =>
@@ -172,9 +222,14 @@ describe('official Dataset Viewer adapter', () => {
           });
         }),
     );
-    await expect(fetchArenaDataset(fetcher, { ...noDelay, pageTimeoutMs: 10 })).rejects.toThrow(
-      '超时',
-    );
+    await expect(
+      fetchArenaDataset(fetcher, {
+        ...noDelay,
+        pageTimeoutMs: 10,
+        transientRetryBackoffMs: [0, 0],
+      }),
+    ).rejects.toThrow('超时');
+    expect(fetcher).toHaveBeenCalledTimes(3);
   });
   it('rejects an oversized response', async () => {
     await expect(
