@@ -182,6 +182,7 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
           visibilityKind: body.visibility.kind,
           sourceKind: null,
           sourceId: null,
+          forwardedPublic: false,
           createKey,
           createdAt: at,
         })
@@ -582,6 +583,8 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
         visibilityKind: null,
         sourceKind: input.sourceRef.kind,
         sourceId: String(input.sourceRef.id).slice(0, 100),
+        // 原文转发标记只认显式传入的 true；其余路径（postPublic/maybePost）一律 false。
+        forwardedPublic: input.forwardedPublic === true,
         createKey,
         createdAt: this.clock.now(),
       });
@@ -1095,6 +1098,13 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
         });
       }
       const selected = visRows.filter((v) => v.postId === row.id).map((v) => v.characterId);
+      const sourceKind =
+        row.sourceKind === 'daily_event' ||
+        row.sourceKind === 'public_update' ||
+        row.sourceKind === 'holiday' ||
+        row.sourceKind === 'pet'
+          ? row.sourceKind
+          : null;
       result.push(
         MomentsPost.parse({
           postId: row.id,
@@ -1122,6 +1132,8 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
                 ? { kind: 'selected', characterIds: selected }
                 : { kind: 'all_characters', characterIds: [] }
               : null,
+          sourceKind,
+          forwardedPublic: row.forwardedPublic === true,
           likes: postLikes.map((l) => ({ kind: l.actorKind, refId: l.actorRefId })),
           likedByMe: postLikes.some((l) => l.actorKind === 'user' && l.actorRefId === userId),
           comments: postComments,

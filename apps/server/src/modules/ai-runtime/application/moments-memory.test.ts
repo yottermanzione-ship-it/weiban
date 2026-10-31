@@ -144,6 +144,39 @@ describe('读脑分流', () => {
       }),
     ).toBe(false);
   });
+
+  it('原文转发（forwardedPublic=true）不走脑前缀', () => {
+    expect(
+      shouldUseBrainPrefix({
+        privateConversation: false,
+        authorKind: 'character',
+        sharedPublicDraft: false,
+        forwardedPublic: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('maybePost 私人动态（素材 public_update、无转发标记）走脑前缀', () => {
+    expect(
+      shouldUseBrainPrefix({
+        privateConversation: false,
+        authorKind: 'character',
+        sharedPublicDraft: false,
+        forwardedPublic: false,
+      }),
+    ).toBe(true);
+  });
+
+  it('旧数据（无转发标记）按旧行为走脑前缀', () => {
+    expect(
+      shouldUseBrainPrefix({
+        privateConversation: false,
+        authorKind: 'character',
+        sharedPublicDraft: false,
+        forwardedPublic: undefined,
+      }),
+    ).toBe(true);
+  });
 });
 
 describe('提取输入', () => {
@@ -437,6 +470,34 @@ describe('MomentsMemoryService.run', () => {
     });
     await shared.service.run(jobData());
     expect(shared.gateway.generateText).not.toHaveBeenCalled();
+  });
+
+  it('原文转发（forwardedPublic=true）的帖子直接丢弃', async () => {
+    const forwarded = buildService();
+    forwarded.moments.getPost.mockResolvedValue(
+      makePost({ sourceKind: 'public_update', forwardedPublic: true, text: '微博原文转发。' }),
+    );
+    await forwarded.service.run(jobData());
+    expect(forwarded.gateway.generateText).not.toHaveBeenCalled();
+    expect(forwarded.memory.applyExternal).not.toHaveBeenCalled();
+  });
+
+  it('maybePost 私人动态（素材 public_update、无转发标记）照常写回', async () => {
+    const { service, moments, gateway, memory } = buildService();
+    const op = {
+      action: 'ADD',
+      content: '角色今天分享了一件公开动态里提到的事。',
+      category: 'episode',
+      importance: 4,
+      sourceMessageIds: [POST],
+    };
+    moments.getPost.mockResolvedValue(
+      makePost({ sourceKind: 'public_update', forwardedPublic: false }),
+    );
+    gateway.generateText.mockResolvedValue(gatewayOk([op]));
+    await service.run(jobData());
+    expect(gateway.generateText).toHaveBeenCalled();
+    expect(memory.applyExternal).toHaveBeenCalled();
   });
 
   it('网关失败、坏 JSON、校验失败一律丢弃不写库', async () => {

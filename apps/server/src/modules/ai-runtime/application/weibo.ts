@@ -319,6 +319,8 @@ export class WeiboSyncService implements OnModuleInit {
       imageMediaIds: [],
       link: null,
       sourceRef: { kind: 'public_update', id: updateId },
+      // 原文转发标记（迁移 0151）：微博公开内容原文投递，只认此标记走公开路。
+      forwardedPublic: true,
       idempotencyKey: `weibo:${itemId}`,
     });
     if (post.ok)

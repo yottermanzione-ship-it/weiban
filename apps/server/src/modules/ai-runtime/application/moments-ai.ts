@@ -57,6 +57,7 @@ import { outputAllowed } from '../domain/reply-rules.js';
 import { momentsPlans, simulationStates } from '../infra/db/schema.js';
 import { localParts } from './proactive-scheduler.js';
 import {
+  isForwardedPublic,
   isSharedPublicDraft,
   momentsMemoryJobData,
   sendMomentsMemoryJob,
@@ -467,6 +468,8 @@ export class MomentsAiService {
       imageMediaIds: picked ? [picked.mediaId] : [],
       link: null,
       sourceRef: { kind: 'public_update', id: material.updateId },
+      // 原文转发标记（迁移 0151）：只认此标记走公开路，不认 sourceKind。
+      forwardedPublic: true,
       // 同一条微博对同一个用户只转一次。
       idempotencyKey: `eco-weibo:${userId}:${material.updateId}`,
     });
@@ -609,6 +612,8 @@ export class MomentsAiService {
 
     // 私人朋友圈读记忆（04:53 决定）：脑前缀放最前；brain 为 null 时回退现有无脑生成。
     // maybePost 是私人动态唯一的生成点（现未被调用，保留作对照）；公开路一字不动。
+    // 收窄口径：maybePost 生成的动态一律是私人动态、读脑，哪怕素材来源是 public_update；
+    // 只有原文转发（postForEcology / 微博同步投递，forwardedPublic=true）才走公开路。
     const privateBrain = await this.brain
       .build(userId, characterId, 'normal', `朋友圈素材：${source.brief}`, { compact: true })
       .catch(() => null);
@@ -719,6 +724,7 @@ export class MomentsAiService {
       .set({ status: 'posted', postId: posted.value.postId })
       .where(eq(momentsPlans.id, planId));
     // 写回触发（04:42 决定）：私人动态发布成功后异步记一笔；公开草稿文本在任务执行时复核丢弃。
+    // 收窄口径：maybePost 生成的动态一律投递写回（哪怕素材是 public_update）；原文转发不走这里。
     const epoch = await this.contacts.getActiveContactEpoch(userId, characterId).catch(() => null);
     if (epoch) {
       await sendMomentsMemoryJob(
@@ -974,7 +980,7 @@ export class MomentsAiService {
 
   /**
    * 朋友圈写回触发（thread 批次）：用户评论角色私人动态后记一笔。
-   * 用户动态、公开草稿、无好友关系时不记；内部异常一律吞掉（尽力而为），
+   * 用户动态、公开草稿、原文转发、无好友关系时不记；内部异常一律吞掉（尽力而为），
    * 绝不影响回复调度。公开性的最终复核在任务执行时做。
    */
   private async enqueueMomentsThreadMemory(payload: {
@@ -991,6 +997,8 @@ export class MomentsAiService {
       const post = await this.moments.getPost(userId, payload.postId);
       if (!post || post.author.kind !== 'character' || post.author.refId !== characterId) return;
       if (await isSharedPublicDraft(this.db, characterId, post.createdAt, post.text)) return;
+      // 微博转发根治收窄口径：仅原文转发（forwardedPublic=true）的动态不投递写回任务。
+      if (isForwardedPublic(post.forwardedPublic)) return;
       const epoch = await this.contacts.getActiveContactEpoch(userId, characterId);
       if (!epoch) return;
       await sendMomentsMemoryJob(
@@ -1010,7 +1018,7 @@ export class MomentsAiService {
 
   /**
    * 朋友圈写回触发（reply 批次）：角色回复评论后记一笔。
-   * 只记角色本人动态下的回复；公开草稿、无好友关系时不记；内部异常一律吞掉。
+   * 只记角色本人动态下的回复；公开草稿、原文转发、无好友关系时不记；内部异常一律吞掉。
    */
   private async enqueueMomentsReplyMemory(
     job: MomentsReactJob,
@@ -1021,6 +1029,8 @@ export class MomentsAiService {
       const { userId, characterId } = job;
       if (post.author.kind !== 'character' || post.author.refId !== characterId) return;
       if (await isSharedPublicDraft(this.db, characterId, post.createdAt, post.text)) return;
+      // 微博转发根治收窄口径：仅原文转发（forwardedPublic=true）的动态不投递写回任务。
+      if (isForwardedPublic(post.forwardedPublic)) return;
       const epoch = await this.contacts.getActiveContactEpoch(userId, characterId);
       if (!epoch) return;
       await sendMomentsMemoryJob(
@@ -1207,9 +1217,10 @@ export class MomentsAiService {
       : post.images.length
         ? `\n（附 ${post.images.length} 张图片，你看不到图片内容，不要描述图片细节）`
         : '';
-    // 私人朋友圈读脑（04:53 决定）：只做私人——角色动态、非公开草稿、非私密模型路；
+    // 私人朋友圈读脑（04:53 决定）：只做私人——角色动态、非公开草稿、非原文转发、非私密模型路；
     // 公开动态、用户动态、私密模型路一律走现有路。brain 为 null 时回退。
-    // 注意：角色动态的 visibility 为 null，分流依据是公开草稿表文本比对（postPublic 的先例）。
+    // 注意：角色动态的 visibility 为 null，分流只认显式原文转发标记 forwardedPublic，
+    // 不认 sourceKind；公开草稿表文本比对只作次级兜底（postPublic 的先例）。
     const sharedDraft = await isSharedPublicDraft(
       this.db,
       characterId,
@@ -1220,6 +1231,7 @@ export class MomentsAiService {
       privateConversation: !!job.privateConversationId,
       authorKind: post.author.kind,
       sharedPublicDraft: sharedDraft,
+      forwardedPublic: post.forwardedPublic ?? false,
     });
     const commentBrain = useBrain
       ? await this.brain

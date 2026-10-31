@@ -5,8 +5,9 @@
  * - 角色私人动态发布成功 → post 批次（moments-ai.maybePost 投递）；
  * - 用户评论角色私人动态 → thread 批次（moments-ai.onCommentCreated 投递）；
  * - 角色回复评论 → reply 批次（moments-ai.react0 投递）。
- * 公开内容（公开草稿文本、微博转发）在投递侧与任务执行时各拦一次，拦不住也不会写错：
- * 执行时复核帖子仍在、仍是该角色的动态、仍不是公开草稿文本，任一不符直接丢弃不重试。
+ * 公开内容（公开草稿文本、原文转发的微博内容）在投递侧与任务执行时各拦一次，
+ * 拦不住也不会写错：执行时复核帖子仍在、仍是该角色的动态、仍不是公开草稿文本、
+ * 不是原文转发（forwardedPublic=true，迁移 0151），任一不符直接丢弃不重试。
  *
  * 写入：经 MemoryService.applyExternal，范围一律 normal，来源值 'moments'
  * （需 0150 迁移放宽 memories 表 check 约束）。每批最多 3 个操作，不存全文，
@@ -157,16 +158,35 @@ export async function isSharedPublicDraft(
 }
 
 /**
- * 读脑分流（04:53 决定）：只做私人——角色动态、非公开草稿、非私密模型路。
- * 私密模型路（job.privateConversationId）沿用现有 adult 生成，不插脑前缀；
- * 用户动态与公开动态走现有路。
+ * 原文转发判定（微博转发根治收窄口径，迁移 0151）：posts.forwarded_public
+ * 为 true 的动态一律走公开路。该标记只由 postForEcology 与微博同步投递
+ * 两条原文转发路径写入；maybePost 生成的私人动态一律 false，哪怕素材来源
+ * 是 public_update。标记缺失/未知时不按公开处理（保持旧行为，由公开草稿
+ * 文本比对兜底）。
+ */
+export function isForwardedPublic(forwardedPublic: boolean | null | undefined): boolean {
+  return forwardedPublic === true;
+}
+
+/**
+ * 读脑分流（04:53 决定 + 微博转发根治收窄口径）：只做私人——角色动态、
+ * 非公开草稿、非原文转发、非私密模型路。原文转发（forwardedPublic=true）
+ * 与公开草稿一律不插脑前缀；私密模型路（job.privateConversationId）沿用现有
+ * adult 生成，不插脑前缀；用户动态与公开动态走现有路。sourceKind 只记素材
+ * 来源，不作分流依据。
  */
 export function shouldUseBrainPrefix(input: {
   privateConversation: boolean;
   authorKind: 'user' | 'character';
   sharedPublicDraft: boolean;
+  forwardedPublic?: boolean | null;
 }): boolean {
-  return !input.privateConversation && input.authorKind === 'character' && !input.sharedPublicDraft;
+  return (
+    !input.privateConversation &&
+    input.authorKind === 'character' &&
+    !input.sharedPublicDraft &&
+    !isForwardedPublic(input.forwardedPublic)
+  );
 }
 
 /**
@@ -265,6 +285,9 @@ export class MomentsMemoryService implements OnModuleInit {
     const post = await this.moments.getPost(userId, postId);
     if (!post || post.author.kind !== 'character' || post.author.refId !== characterId) return;
     if (await isSharedPublicDraft(this.db, characterId, post.createdAt, post.text)) return;
+    // 微博转发根治收窄口径：仅原文转发（forwardedPublic=true）不写回；maybePost
+    // 生成的私人动态（哪怕素材是 public_update）仍写回。
+    if (isForwardedPublic(post.forwardedPublic)) return;
     const { sourceIds, text } = buildMomentsExtractionInput(post, characterId);
     if (healthPrivate(text)) return;
     const focus =
