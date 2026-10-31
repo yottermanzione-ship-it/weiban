@@ -5,6 +5,7 @@ import { PluginsPage } from '../features/plugins.js';
 import { EcologyInsufficientNotice } from '../features/ecology-insufficient-notice.js';
 import { EcologyPage } from '../features/ecology.js';
 import { OnboardingGuidePage, OnboardingGuideProvider } from '../features/onboarding-guide.js';
+import { PermissionsOnboarding } from '../features/permissions-onboarding.js';
 import { MurmursPage } from '../features/murmurs.js';
 import { useCallback, useEffect, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
@@ -522,6 +523,7 @@ function Shell() {
           </RouteMotion>
           {showTabs && <TabBar hidden={false} />}
           <AchievementWatcher />
+          {!firstProfile && !onboarding && <PermissionsOnboarding />}
           {!firstProfile && <ReleaseCenter />}
           {!firstProfile && <RecapAutoShow />}
           <ToastHost />
