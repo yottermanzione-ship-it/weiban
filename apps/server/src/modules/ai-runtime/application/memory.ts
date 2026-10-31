@@ -412,7 +412,7 @@ export class MemoryService {
           characterId: job.characterId,
           conversationId: job.conversationId,
           clientId: input.clientId,
-          scope: 'adult',
+          scope: 'normal',
           ciphertext: await this.seal(tx, job.userId, id, data),
           embedding,
           createdAt: this.clock.now(),
@@ -871,24 +871,13 @@ export class MemoryService {
         .limit(MAX_MEMORIES);
       const rolling: Awaited<ReturnType<ChatSummaryService['views']>> =
         (await this.chatSummaries?.views(tx, state, summarySince)) ?? {};
-      const digestRows = await tx.db
-        .select({ id: privateDigests.memoryId })
-        .from(privateDigests)
-        .where(
-          and(
-            eq(privateDigests.userId, userId),
-            eq(privateDigests.characterId, characterId),
-            eq(privateDigests.conversationId, job.conversationId),
-          ),
-        );
-      const privateIds = new Set(digestRows.map((r) => r.id).filter(Boolean));
       // 记忆库容量：按记下的先后（ID 为时间序）只取最早的 libraryLimit 条参与；超出的不删，开通 PRO+ 立即恢复。
       const capped = limits?.libraryLimit != null ? rows.slice(0, limits.libraryLimit) : rows;
       const decoded: MemoryEntry[] = [];
-      for (const row of capped) {
-        const entry = await this.open(row, tx);
-        decoded.push(privateIds.has(entry.memoryId) ? { ...entry, scope: 'adult' } : entry);
-      }
+      // 恢复私密切出摘要：新摘要是清洁检查后的日常记忆，按存储范围读。PR #25 的来源隔离
+      //（按 private_digests.memory_id 把记忆改回私密范围）会让新摘要在日常里永远读不到，已随恢复去掉；
+      // 线上核实 private_digests 仅 5 行 abandoned、0 行带 memory_id，没有旧链接记忆会被重新放出。
+      for (const row of capped) decoded.push(await this.open(row, tx));
       const filtered = decoded.filter((entry) => scope === 'adult' || entry.scope === 'normal');
       const cappedIds = new Set(capped.map((r) => r.id));
 
@@ -1059,7 +1048,6 @@ export class MemoryService {
       }
 
       let summary = [segmentSummary, dailySummary, monthlySummary].filter(Boolean).join('\n===\n');
-      if (scope === 'normal' && privateIds.size) summary = '';
       // ---- 0091：分段稳定窗口（docs/refactor/09 第 8 节）----
       const legacyFloor = Math.max(state.windowStartSeq, state.barrierSeq);
       const rawFromSeqByScope = {
@@ -1072,7 +1060,6 @@ export class MemoryService {
           : rawFromSeqByScope.normal;
       const summaryVersion = `${rolling.normal?.version ?? 0}:${rolling.adult?.version ?? 0}`;
       const legacyPart = (s: 'normal' | 'adult') => {
-        if (s === 'normal' && privateIds.size) return '';
         return renderStableMemory({
           scope: s,
           resident: [],
@@ -1108,7 +1095,7 @@ export class MemoryService {
             // 档位变了（开通 / 到期 / 新用户体验结束 / 后台改参数），记忆块重算一次
             if (block && limits && block.tier !== tierFingerprint(limits, summarySince))
               block = null;
-            if (block && (block.summaryVersion !== summaryVersion || privateIds.size)) block = null;
+            if (block && block.summaryVersion !== summaryVersion) block = null;
           } finally {
             bytes.fill(0);
           }
@@ -1130,7 +1117,7 @@ export class MemoryService {
           const all = decoded.map((m) => ({ ...m, dueAt: m.dueAt ?? null }));
           const variant = (s: 'normal' | 'adult') => {
             const resident = pickResident(all, s, limits?.residentLimit ?? 8);
-            if (!rolling.normal && !rolling.adult && !privateIds.size)
+            if (!rolling.normal && !rolling.adult)
               return {
                 resident,
                 text: renderStableMemory({

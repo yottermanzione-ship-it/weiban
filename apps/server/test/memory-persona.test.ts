@@ -575,8 +575,8 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
     // H2（20 号 §2.4 第 2 条）：日常范围不再读私密模式原文与私密记忆（以切出时的「干净整理」代替）。
     expect(JSON.stringify(normalSnapshot?.messages)).not.toContain('ADULT_SOURCE_CANARY');
     expect(JSON.stringify(normalSnapshot?.messages)).not.toContain('ADULT_UPDATED_MEMORY_CANARY');
-    expect(JSON.stringify(normalSnapshot?.messages)).not.toContain('私密模式期间的经历整理');
-    expect(JSON.stringify(normalSnapshot?.messages)).toContain('本次没有提供私密范围资料');
+    expect(JSON.stringify(normalSnapshot?.messages)).toContain('私密模式期间的经历整理');
+    expect(JSON.stringify(normalSnapshot?.messages)).not.toContain('本次没有提供私密范围资料');
     response = JSON.stringify({ operations: [], summary: '本批次摘要。' });
     const before = calls.length;
     for (let i = 0; i < 4; i++) await memory().extract(await job());
@@ -700,7 +700,7 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
     expect((await app.get(CHAT_READ_PORT).getConversation(cid)).contentScope).toBe('normal');
     adultAvailability = 'not_configured';
   });
-  it('私密切出不再降范围；旧日常概括按来源隔离；私密模式拒绝语音', async () => {
+  it('私密切出登记干净整理、写成日常记忆；私密原文不进日常', async () => {
     const path = `/api/v1/characters/${characterId}/companion-settings`;
     adultAvailability = null;
     const original = response;
@@ -753,18 +753,34 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
           ).rows[0]!.n,
         );
       const before = await count();
+      const pendingBefore = new Set(
+        (
+          await db.query<{ id: string }>(
+            "SELECT id FROM ai_runtime.private_digests WHERE conversation_id=$1 AND status='pending'",
+            [cid],
+          )
+        ).rows.map((r) => r.id),
+      );
       await http()
         .patch(path)
         .set('Authorization', auth())
         .send({ scenarioMode: 'daily' })
         .expect(200);
-      // 没有切换（日常 → 日常）不登记。
+      // 切出私密登记一次干净整理；没有切换（日常 → 日常）不登记。
       await http()
         .patch(path)
         .set('Authorization', auth())
         .send({ scenarioMode: 'daily', personaFit: 4 })
         .expect(200);
-      expect(await count()).toBe(before);
+      expect(await count()).toBe(before + 1);
+      const enqueued = (
+        await db.query<{ id: string; event_key: string }>(
+          "SELECT id,event_key FROM ai_runtime.private_digests WHERE conversation_id=$1 AND status='pending'",
+          [cid],
+        )
+      ).rows.filter((r) => !pendingBefore.has(r.id));
+      expect(enqueued).toHaveLength(1);
+      expect(enqueued[0]!.event_key.startsWith('mode:')).toBe(true);
       const digestId = newId();
       await db.query(
         "INSERT INTO ai_runtime.private_digests(id,user_id,character_id,conversation_id,event_key,to_seq,status,next_attempt_at,created_at,updated_at) VALUES($1,$2,$3,$4,$6,0,'pending',$5,$5,$5)",
@@ -779,6 +795,34 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
         [digestId],
       );
       expect(done.rows[0]?.status).toBe('skipped');
+      // 切出时登记的那一行：私密模型生成干净摘要，写成日常记忆。
+      response = JSON.stringify({
+        summary: 'DIGEST_CLEAN_CANARY 用户与角色约定一起看晚霞，关系更亲近了。',
+      });
+      const digestCallsBefore = calls.length;
+      await app.get(PrivateDigestService).run(enqueued[0]!.id);
+      const digestCall = calls
+        .slice(digestCallsBefore)
+        .find((c) => c.meta?.promptTemplateVersion === 'private-digest-v1');
+      expect(digestCall).toMatchObject({ modelRole: 'adult', purpose: 'memory' });
+      const finished = await db.query<{ status: string; memory_id: string | null }>(
+        'SELECT status,memory_id FROM ai_runtime.private_digests WHERE id=$1',
+        [enqueued[0]!.id],
+      );
+      expect(finished.rows[0]?.status).toBe('done');
+      expect(finished.rows[0]?.memory_id).not.toBeNull();
+      const digestMemory = await db.query<{ scope: string }>(
+        'SELECT scope FROM ai_runtime.memories WHERE id=$1',
+        [finished.rows[0]!.memory_id],
+      );
+      expect(digestMemory.rows[0]?.scope).toBe('normal');
+      expect(JSON.stringify(await memory().context(userId, characterId, 'normal', ''))).toContain(
+        'DIGEST_CLEAN_CANARY',
+      );
+      expect(
+        JSON.stringify(await memory().context(userId, characterId, 'normal', '')),
+      ).not.toContain('PRIVATE_RAW_CANARY');
+      response = original;
       const legacyId = await memory().addPrivateDigest({
         userId,
         characterId,
@@ -792,16 +836,18 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
         'SELECT scope FROM ai_runtime.memories WHERE id=$1',
         [legacyId],
       );
-      expect(written.rows[0]?.scope).toBe('adult');
-      // 模拟升级前已经写成 normal 的旧条目；必须由任务来源映射隔离，不能靠文本敏感词猜测。
-      await db.query("UPDATE ai_runtime.memories SET scope='normal' WHERE id=$1", [legacyId]);
+      expect(written.rows[0]?.scope).toBe('normal');
+      expect(JSON.stringify(await memory().context(userId, characterId, 'normal', ''))).toContain(
+        'LEGACY_PRIVATE_DIGEST_CANARY',
+      );
+      // 任务来源链接不再把日常记忆改回私密：即使 private_digests 指着它，日常照样读得到。
       await db.query('UPDATE ai_runtime.private_digests SET memory_id=$1 WHERE id=$2', [
         legacyId,
         digestId,
       ]);
-      expect(
-        JSON.stringify(await memory().context(userId, characterId, 'normal', '')),
-      ).not.toContain('LEGACY_PRIVATE_DIGEST_CANARY');
+      expect(JSON.stringify(await memory().context(userId, characterId, 'normal', ''))).toContain(
+        'LEGACY_PRIVATE_DIGEST_CANARY',
+      );
       expect(JSON.stringify(await memory().context(userId, characterId, 'adult', ''))).toContain(
         'LEGACY_PRIVATE_DIGEST_CANARY',
       );
@@ -810,7 +856,6 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
       const daily = await user('还记得我们之前很亲密吗');
       const snapshot = await app.get(ReplyContext).build(daily);
       expect(JSON.stringify(snapshot?.messages)).not.toContain('PRIVATE_RAW_CANARY');
-      expect(JSON.stringify(snapshot?.messages)).not.toContain('LEGACY_PRIVATE_DIGEST_CANARY');
       expect(snapshot?.scope).toBe('normal');
       expect(JSON.stringify(snapshot?.messages)).not.toContain('PRIVATE_ROLLING_SUMMARY_CANARY');
     } finally {
