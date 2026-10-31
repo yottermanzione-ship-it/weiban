@@ -338,6 +338,18 @@ export class CompanionSettingsService {
         .where(eq(companionSettings.id, row.id));
       const contact = await this.contacts.getActiveContact(row.userId, p.characterId, tx);
       if (contact?.conversationId) {
+        const reason =
+          row.scenarioMode === 'adult' ? 'adult_mode_unavailable' : 'scenario_mode_unavailable';
+        // H2 干净整理：资格收紧切回日常也算一次切出（旧缺口：两版代码里这里都没有登记）。
+        // 登记放在改范围、发系统提示之前，和另外两处切出登记一样，toSeq 取切换前最后一条消息。
+        // 幂等键取设置行本次变更前的 updatedAt：同一事件重投只登记一次，资格恢复后再次收紧则键不同。
+        if (row.scenarioMode === 'adult')
+          await this.digests?.enqueue(tx, {
+            userId: row.userId,
+            characterId: p.characterId,
+            conversationId: contact.conversationId,
+            eventKey: `classification:${row.id}:${row.updatedAt.getTime()}:${reason}`,
+          });
         await this.chat.setContentScope(
           { conversationId: contact.conversationId, scope: 'normal' },
           tx,
@@ -347,8 +359,7 @@ export class CompanionSettingsService {
           code: 'scenario_mode_changed',
           params: {
             mode: 'daily',
-            reason:
-              row.scenarioMode === 'adult' ? 'adult_mode_unavailable' : 'scenario_mode_unavailable',
+            reason,
           },
           idempotencyKey: `classification:${row.userId}:${p.characterId}:${now.getTime()}`,
         });
