@@ -10,6 +10,7 @@ import {
   type EcologyActivityLevel,
   type EcologyConfig,
 } from '@weiban/contracts';
+import { MAIN_UNREPLIED_LIMIT } from './ecology-counters.js';
 
 /**
  * 执行方式：
@@ -378,9 +379,9 @@ const JEV_HINT: Partial<Record<EcologyActionKey, string>> = {
   nudge: '拍一拍对方并顺带说一句话。',
   share_link: '分享自己作品库里的一首歌或链接。',
   moment_post: '把已同步的公开微博转到私人朋友圈。',
-  moment_interact: '给对方最近的朋友圈点赞。',
+  moment_interact: '给对方最近的朋友圈点赞或评论（点赞和评论是分开的两件事，都做也可以）。',
   moment_reply: '回复自己朋友圈下还没回的评论。',
-  moment_peer: '给认识的其他角色的朋友圈点赞。',
+  moment_peer: '给认识的其他角色的朋友圈点赞或评论（点赞和评论是分开的两件事，都做也可以）。',
   status: '更新自己的状态，偶尔才做。',
   signature: '改个性签名，很少才做。',
   care_anniversary: '今天是特别的日子时表达心意。',
@@ -460,7 +461,7 @@ export function interpretJevAnswers(
  * 且「主动消息」在候选里，就发一条主动消息，让活跃程度 ≈ 实际动静次数。
  * 10-28 生产上保底按「想做可能性最高」挑中过拍一拍（只拍不说话）、表情包、心愿（都没做成），所以只认主动消息。
  * 分数只用于运行记录：message 一题选 act = 把握值，选 defer = 1 − 把握值；缺答案 / 重复 / 非法值记 0，照样发。
- * 打扰的情形不保底：深夜、已有 2 条以上未回、对方在用应用却没回。
+ * 打扰的情形不保底：深夜、已有 3 条以上未回（主线次数，见 ecology-counters）、对方在用应用却没回。
  */
 export function ecologyFallback(
   candidates: readonly EcologyActionKey[],
@@ -469,7 +470,7 @@ export function ecologyFallback(
 ): { action: EcologyActionKey; score: number } | null {
   if (
     context.lateNight ||
-    context.unansweredCount >= 2 ||
+    context.unansweredCount >= MAIN_UNREPLIED_LIMIT ||
     (context.unansweredCount >= 1 && context.userActiveInApp30m) ||
     !candidates.includes('message')
   )

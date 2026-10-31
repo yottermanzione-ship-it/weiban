@@ -56,7 +56,8 @@ import {
 import { MODEL_GATEWAY_MEDIA_PORT } from '../../model-access/index.js';
 import { CharacterImageService } from './character-image.js';
 import { PlannerService, type PlanBatchRequest, type PlanResult } from './planner.js';
-import { replyTone, selectReplySticker } from '../domain/reply-media-candidates.js';
+import { replyTone, selectReplySticker, voiceSpacingOk } from '../domain/reply-media-candidates.js';
+import { detectFormSuppressions } from '../domain/chat-form-suppression.js';
 
 /** P-45 静默查询（契约 UserQuietStatePort，由 QuietStateService 提供，T-072）。 */
 export const AI_USER_QUIET_STATE = Symbol('weiban.ai-runtime.user-quiet-state');
@@ -71,6 +72,8 @@ export const VOICE_MAX_RATIO = 0.1;
 /** 规则版：上限内主动发语音的概率（T-090 起作为决策层 reply_form 的规则版与退路）。 */
 const VOICE_CHANCE = 0.06;
 const VOICE_MAX_CHARS = 120;
+/** 语音目标长度：主动穿插的语音只挑 80 字以内的短回复（硬上限仍是 120 字）。 */
+const VOICE_TARGET_CHARS = 80;
 const VOICE_REQUEST =
   /(发|来)(条|个|段|一段|一条)?语音|语音(给我|发我|说)|听听你的声音|想听你(的)?声音|用语音/u;
 const LINK_REQUEST =
@@ -420,14 +423,43 @@ export class MediaAiService {
     const seed = `${input.triggerId}:${ctx.characterId}`;
     const requested = VOICE_REQUEST.test(input.userText);
     const recent = mine.slice(-100);
+    // 会话压制：用户在聊天里明确说过不喜欢某一种形式，就不发那一种；后来明确要了就恢复。
+    // 最近的用户原话 + 本轮原话一起算（本轮原话在最后，后说的覆盖先说的）。
+    const userTexts = [
+      ...input.history
+        .filter((m) => m.senderKind === 'user')
+        .slice(-30)
+        .map((m) =>
+          m.content?.type === 'text'
+            ? m.content.text
+            : m.content?.type === 'voice'
+              ? (m.content.transcript ?? '')
+              : '',
+        ),
+      input.userText,
+    ];
+    const suppressedForms = detectFormSuppressions(userTexts).suppressed;
     const voiceCount = recent.filter((m) => m.content?.type === 'voice').length;
     // 语音会替代本轮所有文字气泡，不能用尚未发送的文字气泡虚增分母。
     const ratioOk = (voiceCount + 1) / (recent.length + 1) <= VOICE_MAX_RATIO;
-    const shortEnough = [...joined].length > 0 && [...joined].length <= VOICE_MAX_CHARS;
+    const joinedLength = [...joined].length;
+    const shortEnough = joinedLength > 0 && joinedLength <= VOICE_MAX_CHARS;
+    // 主动穿插只挑短回复；用户明确要语音时放宽到硬上限。20 条内已有 2 条语音就停
+    // （再发就超 10%）；上次语音后不足 5 条文字回复时不连发语音（用户明确要时除外）。
+    const recent20 = mine.slice(-20);
+    const voice20Count = recent20.filter((m) => m.content?.type === 'voice').length;
+    const spacingOk = voiceSpacingOk([...mine].reverse().map((m) => m.content?.type ?? 'text'));
+    const voiceLengthOk = requested
+      ? shortEnough
+      : joinedLength > 0 && joinedLength <= VOICE_TARGET_CHARS;
+    const voiceGuardOk =
+      !suppressedForms.has('voice') &&
+      voiceLengthOk &&
+      (requested || (ratioOk && voice20Count < 2 && spacingOk));
     const until = await this.quiet.getInconvenientUntil(ctx.userId).catch(() => undefined);
     const voiceQuietOk = until !== undefined && (!until || Date.parse(until) <= this.clock.nowMs());
     let availableVoice: string | null = null;
-    if (shortEnough && voiceQuietOk && (requested || (!input.quiet && ratioOk))) {
+    if (shortEnough && voiceQuietOk && (requested || (!input.quiet && voiceGuardOk))) {
       const enabled = await this.media.isServiceEnabled('speech_synthesis').catch(() => false);
       if (enabled)
         availableVoice = await this.resolveVoice(
@@ -436,10 +468,18 @@ export class MediaAiService {
           ctx.defaultVoiceId,
         ).catch(() => null);
     }
-    const recentStickers = mine.filter((m) => m.content?.type === 'sticker').slice(-2);
+    // 20 条内不重复同一张表情：排除最近 20 条角色消息里发过的图。
+    const recentStickers = mine.filter((m) => m.content?.type === 'sticker').slice(-20);
     const excludedIds = new Set(
       recentStickers.flatMap((m) => (m.content?.type === 'sticker' ? [m.content.stickerId] : [])),
     );
+    // 保底：最近 9 条角色回复都没带表情包、且本轮有合义候选时，直接带上（不再等决策层抽签）。
+    let trailingTextOnly = 0;
+    for (let i = mine.length - 1; i >= 0 && trailingTextOnly < 9; i--) {
+      if (mine[i]!.content?.type === 'sticker') break;
+      trailingTextOnly++;
+    }
+    const stickerFloor = trailingTextOnly >= 9;
     const stickerQuota = (contentCount: number) => {
       const previousCount = Math.max(0, STICKER_WINDOW - contentCount - 1);
       const previous = previousCount ? mine.slice(-previousCount) : [];
@@ -447,6 +487,7 @@ export class MediaAiService {
     };
     const canSticker =
       !input.quiet &&
+      !suppressedForms.has('sticker') &&
       bubbles.length < 6 &&
       mine.at(-1)?.content?.type !== 'sticker' &&
       Math.min(stickerQuota(bubbles.length), stickerQuota(1)) > 0;
@@ -459,6 +500,9 @@ export class MediaAiService {
           excludedIds,
         )
       : null;
+    // 保底：最近 9 条角色回复都没带表情包时，规则版与保守版都倾向保留候选
+    // （决策层仍可按场景否决；判定调用失败时不兜底，见 media-ai-batch.test.ts）。
+    const floorSticker = !!candidate && stickerFloor;
     const lastUser = [...input.history].reverse().find((m) => m.senderKind === 'user');
     const baseFeatures = {
       userMsgLength: [...input.userText].length,
@@ -488,13 +532,17 @@ export class MediaAiService {
       });
     }
     if (candidate) {
-      const ruleSticker = seededChance(`sticker:${seed}`) < STICKER_CHANCE;
+      const ruleSticker = floorSticker || seededChance(`sticker:${seed}`) < STICKER_CHANCE;
       questions.push({
         questionId: 'sticker',
         options: ['no_sticker', 'keep_sticker'],
         ruleChoice: ruleSticker ? 'keep_sticker' : 'no_sticker',
-        ruleReason: ruleSticker ? '规则版附合义表情' : '规则版不附表情',
-        conservative: 'no_sticker',
+        ruleReason: floorSticker
+          ? '保底：最近多条回复都没带表情包'
+          : ruleSticker
+            ? '规则版附合义表情'
+            : '规则版不附表情',
+        conservative: floorSticker ? 'keep_sticker' : 'no_sticker',
         question:
           '是否附带已匹配的表情？stickerMeaning是候选含义，replyTone是回复语气。仅在相符且不显得轻浮时选keep_sticker，否则no_sticker；允许与语音同时批准。',
         features: {
@@ -654,9 +702,13 @@ export class MediaAiService {
     return this.pickSticker(characterId, hint, seed);
   }
 
-  /** 生态 v1：该角色有没有可用表情（决策工具清单用）。 */
+  /** 生态 v1：该角色有没有可用表情（决策工具清单用）。只有带含义说明的图才算可用。 */
   async hasStickers(characterId: string): Promise<boolean> {
-    return (await this.assets.listStickersForCharacter(characterId).catch(() => [])).length > 0;
+    const list = await this.assets.listStickersForCharacter(characterId).catch(() => []);
+    return list.some((s) => {
+      const description = s.description.trim();
+      return !!description && !/\d/.test(description);
+    });
   }
 
   /** 陪伴设置 → 已授权角色快照的默认音色 → 预设默认；每一项都必须仍启用。 */
