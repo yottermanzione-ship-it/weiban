@@ -64,6 +64,29 @@ export async function enableWebPush(): Promise<void> {
     }));
   await bind(auth, subscription);
 }
+/**
+ * 通知权限已获批后订阅推送（首次进入一次性申请流程用）。
+ * enableWebPush 保持原样（设置页开关仍先取公钥再弹申请）；本函数假设权限已获批，
+ * VAPID 未配置时取公钥即抛错，由调用方按“只记通知已授权、跳过订阅”处理，不新建基建。
+ */
+export async function subscribeWebPush(): Promise<void> {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window))
+    throw new Error('此浏览器暂不支持推送；iPhone请先添加到主屏幕');
+  const auth = AuthResponse.parse(await localStore.get('session'));
+  const { publicKey } = await api.call(PushEndpoints.getVapidPublicKey, { networkOnly: true });
+  const registration = await navigator.serviceWorker.ready;
+  const existing = await registration.pushManager.getSubscription();
+  const subscription =
+    existing ??
+    (await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: Uint8Array.from(
+        atob(publicKey.replace(/-/g, '+').replace(/_/g, '/')),
+        (character) => character.charCodeAt(0),
+      ),
+    }));
+  await bind(auth, subscription);
+}
 export async function disableWebPush(): Promise<void> {
   const auth = AuthResponse.safeParse(await localStore.get('session'));
   if (auth.success)

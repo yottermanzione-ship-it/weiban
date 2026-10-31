@@ -1,0 +1,14 @@
+{
+  "cookies": [],
+  "origins": [
+    {
+      "localStorage": [
+        {
+          "name": "permissions-onboarded",
+          "value": "1"
+        }
+      ],
+      "origin": "http://127.0.0.1:5173"
+    }
+  ]
+}
