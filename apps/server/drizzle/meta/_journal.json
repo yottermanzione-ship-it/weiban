@@ -982,6 +982,13 @@
       "when": 1793441090955,
       "tag": "0151_moments_forwarded_public",
       "breakpoints": true
+    },
+    {
+      "idx": 154,
+      "version": "7",
+      "when": 1793473899968,
+      "tag": "0154_sticker_labels",
+      "breakpoints": true
     }
   ]
 }

@@ -49,7 +49,7 @@ export interface MediaTranscriptPort {
 export interface MediaAssetReadPort {
   listStickersForCharacter(
     characterId: string,
-  ): Promise<Array<{ stickerId: string; mediaId: string; description: string }>>;
+  ): Promise<Array<{ stickerId: string; mediaId: string; description: string; tags?: string[] }>>;
   getVoice(voiceId: string): Promise<{
     voiceId: string;
     name: string;
