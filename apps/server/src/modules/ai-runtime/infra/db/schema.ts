@@ -282,7 +282,10 @@ export const memories = aiRuntimeSchema.table(
     unique('memory_client_idx').on(t.userId, t.characterId, t.clientId),
     index('memory_owner_idx').on(t.userId, t.characterId, t.conversationId, t.id),
     check('memory_scope', sql`${t.scope} IN ('normal','adult')`),
-    check('memories_origin_check', sql`${t.origin} IN ('private_chat','group','call','system')`),
+    check(
+      'memories_origin_check',
+      sql`${t.origin} IN ('private_chat','group','call','system','moments')`,
+    ),
   ],
 );
 /** 删除屏障按会话seq保守截断旧原文；摘要与来源清单加密。 */

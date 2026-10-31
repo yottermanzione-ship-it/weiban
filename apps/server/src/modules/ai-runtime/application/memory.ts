@@ -1277,7 +1277,7 @@ export class MemoryService {
       conversationId: string;
       epoch: string;
       scope: 'normal' | 'adult';
-      origin: 'group' | 'call';
+      origin: 'group' | 'call' | 'moments';
       batchId: string;
       revision: number;
       operations: z.infer<typeof ExtractedMemory>['operations'];
