@@ -783,6 +783,74 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       },
     });
     this.bus.subscribe({
+      consumer: 'ai.on_contact_reset',
+      eventType: 'contacts.contact_reset',
+      handle: async (event, tx) => {
+        // 重置角色：与 contact_purged 同一套清理，但联系人行保留 active，
+        // 不得复用 purged 的“无 active 联系人”守卫（守卫会跳过清理）。
+        const { userId, characterId, conversationId } = event.payload;
+        await this.store.lock(tx, userId);
+        if (conversationId) await this.captions.deleteByConversation(tx, userId, conversationId);
+        if (conversationId) {
+          await tx.db
+            .delete(memories)
+            .where(and(eq(memories.userId, userId), eq(memories.conversationId, conversationId)));
+          await tx.db
+            .delete(memoryStates)
+            .where(
+              and(eq(memoryStates.userId, userId), eq(memoryStates.conversationId, conversationId)),
+            );
+        }
+        if (conversationId)
+          await tx.db
+            .delete(adultBoundaryStates)
+            .where(
+              and(
+                eq(adultBoundaryStates.userId, userId),
+                eq(adultBoundaryStates.conversationId, conversationId),
+              ),
+            );
+        if (conversationId)
+          await tx.db
+            .delete(replyPlans)
+            .where(
+              and(eq(replyPlans.userId, userId), eq(replyPlans.conversationId, conversationId)),
+            );
+        await tx.db
+          .delete(simulationStates)
+          .where(
+            and(eq(simulationStates.userId, userId), eq(simulationStates.characterId, characterId)),
+          );
+        await tx.db
+          .delete(dailyEvents)
+          .where(and(eq(dailyEvents.userId, userId), eq(dailyEvents.characterId, characterId)));
+        await this.proactive.purgePair(tx, userId, characterId);
+        await tx.query(
+          'DELETE FROM ai_runtime.moments_plans WHERE user_id=$1 AND character_id=$2',
+          [userId, characterId],
+        );
+        await tx.query(
+          'DELETE FROM ai_runtime.joint_events WHERE user_id=$1 AND (character_a_id=$2 OR character_b_id=$2)',
+          [userId, characterId],
+        );
+        await tx.query(
+          'DELETE FROM ai_runtime.card_referrals WHERE user_id=$1 AND (character_id=$2 OR referrer_character_id=$2)',
+          [userId, characterId],
+        );
+        await tx.db
+          .delete(moodStates)
+          .where(and(eq(moodStates.userId, userId), eq(moodStates.characterId, characterId)));
+        await tx.db
+          .delete(companionSettings)
+          .where(
+            and(
+              eq(companionSettings.userId, userId),
+              eq(companionSettings.characterId, characterId),
+            ),
+          );
+      },
+    });
+    this.bus.subscribe({
       consumer: 'ai.on_balance_restored',
       eventType: 'billing.balance_restored',
       handle: async (event, tx) => {

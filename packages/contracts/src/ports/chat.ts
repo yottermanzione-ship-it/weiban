@@ -123,6 +123,12 @@ export interface ChatAdminPort {
   archiveDirectConversation(tx: Tx, input: { userId: string; characterId: string }): Promise<void>;
   /** contacts 立即删除/保留期到期：物理清除该私聊；下一次添加创建新会话。 */
   purgeDirectConversation(tx: Tx, input: { userId: string; characterId: string }): Promise<void>;
+  /**
+   * contacts 重置角色：保留会话行、删除全部消息行、会话状态归零（未读/清空游标归零，
+   * 置顶/免打扰/背景重置为默认值，archivedAt 清空）；lastSeq 不回退。只发 state_updated /
+   * updated，不发 conversation.removed / contact.removed。
+   */
+  clearDirectConversation(tx: Tx, input: { userId: string; characterId: string }): Promise<void>;
   /** 写一条系统提示（如「XX 通过了你的好友申请」）。幂等键规则同 postMessage。 */
   postSystemMessage(
     tx: Tx | null,

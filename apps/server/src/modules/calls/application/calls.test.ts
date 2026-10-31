@@ -30,6 +30,7 @@ function service(scope: 'normal' | 'adult', blocker?: () => Promise<string | nul
     {
       getSpendStatus: async () => ({ depleted: false, insufficient: false, availableMicros: 100 }),
     } as never,
+    unused as never, // EVENT_BUS（重置角色订阅新增）
     {} as never,
     { isVoiceCallEnabled: async () => true, voiceCallBlocker: blocker } as never,
   );

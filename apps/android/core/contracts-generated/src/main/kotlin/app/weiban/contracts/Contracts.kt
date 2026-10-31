@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 4.7. Regenerate: pnpm android:generate
+// Contract 4.8. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "4.7"
+const val CONTRACT_VERSION: String = "4.8"
 
 @Serializable
 data class AccountAlias(
@@ -4080,6 +4080,19 @@ data class EventsContactRequested(
 )
 
 @Serializable
+data class EventsContactReset(
+    @SerialName("eventId") val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") val `type`: String = "contacts.contact_reset",
+    @EncodeDefault
+    @SerialName("version") val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "contacts",
+    @SerialName("occurredAt") val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsContactResetPayload,
+)
+
+@Serializable
 data class EventsContactUpdated(
     @SerialName("eventId") val `eventId`: Id,
     @EncodeDefault
@@ -4473,6 +4486,19 @@ data class EventsDomainEventContactsContactPurged(
     @SerialName("producer") val `producer`: String = "contacts",
     @SerialName("occurredAt") override val `occurredAt`: Timestamp,
     @SerialName("payload") val `payload`: EventsDomainEventContactsContactPurgedPayload,
+) : EventsDomainEvent
+
+@Serializable
+data class EventsDomainEventContactsContactReset(
+    @SerialName("eventId") override val `eventId`: Id,
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "contacts.contact_reset",
+    @EncodeDefault
+    @SerialName("version") override val `version`: Long = 1,
+    @EncodeDefault
+    @SerialName("producer") val `producer`: String = "contacts",
+    @SerialName("occurredAt") override val `occurredAt`: Timestamp,
+    @SerialName("payload") val `payload`: EventsDomainEventContactsContactResetPayload,
 ) : EventsDomainEvent
 
 @Serializable
@@ -5054,6 +5080,7 @@ object EventsDomainEventSerializer : KSerializer<EventsDomainEvent> {
             "contacts.contact_accepted" -> input.json.decodeFromJsonElement(EventsDomainEventContactsContactAccepted.serializer(), value)
             "contacts.contact_removed" -> input.json.decodeFromJsonElement(EventsDomainEventContactsContactRemoved.serializer(), value)
             "contacts.contact_purged" -> input.json.decodeFromJsonElement(EventsDomainEventContactsContactPurged.serializer(), value)
+            "contacts.contact_reset" -> input.json.decodeFromJsonElement(EventsDomainEventContactsContactReset.serializer(), value)
             "contacts.contact_updated" -> input.json.decodeFromJsonElement(EventsDomainEventContactsContactUpdated.serializer(), value)
             "chat.conversation_created" -> input.json.decodeFromJsonElement(EventsDomainEventChatConversationCreated.serializer(), value)
             "chat.message_created" -> input.json.decodeFromJsonElement(EventsDomainEventChatMessageCreated.serializer(), value)
@@ -5128,6 +5155,7 @@ object EventsDomainEventSerializer : KSerializer<EventsDomainEvent> {
             is EventsDomainEventContactsContactAccepted -> output.json.encodeToJsonElement(EventsDomainEventContactsContactAccepted.serializer(), value)
             is EventsDomainEventContactsContactRemoved -> output.json.encodeToJsonElement(EventsDomainEventContactsContactRemoved.serializer(), value)
             is EventsDomainEventContactsContactPurged -> output.json.encodeToJsonElement(EventsDomainEventContactsContactPurged.serializer(), value)
+            is EventsDomainEventContactsContactReset -> output.json.encodeToJsonElement(EventsDomainEventContactsContactReset.serializer(), value)
             is EventsDomainEventContactsContactUpdated -> output.json.encodeToJsonElement(EventsDomainEventContactsContactUpdated.serializer(), value)
             is EventsDomainEventChatConversationCreated -> output.json.encodeToJsonElement(EventsDomainEventChatConversationCreated.serializer(), value)
             is EventsDomainEventChatMessageCreated -> output.json.encodeToJsonElement(EventsDomainEventChatMessageCreated.serializer(), value)
@@ -13002,6 +13030,13 @@ data class EventsContactRequestedPayload(
 )
 
 @Serializable
+data class EventsContactResetPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("conversationId") val `conversationId`: Id?,
+)
+
+@Serializable
 data class EventsContactUpdatedPayload(
     @SerialName("userId") val `userId`: Id,
     @SerialName("characterId") val `characterId`: Id,
@@ -13205,6 +13240,13 @@ data class EventsDomainEventContactsContactRemovedPayload(
 
 @Serializable
 data class EventsDomainEventContactsContactPurgedPayload(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("conversationId") val `conversationId`: Id?,
+)
+
+@Serializable
+data class EventsDomainEventContactsContactResetPayload(
     @SerialName("userId") val `userId`: Id,
     @SerialName("characterId") val `characterId`: Id,
     @SerialName("conversationId") val `conversationId`: Id?,

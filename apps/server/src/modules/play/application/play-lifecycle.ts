@@ -95,6 +95,14 @@ export class PlayLifecycle implements OnModuleInit {
         for (const f of this.features) await f.onContactPurged?.(tx, userId, characterId);
       },
     });
+    this.bus.subscribe({
+      consumer: 'play.on_contact_reset',
+      eventType: 'contacts.contact_reset',
+      handle: async (event, tx) => {
+        const { userId, characterId } = event.payload;
+        for (const f of this.features) await f.onContactPurged?.(tx, userId, characterId);
+      },
+    });
 
     await this.jobs.register(PLAY_DUE_SWEEP_JOB, () => this.sweep());
     await this.jobs.cron(PLAY_DUE_SWEEP_JOB, '* * * * *');

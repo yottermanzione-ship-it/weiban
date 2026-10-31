@@ -32,6 +32,7 @@ import {
   CLOCK,
   DATABASE,
   ENVELOPE_CRYPTO,
+  EVENT_BUS,
   OUTBOX,
   USER_DATA_REGISTRY,
   asDbTx,
@@ -42,6 +43,7 @@ import {
   type Database,
   type DbTx,
   type EnvelopeCrypto,
+  type EventBus,
   type Outbox,
   type UserDataRegistry,
 } from '../../../platform/index.js';
@@ -84,6 +86,7 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(ENVELOPE_CRYPTO) private readonly crypto: EnvelopeCrypto,
     @Inject(OUTBOX) private readonly outbox: Outbox,
+    @Inject(EVENT_BUS) private readonly bus: EventBus,
     @Inject(SYNC_PORT) private readonly sync: SyncPort,
     @Inject(CONTACTS_READ_PORT) private readonly contacts: ContactsReadPort,
     @Inject(MEDIA_READ_PORT) private readonly media: MediaReadPort,
@@ -101,6 +104,16 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
       module: 'moments',
       count: (characterId, tx) => this.countCharacterData(characterId, tx),
       purge: (tx, characterId) => this.purgeCharacter(tx, characterId),
+    });
+    // 重置角色（留好友、只清数据）：只删该用户与该角色这一对的互动数据。
+    // 不得复用 contact_purged 的“联系人已不存在”守卫——重置后联系人行仍是 active。
+    this.bus.subscribe({
+      consumer: 'moments.on_contact_reset',
+      eventType: 'contacts.contact_reset',
+      handle: async (event, tx) => {
+        const { userId, characterId } = event.payload;
+        await this.onContactReset(tx, userId, characterId);
+      },
     });
   }
 
@@ -761,6 +774,79 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
       return n;
     });
   }
+  /**
+   * 重置角色的朋友圈分流清理（contacts.contact_reset 订阅者）。
+   *
+   * 只动 owner_user_id = userId 的那一个朋友圈世界：
+   * - 动态行：只删该角色发的、私人动态（forwarded_public = false）。原文转发的公开内容
+   *   （forwarded_public = true，迁移 0151，仅 postForEcology 与微博同步投递）保留；
+   *   其图片 / 可见范围 / 点赞 / 评论随动态行级联删除。
+   * - 互动子项（保留动态上的）：删该角色的全部评论 / 点赞；删用户在该角色动态下的评论 /
+   *   点赞；删回复链上被删评论的全部后代回复（reply_to_comment_id 闭包，不论作者）。
+   *   用户自己的动态、其他角色的动态与互动一律不动。
+   * - 信号：每条被删动态发 post_changed(deleted=true)，每条被删过互动的保留动态发
+   *   post_changed(deleted=false)，最后发一次 badge_updated（既有口径，与 deleteUserPost
+   *   一致）。什么都没删时不发信号；重复投递时已无可删行，自然不再发信号。
+   */
+  async onContactReset(tx: DbTx, userId: string, characterId: string): Promise<void> {
+    parseContract(Id, userId);
+    parseContract(Id, characterId);
+    const doomed = await tx.db
+      .select({ id: posts.id })
+      .from(posts)
+      .where(
+        and(
+          eq(posts.ownerUserId, userId),
+          eq(posts.authorKind, 'character'),
+          eq(posts.authorCharacterId, characterId),
+          eq(posts.forwardedPublic, false),
+        ),
+      );
+    const doomedIds = new Set(doomed.map((row) => row.id));
+    const liked = await tx.query<{ post_id: string }>(
+      `DELETE FROM moments.likes l
+        USING moments.posts p
+        WHERE l.post_id = p.id
+          AND p.owner_user_id = $1
+          AND (
+            (l.actor_kind = 'character' AND l.actor_ref_id = $2)
+            OR (l.actor_kind = 'user' AND l.actor_ref_id = $1
+              AND p.author_kind = 'character' AND p.author_character_id = $2)
+          )
+        RETURNING l.post_id`,
+      [userId, characterId],
+    );
+    const commented = await tx.query<{ post_id: string }>(
+      `WITH RECURSIVE doomed AS (
+         SELECT c.id
+           FROM moments.comments c
+           JOIN moments.posts p ON p.id = c.post_id
+          WHERE p.owner_user_id = $1
+            AND (
+              (c.author_kind = 'character' AND c.author_ref_id = $2)
+              OR (c.author_kind = 'user' AND c.author_ref_id = $1
+                AND p.author_kind = 'character' AND p.author_character_id = $2)
+            )
+         UNION
+         SELECT c.id
+           FROM moments.comments c
+           JOIN doomed d ON c.reply_to_comment_id = d.id
+       )
+       DELETE FROM moments.comments WHERE id IN (SELECT id FROM doomed)
+       RETURNING post_id`,
+      [userId, characterId],
+    );
+    if (doomedIds.size) {
+      await tx.db.delete(posts).where(inArray(posts.id, [...doomedIds]));
+    }
+    const affected = new Set<string>();
+    for (const row of [...liked.rows, ...commented.rows])
+      if (!doomedIds.has(row.post_id)) affected.add(row.post_id);
+    for (const postId of [...doomedIds].sort()) await this.postChanged(tx, userId, postId, true);
+    for (const postId of [...affected].sort()) await this.postChanged(tx, userId, postId, false);
+    if (doomedIds.size || affected.size) await this.pushBadge(tx, userId);
+  }
+
   async countUserData(userId: string, runner: Runner = this.db.db): Promise<number> {
     const result = await runner.execute<{ n: string }>(sql`SELECT
       (SELECT count(*) FROM moments.posts WHERE owner_user_id = ${userId}) +

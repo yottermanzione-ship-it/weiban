@@ -228,6 +228,26 @@ export class SharedEpisodesService implements OnModuleInit {
         );
       },
     });
+    this.bus.subscribe({
+      consumer: 'ai.shared_episode_reset',
+      eventType: 'contacts.contact_reset',
+      handle: async (event, tx) => {
+        // 重置角色：联系人行保留、requestId（epoch 版本）不变，epoch 条件删不掉，
+        // 直接按用户+角色删；group_memory_states 全用户游标重置是 purge 副作用，不做。
+        const { userId, characterId } = event.payload;
+        await this.store.lock(tx, userId);
+        for (const table of [
+          'shared_episode_states',
+          'shared_episode_months',
+          'shared_episodes',
+          'call_memory_jobs',
+        ])
+          await tx.query(`DELETE FROM ai_runtime.${table} WHERE user_id=$1 AND character_id=$2`, [
+            userId,
+            characterId,
+          ]);
+      },
+    });
   }
   async record(transaction: DbTx | null, input: EpisodeInput): Promise<string | null> {
     let text = input.text.replace(/\s+/gu, ' ').trim().slice(0, 120);

@@ -171,7 +171,7 @@ internal data class InformationNavigation(
         InformationNames(actions, contact, characterId)
         (actions.error ?: companion.error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         if (actions.saved) Text(actions.notice ?: "已保存")
-        InformationRemoval(actions, conversation.conversationId, characterId, navigation.back, onRemoved)
+        InformationRemoval(actions, conversation.conversationId, characterId, navigation.back, onRemoved, navigation.back)
     }
 }
 
@@ -234,6 +234,7 @@ internal data class InformationNavigation(
     characterId: String,
     onBack: () -> Unit,
     onRemoved: () -> Unit,
+    onReset: () -> Unit,
 ) {
     var confirmation by remember { mutableStateOf<String?>(null) }
     BackHandler {
@@ -246,21 +247,25 @@ internal data class InformationNavigation(
         }
     }
     TextButton(enabled = !actions.pending, onClick = { confirmation = "clear" }) { Text("清空聊天记录") }
-    TextButton(enabled = !actions.pending, onClick = { confirmation = "soft" }) { Text("删除角色") }
-    TextButton(enabled = !actions.pending, onClick = { confirmation = "purge" }) { Text("永久删除角色和数据") }
+    TextButton(enabled = !actions.pending, onClick = { confirmation = "soft" }) { Text("删除好友") }
+    TextButton(enabled = !actions.pending, onClick = { confirmation = "reset" }) { Text("重置角色") }
     confirmation?.let { mode ->
         InformationConfirmation(mode, actions.pending, { confirmation = null }) {
-            if (mode == "purge") {
-                confirmation = "purgeConfirmed"
+            if (mode == "reset") {
+                confirmation = "resetConfirmed"
             } else {
                 actions.change(after = {
                     confirmation = null
-                    if (mode != "clear") onRemoved()
+                    if (mode == "resetConfirmed") {
+                        onReset()
+                    } else if (mode != "clear") {
+                        onRemoved()
+                    }
                 }) {
                     if (mode == "clear") {
                         actions.clear(conversationId)
                     } else {
-                        actions.remove(characterId, if (mode == "soft") "soft" else "purge")
+                        actions.remove(characterId, if (mode == "soft") "soft" else "reset")
                     }
                 }
             }
@@ -289,7 +294,9 @@ internal data class InformationNavigation(
     val text =
         when (mode) {
             "clear" -> "只清空聊天记录显示，TA的记忆和养成数据会保留"
-            "soft" -> "角色和聊天将从列表移除，30天内重新添加可恢复"
+            "soft" -> "角色和聊天将从列表移除，30天内重新添加可恢复，30天后自动彻底删除"
+            "reset" -> "好友关系保留，不用重新申请。会清除你和 TA 的全部互动内容：聊天记录、记忆、熟悉度、卡片、宠物和养成数据，还有私人朋友圈的动态、评论、回复和点赞。微博同步过来的公开动态会保留，但下面的评论和点赞会一起删除。生态开关需要重新打开，没送到的慢信会作废，宠物相册里你上传的图片会删除。还会退出你们共同的群聊，之后需要重新拉群。重置后这些内容无法恢复。"
+            "resetConfirmed" -> "重置后全部互动内容无法恢复，好友关系保留，可以直接继续聊天。"
             "purge" -> "这会永久删除聊天记录、记忆和养成数据，无法恢复"
             else -> "再次确认永久删除：重新添加也无法恢复这些数据"
         }
