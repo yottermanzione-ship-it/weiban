@@ -1,10 +1,14 @@
 package app.weiban.feature.chat
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -16,6 +20,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.weiban.contracts.*
@@ -23,7 +31,9 @@ import app.weiban.data.*
 import app.weiban.designsystem.LocalWeibanColors
 import app.weiban.designsystem.tokens.WbSize
 import app.weiban.designsystem.tokens.WbSpace
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
 import java.util.UUID
 
@@ -144,6 +154,108 @@ private class MomentActions(
             onDeleted(post.postId)
         }
 }
+
+/** 朋友圈封面头（网页版 MomentsCover 同款配色）：渐变 + 头像 + 名字；仅展示，换封面编辑暂无可复用的安卓流程。 */
+private val coverGradients =
+    listOf(
+        Color(0xFF4A6FA5) to Color(0xFF9FB8D4),
+        Color(0xFF9A8C98) to Color(0xFFC9ADA7),
+        Color(0xFF5F7470) to Color(0xFFA4B8AE),
+        Color(0xFFBC6C25) to Color(0xFFE9B872),
+        Color(0xFF3D5A80) to Color(0xFF98C1D9),
+        Color(0xFF7B6D8D) to Color(0xFFC4B2CE),
+    )
+
+private fun coverColors(name: String): Pair<Color, Color> {
+    var hash = 0
+    for (ch in name) hash = hash * 31 + ch.code
+    val index = ((hash % coverGradients.size) + coverGradients.size) % coverGradients.size
+    return coverGradients[index]
+}
+
+@Composable private fun MomentsCoverHeader(
+    repository: SessionRepository,
+    owner: OwnerRecord,
+    mode: String,
+    names: MomentNames,
+    me: Profile?,
+) {
+    val isCharacter = mode.startsWith("character:")
+    val characterId = if (isCharacter) mode.removePrefix("character:") else null
+    val displayName =
+        when {
+            characterId != null -> names.of(MomentsActor("character", characterId))
+            else -> me?.nickname ?: "我"
+        }
+    val coverMediaId = if (isCharacter) null else me?.momentsCoverMediaId
+    val (top, bottom) = coverColors(displayName)
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(150.dp)
+            .background(Brush.linearGradient(listOf(top, bottom))),
+    ) {
+        coverMediaId?.let { CoverPicture(repository, owner, it) }
+        Row(
+            Modifier.align(Alignment.BottomStart).padding(WbSpace.S5),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(WbSpace.S4),
+        ) {
+            if (characterId != null) {
+                RoleAvatar(
+                    repository,
+                    owner,
+                    RoleAvatarIdentity(characterId, displayName, names.profiles[characterId]?.avatar),
+                    56.dp,
+                )
+            } else {
+                RoleAvatar(repository, owner, RoleAvatarIdentity(owner.userId, "我", null, user = true), 56.dp)
+            }
+            Text(displayName, color = Color.White, style = MaterialTheme.typography.titleMedium)
+        }
+    }
+}
+
+@Composable private fun CoverPicture(
+    repository: SessionRepository,
+    owner: OwnerRecord,
+    mediaId: String,
+) {
+    var bitmap by remember(owner, mediaId) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(owner, mediaId) { bitmap = loadCoverBitmap(repository, owner, mediaId) }
+    bitmap?.let { image ->
+        Image(image.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        DisposableEffect(image) { onDispose { image.recycle() } }
+    }
+}
+
+@Suppress("TooGenericExceptionCaught") // Missing images keep the gradient placeholder.
+private suspend fun loadCoverBitmap(
+    repository: SessionRepository,
+    owner: OwnerRecord,
+    mediaId: String,
+): Bitmap? =
+    try {
+        val media =
+            repository.call(
+                Endpoints.mediaEndpointsGetMedia,
+                params = mapOf("mediaId" to mediaId),
+                options = SessionCallOptions(owner = owner),
+            )
+        val bytes = repository.download(media, owner)
+        withContext(Dispatchers.IO) {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            require(bounds.outWidth > 0 && bounds.outHeight > 0 && bounds.outWidth.toLong() * bounds.outHeight <= 40_000_000L)
+            var sample = 1
+            while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 1080) sample *= 2
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
+        }
+    } catch (error: kotlinx.coroutines.CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        null
+    }
 
 /**
  * 朋友圈（SOC-07～SOC-09；moments.md、social-l4.md 第 3 节）。
@@ -304,6 +416,10 @@ private class MomentActions(
         }
     val profiles = characterProfiles(repository, ids.filter { it.kind == "character" }.map { it.refId })
     val names = MomentNames(state, profiles)
+    val me =
+        remote("${owner.sessionId}:identity-profile") {
+            repository.call(Endpoints.identityEndpointsGetProfile, options = SessionCallOptions(owner = owner))
+        }
     LaunchedEffect(pager) {
         pager.next()
         if (mode == "feed") {
@@ -359,17 +475,21 @@ private class MomentActions(
                 }
             !pager.initialized -> LinearProgressIndicator(Modifier.fillMaxWidth())
             pager.items.isEmpty() ->
-                Text(
-                    when {
-                        mode == "me" -> "你还没有发过朋友圈"
-                        mode.startsWith("character:") -> "TA 还没有发过朋友圈"
-                        else -> "还没有朋友圈动态"
-                    },
-                    Modifier.fillMaxWidth().padding(WbSpace.S8),
-                    color = colors.textSecondary,
-                )
+                Column {
+                    MomentsCoverHeader(repository, owner, mode, names, me.data)
+                    Text(
+                        when {
+                            mode == "me" -> "你还没有发过朋友圈"
+                            mode.startsWith("character:") -> "TA 还没有发过朋友圈"
+                            else -> "还没有朋友圈动态"
+                        },
+                        Modifier.fillMaxWidth().padding(WbSpace.S8),
+                        color = colors.textSecondary,
+                    )
+                }
             else ->
                 LazyColumn(state = list, modifier = Modifier.weight(1f), contentPadding = PaddingValues(WbSpace.S5)) {
+                    item(key = "cover") { MomentsCoverHeader(repository, owner, mode, names, me.data) }
                     items(pager.items, key = { it.postId }) { post ->
                         MomentCard(post, names, actions, full = false) { onOpenPost(post.postId) }
                     }

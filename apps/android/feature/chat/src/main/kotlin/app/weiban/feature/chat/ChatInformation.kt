@@ -1,15 +1,18 @@
 package app.weiban.feature.chat
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
 import app.weiban.contracts.*
 import app.weiban.data.*
 import app.weiban.designsystem.tokens.WbSpace
@@ -101,11 +104,21 @@ internal data class InformationNavigation(
     conversation: Conversation,
     navigation: InformationNavigation,
     onRemoved: () -> Unit,
+    onAsk: (String) -> Unit = {},
+    onOpenProfile: (String) -> Unit = {},
+    startOnTimeline: Boolean = false,
+    onTimelineOpened: () -> Unit = {},
 ) {
     val characterId = conversation.participants.find { it.kind == "character" }?.refId ?: return
     val contact = state.contacts.find { it.characterId == characterId }
     var memoryPage by remember(owner, characterId) { mutableStateOf(false) }
     var timelinePage by remember(owner, characterId) { mutableStateOf(false) }
+    LaunchedEffect(startOnTimeline) {
+        if (startOnTimeline) {
+            timelinePage = true
+            onTimelineOpened()
+        }
+    }
     var voicePage by remember(owner, characterId) { mutableStateOf(false) }
     var modelPage by remember(owner, characterId) { mutableStateOf(false) }
     if (modelPage) {
@@ -118,7 +131,15 @@ internal data class InformationNavigation(
     }
     val names = characterNames(repository, listOf(characterId))
     if (timelinePage) {
-        CharacterTimeline(repository, owner, characterId, contact?.remark ?: names[characterId].orEmpty()) { timelinePage = false }
+        CharacterTimeline(
+            repository,
+            owner,
+            characterId,
+            contact?.remark ?: names[characterId].orEmpty(),
+            { timelinePage = false },
+            onAsk = { timelinePage = false; onAsk(it) },
+            onOpenCharacter = onOpenProfile,
+        )
         return
     }
     var searchPage by remember(owner, characterId) { mutableStateOf(false) }
@@ -149,10 +170,18 @@ internal data class InformationNavigation(
         return
     }
     app.weiban.designsystem.WbNavBar("聊天信息", { if (!actions.pending) navigation.back() })
+    val profiles = characterProfiles(repository, listOf(characterId))
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WbSpace.S5),
         verticalArrangement = Arrangement.spacedBy(WbSpace.S3),
     ) {
+        ProfileEntryRow(
+            repository,
+            owner,
+            characterId,
+            contact?.remark ?: names[characterId].orEmpty(),
+            profiles[characterId]?.avatar,
+        ) { onOpenProfile(characterId) }
         TextButton(onClick = navigation.createGroup, enabled = !actions.pending) { Text("＋ 发起群聊") }
         Text(title(state, conversation, names))
         InformationPreferences(actions, conversation, companion, characterId)
@@ -161,7 +190,7 @@ internal data class InformationNavigation(
         Text("和 TA 一起用", style = MaterialTheme.typography.titleSmall)
         TogetherRow(characterId)
         Text("和 TA 的相处", style = MaterialTheme.typography.titleSmall)
-        TextButton(onClick = { timelinePage = true }, enabled = !actions.pending) { Text("TA 的近况 ›") }
+        TextButton(onClick = { timelinePage = true }, enabled = !actions.pending) { Text("TA 的动态 ›") }
         TextButton(onClick = { searchPage = true }, enabled = !actions.pending) { Text("查找聊天记录 ›") }
         TextButton(onClick = { supplementPage = true }, enabled = !actions.pending) { Text("我的补充设定 ›") }
         PlazaPublishRow(repository, owner, characterId, !actions.pending)
@@ -172,6 +201,26 @@ internal data class InformationNavigation(
         (actions.error ?: companion.error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         if (actions.saved) Text(actions.notice ?: "已保存")
         InformationRemoval(actions, conversation.conversationId, characterId, navigation.back, onRemoved)
+    }
+}
+
+/** 聊天信息页顶部的成员/资料入口（网页版成员 cell 同款）：点进资料页，朋友圈入口仍在资料页。 */
+@Composable private fun ProfileEntryRow(
+    repository: SessionRepository,
+    owner: OwnerRecord,
+    characterId: String,
+    displayName: String,
+    avatar: CharacterAvatar?,
+    onOpen: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(vertical = WbSpace.S3),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(WbSpace.S3),
+    ) {
+        RoleAvatar(repository, owner, RoleAvatarIdentity(characterId, displayName, avatar), 48.dp)
+        Text(displayName, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+        Text("›", color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

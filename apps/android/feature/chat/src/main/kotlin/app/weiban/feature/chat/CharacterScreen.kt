@@ -1,5 +1,6 @@
 package app.weiban.feature.chat
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -7,6 +8,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.weiban.contracts.*
 import app.weiban.data.*
@@ -90,6 +92,8 @@ private class CharacterUi(
     onOpenConversation: (String) -> Unit,
     progress: OnboardingProgress? = null,
     referral: ProfileTarget? = null,
+    onTimelineAsk: ((conversationId: String, text: String) -> Unit)? = null,
+    onOpenCharacter: ((String) -> Unit)? = null,
 ) {
     var sub by remember(characterId) { mutableStateOf<String?>(null) }
     when (sub) {
@@ -130,6 +134,26 @@ private class CharacterUi(
     val customEditor by L6Overlays.customEditor.collectAsState()
     LaunchedEffect(customEditor) { if (customEditor == null) profile.refresh() }
     val contact = state.contacts.find { it.characterId == characterId } ?: ui.added
+    if (sub == "timeline") {
+        val ask =
+            if (onTimelineAsk != null) {
+                contact?.conversationId?.let { cid ->
+                    { text: String -> onTimelineAsk(cid, text) }
+                }
+            } else {
+                null
+            }
+        CharacterTimeline(
+            repository,
+            owner,
+            characterId,
+            contact?.remark ?: profile.data?.name.orEmpty(),
+            { sub = null },
+            onAsk = ask,
+            onOpenCharacter = onOpenCharacter,
+        )
+        return
+    }
     Column(
         Modifier
             .weight(1f)
@@ -175,6 +199,9 @@ private class CharacterUi(
         }
         if (progress == null) {
             TextButton(onClick = { sub = "moments" }) { Text("朋友圈 ›") }
+            if (contact?.conversationId != null) {
+                RecentTimelineRow(repository, owner, characterId) { sub = "timeline" }
+            }
             // 角色资料页 › 卡册（GRW-05；cards-familiarity.md 3.1）。
             if (contact?.conversationId != null) TextButton(onClick = { sub = "cards" }) { Text("卡册 ›") }
             if (contact?.conversationId != null && profile.data?.kind == "custom") {
@@ -187,6 +214,39 @@ private class CharacterUi(
         }) { Text("刷新资料") }
     }
     if (ui.restore) RestoreContact(ui)
+}
+
+/** 资料页「TA 的动态」行（网页版 RecentRow 同款）：右侧显示最近一条事件文字，点进时间线页。 */
+@Composable private fun ColumnScope.RecentTimelineRow(
+    repository: SessionRepository,
+    owner: OwnerRecord,
+    characterId: String,
+    onOpen: () -> Unit,
+) {
+    val latest =
+        remote("timeline-latest:$characterId") {
+            repository.call(
+                Endpoints.timelineEndpointsListTimeline,
+                params = mapOf("characterId" to characterId),
+                query = mapOf("limit" to "1"),
+                options = SessionCallOptions(owner = owner, networkOnly = true),
+            )
+        }
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(vertical = WbSpace.S3),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(WbSpace.S3),
+    ) {
+        Text("TA 的动态 ›", style = MaterialTheme.typography.bodyLarge)
+        Text(
+            latest.data?.items?.firstOrNull()?.summary.orEmpty(),
+            Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
 }
 
 /** 资料页头部：定高 64dp，资料未到时用同尺寸占位，避免下方按钮随加载移动。 */

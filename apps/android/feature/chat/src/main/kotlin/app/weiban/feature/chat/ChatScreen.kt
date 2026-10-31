@@ -42,6 +42,7 @@ import kotlinx.serialization.json.*
         }
     }
     var information by rememberSaveable(conversationId) { mutableStateOf(false) }
+    var timelineRequest by rememberSaveable(conversationId) { mutableStateOf(false) }
     val composerDraft = rememberSaveable(owner.sessionId, conversationId) { mutableStateOf("") }
     // "": 从会话列表发起；characterId：从私聊聊天信息页发起（原角色锁定）。
     var creating by rememberSaveable(owner.sessionId) { mutableStateOf<String?>(null) }
@@ -96,6 +97,12 @@ import kotlinx.serialization.json.*
                         select(it)
                     },
                     referral = target,
+                    onTimelineAsk = { cid, text ->
+                        profile = null
+                        composerDraft.value = text
+                        select(cid)
+                    },
+                    onOpenCharacter = { id -> profile = ProfileTarget(id) },
                 )
             }
             creatingFrom != null ->
@@ -149,7 +156,10 @@ import kotlinx.serialization.json.*
                     state,
                     selected,
                     InformationNavigation(
-                        { information = false },
+                        {
+                            information = false
+                            timelineRequest = false
+                        },
                         onModelsRequested,
                         createGroup = {
                             creating =
@@ -160,7 +170,20 @@ import kotlinx.serialization.json.*
                                     .orEmpty()
                         },
                     ),
-                ) { select(null) }
+                    { select(null) },
+                    onAsk = { text ->
+                        information = false
+                        timelineRequest = false
+                        composerDraft.value = text
+                    },
+                    onOpenProfile = { id ->
+                        information = false
+                        timelineRequest = false
+                        profile = ProfileTarget(id)
+                    },
+                    startOnTimeline = timelineRequest,
+                    onTimelineOpened = { timelineRequest = false },
+                )
             else ->
                 ConversationView(
                     repository,
@@ -171,7 +194,12 @@ import kotlinx.serialization.json.*
                     composerDraft,
                     { information = true },
                     { profile = it },
-                ) { select(null) }
+                    { select(null) },
+                    onOpenTimeline = {
+                        timelineRequest = true
+                        information = true
+                    },
+                )
         }
     }
 }
@@ -508,6 +536,7 @@ internal suspend fun userAction(onError: (String) -> Unit, action: suspend () ->
     onInformation: () -> Unit,
     onProfile: (ProfileTarget) -> Unit,
     onBack: () -> Unit,
+    onOpenTimeline: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -598,7 +627,7 @@ internal suspend fun userAction(onError: (String) -> Unit, action: suspend () ->
                 .takeIf { !group },
             messages.lastOrNull()?.messageId,
         )
-    WhileAwayCard(whileAway) { ui.text = it }
+    WhileAwayCard(whileAway, onOpenTimeline = onOpenTimeline) { ui.text = it }
     ui.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = WbSpace.S5)) }
     if (group && visible && typingActive) Text(typingText, Modifier.padding(horizontal = WbSpace.S5))
     MessageTimeline(ui, messages, pending, list, Modifier.weight(1f), avatars)
