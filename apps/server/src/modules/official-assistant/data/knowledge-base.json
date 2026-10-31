@@ -1,0 +1,270 @@
+{
+  "entries": [
+    {
+      "answer": "你好呀～微伴使用上有任何问题都可以直接问我，我来帮你看看。",
+      "deterministic": true,
+      "enabled": true,
+      "id": "kb-greeting",
+      "keywords": ["你好", "hi", "hello", "在吗", "在么", "早上好", "晚上好", "您好"]
+    },
+    {
+      "answer": "我是小V同学，微伴的官方小客服，不是真人。使用上有任何问题都可以直接问我；我能帮你查会员、积分、通讯录这些状态，但不能改头像、改人设，也不能替你操作。",
+      "deterministic": true,
+      "enabled": true,
+      "id": "kb-who-are-you",
+      "keywords": [
+        "你是谁",
+        "你叫什么",
+        "小v",
+        "小薇",
+        "小微",
+        "小魏",
+        "介绍一下你",
+        "你是真人吗",
+        "你是机器人吗"
+      ]
+    },
+    {
+      "answer": "会员只有两档：免费和 PRO+。PRO+ 按到期时间判断是否有效，过期就回到免费。",
+      "deterministic": true,
+      "enabled": true,
+      "id": "kb-membership-tiers",
+      "keywords": [
+        "会员有几档",
+        "几档会员",
+        "会员档",
+        "免费会员",
+        "pro+",
+        "pro",
+        "plus会员",
+        "会员等级"
+      ]
+    },
+    {
+      "answer": "{{membershipPlans}}\n首次价每人限一次（任一档用过就不再有）。注册赠送 {{signupBonus}} 积分。\n在线支付还没开放，在 App「我」→「会员权益」里联系管理员开通。",
+      "deterministic": true,
+      "enabled": true,
+      "id": "kb-membership-prices",
+      "keywords": [
+        "会员多少钱",
+        "pro+多少钱",
+        "会员价格",
+        "开通会员",
+        "买会员",
+        "续费",
+        "会员怎么买",
+        "年卡",
+        "月卡",
+        "季卡",
+        "首次价",
+        "赠送积分"
+      ]
+    },
+    {
+      "answer": "目前没有在线支付。充值档位是 {{rechargeTiers}}，不赠送；用户端显示“联系管理员充值”，管理员在后台按积分加余额。",
+      "deterministic": true,
+      "enabled": true,
+      "id": "kb-recharge",
+      "keywords": ["充值", "充钱", "充积分", "怎么充值", "充值档位", "充多少"]
+    },
+    {
+      "answer": "1 元 = 100 积分，聊天按实际用量扣积分。具体每个模型的价格以价目表页现行显示为准，我这边不逐条报，价目表改价会换一版。",
+      "deterministic": true,
+      "enabled": true,
+      "id": "kb-points-rate",
+      "keywords": [
+        "积分怎么算",
+        "模型多少钱",
+        "聊天多少钱",
+        "扣费",
+        "扣多少",
+        "价格表",
+        "价目表",
+        "一元多少积分",
+        "1元多少积分"
+      ]
+    },
+    {
+      "answer": "你现在的积分余额是 {{pointsBalance}} 分。明细可以到积分明细里看，我这边只报余额数字。",
+      "deterministic": true,
+      "enabled": true,
+      "id": "kb-points-balance",
+      "keywords": ["我还有多少积分", "还剩多少积分", "余额", "积分余额", "剩多少", "查积分"]
+    },
+    {
+      "answer": "我这边没看到每天固定免费额度的规则：微伴是按余额扣积分的记账方式，没有找到“每天固定送、0 点刷新”的机制。",
+      "deterministic": true,
+      "enabled": true,
+      "id": "kb-daily-quota",
+      "keywords": ["每天免费", "免费额度", "每日额度", "免费次数", "每天送", "0点刷新"]
+    },
+    {
+      "answer": "通讯录上限是 {{contactLimit}} 个角色，你现在加了 {{contactCount}} 个。达到上限时会提示“通讯录已满，请先删除一些角色”。",
+      "deterministic": true,
+      "enabled": true,
+      "id": "kb-contact-limit",
+      "keywords": ["能加多少", "通讯录上限", "加满了", "好友上限", "最多加几个", "通讯录已满"]
+    },
+    {
+      "answer": null,
+      "deterministic": false,
+      "enabled": true,
+      "guidance": "添加角色要先过可用性检查。已有联系人行且未删除时提示“已经添加或正在等待通过”；删除过的联系人重新添加时，须选择“恢复以前的记录或重新认识”，否则提示“请选择恢复以前的记录或重新认识”。前台按钮文案以客户端为准，不要编按钮名字和步骤。",
+      "id": "kb-add-contact",
+      "keywords": [
+        "添加角色",
+        "加角色",
+        "加不上",
+        "添加失败",
+        "已经添加",
+        "正在等待通过",
+        "恢复以前的记录",
+        "重新认识"
+      ]
+    },
+    {
+      "answer": "申请制作角色功能是开着的：终身免费 3 次，免费次数用完后每次 200 积分；每人同时最多 3 个未结申请；PRO+ 每周免费 3 次（与终身免费不叠加）；拒绝、撤回不计入免费次数、退还免费次数；申请时可以传参考图（须为本人上传、用途匹配的媒体）。具体以申请页现行显示为准。",
+      "deterministic": true,
+      "enabled": true,
+      "id": "kb-role-request",
+      "keywords": ["申请制作", "申请角色", "做角色", "制作角色", "申请收费", "免费几次"]
+    },
+    {
+      "answer": "注册和登录用“用户名 + 密码”，不需要手机号。邀请码字段已经废弃了，只兼容旧客户端，会被忽略。",
+      "deterministic": true,
+      "enabled": true,
+      "id": "kb-register",
+      "keywords": ["注册", "登录", "手机号", "需要手机号吗", "邀请码", "用户名"]
+    },
+    {
+      "answer": "个人资料能改这些：昵称、头像、朋友圈封面、生日、性别、城市、简介、拍一拍后缀（最多 15 字）、时区。",
+      "deterministic": true,
+      "enabled": true,
+      "id": "kb-profile-fields",
+      "keywords": [
+        "改资料",
+        "改昵称",
+        "改头像",
+        "改简介",
+        "个人资料",
+        "拍一拍后缀",
+        "改城市",
+        "改生日"
+      ]
+    },
+    {
+      "answer": null,
+      "deterministic": false,
+      "enabled": true,
+      "guidance": "消息内容类型包括文字、图片、语音、表情包、链接、联系人名片、通话记录、信件、每日一问、动作卡片，另有“拍一拍”。用户发语音、图片、表情包的具体操作步骤、是否需要权限没有核实到，不得编步骤；问到步骤时按未知口径答。",
+      "id": "kb-message-types",
+      "keywords": ["能发什么消息", "发图片", "发语音", "发表情包", "发链接", "拍一拍", "发名片"]
+    },
+    {
+      "answer": null,
+      "deterministic": false,
+      "enabled": true,
+      "guidance": "建群、改名、改群头像、加人、移出、解散接口都存在。群人数上限、每群角色数上限、建群是否分档没有核实到，不得照搬旧版“Plus/Pro 才能建群、最多 10 个群、每群最多 7 位 AI 角色”的说法；问到上限时按未知口径答。",
+      "id": "kb-group-chat",
+      "keywords": ["建群", "群聊", "拉群", "群人数", "解散群", "改群名"]
+    },
+    {
+      "answer": null,
+      "deterministic": false,
+      "enabled": true,
+      "guidance": "用户可以发动态、删动态、点赞、评论。公众、私人可见范围规则，谁能评论、点赞，角色动态来源没有核实到，不得编规则；问到时按未知口径答。",
+      "id": "kb-moments",
+      "keywords": ["朋友圈", "发动态", "动态", "点赞", "评论动态"]
+    },
+    {
+      "answer": null,
+      "deterministic": false,
+      "enabled": true,
+      "guidance": "通话模块存在；每用户同时最多一通未结束通话；余额用完后最多再等 30 秒（角色道别）后强制结束；私密模式只开放文字与图片、不能语音通话。发起方式、适用角色、用户侧单价没有核实到，不得编。",
+      "id": "kb-calls",
+      "keywords": ["语音通话", "打电话", "通话", "语音聊天", "通话多少钱", "通话单价"]
+    },
+    {
+      "answer": null,
+      "deterministic": false,
+      "enabled": true,
+      "guidance": "消息可以撤回、可以隐藏，会话可以标记已读、未读、可以清空。时限与规则没有核实到，不得编时限；问到时按未知口径答。",
+      "id": "kb-recall-hide",
+      "keywords": ["撤回", "撤回消息", "隐藏消息", "删除消息", "清空聊天", "标为未读", "标记已读"]
+    },
+    {
+      "answer": null,
+      "deterministic": false,
+      "enabled": true,
+      "guidance": "服务端有公告模块，用户侧公告展示方式没有核实到，不得编入口位置。公告群发是内部已定方向，不要写入用户答案。",
+      "id": "kb-announcements",
+      "keywords": ["公告", "通知公告", "更新说明", "新功能公告"]
+    },
+    {
+      "answer": "这类事项我这边处理不了，你加微信 xingliubuji 把情况告诉我。购买、续费在 App「我」→「会员权益」里完成，App 内没有单独的“在线人工坐席”入口。",
+      "deterministic": true,
+      "enabled": true,
+      "id": "kb-sensitive",
+      "keywords": [
+        "退款",
+        "退钱",
+        "付款核对",
+        "封禁",
+        "封号",
+        "账号纠纷",
+        "被封",
+        "人工",
+        "人工客服",
+        "客服电话"
+      ]
+    },
+    {
+      "answer": null,
+      "deterministic": false,
+      "enabled": true,
+      "guidance": "旧版“找回码”机制在香港服没有找到，重置步骤没有核实到。按未知口径答，不得编步骤。",
+      "id": "kb-password-reset",
+      "keywords": ["忘记密码", "找回密码", "重置密码", "改密码", "密码忘了", "找回码"],
+      "unknown": true
+    },
+    {
+      "answer": null,
+      "deterministic": false,
+      "enabled": true,
+      "guidance": "注销账号接口存在（需登录态），注销步骤、后果、确认方式没有核实到。按未知口径答，不得编。",
+      "id": "kb-delete-account",
+      "keywords": ["注销", "注销账号", "删除账号", "销号"],
+      "unknown": true
+    },
+    {
+      "answer": null,
+      "deterministic": false,
+      "enabled": true,
+      "guidance": "服务端代码中没有找到独立的“用户反馈、投诉”用户端接口。反馈入口怎么写、截图报障走什么通道没有核实到，按未知口径答；不得把工单写成可用入口（人工工单不开），不得照搬旧版“聊天设置里举报、告诉小V记录”。",
+      "id": "kb-feedback",
+      "keywords": ["反馈", "举报", "投诉", "建议", "报障", "截图报障", "意见反馈"],
+      "unknown": true
+    },
+    {
+      "answer": null,
+      "deterministic": false,
+      "enabled": true,
+      "guidance": "聊天记录保留规则（保留多久、换机如何恢复、恢复范围）没有核实到。不得引用旧版笼统说法，也不得引用生产服的规则（另一系统）。按未知口径答。",
+      "id": "kb-chat-retention",
+      "keywords": ["聊天记录保留", "记录保留多久", "换机恢复", "记录怎么恢复", "消息保存多久"],
+      "unknown": true
+    },
+    {
+      "answer": null,
+      "deterministic": false,
+      "enabled": true,
+      "guidance": "前台是否可按角色选模型、模型列表如何展示、价格如何展示没有核实到（模型目录不等于前台可见列表）。按未知口径答，不得编。",
+      "id": "kb-model-select",
+      "keywords": ["选模型", "换模型", "模型列表", "用什么模型", "哪个模型", "模型价格怎么展示"],
+      "unknown": true
+    }
+  ],
+  "source": "知识库草稿 ~/workspace/weiban/ops-log/2026-10-31-xiaov-knowledge-base-draft.md（2026-10-31 晓楠批可用）。每条事实按草稿核实结论转写；价格与配置以数据库现行值为准、代码里读配置填充占位符，绝不硬编码。维护方式：暂时找 Muse 改，不做后台入口；改完须跑知识库单测。",
+  "updatedAt": "2026-10-31",
+  "version": 1
+}
