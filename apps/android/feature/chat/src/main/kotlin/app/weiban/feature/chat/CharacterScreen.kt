@@ -239,7 +239,11 @@ private class CharacterUi(
     ) {
         Text("TA 的动态 ›", style = MaterialTheme.typography.bodyLarge)
         Text(
-            latest.data?.items?.firstOrNull()?.summary.orEmpty(),
+            latest.data
+                ?.items
+                ?.firstOrNull()
+                ?.summary
+                .orEmpty(),
             Modifier.weight(1f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

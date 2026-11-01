@@ -193,7 +193,10 @@ private fun timelineGroups(items: List<TimelineEntry>): List<Pair<java.time.Loca
 
 private fun timelineDay(occurredAt: String): java.time.LocalDate =
     try {
-        java.time.Instant.parse(occurredAt).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+        java.time.Instant
+            .parse(occurredAt)
+            .atZone(java.time.ZoneId.systemDefault())
+            .toLocalDate()
     } catch (_: Exception) {
         java.time.LocalDate.now(java.time.ZoneId.systemDefault())
     }
@@ -211,8 +214,7 @@ private fun timelineDayLabel(day: java.time.LocalDate): String {
 /** 行内时间：时钟 HH:mm（网页版 TimelineItem 同款）。 */
 private fun timelineClock(occurredAt: String): String =
     try {
-        java.time.Instant
-            .parse(occurredAt)
+        java.time.Instant.parse(occurredAt)
             .atZone(java.time.ZoneId.systemDefault())
             .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
     } catch (_: Exception) {

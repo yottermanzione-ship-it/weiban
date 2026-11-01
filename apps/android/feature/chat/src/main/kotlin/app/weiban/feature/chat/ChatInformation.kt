@@ -137,7 +137,10 @@ internal data class InformationNavigation(
             characterId,
             contact?.remark ?: names[characterId].orEmpty(),
             { timelinePage = false },
-            onAsk = { timelinePage = false; onAsk(it) },
+            onAsk = {
+                timelinePage = false
+                onAsk(it)
+            },
             onOpenCharacter = onOpenProfile,
         )
         return
