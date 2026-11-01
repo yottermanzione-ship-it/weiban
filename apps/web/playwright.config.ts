@@ -1,4 +1,11 @@
 import { defineConfig } from '@playwright/test';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// storageState 须按 config 文件位置解析为绝对路径：CI 在仓库根目录跑时，
+// 相对路径会被 playwright 按根目录解，找不到 apps/web/test/e2e 下的文件。
+// 按 config 所在目录拼，根目录与 apps/web 两种跑法都找得到。
+const configDir = dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   testDir: 'test/e2e',
   fullyParallel: false,
@@ -15,7 +22,7 @@ export default defineConfig({
     // 预置该标记（与各用例 addInitScript 预置首访标记是同一机制，只是提到配置层，
     // 避免每个用例重复写、避免新用例重蹈）；生产代码一字未动，真机行为不变。
     // 往这里加键前先核对：不得干扰首访断言（如 home-screen-guide-seen 的断言）。
-    storageState: 'test/e2e/storage-state.json',
+    storageState: join(configDir, 'test/e2e/storage-state.json'),
   },
   webServer: [
     {
