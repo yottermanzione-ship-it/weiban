@@ -219,7 +219,7 @@ private fun timelineClock(occurredAt: String): String =
             .atZone(java.time.ZoneId.systemDefault())
             .format(
                 java.time.format.DateTimeFormatter
-                    .ofPattern("HH:mm")
+                    .ofPattern("HH:mm"),
             )
     } catch (_: Exception) {
         momentTime(occurredAt)
