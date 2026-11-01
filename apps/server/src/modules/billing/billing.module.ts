@@ -23,6 +23,7 @@ import { ChargeQueryService } from './application/charge-query.js';
 import { BillingQuoteService } from './application/quotes.js';
 import {
   BILLING_CHARGE_QUERY_PORT,
+  BILLING_CUSTOMER_CONFIG_PORT,
   BILLING_DAILY_SPEND_READ_PORT,
   BILLING_MODEL_RATE_PORT,
   BILLING_PAID_HISTORY_PORT,
@@ -74,6 +75,15 @@ import { BILLING_SHARED_SEARCH_PORT } from './tokens.js';
     { provide: BILLING_SERVICE_FEE_PORT, useExisting: ServiceFeeService },
     PaidHistoryService,
     { provide: BILLING_PAID_HISTORY_PORT, useExisting: PaidHistoryService },
+    {
+      // 小V同学客服简报读会员/充值配置：只读、与后台同一来源（数据库配置 + 代码默认值兜底）。
+      provide: BILLING_CUSTOMER_CONFIG_PORT,
+      inject: [MembershipOrderService, RechargeService],
+      useFactory: (membership: MembershipOrderService, recharge: RechargeService) => ({
+        getMembershipSettings: () => membership.getSettings(),
+        getRechargeOptions: () => recharge.get(),
+      }),
+    },
   ],
   exports: [
     BILLING_SHARED_SEARCH_PORT,
@@ -85,6 +95,7 @@ import { BILLING_SHARED_SEARCH_PORT } from './tokens.js';
     BILLING_DAILY_SPEND_READ_PORT,
     BILLING_SERVICE_FEE_PORT,
     BILLING_PAID_HISTORY_PORT,
+    BILLING_CUSTOMER_CONFIG_PORT,
   ],
 })
 export class BillingModule {}

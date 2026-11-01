@@ -18,6 +18,7 @@ import {
   Id,
   ListMessagesQuery,
   MessagePage,
+  OFFICIAL_IDENTITY_KEY,
   type ChatReadPort,
   type Conversation,
   type Message,
@@ -102,7 +103,7 @@ export class ChatReadService implements ChatReadPort {
         conversationType: row.type as 'direct' | 'group',
         seq: message.seq,
         scope: message.scope as 'normal' | 'adult',
-        senderKind: message.senderKind as 'user' | 'character' | 'system',
+        senderKind: message.senderKind as 'user' | 'character' | 'official' | 'system',
         senderRefId: sender.refId,
         recipientParticipantId: recipient.id,
         muted: view.state.muted,
@@ -154,6 +155,24 @@ export class ChatReadService implements ChatReadPort {
           and(
             eq(conversations.ownerUserId, userId),
             eq(conversations.characterId, characterId),
+            eq(conversations.type, 'direct'),
+          ),
+        )
+        .for('share');
+      return row ? this.internalConversation(tx, row) : null;
+    });
+  }
+  async findOfficialConversation(userId: string): Promise<Conversation | null> {
+    parseContract(Id, userId);
+    return this.db.transaction(async (tx) => {
+      await this.store.requireActive(tx, userId);
+      const [row] = await tx.db
+        .select()
+        .from(conversations)
+        .where(
+          and(
+            eq(conversations.ownerUserId, userId),
+            eq(conversations.officialIdentityKey, OFFICIAL_IDENTITY_KEY),
             eq(conversations.type, 'direct'),
           ),
         )

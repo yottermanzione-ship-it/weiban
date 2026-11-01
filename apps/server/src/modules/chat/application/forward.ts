@@ -5,6 +5,7 @@ import {
   ForwardMessagesRequest,
   ForwardMessagesResponse,
   FORWARD_LIMITS,
+  OFFICIAL_NAME,
   type ForwardSnapshotContent,
   type MessageContent,
   type IdentityReadPort,
@@ -147,7 +148,9 @@ export class ChatForwardService {
               member.id,
               member.kind === 'user'
                 ? (profile?.nickname ?? '用户')
-                : ((await this.directory?.displayName(userId, member.refId, tx)) ?? '角色'),
+                : member.kind === 'official'
+                  ? OFFICIAL_NAME
+                  : ((await this.directory?.displayName(userId, member.refId, tx)) ?? '角色'),
             );
           const items = [];
           for (const message of sourceMessages) {
@@ -161,7 +164,7 @@ export class ChatForwardService {
             }
             items.push({
               senderName: (names.get(message.senderParticipantId) ?? '角色').slice(0, 100),
-              senderKind: message.senderKind as 'user' | 'character',
+              senderKind: message.senderKind as 'user' | 'character' | 'official',
               createdAt: message.createdAt.toISOString(),
               content: snapshot,
             });

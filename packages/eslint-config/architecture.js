@@ -49,6 +49,8 @@ export const SERVER_MODULES = {
   channels: { layer: 'middle', schema: 'channels' },
   // 10-25：年度回忆（PRO+ 权益，每年 12-31 22:00 生成）。只经端口读 chat / identity / characters / push。
   recap: { layer: 'middle', schema: 'recap' },
+  // 方向 B（2026-10-31）：小V同学官方身份。无自有 schema，会话经 chat 端口写 chat schema。
+  'official-assistant': { layer: 'upper', schema: null },
 };
 
 /**
@@ -67,6 +69,8 @@ export const UPPER_LAYER_ALLOWED_DEPS = {
   growth: [],
   library: [],
   play: [],
+  // 官方身份只依赖中层模块（经端口），不依赖其他上层模块。
+  'official-assistant': [],
 };
 
 /** 不属于任何业务模块、业务模块也不能直接读写的 schema（R8）。 */

@@ -22,13 +22,13 @@ import {
 
 // ---------- 参与者 ----------
 
-export const ParticipantKind = z.enum(['user', 'character']);
+export const ParticipantKind = z.enum(['user', 'character', 'official']);
 export type ParticipantKind = z.infer<typeof ParticipantKind>;
 
 export const Participant = z.object({
   participantId: Id,
   kind: ParticipantKind,
-  /** kind = user 时是 userId；kind = character 时是 characterId。 */
+  /** kind = user 时是 userId；kind = character 时是 characterId；kind = official 时是官方身份固定 refId。 */
   refId: Id,
   joinedAt: Timestamp,
 });
@@ -48,8 +48,8 @@ export const TextContent = z.object({
 export const NudgeContent = z.object({
   type: z.literal('nudge'),
   targetParticipantId: Id,
-  /** 3.27（H1）：被拍的是用户还是角色。服务器写入时填写，客户端发送时不用传（传了也会被覆盖）。 */
-  targetKind: z.enum(['user', 'character']).optional(),
+  /** 3.27（H1）：被拍的是用户、角色还是官方身份。服务器写入时填写，客户端发送时不用传（传了也会被覆盖）。 */
+  targetKind: z.enum(['user', 'character', 'official']).optional(),
   /**
    * 3.27（H1）：被拍一方的拍一拍后缀快照（目前只有用户能设置，见 Profile.nudgeSuffix）。
    * 服务器写入时填写，客户端传了会被覆盖；显示为「X 拍了拍 Y」+ suffix。
@@ -346,6 +346,7 @@ export const Message = z.object({
   conversationId: Id,
   seq: Seq,
   senderParticipantId: Id,
+  /** 'official' = 小V同学官方身份发出的消息；'system' 仍是会话内系统提示，不得挪用为官方身份。 */
   senderKind: ParticipantKind.or(z.literal('system')),
   /** 撤回后为 null（与微信一致，看不到撤回内容）。客户端解析时不认识的类型变为 unsupported。 */
   content: ReceivedMessageContent.nullable(),
