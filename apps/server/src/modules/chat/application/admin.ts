@@ -30,7 +30,12 @@ import {
 } from '../../../platform/index.js';
 import { SYNC_PORT } from '../../realtime/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
-import { conversations, participants, userConversationStates } from '../infra/db/schema.js';
+import {
+  conversations,
+  messages,
+  participants,
+  userConversationStates,
+} from '../infra/db/schema.js';
 import { ChatStore, type ConversationRow } from './store.js';
 import { ChatWriteService } from './write.js';
 
@@ -257,6 +262,84 @@ export class ChatAdminService implements ChatAdminPort {
     input: { userId: string; characterId: string },
   ): Promise<void> {
     await this.removeDirect(transaction, input, true);
+  }
+  /**
+   * 重置角色：保留会话行，删除该私聊的全部消息行（hidden_messages 随 FK cascade；
+   * quoteMessageId 无 FK，不留悬空），会话状态归零且偏好重置为默认值；lastSeq 不回退。
+   * 只发 state_updated / updated，不发 conversation.removed。
+   */
+  async clearDirectConversation(
+    transaction: Tx,
+    input: { userId: string; characterId: string },
+  ): Promise<void> {
+    const tx = asDbTx(transaction);
+    parseContract(Id, input.userId);
+    parseContract(Id, input.characterId);
+    await tx.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended('chat:direct:' || $1 || ':' || $2,0))",
+      [input.userId, input.characterId],
+    );
+    await this.store.requireActive(tx, input.userId);
+    const [row] = await tx.db
+      .select()
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.ownerUserId, input.userId),
+          eq(conversations.characterId, input.characterId),
+          eq(conversations.type, 'direct'),
+        ),
+      )
+      .for('update');
+    if (!row) return;
+    await tx.db.delete(messages).where(eq(messages.conversationId, row.id));
+    const now = this.clock.now();
+    await tx.db
+      .update(conversations)
+      .set({ archivedAt: null, updatedAt: now })
+      .where(eq(conversations.id, row.id));
+    const [state] = await tx.db
+      .update(userConversationStates)
+      .set({
+        pinned: false,
+        muted: false,
+        hidden: false,
+        clearedThroughSeq: row.lastSeq,
+        readSeq: row.lastSeq,
+        markedUnread: false,
+        backgroundMediaId: null,
+      })
+      .where(eq(userConversationStates.conversationId, row.id))
+      .returning();
+    if (!state)
+      await tx.db.insert(userConversationStates).values({
+        conversationId: row.id,
+        userId: input.userId,
+        pinned: false,
+        muted: false,
+        hidden: false,
+        clearedThroughSeq: row.lastSeq,
+        readSeq: row.lastSeq,
+        markedUnread: false,
+        backgroundMediaId: null,
+      });
+    await tx.db
+      .update(participants)
+      .set({ readSeq: row.lastSeq })
+      .where(eq(participants.conversationId, row.id));
+    const conversation = await this.store.conversation(tx, await this.store.load(tx, row.id));
+    await this.sync.appendUpdate(tx, input.userId, {
+      type: 'conversation.state_updated',
+      data: {
+        conversationId: row.id,
+        state: conversation.state,
+        unreadCount: conversation.unreadCount,
+      },
+    });
+    await this.sync.appendUpdate(tx, input.userId, {
+      type: 'conversation.updated',
+      data: { conversation },
+    });
   }
   private async removeDirect(
     transaction: Tx,

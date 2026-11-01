@@ -352,15 +352,69 @@ export class ContactsCommands {
     });
     return result;
   }
-  async remove(userId: string, characterId: string, mode: 'soft' | 'purge'): Promise<void> {
+  async remove(
+    userId: string,
+    characterId: string,
+    mode: 'soft' | 'purge' | 'reset',
+  ): Promise<void> {
     parseContract(Id, characterId);
-    if (!['soft', 'purge'].includes(mode)) throw new AppError('bad_request', '删除方式不正确');
+    if (!['soft', 'purge', 'reset'].includes(mode))
+      throw new AppError('bad_request', '删除方式不正确');
     await this.db.transaction(async (tx) => {
       await this.lockUser(tx, userId);
       const row = await this.row(tx, userId, characterId);
       if (!row) return;
       if (mode === 'purge') await this.purgeTx(tx, row);
-      else if (row.status !== 'deleted') await this.softRemoveTx(tx, row);
+      else if (mode === 'reset') {
+        if (row.status === 'active') await this.resetTx(tx, row);
+      } else if (row.status !== 'deleted') await this.softRemoveTx(tx, row);
+    });
+  }
+  /**
+   * 重置角色（v2 清单）：好友关系保留（行保持 active，不排 30 天清理），清除全部互动内容。
+   * 字段按 fresh-add 取值重定（备注/称呼/自定义头像/欢迎语清空、knownSince 为重置当天；
+   * requestId 不变、addedAt 不变）；消息与派生数据由 chat 清理 + contact_reset 各模块订阅者清理；
+   * 朋友圈分流清理在 #27 合并后的基线上另行接入（本轮不写分流条件）。
+   */
+  private async resetTx(tx: DbTx, row: ContactRow): Promise<void> {
+    const profile = await this.identity.getProfile(row.userId, tx);
+    const knownSince = new Intl.DateTimeFormat('en-CA', {
+      timeZone: profile?.timeZone ?? 'UTC',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(this.clock.now());
+    // 等同重新添加：角色退出其所在全部群聊（群里显示退群提示，与 soft/purge 一致）。
+    await this.chatGroups.removeCharacterFromUserGroups(tx, {
+      userId: row.userId,
+      characterId: row.characterId,
+    });
+    await this.chat.clearDirectConversation(tx, {
+      userId: row.userId,
+      characterId: row.characterId,
+    });
+    // 朋友圈分流清理由 contacts.contact_reset 的订阅者接走（不在 resetTx 内写分流条件）：
+    // moments.on_contact_reset 删 forwarded_public=false 的私人动态行、保留 true 的微博
+    // 同步动态行并清互动子项；library.on_contact_reset 按同一分流删动态类收藏快照。
+    const [updated] = await tx.db
+      .update(contacts)
+      .set({
+        remark: null,
+        addressAs: null,
+        customAvatarMediaId: null,
+        greetingCiphertext: null,
+        knownSince,
+      })
+      .where(eq(contacts.id, row.id))
+      .returning();
+    await this.sync.appendUpdate(tx, row.userId, {
+      type: 'contact.upserted',
+      data: { contact: contactDto(updated!) },
+    });
+    await this.outbox.publish(tx, 'contacts.contact_reset', 'contacts', {
+      userId: row.userId,
+      characterId: row.characterId,
+      conversationId: row.conversationId,
     });
   }
   private async softRemoveTx(tx: DbTx, row: ContactRow): Promise<void> {

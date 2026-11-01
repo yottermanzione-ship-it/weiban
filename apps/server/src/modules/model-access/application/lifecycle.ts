@@ -121,6 +121,11 @@ export class ModelAccessLifecycle implements OnModuleInit, UserDataOwner {
       eventType: 'contacts.contact_purged',
       handle: (event, tx) => this.onContactPurged(event.payload, tx),
     });
+    this.bus.subscribe({
+      consumer: 'model_access.on_contact_reset',
+      eventType: 'contacts.contact_reset',
+      handle: (event, tx) => this.onContactPurged(event.payload, tx),
+    });
     await this.jobs.work(RECONCILE_USAGE_JOB, async () => {
       await this.reconciliation.runForYesterday();
     });

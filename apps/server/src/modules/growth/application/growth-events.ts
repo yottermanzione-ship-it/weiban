@@ -150,6 +150,31 @@ export class GrowthEvents implements OnModuleInit {
         await this.ctx.dataChanged(tx, userId, 'cards', characterId, null);
       },
     });
+    bus.subscribe({
+      consumer: 'growth.on_contact_reset',
+      eventType: 'contacts.contact_reset',
+      handle: async (event, tx) => {
+        // 重置角色：索引行保留（不走 purge 的删行路径），knownSince 与联系人行同步、
+        // lastCheckedOn 置空；卡片、熟悉度、纪念日、宠物与 purge 同口径删除；成就不收回。
+        const { userId, characterId } = event.payload;
+        const contact = await this.ctx.contacts.getActiveContact(userId, characterId, tx);
+        if (contact)
+          await tx.db
+            .update(contactIndex)
+            .set({
+              knownSince: contact.knownSince,
+              active: true,
+              lastCheckedOn: null,
+              updatedAt: this.clock.now(),
+            })
+            .where(and(eq(contactIndex.userId, userId), eq(contactIndex.characterId, characterId)));
+        await this.cards.purgeCharacter(tx, userId, characterId);
+        await this.growth.purgeCharacter(tx, userId, characterId);
+        await this.pets.purgeCharacter(tx, userId, characterId);
+        await this.ctx.dataChanged(tx, userId, 'pets', characterId, null);
+        await this.ctx.dataChanged(tx, userId, 'cards', characterId, null);
+      },
+    });
 
     // ---------- chat ----------
     bus.subscribe({
