@@ -80,7 +80,7 @@ export class ContactsController {
   remove(
     @CurrentPrincipal() p: AuthPrincipal,
     @Param(new ContractPipe(E.remove.params!)) params: { characterId: string },
-    @Query(new ContractPipe(E.remove.query!)) query: { mode: 'soft' | 'purge' },
+    @Query(new ContractPipe(E.remove.query!)) query: { mode: 'soft' | 'purge' | 'reset' },
   ) {
     return this.commands.remove(p.userId, params.characterId, query.mode);
   }

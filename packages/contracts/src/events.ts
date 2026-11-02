@@ -369,6 +369,17 @@ export const ContactPurged = event(
   z.object({ userId: Id, characterId: Id, conversationId: Id.nullable() }),
 );
 
+/**
+ * 重置角色（留好友、只清数据）：清除该用户与该角色之间的全部互动内容，效果等同重新添加。
+ * 各模块删除单对互动数据（不得复用 contact_purged 的“联系人已不存在”守卫）；朋友圈清理按
+ * forwarded_public 分流（见 PR #27 引入的列），不在本事件里另行判断。
+ */
+export const ContactReset = event(
+  'contacts.contact_reset',
+  'contacts',
+  z.object({ userId: Id, characterId: Id, conversationId: Id.nullable() }),
+);
+
 export const ContactUpdated = event(
   'contacts.contact_updated',
   'contacts',
@@ -827,6 +838,7 @@ export const DomainEvent = z.discriminatedUnion('type', [
   ContactAccepted,
   ContactRemoved,
   ContactPurged,
+  ContactReset,
   ContactUpdated,
   ConversationCreated,
   MessageCreated,

@@ -46,6 +46,11 @@ export class HealthLifecycle implements OnModuleInit {
       eventType: 'contacts.contact_purged',
       handle: (event, tx) => this.revoke(tx, event.payload.userId, event.payload.characterId),
     });
+    this.bus.subscribe({
+      consumer: 'health.on_contact_reset',
+      eventType: 'contacts.contact_reset',
+      handle: (event, tx) => this.revoke(tx, event.payload.userId, event.payload.characterId),
+    });
   }
 
   /** 后台彻底删除角色：撤销该角色在所有用户下的经期日记授权。 */

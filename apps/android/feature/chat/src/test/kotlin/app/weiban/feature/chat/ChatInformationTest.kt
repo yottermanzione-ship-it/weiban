@@ -44,6 +44,7 @@ class ChatInformationTest {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutations = ConcurrentLinkedQueue<String>()
     private val removed = AtomicBoolean(false)
+    private val closed = AtomicBoolean(false)
     private val modelsOpened = AtomicBoolean(false)
     private val ready = AtomicBoolean(false)
     private val auth =
@@ -133,17 +134,8 @@ class ChatInformationTest {
                     owner,
                     initial,
                     initial.conversations.single(),
-                    InformationNavigation({}, { modelsOpened.set(true) }),
-                    onRemoved = {
-                        val durable = runBlocking { repository.loadSync(owner)!! }
-                        assertTrue(durable.messages.isEmpty())
-                        assertTrue(
-                            durable.conversations
-                                .single()
-                                .state.hidden,
-                        )
-                        removed.set(true)
-                    },
+                    InformationNavigation({ closed.set(true) }, { modelsOpened.set(true) }),
+                    onRemoved = { removed.set(true) },
                 )
             }
         }
@@ -245,14 +237,16 @@ class ChatInformationTest {
         compose.onNodeWithText("已保存").assertExists()
     }
 
-    @Test fun permanentRemovalRequiresTwoConfirmationsAndDurableSyncBeforeLeaving() {
-        compose.onNodeWithText("永久删除角色和数据").performScrollTo().performClick()
+    @Test fun resetRequiresTwoConfirmationsAndReturnsToClearedConversationWithoutRemoving() {
+        compose.onNodeWithText("重置角色").performScrollTo().performClick()
         compose.onNodeWithText("确认").performClick()
         assertTrue(mutations.isEmpty())
-        compose.onNodeWithText("再次确认永久删除：重新添加也无法恢复这些数据").assertExists()
+        compose.onNodeWithText("重置后全部互动内容无法恢复，好友关系保留，可以直接继续聊天。").assertExists()
         compose.onNodeWithText("确认").performClick()
-        compose.waitUntil(10_000) { removed.get() }
+        compose.waitUntil(10_000) { closed.get() }
         assertEquals(1, mutations.size)
-        assertTrue(mutations.single().contains("mode=purge"))
+        assertTrue(mutations.single().contains("mode=reset"))
+        assertFalse(removed.get())
+        compose.waitUntil(10_000) { runBlocking { repository.loadSync(owner)!!.messages.isEmpty() } }
     }
 }

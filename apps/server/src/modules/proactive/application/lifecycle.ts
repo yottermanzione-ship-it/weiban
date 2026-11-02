@@ -84,6 +84,16 @@ export class ProactiveLifecycle implements OnModuleInit {
         await this.purge(tx, userId, characterId);
       },
     });
+    this.bus.subscribe({
+      consumer: 'proactive.on_contact_reset',
+      eventType: 'contacts.contact_reset',
+      handle: async (event, tx) => {
+        // 重置角色：联系人仍在，epoch 守卫会跳过清理，直接删单对账本。
+        const { userId, characterId } = event.payload;
+        await this.guards.lock(tx, userId);
+        await this.purge(tx, userId, characterId);
+      },
+    });
   }
   async purgeUser(userId: string): Promise<number> {
     return this.db.transaction(async (tx) => {

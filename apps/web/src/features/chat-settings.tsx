@@ -106,7 +106,7 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
   const [error, setError] = useState('');
   const [sheet, setSheet] = useState<'fit' | 'proactive' | null>(null);
   const [confirmation, setConfirmation] = useState<
-    'clear' | 'remove' | 'purge' | 'purgeConfirmed' | null
+    'clear' | 'remove' | 'reset' | 'resetConfirmed' | null
   >(null);
   async function change(operation: () => Promise<unknown>, after?: () => void, success?: string) {
     setPending(true);
@@ -272,7 +272,7 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
       </MenuGroup>
       <MenuGroup>
         <MenuRow
-          label="删除角色"
+          label="删除好友"
           danger
           chevron={false}
           center
@@ -280,12 +280,12 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
           onClick={() => setConfirmation('remove')}
         />
         <MenuRow
-          label="永久删除角色和数据"
+          label="重置角色"
           danger
           chevron={false}
           center
           disabled={pending}
-          onClick={() => setConfirmation('purge')}
+          onClick={() => setConfirmation('reset')}
         />
       </MenuGroup>
       {error && (
@@ -408,37 +408,38 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
         <AlertDialog
           title={
             confirmation === 'remove'
-              ? '删除角色？'
-              : confirmation === 'purge'
-                ? '永久删除角色和数据？'
-                : '再次确认永久删除'
+              ? '删除好友？'
+              : confirmation === 'reset'
+                ? '重置角色？'
+                : '再次确认重置'
           }
           message={
             confirmation === 'remove'
-              ? '角色和聊天将从列表移除，30 天内重新添加可恢复。'
-              : confirmation === 'purge'
-                ? '这会永久删除聊天记录、记忆和养成数据，无法恢复。'
-                : '重新添加也无法恢复这些数据。'
+              ? '角色和聊天将从列表移除，30 天内重新添加可恢复，30 天后自动彻底删除。'
+              : confirmation === 'reset'
+                ? '好友关系保留，不用重新申请。会清除你和 TA 的全部互动内容：聊天记录、记忆、熟悉度、卡片、宠物和养成数据，还有私人朋友圈的动态、评论、回复和点赞。微博同步过来的公开动态会保留，但下面的评论和点赞会一起删除。生态开关需要重新打开，没送到的慢信会作废，宠物相册里你上传的图片会删除。还会退出你们共同的群聊，之后需要重新拉群。重置后这些内容无法恢复。'
+                : '重置后全部互动内容无法恢复，好友关系保留，可以直接继续聊天。'
           }
           confirmLabel={
-            confirmation === 'remove' ? '删除角色' : confirmation === 'purge' ? '继续' : '永久删除'
+            confirmation === 'remove' ? '删除好友' : confirmation === 'reset' ? '继续' : '重置角色'
           }
           pending={pending}
           onCancel={() => setConfirmation(null)}
           onConfirm={() => {
-            if (confirmation === 'purge') {
-              setConfirmation('purgeConfirmed');
+            if (confirmation === 'reset') {
+              setConfirmation('resetConfirmed');
               return;
             }
             void change(
               () =>
                 api.call(ContactsEndpoints.remove, {
                   params: { characterId },
-                  query: { mode: confirmation === 'remove' ? 'soft' : 'purge' },
+                  query: { mode: confirmation === 'remove' ? 'soft' : 'reset' },
                 }),
               () => {
                 setConfirmation(null);
-                navigate('/contacts');
+                // 重置完成后打开已清空的私聊（去向 B）；删除好友仍回通讯录。
+                navigate(confirmation === 'remove' ? '/contacts' : `/chat/${id}`);
               },
             );
           }}

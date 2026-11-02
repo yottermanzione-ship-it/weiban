@@ -36,6 +36,7 @@ import {
   CLOCK,
   DATABASE,
   ENVELOPE_CRYPTO,
+  EVENT_BUS,
   OUTBOX,
   USER_DATA_REGISTRY,
   newId,
@@ -45,6 +46,7 @@ import {
   type Database,
   type DbTx,
   type EnvelopeCrypto,
+  type EventBus,
   type Outbox,
   type UserDataRegistry,
 } from '../../../platform/index.js';
@@ -134,6 +136,7 @@ export class LibraryService implements OnModuleInit {
     @Inject(SYNC_PORT) private readonly sync: SyncPort,
     @Inject(CHARACTER_READ_PORT) private readonly characters: CharacterReadPort,
     @Inject(MEDIA_SYSTEM_PORT) private readonly mediaSystem: MediaSystemPort,
+    @Inject(EVENT_BUS) private readonly bus: EventBus,
     @Optional() @Inject(LIBRARY_MOMENTS_READ) private readonly moments?: LibraryMomentsRead,
     @Optional() @Inject(LIBRARY_CARD_LOOKUP) private readonly cards?: LibraryCardLookup,
   ) {}
@@ -148,6 +151,47 @@ export class LibraryService implements OnModuleInit {
     this.purgeRegistry.register({
       module: 'library',
       purge: (tx, characterId) => this.purgeCharacter(tx, characterId),
+    });
+    // 重置角色：消息类收藏快照只删本次清空的私聊（sourceKind='message'，conversationId
+    // 即该会话）；动态类收藏快照按朋友圈分流删——sourceId 在本次删除的动态 id 集合内。
+    // 两个订阅者各跑在独立事务里、投递顺序不保证：moments 订阅者可能已先删掉动态行，
+    // 所以分流判定走 moments 端口逐条查源动态——仍在且 forwarded_public=true（原文转发
+    // 公开内容）才保留，已删或私人动态的快照都删；绝不直接读 moments 的表（R8）。
+    // 动态收藏的 conversationId 为 null、characterId 为动态作者，本分支不以后者（会话）为条件。
+    this.bus.subscribe({
+      consumer: 'library.on_contact_reset',
+      eventType: 'contacts.contact_reset',
+      handle: async (event, tx) => {
+        const { userId, characterId, conversationId } = event.payload;
+        if (conversationId) {
+          await tx.db
+            .delete(favorites)
+            .where(
+              and(
+                eq(favorites.userId, userId),
+                eq(favorites.conversationId, conversationId),
+                eq(favorites.sourceKind, 'message'),
+              ),
+            );
+        }
+        const candidates = await tx.db
+          .select({ id: favorites.id, sourceId: favorites.sourceId })
+          .from(favorites)
+          .where(
+            and(
+              eq(favorites.userId, userId),
+              eq(favorites.sourceKind, 'moments_post'),
+              eq(favorites.characterId, characterId),
+            ),
+          );
+        for (const candidate of candidates) {
+          // 端口未接线时无法判定分流，不删（生产装配恒绑定该端口）。
+          if (!this.moments) continue;
+          const post = await this.moments.getPost(userId, candidate.sourceId);
+          if (post?.forwardedPublic === true) continue;
+          await tx.db.delete(favorites).where(eq(favorites.id, candidate.id));
+        }
+      },
     });
   }
 

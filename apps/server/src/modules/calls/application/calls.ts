@@ -30,6 +30,7 @@ import {
   CLOCK,
   DATABASE,
   ENVELOPE_CRYPTO,
+  EVENT_BUS,
   JOB_QUEUE,
   OUTBOX,
   PLATFORM_KEY_OWNER,
@@ -40,6 +41,7 @@ import {
   type Database,
   type DbTx,
   type EnvelopeCrypto,
+  type EventBus,
   type JobQueue,
   type Outbox,
   type UserDataRegistry,
@@ -92,6 +94,7 @@ export class CallService implements CallSessionPort, UserDataOwner, OnModuleInit
     @Inject(CHAT_PARTICIPANT_PORT) private readonly chatWrite: ChatParticipantPort,
     @Inject(CONTACTS_READ_PORT) private readonly contacts: ContactsReadPort,
     @Inject(BILLING_READ_PORT) private readonly billing: BillingReadPort,
+    @Inject(EVENT_BUS) private readonly bus: EventBus,
     @Optional() @Inject(CALL_AGENT_PORT) readonly agent: CallAgentPort | null = null,
     @Optional()
     @Inject(CALL_SERVICE_STATUS)
@@ -103,6 +106,23 @@ export class CallService implements CallSessionPort, UserDataOwner, OnModuleInit
     this.purgeRegistry.register({
       module: 'calls',
       purge: (tx, characterId) => this.purgeCharacter(tx, characterId),
+    });
+    // 重置角色：只删已结束的通话行，进行中的通话不动（不受影响）；删行后不发事件。
+    this.bus.subscribe({
+      consumer: 'calls.on_contact_reset',
+      eventType: 'contacts.contact_reset',
+      handle: async (event, tx) => {
+        const { userId, characterId } = event.payload;
+        await tx.db
+          .delete(callSessions)
+          .where(
+            and(
+              eq(callSessions.userId, userId),
+              eq(callSessions.characterId, characterId),
+              eq(callSessions.state, 'ended'),
+            ),
+          );
+      },
     });
     await this.jobs.work<{ callId: string }>(JOB_AUTO_ANSWER, (job) =>
       this.autoAnswer(job.data.callId),

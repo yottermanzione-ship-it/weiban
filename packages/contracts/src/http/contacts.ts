@@ -93,9 +93,10 @@ export const ContactsEndpoints = {
     path: `${API_PREFIX}/contacts/:characterId`,
     auth: 'user',
     params: z.object({ characterId: Id }),
-    query: z.object({ mode: z.enum(['soft', 'purge']).default('soft') }),
+    query: z.object({ mode: z.enum(['soft', 'purge', 'reset']).default('soft') }),
     response: NoContent,
-    summary: '删除角色：soft 保留 30 天可恢复；purge 立即彻底删除（CHR-06）',
+    summary:
+      '删除角色：soft 保留 30 天可恢复；purge 立即彻底删除（CHR-06）；reset 留好友、只清互动数据（效果等同重新添加），菜单不再传 purge（仅 30 天自动清内部用）',
   }),
 } as const;
 

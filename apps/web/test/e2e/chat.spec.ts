@@ -230,23 +230,23 @@ test('HTTP确认清空先持久保存范围，更新日志暂不可达也不会�
   await expect(page.locator('.wx-bubble').filter({ hasText: secret })).toHaveCount(0);
   await page.getByRole('link', { name: '聊天信息', exact: true }).click();
   const removals: string[] = [];
-  await page.route('**/contacts/*?mode=purge', (route) => {
+  await page.route('**/contacts/*?mode=reset', (route) => {
     removals.push(route.request().url());
     return route.abort('failed');
   });
-  await page.getByRole('button', { name: '永久删除角色和数据', exact: true }).click();
+  await page.getByRole('button', { name: '重置角色', exact: true }).click();
   await page
-    .getByRole('dialog', { name: '永久删除角色和数据？', exact: true })
+    .getByRole('dialog', { name: '重置角色？', exact: true })
     .getByRole('button', { name: '继续', exact: true })
     .click();
-  await expect(page.getByRole('dialog', { name: '再次确认永久删除', exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: '再次确认重置', exact: true })).toBeVisible();
   expect(removals).toEqual([]);
   await page
-    .getByRole('dialog', { name: '再次确认永久删除', exact: true })
-    .getByRole('button', { name: '永久删除', exact: true })
+    .getByRole('dialog', { name: '再次确认重置', exact: true })
+    .getByRole('button', { name: '重置角色', exact: true })
     .click();
   await expect.poll(() => removals.length).toBe(1);
-  expect(removals[0]).toContain('mode=purge');
+  expect(removals[0]).toContain('mode=reset');
   await expect(page.getByRole('alert')).toBeVisible();
 });
 test('真实HTTP记忆管理：新增、手改、删除确认与人设设置', async ({ page }) => {

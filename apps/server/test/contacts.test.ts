@@ -360,6 +360,51 @@ describeDb('contacts 真实PG：持久申请、本人数据与恢复生命周期
     await commands.add(ownerId, { characterId: roleId });
     cid = (await accept(roleId))!.conversationId!;
   });
+  it('重置保留好友与会话、字段重定、消息清空、新消息续号；30天任务不误删', async () => {
+    await commands.update(ownerId, roleId, { remark: '重置前备注', addressAs: '同学' });
+    const sent = await users.sendMessage(ownerId, cid, {
+      clientMsgId: newId(),
+      content: { type: 'text', text: 'reset history' },
+    });
+    const beforeRow = (await query.row(ownerId, roleId))!;
+    const lastSeq = (await chat.getConversation(cid))!.lastSeq;
+    expect(lastSeq).toBe(sent.message.seq);
+    await http()
+      .delete(`/api/v1/contacts/${roleId}`)
+      .query({ mode: 'reset' })
+      .set('Authorization', auth())
+      .expect(204);
+    const reset = (await read.getActiveContact(ownerId, roleId))!;
+    expect(reset.conversationId).toBe(cid);
+    expect(reset.remark).toBeNull();
+    expect(reset.addressAs).toBeNull();
+    expect((await query.row(ownerId, roleId))!.request_id).toBe(beforeRow.request_id);
+    const today = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date(clock.nowMs()));
+    expect(reset.knownSince).toBe(today);
+    expect((await chat.getConversation(cid))?.lastSeq).toBe(lastSeq);
+    const counted = await db.query<{ count: string }>(
+      'SELECT COUNT(*)::text AS count FROM chat.messages WHERE conversation_id=$1',
+      [cid],
+    );
+    expect(Number(counted.rows[0]!.count)).toBe(0);
+    const next = await users.sendMessage(ownerId, cid, {
+      clientMsgId: newId(),
+      content: { type: 'text', text: 'after reset' },
+    });
+    expect(next.message.seq).toBe(lastSeq + 1);
+    clock.advance(30 * 86400000);
+    await commands.purgeExpired({
+      userId: ownerId,
+      characterId: roleId,
+      requestId: beforeRow.request_id,
+    });
+    expect(await read.getActiveContact(ownerId, roleId)).not.toBeNull();
+  });
   it('申请后下架取消pending，迟到或重复接受不能创建会话', async () => {
     const id = await published('removed before accept');
     await commands.add(ownerId, { characterId: id });
