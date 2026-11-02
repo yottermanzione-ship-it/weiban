@@ -50,6 +50,7 @@ import {
   parseLegacyCard,
   type LegacyCharacterCard,
 } from '../domain/legacy-card.js';
+import type { OfficialPersonaSource } from '../domain/official-persona.js';
 import {
   categories,
   characters,
@@ -214,6 +215,18 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     // 旧卡角色没有 WeibanCardData，不能按新卡复制。
     if (this.legacyOf(row)) return null;
     return { row, body: await this.decode(row, true), classification: this.classify(row) };
+  }
+  /**
+   * 3.5 广场「微伴角色」详情 / 点赞 / 评论（T-20261103c）：已上架预设角色的人设原文来源。
+   * 口径与 listOfficialIds 完全一致：preset、已发布、存在即可，新卡和旧卡都支持；不存在 / 未上架 / 非预设返回 null。
+   * 与 presetForCopy（「复制成自定义角色」，旧卡不能复制）口径不同，不要互相借用。
+   */
+  async publishedPresetSource(id: string): Promise<OfficialPersonaSource | null> {
+    const [row] = await this.database.db.select().from(characters).where(eq(characters.id, id));
+    if (!row || row.kind !== 'preset' || row.status !== 'published') return null;
+    const legacy = this.legacyOf(row);
+    if (legacy) return { kind: 'legacy', legacy };
+    return { kind: 'card', body: await this.decode(row, true) };
   }
   /** 自定义角色（含广场复制品）的存储 payload（T-088）。 */
   private async customPayload(row: Row, tx?: DbTx): Promise<CustomCharacterPayload> {

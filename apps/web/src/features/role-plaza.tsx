@@ -351,11 +351,22 @@ export function OfficialRolePage() {
       showToast(friendlyError(e));
     }
   }
+  // T-20261103c：只有 not_found 才说「不存在或已下架」；网络或其他错误是加载失败，给重试。
   if (detail.error && !data)
     return (
       <main>
         <NavBar title="微伴角色" fallback="/plaza" />
-        <EmptyState icon="wechat/info" title="角色不存在或已下架" desc={detail.error} />
+        {detail.errorCode === 'not_found' ? (
+          <EmptyState icon="wechat/info" title="角色不存在或已下架" />
+        ) : (
+          <div className="empty" role="alert">
+            <p>加载失败</p>
+            <small>{detail.error}</small>
+            <button type="button" onClick={detail.refresh}>
+              重试
+            </button>
+          </div>
+        )}
       </main>
     );
   return (

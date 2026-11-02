@@ -6,7 +6,11 @@ import { api } from './client.js';
 export function friendlyError(error: unknown): string {
   return error instanceof ApiFailure ? error.message : '请检查填写的内容，稍后再试';
 }
-type Result<T> = { key: string; data?: T; error: string; loading: boolean };
+/**
+ * errorCode：失败时的契约错误码（ApiFailure.code）；连不上服务器等非接口错误为 'network_error'，成功或未请求时为空串。
+ * 页面据此区分「不存在」（not_found）和「加载失败可重试」。
+ */
+type Result<T> = { key: string; data?: T; error: string; errorCode: string; loading: boolean };
 const STALE_OK = { allowStale: true } as const;
 /**
  * enabled = false 时不请求（同一组件里按条件二选一的接口）。
@@ -23,9 +27,9 @@ export function useRemote<E extends EndpointDef>(
   const [state, setState] = useState<Result<z.output<E['response']>>>(() => seed());
   const [revision, setRevision] = useState(0);
   function seed(): Result<z.output<E['response']>> {
-    if (!enabled) return { key, error: '', loading: false };
+    if (!enabled) return { key, error: '', errorCode: '', loading: false };
     const hit = api.peek(endpoint, options, STALE_OK);
-    return { key, data: hit?.value, error: '', loading: !hit };
+    return { key, data: hit?.value, error: '', errorCode: '', loading: !hit };
   }
   useEffect(() => {
     const refresh = () => setRevision((value) => value + 1);
@@ -42,24 +46,26 @@ export function useRemote<E extends EndpointDef>(
     const hit = api.peek(endpoint, request, STALE_OK);
     setState((previous) => {
       const data = hit?.value ?? (previous.key === key ? previous.data : undefined);
-      return { key, data, error: '', loading: data === undefined };
+      return { key, data, error: '', errorCode: '', loading: data === undefined };
     });
     void (async () => {
       try {
         if (!hit && !request.networkOnly) {
           const cached = await api.cached(endpoint, request).catch(() => undefined);
           if (!live()) return;
-          if (cached !== undefined) setState({ key, data: cached, error: '', loading: false });
+          if (cached !== undefined)
+            setState({ key, data: cached, error: '', errorCode: '', loading: false });
         }
         if (!live()) return;
         const result = await api.call(endpoint, request);
-        if (live()) setState({ key, data: result, error: '', loading: false });
+        if (live()) setState({ key, data: result, error: '', errorCode: '', loading: false });
       } catch (error) {
         if (!live()) return;
         setState((previous) => ({
           key,
           data: previous.key === key ? previous.data : undefined,
           error: friendlyError(error),
+          errorCode: error instanceof ApiFailure ? error.code : 'network_error',
           loading: false,
         }));
       }
@@ -72,6 +78,7 @@ export function useRemote<E extends EndpointDef>(
   return {
     data: current.data,
     error: current.error,
+    errorCode: current.errorCode,
     loading: current.loading,
     refresh: () => setRevision((value) => value + 1),
   };
