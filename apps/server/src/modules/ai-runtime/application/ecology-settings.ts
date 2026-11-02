@@ -4,7 +4,10 @@
  * - 用户设置：总开关（默认关）、活跃程度四档、关掉的动作、每个角色一个开关（没设置过 = 开）。
  * - 平台参数：决策模型（后台必须配置；未配置时生态不运行，不回退用户聊天模型）、四档次数、关掉的动作、唤醒时段。
  * - 闸门 isActive：账号正常 + PRO+（统一用 isProPlus）+ 总开关 + 未因积分不足暂停 + 角色开关 + 动作开关。
- *   所有「角色自己做、扣用户积分」的旧流程（推演、朋友圈、群里自己聊、经期关怀、你不在时、名场面……）都先过它。
+ *   所有「角色自己做、扣用户积分」的生态流程（推演、私人朋友圈、群里自己聊、经期关怀、你不在时、名场面……）都先过它。
+ * - 2026-11-03 按对照表 v3：用户开关只有 6 个（domain/ecology.ts 的 ECOLOGY_SWITCHES），动作按
+ *   gateKeyForRunKind 归到开关；基础层动作（朋友圈三种互动、聊天里的语音 / 图片 / 表情包 / 拍一拍 /
+ *   熬夜催睡）不走这道闸门，所有人默认都有。
  * 说明见 docs/ai/ecology-v1.md。
  */
 import { Inject, Injectable } from '@nestjs/common';
@@ -41,13 +44,18 @@ import { MODEL_GATEWAY_MEDIA_PORT, MODEL_QUOTE_PORT } from '../../model-access/i
 import {
   ACTION_DEF,
   DEFAULT_ECOLOGY_CONFIG,
-  ECOLOGY_ACTIONS,
+  ECOLOGY_SWITCHES,
   LEVEL_LABELS,
   LEVEL_ORDER,
   averageWakes,
   detectUserRequest,
+  gateKeyForRunKind,
+  mergeDisabledActions,
   microsToPoints,
+  switchEnabled,
+  type EcologySwitchDef,
 } from '../domain/ecology.js';
+import type { EcologyRunKind } from '../domain/ecology-counters.js';
 import { BILLING_READ_PORT } from '../../billing/index.js';
 import type { BillingReadPort } from '@weiban/contracts';
 import {
@@ -82,23 +90,8 @@ export function parseEcologyConfigLenient(raw: unknown): EcologyConfig | null {
   return parsed.success ? parsed.data : null;
 }
 
-/**
- * 合并用户开关变更并剥离存量未知 key（已删动作）：只保留现行 key，排序后写回，
- * 避免存量垃圾永久累积。读取时未知 key 本就被忽略（不在动作表里），这里只清写回路径。
- */
-export function mergeDisabledActions(
-  current: readonly string[],
-  changes: ReadonlyArray<{ key: EcologyActionKey; enabled: boolean }>,
-): string[] {
-  const disabled = new Set(current);
-  for (const a of changes) {
-    if (a.enabled) disabled.delete(a.key);
-    else disabled.add(a.key);
-  }
-  return [...disabled]
-    .filter((k): k is EcologyActionKey => (ECOLOGY_ACTION_KEYS as readonly string[]).includes(k))
-    .sort();
-}
+/** 用户开关写回规则（定义在 domain/ecology.ts，这里转出供测试与旧引用使用）。 */
+export { mergeDisabledActions };
 
 type SettingsRow = typeof ecologySettings.$inferSelect;
 
@@ -261,25 +254,50 @@ export class EcologySettingsService {
     return row?.enabled ?? true;
   }
 
-  /** 平台能否执行某动作（不看用户开关）。 */
-  async actionAvailable(key: EcologyActionKey, config?: EcologyConfig): Promise<string | null> {
-    const def = ACTION_DEF.get(key);
+  /**
+   * 平台能否执行某个运行 kind（不看用户开关）；返回 null = 可以，否则是给用户看的原因。
+   * 内部 kind（greeting / care_anniversary）没有自己的定义，按它所属开关（message）的定义查。
+   * 后台把整个开关关掉（例 disabledActions 含 private_moments）时，开关下的动作都不可用。
+   */
+  async actionAvailable(key: EcologyRunKind, config?: EcologyConfig): Promise<string | null> {
+    const gate = gateKeyForRunKind(key);
+    const def =
+      ACTION_DEF.get(key as EcologyActionKey) ?? (gate ? ACTION_DEF.get(gate) : undefined);
     if (!def) return '即将上线';
     if (def.mode === 'reserved') return def.reservedReason ?? '即将上线';
-    if ((config ?? (await this.config())).disabledActions.includes(key)) return '平台暂未开放';
+    const platformOff = (config ?? (await this.config())).disabledActions;
+    if (platformOff.includes(key as EcologyActionKey) || (gate && platformOff.includes(gate)))
+      return '平台暂未开放';
     if (def.needs && !(await this.media.isServiceEnabled(def.needs).catch(() => false)))
       return def.needs === 'speech_synthesis' ? '平台未开通语音合成' : '平台未开通联网搜索';
     return null;
   }
 
   /**
+   * 开关能否使用（设置页置灰用）：开关下只要有一个动作平台能执行就可用；都不能时返回第一个原因。
+   * 例：没开通联网搜索时「私人朋友圈」仍可用（转发已同步的微博素材不需要搜索）。
+   */
+  async switchAvailable(sw: EcologySwitchDef, config?: EcologyConfig): Promise<string | null> {
+    const cfg = config ?? (await this.config());
+    if (cfg.disabledActions.includes(sw.key)) return '平台暂未开放';
+    const reasons: Array<string | null> = [];
+    for (const kind of sw.covers)
+      if (ACTION_DEF.has(kind as EcologyActionKey))
+        reasons.push(await this.actionAvailable(kind, cfg));
+    if (reasons.some((r) => r === null)) return null;
+    return reasons[0] ?? '即将上线';
+  }
+
+  /**
    * 生态闸门：这个用户（+ 角色 + 动作）现在能不能由角色自己行动。
    * 不检查决策模型（旧流程用各自的模型；决策模型只管生态唤醒）。
+   * 动作按所属开关查用户设置（weibo_sync → private_moments、care_follow_up → message …）；
+   * 基础层动作不属于任何开关，传进来一律返回 false——基础层不该来问生态闸门。
    */
   async isActive(
     userId: string,
     characterId?: string | null,
-    action?: EcologyActionKey,
+    action?: EcologyRunKind,
   ): Promise<boolean> {
     try {
       const row = await this.row(userId);
@@ -290,7 +308,8 @@ export class EcologySettingsService {
       if (!(await this.membership.isProPlus(userId))) return false;
       if (characterId && !(await this.characterEnabled(userId, characterId))) return false;
       if (action) {
-        if (row.disabledActions.includes(action)) return false;
+        const gate = gateKeyForRunKind(action);
+        if (!gate || !switchEnabled(row.disabledActions, gate)) return false;
         if (await this.actionAvailable(action)) return false;
       }
       return true;
@@ -332,17 +351,18 @@ export class EcologySettingsService {
       characterId,
       enabled: switches.find((s) => s.characterId === characterId)?.enabled ?? true,
     }));
-    const disabled = new Set(row?.disabledActions ?? []);
+    // 对照表 v3：只返回 6 个开关（基础层不展示；care_absence / care_follow_up 归主动消息）。
+    const disabled = row?.disabledActions ?? [];
     const actions = [];
-    for (const def of ECOLOGY_ACTIONS) {
-      const reason = await this.actionAvailable(def.key, config);
+    for (const sw of ECOLOGY_SWITCHES) {
+      const reason = await this.switchAvailable(sw, config);
       actions.push({
-        key: def.key,
-        group: def.group,
-        label: def.label,
+        key: sw.key,
+        group: sw.group,
+        label: sw.label,
         available: reason === null,
         unavailableReason: reason,
-        enabled: !disabled.has(def.key),
+        enabled: switchEnabled(disabled, sw.key),
       });
     }
     const perWake = await this.estimatePerWakeMicros(userId, config);

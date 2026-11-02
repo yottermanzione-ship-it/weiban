@@ -2,15 +2,11 @@
 /**
  * 3.29 两个缺口的最小用例：
  * 1) 共享检索结算前重核：caller 传 eligibleUserIds 回调，settle 只收仍合格的人；
- * 2) 生态 photo 从微博素材图片里稳定选图，交给既有媒体路径（本用例只验选择，不建消息）。
+ * 2) （2026-11-03 删除）生态 photo：图片已归基础层，不再是生态动作；转发选图见 ecology-gate.test.ts。
  */
 import { describe, expect, it, vi } from 'vitest';
 import { eligibleMembers, sharedSlice } from '../../billing/domain/shared-search.js';
 import { SharedWebSearch } from '../../model-access/application/shared-search.js';
-import { MomentsAiService } from './moments-ai.js';
-
-const USER = '00000000-0000-4000-8000-000000000001';
-const CHAR = '00000000-0000-4000-8000-000000000002';
 
 describe('共享检索结算资格', () => {
   it('eligibleMembers 只保留重核后仍合格的人；空集合不把费用转给残留用户', () => {
@@ -58,34 +54,5 @@ describe('共享检索结算资格', () => {
     });
     expect(settle).toHaveBeenCalledWith('group-1', 'usage-1', ['u2']);
     expect(result).toMatchObject({ ok: true, requesterChargeMicros: 0 });
-  });
-});
-
-describe('生态 photo：只从微博素材选图', () => {
-  it('同一条微博的图片稳定选一张；没有图片返回 null', async () => {
-    const service = Object.create(MomentsAiService.prototype) as MomentsAiService;
-    Object.assign(service, {
-      weiboMaterial: {
-        latest: vi.fn().mockResolvedValue({
-          updateId: 'update-1',
-          content: '微博原文',
-          images: [{ mediaId: 'm1' }, { mediaId: 'm2' }],
-        }),
-      },
-    });
-    const first = await service.weiboPhotoForEcology(USER, CHAR);
-    expect(['m1', 'm2']).toContain(first?.mediaId);
-    await expect(service.weiboPhotoForEcology(USER, CHAR)).resolves.toEqual(first);
-
-    Object.assign(service, {
-      weiboMaterial: {
-        latest: vi.fn().mockResolvedValue({
-          updateId: 'update-2',
-          content: '只有文字',
-          images: [],
-        }),
-      },
-    });
-    await expect(service.weiboPhotoForEcology(USER, CHAR)).resolves.toBeNull();
   });
 });

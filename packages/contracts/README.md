@@ -95,6 +95,13 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 5.2（2026-11-03，生态开关按对照表 v3 收拢）
+
+- `ECOLOGY_ACTION_KEYS` 新增取值 `private_moments`（私人朋友圈总开关）：一个开关同时管微博同步与发私人朋友圈。服务器存储仍按 `weibo_sync`、`moment_post` 两个 key 写进 `disabled_actions`（关 = 两个都写入，开 = 两个都去掉），无新迁移。
+- 生态开关面板（`EcologySettings.actions`）只返回 6 项：`message`（主动消息，含早安晚安 / 纪念日 / 久未问候 / 跟进）、`private_moments`、`status`、`signature`、`play_pet`（未开放，置灰）、`group_talk`。其余旧 key 仍留在枚举里，旧客户端 PATCH 时带上不报错，但不再生效（语音、图片、表情包、拍一拍、熬夜催睡、朋友圈三种互动归基础层，所有人默认都有，不看生态开关）。
+- 新增可选取值、不删不改旧字段，按规则升次版本；Android 生成产物同步版本号与枚举。旧客户端读到 `private_moments` 会按 `tolerantEnum` 读成 `unsupported`。WebSocket 鉴权已放行 5.x，不用改。
+- 依据：`docs/product/ecology-display-v3.md`、任务卡 `docs/tasks/T-20261103b-ecology-v3-switches-murmur.md`。
+
 ### 5.1（2026-11-03，热门榜按利润率排序）
 
 - `ModelLeaderboardInfo`（`ModelAccessEndpoints.getLeaderboardInfo` 的响应）新增可选字段 `hotOrder`：只含模型键的有序列表，由服务端算好——第一位是利润率最高的 DeepSeek 模型，其余按利润率从高到低，缺价的排最后。利润率 = 1 −（文字输入成本 + 文字输出成本）÷（文字输入售价 + 文字输出售价），取当前生效价目表的全天价；成本价是后台内部数据，**不随响应下发**。
