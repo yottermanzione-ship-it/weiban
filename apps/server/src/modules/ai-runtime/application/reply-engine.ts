@@ -1,4 +1,4 @@
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import {
@@ -32,7 +32,15 @@ import { HEALTH_LABEL } from './health-care.js';
 import { MediaAiService } from './media-ai.js';
 import { PlannerService } from './planner.js';
 import { QuirkService } from './quirk-service.js';
-import { typoCorrection } from '../domain/quirks.js';
+import { seriousQuirkContext, typoCorrection } from '../domain/quirks.js';
+import {
+  DELIBERATE_WAIT_HINT,
+  fitReplyContents,
+  fixedPrefix,
+  lateRecoveryHint,
+  permanentFailure,
+  waitRetryDelayMs,
+} from '../domain/reply-delivery.js';
 import {
   outputAllowed,
   replyDelay,
@@ -84,6 +92,23 @@ export class ReplyEngine {
   ) {}
   async run(id: string): Promise<void> {
     if (!z.uuid().safeParse(id).success) return;
+    try {
+      await this.execute(id);
+    } catch (error) {
+      // T-20261103e：违反约束这类确定性失败重试多少次都一样（10-29 曾空转 47 次）——直接作废并记下原因；
+      // 发气泡和推进进度在同一个事务里，失败的那条随事务回滚，已发出的不受影响、之后也不再重发。
+      const reason = permanentFailure(error);
+      if (!reason) throw error;
+      const ended = await this.store.fail(id, reason);
+      new Logger(ReplyEngine.name).error({
+        code: 'ai_reply_permanent_failure',
+        planId: id,
+        reason,
+        ended,
+      });
+    }
+  }
+  private async execute(id: string): Promise<void> {
     const row = await this.store.claim(id);
     if (!row) return;
     if (row.status === 'sending') {
@@ -373,6 +398,14 @@ export class ReplyEngine {
         ];
       else snapshot.quirk.kind = 'none';
     }
+    // T-20261103e：表情包 / 链接 / 撤回草稿 / 错字更正都会多出一条，4 条文字再加一条就是 5 条，
+    // 写 next_bubble=5 违反 reply_plan_counters（P-02 上限 4）。统一封顶：相邻文字合并进后一条，
+    // 合并不下再去掉附加内容；仍不行就只发文字气泡（这时撤回 / 错字小巧思不演）。
+    if (contents) {
+      const fitted = fitReplyContents(contents, fixedPrefix(snapshot.quirk.kind));
+      if (!fitted && ['recall', 'typo'].includes(snapshot.quirk.kind)) snapshot.quirk.kind = 'none';
+      contents = fitted;
+    }
     // T-090 reply_timing：秒回关闭时由决策层在 fast / normal / slow 间挑（仍在 P-01 上下限内）；秒回开启不加人为延迟。
     let timing: 'fast' | 'normal' | 'slow' = 'normal';
     if (!inCare && !snapshot.instantReply && row.kind === 'message') {
@@ -604,12 +637,26 @@ export class ReplyEngine {
       if (!current || current.status !== 'generating' || current.leaseId !== row.leaseId)
         return false;
       snapshot.quirk = await this.quirks.reserve(tx, row, proposed, snapshot.timeZone);
-      if (snapshot.quirk.kind === 'read_delay')
-        snapshot.messages.push({
-          role: 'system',
-          content:
-            '本轮你有意稍等了一会儿再回复。按人设自然体现稍微晾了一下，不要假装没看到；不得冷落、责怪或操纵用户。',
-        });
+      // T-20261103e：模型临时不可用、稍后由巡检恢复的回复已经晚了，沿用同一句「有意稍等了一会儿」。
+      if (
+        snapshot.quirk.kind === 'read_delay' ||
+        lateRecoveryHint({
+          kind: row.kind,
+          retryEpoch: row.retryEpoch,
+          failure: row.failure,
+          createdAt: row.createdAt,
+          nowMs: this.clock.nowMs(),
+          sensitive:
+            snapshot.highRisk ||
+            snapshot.careActive ||
+            snapshot.suspected ||
+            snapshot.healthUsed ||
+            snapshot.trial === true ||
+            snapshot.effectiveStyle === 'treehole' ||
+            seriousQuirkContext(snapshot.userText),
+        })
+      )
+        snapshot.messages.push({ role: 'system', content: DELIBERATE_WAIT_HINT });
       const cipher = await this.store.seal(tx, row, 'input', snapshot);
       const saved = await tx.db
         .update(replyPlans)
@@ -620,13 +667,44 @@ export class ReplyEngine {
     });
   }
   private async wait(row: ReplyPlan, reason: string): Promise<void> {
+    // T-20261103e：due_at 记下次巡检最早什么时候再试（按已恢复次数退避）；只有可重试的失败会被巡检捡起。
     await this.store.db.db
       .update(replyPlans)
-      .set({ status: 'waiting', failure: reason, leaseId: null, leaseUntil: null })
+      .set({
+        status: 'waiting',
+        failure: reason,
+        leaseId: null,
+        leaseUntil: null,
+        dueAt: new Date(this.clock.nowMs() + waitRetryDelayMs(row.retryEpoch)),
+      })
       .where(and(eq(replyPlans.id, row.id), eq(replyPlans.leaseId, row.leaseId!)));
   }
   private async emit(row: ReplyPlan): Promise<void> {
     const result = Result.parse(await this.store.open(row, 'result'));
+    // T-20261103e：上线前已生成、还没开始发的旧结果也按同一规则封顶（发出第一条时连同结果重新加密保存）。
+    if (row.nextBubble === 0 && result.contents) {
+      const fitted = fitReplyContents(result.contents, fixedPrefix(result.snapshot.quirk.kind));
+      if (fitted) result.contents = fitted;
+      else {
+        delete result.contents;
+        if (['recall', 'typo'].includes(result.snapshot.quirk.kind))
+          result.snapshot.quirk.kind = 'none';
+      }
+    }
+    // 已经发到第 4 条的旧计划：多出的不再发，直接收尾（next_bubble 永远不超过 P-02 上限）。
+    if (row.nextBubble >= deliveryCount(result)) {
+      await this.store.db.db
+        .update(replyPlans)
+        .set({ status: 'done', inputCiphertext: null, resultCiphertext: null })
+        .where(
+          and(
+            eq(replyPlans.id, row.id),
+            eq(replyPlans.status, 'sending'),
+            eq(replyPlans.nextBubble, row.nextBubble),
+          ),
+        );
+      return;
+    }
     const contact = await this.context.contacts.getActiveContact(row.userId, row.characterId);
     const conversation =
       contact?.conversationId === row.conversationId ||
@@ -795,7 +873,7 @@ export class ReplyEngine {
         const nextBubble = row.nextBubble + 1;
         if (row.nextBubble === 0 && result.snapshot.quirk.kind === 'recall')
           result.quirkDraftMessageId = posted.value.messageId;
-        const done = nextBubble >= (result.contents?.length ?? result.bubbles.length);
+        const done = nextBubble >= deliveryCount(result);
         const dueAt = new Date(
           this.clock.nowMs() + (result.care ? 0 : P02_SPLIT_BUBBLES.minIntervalMs),
         );
@@ -825,6 +903,11 @@ export class ReplyEngine {
       });
     }
   }
+}
+
+/** 这次回复一共发几条：有 contents 按 contents，否则按文字气泡；无论如何不超过 P-02 上限（reply_plan_counters）。 */
+function deliveryCount(result: z.infer<typeof Result>): number {
+  return Math.min(P02_SPLIT_BUBBLES.maxBubbles, result.contents?.length ?? result.bubbles.length);
 }
 
 /** v3.3：包一层网关，累计成功调用的扣费；回复类调用（reply / guard / names）的用量记录 ID 记为这次回复的调用。 */
