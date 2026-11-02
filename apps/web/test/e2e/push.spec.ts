@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Worker } from '@playwright/test';
+import { expect, test, type Page, type Worker } from './fixtures.js';
 import { AuthResponse, NotificationEnvelope } from '@weiban/contracts';
 async function login(page: Page) {
   await page.goto('/');

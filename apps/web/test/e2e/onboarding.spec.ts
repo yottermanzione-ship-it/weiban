@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.js';
 test('首次昵称、选角与申请草稿可恢复；真实添加保持待通过状态，不编造会话', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: '登录', exact: true }).click();

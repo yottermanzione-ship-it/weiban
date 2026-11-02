@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 import { AuthResponse } from '@weiban/contracts';
 import { readFile, writeFile } from 'node:fs/promises';
 async function login(page: Page, name = 'browser_user') {

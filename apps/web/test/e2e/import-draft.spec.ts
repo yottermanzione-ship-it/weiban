@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.js';
 import { openField, setBirthday, setMinor, setVoice, uploadAvatar } from './persona-ui.js';
 
 test('导入草稿生日、头像、分类保存重读并创建角色；清空后仍为空', async ({ page }) => {

@@ -48,10 +48,50 @@ describe('web feedback catalog behavior', () => {
           select: () => ({ from: () => ({ where: () => ({ groupBy: async () => popular }) }) }),
         },
       },
+      hotOrder: async () => ['test/model'],
     } as never);
     expect(result.source?.asOf).toBe('2026-10-20');
     expect(result.fetchedAt).toBe('2026-10-22T10:00:00Z');
     expect(result.popular).toEqual(popular);
+    expect(result.hotOrder).toEqual(['test/model']);
+  });
+  it('hot order (5.1) covers enabled chat models, puts DeepSeek first and never returns costs', async () => {
+    const rows = [
+      { modelKey: 'qwen/qwen3-max', vendorName: '阿里', scenarios: ['chat'] },
+      { modelKey: 'deepseek/deepseek-v4-pro', vendorName: 'DeepSeek', scenarios: ['chat'] },
+      { modelKey: 'voice/cascade-call', vendorName: '微伴', scenarios: ['call'] },
+      { modelKey: 'x/no-price', vendorName: 'X', scenarios: ['chat'] },
+    ];
+    const tokens = (input: number, output: number) => ({
+      inputPerMillionMicros: input,
+      outputPerMillionMicros: output,
+      cachedInputPerMillionMicros: null,
+    });
+    const getActiveTokenRates = vi.fn(
+      async () =>
+        new Map([
+          [
+            'qwen/qwen3-max',
+            { price: tokens(2, 6), cost: tokens(1, 1), hasTimeBands: false }, // 75%
+          ],
+          [
+            'deepseek/deepseek-v4-pro',
+            { price: tokens(4, 16), cost: tokens(3, 12), hasTimeBands: false }, // 25%
+          ],
+        ]),
+    );
+    const order = await CatalogService.prototype.hotOrder.call({
+      database: {
+        db: { select: () => ({ from: () => ({ where: () => ({ orderBy: async () => rows }) }) }) },
+      },
+      rates: { getActiveTokenRates },
+    } as never);
+    expect(getActiveTokenRates).toHaveBeenCalledWith([
+      'qwen/qwen3-max',
+      'deepseek/deepseek-v4-pro',
+      'x/no-price',
+    ]);
+    expect(order).toEqual(['deepseek/deepseek-v4-pro', 'qwen/qwen3-max', 'x/no-price']);
   });
   it('does not expose or route through a legacy photo model selection', async () => {
     expect(ALL_SCENARIOS).not.toContain('image_generation');

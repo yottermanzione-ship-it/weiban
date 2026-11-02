@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 async function upload(page: Page) {
   await page.getByLabel('头像', { exact: true }).setInputFiles({
     name: 'avatar.png',

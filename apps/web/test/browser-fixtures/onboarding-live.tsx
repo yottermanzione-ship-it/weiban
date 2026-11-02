@@ -54,6 +54,8 @@ const characterId = '01920000-0000-7000-8000-000000000031';
 const conversationId = '01920000-0000-7000-8000-000000000041';
 const time = '2026-10-29T12:00:00.000Z';
 const tabMode = new URLSearchParams(location.search).get('page') === 'tabs';
+/** ?start=chat：从聊天列表开始（测自动弹出的引导）；默认从新手引导目录开始。 */
+const startAtChat = new URLSearchParams(location.search).get('start') === 'chat';
 const contacts = tabMode
   ? Array.from({ length: 80 }, (_, i) => ({
       characterId: `01920000-0000-7000-8000-${String(100 + i).padStart(12, '0')}`,
@@ -311,7 +313,9 @@ function FixtureShell() {
 // Give the memory-router guide fixture the same one-level-back baseline; tab tests keep their own history.
 if (!tabMode) window.history.replaceState({ ...window.history.state, idx: 1 }, '');
 createRoot(document.getElementById('root')!).render(
-  <MemoryRouter initialEntries={tabMode ? ['/contacts'] : ['/chat', '/help/guide']}>
+  <MemoryRouter
+    initialEntries={tabMode ? ['/contacts'] : startAtChat ? ['/chat'] : ['/chat', '/help/guide']}
+  >
     <AuthProvider>
       <ChatProvider>
         <FixtureShell />

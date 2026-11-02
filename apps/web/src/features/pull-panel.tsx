@@ -28,6 +28,7 @@ import {
 import { useLocation, useNavigate } from 'react-router-dom';
 import { LongPressMenu, type ActionItem } from './shell-kit.js';
 import { MiniAppIcon, useMiniAppPrefs, type MiniApp } from './miniapps.js';
+import { useAutoGuide } from './onboarding-auto.js';
 
 /** 手指移动多少像素后才算拖动（与会话行状态机的 10 像素配合：先于行判定为竖滚）。 */
 const SLOP = 8;
@@ -127,6 +128,8 @@ export function PullMiniApps({ title, children }: { title: ReactNode; children: 
   const location = useLocation();
   const navigate = useNavigate();
   const open = (location.state as { miniPanel?: boolean } | null)?.miniPanel === true;
+  // 11-03：第一次下拉打开小程序面板时自动弹「小程序」引导（面板版步骤，一生一次）。
+  useAutoGuide('miniapps-pull', open);
   const listRef = useRef<HTMLDivElement>(null);
   const hintRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -561,7 +564,7 @@ function MiniPanel({
       <div className="pull-panel-inner">
         <h2>小程序</h2>
         <div className="pull-scroll">
-          <div className="miniapp-grid pull-grid">
+          <div className="miniapp-grid pull-grid" data-guide="pull-grid">
             {prefs.ordered.map((app) => (
               <GridCell
                 key={app.id}
@@ -740,6 +743,7 @@ function GridCell({
       type="button"
       className="miniapp-cell pull-grid-cell"
       data-app={app.id}
+      data-guide={app.id === 'cards' ? 'pull-cards' : undefined}
       tabIndex={tabIndex}
     >
       <MiniAppIcon app={app} />
