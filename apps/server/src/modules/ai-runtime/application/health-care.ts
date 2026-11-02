@@ -174,8 +174,10 @@ export class HealthCareService {
     const notify = await this.identity.getNotificationSettings(userId);
     if (!profile) return { sent: false, reason: 'no_profile' };
     // v5 角色生态（17 号 §3、§4.4）：经期关怀是生态动作，旧「主动消息」开关与免打扰不再适用。
+    // 2026-11-02 清理：care_period 已并入 message，门控查 message 开关（总开关与角色开关语义不变）；
+    // 流程、账本上限（P-36=2）与隐私口径一律不变。
     void notify;
-    if (this.ecology && !(await this.ecology.isActive(userId, null, 'care_period')))
+    if (this.ecology && !(await this.ecology.isActive(userId, null, 'message')))
       return { sent: false, reason: 'ecology_off' };
     const now = this.clock.now();
     const local = localClock(now, profile.timeZone);
@@ -184,7 +186,7 @@ export class HealthCareService {
 
     const characterId = await this.pickCharacter(userId);
     if (!characterId) return { sent: false, reason: 'no_authorized_character' };
-    if (this.ecology && !(await this.ecology.isActive(userId, characterId, 'care_period')))
+    if (this.ecology && !(await this.ecology.isActive(userId, characterId, 'message')))
       return { sent: false, reason: 'ecology_off' };
     const ctx = await health.getPeriodContext({ userId, characterId, scene: 'proactive_direct' });
     if (!ctx) return { sent: false, reason: 'no_context' };

@@ -2,12 +2,14 @@
  * 生态三线分账的纯规则（对照表 v3 第 9、10、25、26、28 项；多样性草案 §3）。
  *
  * 三条线各记各的账，绝不共用一个「未回复次数」字段：
- * - 主线：生态聊天类动作（message / voice / photo / sticker / nudge / share_link / play_wish）
+ * - 主线：生态聊天类动作（message / voice / photo / sticker / nudge）
  *   在用户最后一条消息之后成功执行的次数。满 3 次停发主线。
+ *   （2026-11-02 清理：share_link / play_wish 已删，不再计入。）
  * - 久未问候（care_absence）：主线之外的 +1。主线满 3 次后、72 小时无互动时仍可发一次，
  *   发过一次就不再发；它不计入主线次数。
- * - 单独线（greeting / care_anniversary / care_follow_up / care_late_night / care_period）：
+ * - 单独线（greeting / care_anniversary / care_follow_up / care_late_night）：
  *   各自按自己的字段计数（当天是否发过 / 事项状态），永远不计入主线，也不影响 3 天判定。
+ *   greeting / care_anniversary 已并入 message 开关，但计数仍按各自内部 kind 记（见下）。
  * - 3 天自动关：只看「最后一次用户消息时间」满 72 小时且主线已满 3 次。
  *
  * 主线次数的来源是 ecology_runs 里已成功的行（按 actionKey 区分），不是聊天条数：
@@ -16,24 +18,31 @@
  */
 import type { EcologyActionKey } from '@weiban/contracts';
 
-/** 计入主线未回复次数的动作：只有这些动作的成功执行会让主线 +1。 */
-export const MAIN_LINE_ACTIONS: ReadonlySet<EcologyActionKey> = new Set([
+/**
+ * 内部运行 kind：已并入 message 的旧动作名。不是契约 key、不是用户开关、不能传给
+ * actionAvailable（未知 key 会被判「即将上线」）；只在 ecology_runs.action_key（plain text
+ * 列、无约束）里记账，让 greetingDone / separateLineDoneToday 能按旧行继续分记。
+ * care_period 不在此列：它是 flow，走 health-care 自己的账本，从不进单独线集合。
+ */
+export type EcologyInternalKind = 'greeting' | 'care_anniversary';
+/** 候选 / 运行里出现的动作标识：契约 key 或内部 kind。 */
+export type EcologyRunKind = EcologyActionKey | EcologyInternalKind;
+
+/** 计入主线未回复次数的动作：只有这些动作的成功执行会让主线 +1。（集合按运行 kind 查，成员只有契约 key。） */
+export const MAIN_LINE_ACTIONS: ReadonlySet<EcologyRunKind> = new Set([
   'message',
   'voice',
   'photo',
   'sticker',
   'nudge',
-  'share_link',
-  'play_wish',
 ]);
 
 /** 单独线的动作：发了只记自己的账，绝不计入主线。 */
-export const SEPARATE_LINE_ACTIONS: ReadonlySet<EcologyActionKey> = new Set([
+export const SEPARATE_LINE_ACTIONS: ReadonlySet<EcologyRunKind> = new Set([
   'greeting',
   'care_anniversary',
   'care_follow_up',
   'care_late_night',
-  'care_period',
 ]);
 
 /** 主线未回复达到这个数就停发主线（对照表 v3：3 次）。 */
@@ -100,7 +109,7 @@ export function greetingDone(
 /** 某单独线动作今天是否已成功执行过（生日 / 纪念日、深夜催睡各记各的）。 */
 export function separateLineDoneToday(
   runs: readonly EcologyRunCount[],
-  action: EcologyActionKey,
+  action: EcologyRunKind,
   today: string,
 ): boolean {
   return runs.some((run) => run.actionKey === action && run.localDate === today);
@@ -130,7 +139,7 @@ export function shouldAutoOff(input: {
  * - 非聊天动作：不挡。
  */
 export function chatActionCountAllowed(
-  action: EcologyActionKey,
+  action: EcologyRunKind,
   counts: { mainUnreplied: number; absenceGreeted: boolean },
 ): boolean {
   if (action === 'care_absence') return !counts.absenceGreeted;

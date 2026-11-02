@@ -8,9 +8,12 @@ import type { EcologyActionKey } from '@weiban/contracts';
 import {
   DEFAULT_ECOLOGY_CONFIG,
   ECOLOGY_JEV_MIN_CONFIDENCE,
+  gateKeyForRunKind,
   interpretJevAnswers,
+  jevPrompt,
   resolveEcologyConflicts,
 } from '../domain/ecology.js';
+import type { EcologyRunKind } from '../domain/ecology-counters.js';
 import { EcologyService, jevSummary } from './ecology.js';
 import { EcologySettingsService } from './ecology-settings.js';
 
@@ -117,18 +120,33 @@ describe('Jev 答案解读（纯规则）', () => {
   });
 
   it('陌生 ID 忽略；重复 ID、缺答案、把握越界都不做', () => {
-    const v = interpretJevAnswers(
-      ['message', 'greeting', 'status'],
-      [
-        answer('message', 'act', 0.9),
-        answer('message', 'act', 0.9),
-        answer('call_user', 'act', 1),
-        { questionId: 'status', choice: 'act', confidence: 1.5 },
-      ],
-    );
+    // greeting 是并入 message 的内部 kind（2026-11-02 清理），仍可作候选样本。
+    const candidates: EcologyRunKind[] = ['message', 'greeting', 'status'];
+    const v = interpretJevAnswers(candidates, [
+      answer('message', 'act', 0.9),
+      answer('message', 'act', 0.9),
+      answer('call_user', 'act', 1),
+      { questionId: 'status', choice: 'act', confidence: 1.5 },
+    ]);
     expect(v.approved).toEqual([]);
     expect(v.unknownIds).toBe(1);
     expect(v.invalid.sort()).toEqual(['greeting', 'message', 'status']);
+  });
+
+  it('内部 kind 仍进 Jev 判定与互斥：早安晚安与主动消息同轮只做一个，门控查 message', () => {
+    expect(gateKeyForRunKind('greeting')).toBe('message');
+    expect(gateKeyForRunKind('care_anniversary')).toBe('message');
+    expect(jevPrompt('greeting')).toContain('早安 / 晚安');
+    expect(jevPrompt('care_anniversary')).toContain('生日、纪念日、约定的日子');
+    const r = resolveEcologyConflicts(
+      [
+        { action: 'message', confidence: 0.8 },
+        { action: 'greeting', confidence: 0.8 },
+      ],
+      2,
+    );
+    expect(r.selected).toEqual(['greeting']);
+    expect(r.dropped).toEqual(['message']);
   });
 
   it('程序排冲突：同轮只发一条聊天、状态签名二选一、微博同步与转发二选一，总数受上限', () => {
