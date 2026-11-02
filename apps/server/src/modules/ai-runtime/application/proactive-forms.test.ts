@@ -7,6 +7,8 @@
  *   决策层、语音合成按后台消耗计费，语音费用并进本次总费用，记在第一条消息上；
  * - 用户在聊天里说过「别发语音」「别发表情包」：那种形式不发（suppressedForms）；
  * - 私密模式（成人范围）不进入形式判断，只发文字、不发语音。
+ * T-20261103d：表情包由写这条消息的模型自己决定——能配时提示里给情绪清单，模型写「[表情:开心]」，
+ * 发送前剥掉标记（用户看不到），按情绪挑图；没写标记就不发。
  */
 import 'reflect-metadata';
 import { describe, expect, it, vi } from 'vitest';
@@ -19,6 +21,9 @@ const USER = 'user-1';
 const CHARACTER = 'character-1';
 const CONVERSATION = 'conversation-1';
 const REPLY = '哈哈，好开心';
+/** 模型原文：正文最后一行是表情标记。 */
+const RAW = `${REPLY}
+[表情:开心]`;
 const happy = { stickerId: 'happy', mediaId: 'happy-media', description: '开心哈哈大笑' };
 
 function message(i: number, sender: 'user' | 'character', text: string): Message {
@@ -60,7 +65,7 @@ function mediaAi() {
       req.questions.map((q) => [
         q.questionId,
         {
-          choice: q.questionId === 'voice' ? 'voice' : 'keep_sticker',
+          choice: 'voice',
           confidence: 0.9,
           reason: 'test',
           implementation: 'jev',
@@ -94,12 +99,12 @@ function mediaAi() {
   return { service, synthesizeSpeech, decideBatch, planExtras };
 }
 
-function harness(opts: { history?: Message[]; privateMode?: boolean } = {}) {
+function harness(opts: { history?: Message[]; privateMode?: boolean; text?: string } = {}) {
   const media = mediaAi();
   const posted: Array<{ content: MessageContent; idempotencyKey: string; charge?: unknown }> = [];
   const generate = vi.fn(async (_req: Record<string, unknown>, _privateModel: boolean) => ({
     ok: true as const,
-    value: { text: REPLY, usageRecordId: 'text-usage', chargedMicros: 100 },
+    value: { text: opts.text ?? RAW, usageRecordId: 'text-usage', chargedMicros: 100 },
   }));
   const readMessages = vi.fn(async () => opts.history ?? tenTexts());
   const update = () => ({ set: () => ({ where: async () => undefined }) });
@@ -188,7 +193,13 @@ function harness(opts: { history?: Message[]; privateMode?: boolean } = {}) {
         send(c: unknown, p: unknown, contact: unknown, e: EcologySendExtras): Promise<unknown>;
       }
     ).send(ctx, plan, { conversationId: CONVERSATION }, eco);
-  return { ...media, send, posted, generate };
+  /** 发给模型的最后一条（系统提示）里有没有表情包说明。 */
+  const hinted = () => {
+    const req = generate.mock.calls[0]?.[0] as
+      { messages?: Array<{ content: string }> } | undefined;
+    return (req?.messages?.at(-1)?.content ?? '').includes('[表情:情绪]');
+  };
+  return { ...media, send, posted, generate, hinted };
 }
 
 describe('生态主动消息复用聊天回复的形式判断', () => {
@@ -196,9 +207,12 @@ describe('生态主动消息复用聊天回复的形式判断', () => {
     const h = harness();
     const outcome = await h.send();
     expect(h.planExtras).toHaveBeenCalledOnce();
+    // 提示里告诉模型可以配表情；模型写的标记在发送前剥掉，情绪交给形式判断。
+    expect(h.hinted()).toBe(true);
     expect(h.planExtras.mock.calls[0]![0]).toMatchObject({
       bubbles: [REPLY],
       userText: '',
+      stickerMood: 'happy',
       path: 'proactive',
       triggerId: 'proactive:plan-1',
       ctx: { userId: USER, characterId: CHARACTER, conversationId: CONVERSATION },
@@ -218,6 +232,7 @@ describe('生态主动消息复用聊天回复的形式判断', () => {
     });
     expect(h.posted.map((p) => p.content.type)).toEqual(['voice', 'sticker']);
     expect(h.posted[1]!.content).toMatchObject({ stickerId: 'happy' });
+    expect(JSON.stringify(h.posted)).not.toContain('[表情');
     // 文字 100 + 语音 200，记在第一条消息上；结果把总费用带回生态。
     expect(h.posted[0]!.charge).toEqual({ usageRecordId: 'text-usage', chargedMicros: 300 });
     expect(h.posted[1]!.charge).toBeUndefined();
@@ -241,7 +256,8 @@ describe('生态主动消息复用聊天回复的形式判断', () => {
     });
     const outcome = await h.send();
     expect(h.planExtras).toHaveBeenCalledOnce();
-    // 两种形式都被压制：不问决策层、不合成语音。
+    // 两种形式都被压制：提示里不提表情包，不问决策层、不合成语音；模型照写的标记也剥掉。
+    expect(h.hinted()).toBe(false);
     expect(h.decideBatch).not.toHaveBeenCalled();
     expect(h.synthesizeSpeech).not.toHaveBeenCalled();
     expect(h.posted.map((p) => p.content)).toEqual([{ type: 'text', text: REPLY }]);
@@ -251,7 +267,8 @@ describe('生态主动消息复用聊天回复的形式判断', () => {
   it('只压制说过的那一种：别发语音时表情包照常斟酌', async () => {
     const h = harness({ history: [message(0, 'user', '别发语音了'), ...tenTexts()] });
     await h.send();
-    expect(h.decideBatch.mock.calls[0]![0].questions.map((q) => q.questionId)).toEqual(['sticker']);
+    // 决策层只剩语音一个问题，语音被压制就不问；表情包按模型标记发。
+    expect(h.decideBatch).not.toHaveBeenCalled();
     expect(h.synthesizeSpeech).not.toHaveBeenCalled();
     expect(h.posted.map((p) => p.content.type)).toEqual(['text', 'sticker']);
   });
@@ -260,10 +277,18 @@ describe('生态主动消息复用聊天回复的形式判断', () => {
     const h = harness({ privateMode: true });
     const outcome = await h.send();
     expect(h.generate.mock.calls[0]![1]).toBe(true);
+    expect(h.hinted()).toBe(false);
     expect(h.planExtras).not.toHaveBeenCalled();
     expect(h.synthesizeSpeech).not.toHaveBeenCalled();
     expect(h.posted.map((p) => p.content)).toEqual([{ type: 'text', text: REPLY }]);
     expect(outcome).toEqual({ ok: true, chargedMicros: 100, messageId: 'msg-1' });
+  });
+
+  it('模型没写表情标记：不发表情包（不由服务端硬塞），语音照常判断', async () => {
+    const h = harness({ text: REPLY });
+    await h.send();
+    expect(h.planExtras.mock.calls[0]![0]).toMatchObject({ bubbles: [REPLY], stickerMood: null });
+    expect(h.posted.map((p) => p.content.type)).toEqual(['voice']);
   });
 
   it('私密模式点名发语音仍按原规则拒绝', async () => {
