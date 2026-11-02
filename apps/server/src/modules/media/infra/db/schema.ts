@@ -7,6 +7,7 @@ import {
   timestamp,
   customType,
   jsonb,
+  numeric,
   index,
   uniqueIndex,
   primaryKey,
@@ -72,6 +73,35 @@ export const libraryStickers = mediaSchema.table(
     deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
   },
   (t) => [index('library_stickers_pack_idx').on(t.packId)],
+);
+
+/** 0154：离线打标签的完整意思（sticker-tag-v1），一 sticker 一行；不改 library_stickers.description。 */
+export const libraryStickerLabels = mediaSchema.table(
+  'library_sticker_labels',
+  {
+    stickerId: uuid('sticker_id')
+      .primaryKey()
+      .references(() => libraryStickers.id, { onDelete: 'cascade' }),
+    mediaId: uuid('media_id').notNull(),
+    contentHash: text('content_hash').notNull(),
+    fullDescription: text('full_description').notNull(),
+    imageText: text('image_text').notNull(),
+    literalMeaning: text('literal_meaning').notNull(),
+    usageMeaning: text('usage_meaning').notNull(),
+    suitableContexts: text('suitable_contexts').notNull(),
+    unsuitableContexts: text('unsuitable_contexts').notNull(),
+    primaryTag: text('primary_tag').notNull(),
+    /** 情绪与强度（主情绪/强度/副情绪，个别行含额外键，原样保存）。 */
+    emotion: jsonb('emotion').$type<Record<string, unknown>>().notNull(),
+    confidence: numeric('confidence').notNull(),
+    reviewNeeded: boolean('review_needed').notNull().default(false),
+    /** 排除标记：低可信度行与空白占位图为 true，选图整行排除（见 listStickersForCharacter）。 */
+    retryExcluded: boolean('retry_excluded').notNull().default(false),
+    model: text('model').notNull(),
+    tagVersion: text('tag_version').notNull(),
+    taggedAt: timestamp('tagged_at', { withTimezone: true, mode: 'date' }).notNull(),
+  },
+  (t) => [index('library_sticker_labels_media_idx').on(t.mediaId)],
 );
 
 /** 0041：用户自己添加的表情（MED-01 第 3 条）。media 对象为 user_sticker，属于用户本人。 */

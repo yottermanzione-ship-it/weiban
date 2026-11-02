@@ -37,9 +37,10 @@ export interface StickerOption {
   mediaId: string;
   description: string;
   /**
-   * 完整意思标签（离线打标签的产物）：完整描述 + 图里原文字 + 字面意思 + 使用意思 +
-   * 适合/不适合场合。有标签时以标签为准选图，description 里的「表情 N」不再作数；
-   * 没标签时退回 description 含义匹配（数字说明一律排除，见 selectReplySticker）。
+   * 完整意思标签（离线打标签的产物，从 library_sticker_labels 读出，见 listStickersForCharacter）：
+   * 完整描述 + 图里原文字 + 字面意思 + 使用意思 + 适合/不适合场合。有标签时以标签为准选图，
+   * description 里的「表情 N」不再作数；没标签时退回 description 含义匹配（数字说明一律排除，见 selectReplySticker）。
+   * 标签表回填前全部为空，选图与回填前一致；回填一旦写入即按标签选图。
    */
   tags?: readonly string[];
 }

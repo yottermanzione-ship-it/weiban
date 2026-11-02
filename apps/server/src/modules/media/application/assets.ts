@@ -32,6 +32,7 @@ import {
 } from '../../../platform/index.js';
 import {
   cardTemplates,
+  libraryStickerLabels,
   libraryStickers,
   objects,
   stickerPacks,
@@ -39,6 +40,7 @@ import {
   userStickers,
   voices,
 } from '../infra/db/schema.js';
+import { toStickerListOption } from './sticker-labels.js';
 import {
   MEDIA_MESSAGE_LOOKUP,
   MEDIA_REAL_PERSON_NAMES,
@@ -842,7 +844,7 @@ export class MediaAssetService
 
   async listStickersForCharacter(
     characterId: string,
-  ): Promise<Array<{ stickerId: string; mediaId: string; description: string }>> {
+  ): Promise<Array<{ stickerId: string; mediaId: string; description: string; tags?: string[] }>> {
     const packs = await this.database.db
       .select()
       .from(stickerPacks)
@@ -856,9 +858,20 @@ export class MediaAssetService
         stickerId: libraryStickers.id,
         mediaId: libraryStickers.mediaId,
         description: libraryStickers.description,
+        primaryTag: libraryStickerLabels.primaryTag,
+        fullDescription: libraryStickerLabels.fullDescription,
+        imageText: libraryStickerLabels.imageText,
+        literalMeaning: libraryStickerLabels.literalMeaning,
+        usageMeaning: libraryStickerLabels.usageMeaning,
+        suitableContexts: libraryStickerLabels.suitableContexts,
+        reviewNeeded: libraryStickerLabels.reviewNeeded,
+        retryExcluded: libraryStickerLabels.retryExcluded,
       })
       .from(libraryStickers)
       .innerJoin(objects, eq(objects.id, libraryStickers.mediaId))
+      // 0154：标签表 LEFT JOIN（只按 stickerId，不按标记过滤）；整行排除在
+      // toStickerListOption 里判：已有标签行且任一标记为 true 的整行剔除，无标签行保留。
+      .leftJoin(libraryStickerLabels, eq(libraryStickerLabels.stickerId, libraryStickers.id))
       .where(
         and(
           inArray(libraryStickers.packId, usable),
@@ -867,7 +880,28 @@ export class MediaAssetService
         ),
       )
       .orderBy(asc(libraryStickers.sortOrder));
-    return rows;
+    return rows.flatMap((row) => {
+      // LEFT JOIN 无匹配时标签列全为 null，以 primaryTag 是否为 null 判标签行是否存在。
+      const option = toStickerListOption({
+        stickerId: row.stickerId,
+        mediaId: row.mediaId,
+        description: row.description,
+        label:
+          row.primaryTag === null
+            ? null
+            : {
+                primaryTag: row.primaryTag,
+                fullDescription: row.fullDescription!,
+                imageText: row.imageText!,
+                literalMeaning: row.literalMeaning!,
+                usageMeaning: row.usageMeaning!,
+                suitableContexts: row.suitableContexts!,
+                reviewNeeded: row.reviewNeeded!,
+                retryExcluded: row.retryExcluded!,
+              },
+      });
+      return option === null ? [] : [option];
+    });
   }
 
   async getVoice(voiceId: string): Promise<{
