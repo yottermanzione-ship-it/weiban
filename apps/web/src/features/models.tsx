@@ -390,12 +390,8 @@ function ScenarioModelPicker({ scenario }: { scenario: ModelScenario }) {
             info.data?.source && (
               <p className="hint page-note">
                 <a href={info.data.source.url} target="_blank" rel="noreferrer">
-                  来源：{info.data.source.label}
-                  {info.data.source.asOf ? ` · 发布 ${info.data.source.asOf}` : ''}
+                  来源：Arena 的文本聊天排行榜
                 </a>
-                {info.data.fetchedAt && (
-                  <span> · 最近同步 {new Date(info.data.fetchedAt).toLocaleString('zh-CN')}</span>
-                )}
                 {info.data.method === 'paste' && <span> · 管理员手工导入</span>}
                 {info.data.lastError && <span> · 同步失败，保留上次有效数据</span>}
               </p>
