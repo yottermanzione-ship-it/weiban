@@ -15,6 +15,15 @@ import { API_PREFIX, Id, Timestamp, defineEndpoint, tolerantEnum } from '../comm
 // care_anniversary / care_period 并入 message（行为保留、开关改由 message 门控），不再是用户开关。
 // ecology_runs.action_key 是无约束 plain text 列，'greeting' / 'care_anniversary' 作为内部运行 kind
 // 继续记账（见 ecology-counters.ts），响应侧 tolerantEnum 会把旧行读成 'unsupported'。
+//
+// 2026-11-03 按对照表 v3 收拢（契约 5.2，docs/product/ecology-display-v3.md）：
+// - 设置页只展示 6 个开关：message（主动消息，另管早安晚安、生日纪念日、经期关心、care_absence、
+//   care_follow_up）、private_moments（私人朋友圈 = weibo_sync + moment_post）、status、signature、
+//   play_pet、group_talk。哪个 key 是开关、各管哪些动作，由服务端定义（ai-runtime domain/ecology.ts）。
+// - 新增 private_moments（只新增，次版本）。其余旧 key 留在枚举里兼容旧客户端：PATCH 里照收，但已收进
+//   别的开关（weibo_sync / moment_post / care_absence / care_follow_up）或已归基础层（voice / photo /
+//   sticker / nudge / moment_interact / moment_reply / moment_peer / care_late_night）的 key 不起作用。
+//   基础层所有人默认都有，不看生态开关。
 
 export const ECOLOGY_ACTION_KEYS = [
   // 4.1 和你聊天
@@ -29,6 +38,8 @@ export const ECOLOGY_ACTION_KEYS = [
   'moment_reply',
   'moment_peer',
   'weibo_sync',
+  // 5.2：私人朋友圈总开关（= weibo_sync + moment_post，存储仍按这两个 key）
+  'private_moments',
   // 4.3 TA 自己的生活（碎碎念每次都写，不设开关）
   'status',
   'signature',

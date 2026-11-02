@@ -12,6 +12,10 @@
  *   下次打开 App 的一次提示由 billing 记录（16 号 §8）。
  * - 说到做到（17 号 §7）：碎碎念只在动作真的执行成功时保留，失败改成中性一句；用户在聊天里让角色做的动作
  *   （发朋友圈、拍一拍、改状态、改签名）不受生态开关限制，PRO+ + 积分够就执行。
+ * - 2026-11-03 按对照表 v3（T-20261103b）：候选只剩生态层动作（主动消息及其并入的早安晚安 / 纪念日 /
+ *   久未问候 / 跟进、私人朋友圈的微博同步与转发、状态、签名、群聊话题）。基础层（语音、图片、表情包、
+ *   拍一拍、熬夜催睡、朋友圈三种互动）不再是生态候选：聊天里的形式由聊天流程自己判断，朋友圈互动由
+ *   朋友圈事件排期（moments-ai），所有人默认都有。
  */
 import { ROMANCE_TITLE_STAGE } from '../domain/relationship-stage.js';
 import { Inject, Injectable } from '@nestjs/common';
@@ -72,7 +76,6 @@ import {
   LEVEL_ORDER,
   TEXT_MODEL_ACTIONS,
   detectUserRequest,
-  ecoRandom,
   ecologyFallback,
   ecologyRunLabel,
   ecologyRunSummary,
@@ -81,8 +84,14 @@ import {
   jevPrompt,
   microsToPoints,
   resolveEcologyConflicts,
+  switchEnabled,
   wakeSlots,
 } from '../domain/ecology.js';
+import {
+  MURMUR_MAX_OUTPUT_TOKENS,
+  buildMurmurMaterial,
+  finalizeMurmur,
+} from '../domain/ecology-murmur.js';
 import {
   absenceGreetedSince,
   chatActionCountAllowed,
@@ -101,8 +110,6 @@ import {
   isFollowUpDue,
   isFollowUpExpired,
 } from '../domain/follow-ups.js';
-import { detectFormSuppressions } from '../domain/chat-form-suppression.js';
-import { momentsReactDelayMs } from '../domain/moments-reactions.js';
 import { healthPrivate } from '../domain/memory.js';
 import { outputAllowed } from '../domain/reply-rules.js';
 import { scrubSummary } from './planner.js';
@@ -110,9 +117,7 @@ import { ecologyProfiles, ecologyRuns, followUps } from '../infra/db/ecology-sch
 import { simulationStates, userChatActivity } from '../infra/db/schema.js';
 import { EcologySettingsService } from './ecology-settings.js';
 import { GroupChatService } from './group-chat.js';
-import { MediaAiService } from './media-ai.js';
 import { MemoryService } from './memory.js';
-import { CompanionSettingsService } from './settings.js';
 import { SharedEpisodesService } from './shared-episodes.js';
 import { MomentsAiService } from './moments-ai.js';
 import {
@@ -125,7 +130,6 @@ import { SocialService } from './social.js';
 import { WeiboSyncService } from './weibo.js';
 import { AI_CHARACTER_READ } from './supplemented-character-read.js';
 import { characterView, rolePersonaSpeechText } from './character-view.js';
-import { MOMENTS_REACT_JOB, type MomentsReactJob } from './moments-ai.js';
 
 export const ECOLOGY_TICK_JOB = 'ai.ecology_tick';
 export const ECOLOGY_USER_JOB = 'ai.ecology_user';
@@ -204,11 +208,13 @@ interface Snapshot {
    */
   privateMode: boolean;
   conversationId: string;
+  /** 用户当地日期与时刻、星期（0 = 周日）；碎碎念素材用。 */
+  local: { date: string; hour: number; minute: number };
+  weekday: number;
   tools: EcologyRunKind[];
-  targets: Map<string, { postId?: string; commentId?: string; conversationId?: string }>;
+  /** 执行时用的目标（目前只有共同的群）；不交给 Jev。 */
+  targets: Map<string, { conversationId?: string }>;
   hasFollowUps: boolean;
-  /** 3.29：这条微博已有可消费的图片；photo 用它走既有聊天媒体路径，不生图。 */
-  weiboPhoto: { mediaId: string; updateId: string } | null;
   /** 主线未回复次数（只数主线动作的成功行，单独线不计入）。 */
   mainUnreplied: number;
   /** 久未问候（+1）是否已发过。 */
@@ -257,13 +263,11 @@ export class EcologyService {
     @Inject(HOLIDAY_EVENT_PORT) private readonly holidays: HolidayEventPort,
     @Inject(MOMENTS_READ_PORT) private readonly moments: MomentsReadPort,
     @Inject(MemoryService) private readonly memory: MemoryService,
-    @Inject(CompanionSettingsService) private readonly companion: CompanionSettingsService,
     @Inject(SharedEpisodesService) private readonly episodes: SharedEpisodesService,
     @Inject(SimulationService) private readonly simulation: SimulationService,
     @Inject(SocialService) private readonly social: SocialService,
     @Inject(ProactiveSchedulerService) private readonly proactive: ProactiveSchedulerService,
     @Inject(MomentsAiService) private readonly momentsAi: MomentsAiService,
-    @Inject(MediaAiService) private readonly mediaAi: MediaAiService,
     @Inject(GroupChatService) private readonly groups: GroupChatService,
     @Inject(WeiboSyncService) private readonly weibo: WeiboSyncService,
   ) {}
@@ -457,8 +461,8 @@ export class EcologyService {
         actionKey: null,
         actionSummary: '看了看手机，没做什么',
         // 碎碎念每天都要写（对照表 v3「TA 的生活」）：没做什么时也写一句中性的，
-        // 只基于快照里的真实情况，不编造。生成失败就留空，不伪造。
-        murmur: murmur ? { userId, text: murmur.text } : null,
+        // 只基于角色自己的生活素材，不编造。生成失败或被过滤就留空，不伪造。
+        murmur: murmur?.text ? { userId, text: murmur.text } : null,
         modelKey: extra.modelKey,
         chargedMicros: (extra.chargedMicros ?? 0) + (murmur?.chargedMicros ?? 0),
         latencyMs: this.clock.nowMs() - started,
@@ -541,7 +545,7 @@ export class EcologyService {
         actionSummary: '看了看微博，暂时没有新动态',
         modelKey: asked.modelKey,
         chargedMicros: charged + (murmur?.chargedMicros ?? 0),
-        murmur: murmur ? { userId, text: murmur.text } : null,
+        murmur: murmur?.text ? { userId, text: murmur.text } : null,
         latencyMs: this.clock.nowMs() - started,
       });
     }
@@ -564,7 +568,7 @@ export class EcologyService {
       actionSummary: summaries.join('；').slice(0, 500),
       modelKey: asked.modelKey,
       chargedMicros: charged + (murmur?.chargedMicros ?? 0),
-      murmur: murmur ? { userId, text: murmur.text } : null,
+      murmur: murmur?.text ? { userId, text: murmur.text } : null,
       latencyMs: this.clock.nowMs() - started,
     });
   }
@@ -627,16 +631,16 @@ export class EcologyService {
   }
 
   /**
-   * 碎碎念（对照表 v3「TA 的生活」）：每次唤醒写一两句第一人称日记，每天都要有，
-   * 不管用户有没有互动。只基于快照与本次真实做了什么写，不编造；只进 ecology_runs
+   * 碎碎念（对照表 v3「TA 的生活」）：每次唤醒写一两句第一人称的话，每天都要有，
+   * 不管用户有没有互动。只基于角色自己的生活素材与本次真实做了什么写，不编造；只进 ecology_runs
    * 的加密展示字段，绝不写回记忆、绝不记成事实（无例外）。
-   * 返回 null = 生成失败 / 内容不安全：留空，不伪造。
+   * 返回 null = 没调到模型；text 为 null = 调了但生成失败 / 被过滤（费用照记，碎碎念留空，不重试、不伪造）。
    */
   private async generateMurmur(
     run: RunRow,
     snapshot: Snapshot,
     doneSummaries: readonly string[],
-  ): Promise<{ text: string; chargedMicros: number } | null> {
+  ): Promise<{ text: string | null; chargedMicros: number } | null> {
     // 碎碎念只是展示内容：任何失败（模型、资料、政策）都留空，绝不能打断唤醒本身。
     try {
       return await this.generateMurmurInner(run, snapshot, doneSummaries);
@@ -645,18 +649,63 @@ export class EcologyService {
     }
   }
 
+  /**
+   * 碎碎念素材（T-20261103b）：单独组装，绝不复用给 Jev 的运营摘要（jevSummary）。只有当前时段、
+   * 角色自己的状态 / 签名 / 最近自己发的动态 / 今天自己的事，和这次做了什么；各项读取失败就少一项。
+   */
+  private async murmurMaterial(
+    run: RunRow,
+    snapshot: Snapshot,
+    doneSummaries: readonly string[],
+  ): Promise<string> {
+    const { userId, characterId } = run;
+    const [profileRows, posts, daily, joint] = await Promise.all([
+      this.db.db
+        .select({ statusText: ecologyProfiles.statusText, signature: ecologyProfiles.signature })
+        .from(ecologyProfiles)
+        .where(
+          and(eq(ecologyProfiles.userId, userId), eq(ecologyProfiles.characterId, characterId)),
+        )
+        .catch(() => []),
+      this.moments
+        .listCharacterPosts(
+          userId,
+          characterId,
+          new Date(this.clock.nowMs() - 7 * 86400_000).toISOString(),
+        )
+        .catch(() => [] as MomentsPost[]),
+      this.simulation.getDailyEvents(userId, characterId, snapshot.local.date).catch(() => []),
+      this.social.listJointEvents(userId, characterId, snapshot.local.date).catch(() => []),
+    ]);
+    const profile = profileRows[0];
+    return buildMurmurMaterial({
+      localHour: snapshot.local.hour,
+      weekday: snapshot.weekday,
+      statusText: profile?.statusText ?? null,
+      signature: profile?.signature ?? null,
+      recentPosts: posts
+        .filter((p) => p.author.kind === 'character' && p.author.refId === characterId)
+        .map((p) => p.text),
+      todayEvents: [
+        ...joint.filter((j) => j.eventDate === snapshot.local.date).map((j) => j.summary),
+        ...daily.map((e) => e.summary),
+      ],
+      done: doneSummaries,
+    });
+  }
+
   private async generateMurmurInner(
     run: RunRow,
     snapshot: Snapshot,
     doneSummaries: readonly string[],
-  ): Promise<{ text: string; chargedMicros: number } | null> {
+  ): Promise<{ text: string | null; chargedMicros: number } | null> {
     const role = await this.characters.getForRuntime(run.userId, run.characterId).catch(() => null);
     if (!role) return null;
     const policy = await this.policy
       .getCharacterPolicy(run.userId, run.characterId)
       .catch(() => null);
     if (!policy) return null;
-    const doneText = doneSummaries.length ? doneSummaries.join('；') : '看了看手机，没做什么';
+    const material = await this.murmurMaterial(run, snapshot, doneSummaries);
     const r = await this.gateway
       .generateText({
         userId: run.userId,
@@ -673,44 +722,41 @@ export class EcologyService {
             }
           : { modelRole: 'chat' as const }),
         responseFormat: 'text',
-        maxOutputTokens: 80,
+        // 11-02 宁静那条正好 80 token 被截断：给足余量，长了由 finalizeMurmur 在句末截到 60 字以内。
+        maxOutputTokens: MURMUR_MAX_OUTPUT_TOKENS,
         idempotencyKey: `eco:murmur:${run.id}`,
         messages: [
           {
             role: 'system',
-            content: `你是「${role.profile.name}」，人设：${
+            content: `你是「${role.profile.name}」。你的性格和说话方式：${
               role.card
                 ? JSON.stringify(role.card.data.persona).slice(0, 1200)
                 : rolePersonaSpeechText(characterView(role), 1200)
-            }。只输出一两句第一人称的日记（碎碎念），不超过 60 字，不加引号。只写下面给出的真实情况，不编造没发生的事、不写具体人名和私事，不含成人内容，不提健康隐私。`,
+            }\n用你自己的口吻，随手写一两句此刻的心里话或身边的小事，像随手记在手机里的一句话。可以用上下面列出的经历，没列出的不要编。直接写那一两句话本身，不要标题、不要解释、不加引号，60 个字以内。不提别人的私事，不含成人内容，不提健康隐私。`,
           },
-          {
-            role: 'user',
-            content: `今天的情况：${snapshot.summary.slice(0, 300)}\n这次做了：${doneText}`,
-          },
+          { role: 'user', content: material },
         ],
       })
       .catch(() => null);
     if (!r?.ok) return null;
-    const text = r.value.text
-      .trim()
-      .replace(/^["「『]|["」』]$/g, '')
-      .slice(0, 200);
-    if (!text || healthPrivate(text) || !outputAllowed(text, policy, false)) return null;
-    return { text, chargedMicros: r.value.chargedMicros };
+    // 元话语 / 复述指令整条丢弃，不重试；超长按句末截断（见 domain/ecology-murmur.ts）。
+    const text = finalizeMurmur(r.value.text);
+    const safe = !!text && !healthPrivate(text) && outputAllowed(text, policy, false);
+    return { text: safe ? text : null, chargedMicros: r.value.chargedMicros };
   }
 
   /**
    * 执行前复核；返回 null = 可以执行，否则返回不执行的原因。
-   * 内部 kind（greeting / care_anniversary）按门控 key（message）查开关与平台可用性，
-   * 绝不能把内部 kind 本身传给 actionAvailable（契约里已无此 key，会被判「即将上线」）。
+   * 动作按所属开关查用户设置（weibo_sync / moment_post → 私人朋友圈，早安晚安、跟进等 → 主动消息）；
+   * 平台可用性按动作自己的定义查（内部 kind 按所属开关的定义）。基础层动作不该出现在这里。
    */
   private async stillAllowed(userId: string, action: EcologyRunKind): Promise<string | null> {
     if (!(await this.settings.isActive(userId))) return 'ecology_inactive';
     const gateKey = gateKeyForRunKind(action);
+    if (!gateKey) return 'base_layer';
     const row = await this.settings.row(userId);
-    if (row?.disabledActions?.includes(gateKey)) return 'action_disabled';
-    if (await this.settings.actionAvailable(gateKey)) return 'action_unavailable';
+    if (!switchEnabled(row?.disabledActions ?? [], gateKey)) return 'action_disabled';
+    if (await this.settings.actionAvailable(action)) return 'action_unavailable';
     return null;
   }
 
@@ -727,28 +773,27 @@ export class EcologyService {
       ACTION_DEF.get(action as EcologyActionKey)?.tool ??
       ''
     ).slice(0, 500);
-    const targetWith = (field: 'postId' | 'commentId' | 'conversationId') =>
-      [...snapshot.targets.values()].find((target) => target[field]);
-    const viaChat = async (extra: 'voice' | 'sticker' | 'link' | null, greeting = false) => {
+    const group = [...snapshot.targets.values()].find((target) => target.conversationId);
+    const viaChat = async (greeting = false) => {
       const r = await this.proactive.sendEcology({
         userId,
         characterId,
         runId: run.id,
         brief,
-        extras: { extra, greeting },
+        extras: { extra: null, greeting },
       });
       return r.ok
         ? { ok: true, chargedMicros: r.chargedMicros, messageId: r.messageId }
         : { ok: false, chargedMicros: r.chargedMicros ?? 0, reason: r.reason };
     };
+    // 基础层动作（语音、图片、表情包、拍一拍、熬夜催睡、朋友圈三种互动）不再是生态候选，走 default。
     switch (action) {
       case 'weibo_sync':
         return this.weibo.run(userId, characterId);
       case 'message':
       case 'care_anniversary':
       case 'care_absence':
-      case 'care_late_night':
-        return viaChat(null);
+        return viaChat();
       case 'care_follow_up': {
         // 跟进问的是到点的那件具体事：brief 里写清事项，问完立刻标记已问、只问一次。
         // 单独线：发完不计入主线次数（计数口径见 ecology-counters）。
@@ -773,90 +818,9 @@ export class EcologyService {
         return { ok: true, chargedMicros: r.chargedMicros };
       }
       case 'greeting':
-        return viaChat(null, true);
-      case 'voice':
-        return viaChat('voice');
-      case 'photo': {
-        // 3.29：只投递该条微博已审核的图片，走既有聊天媒体路径；不生图、不扣图片生成费。
-        if (!snapshot.weiboPhoto) return { ok: false, chargedMicros: 0, reason: 'no_material' };
-        const r = await this.proactive.sendEcology({
-          userId,
-          characterId,
-          runId: run.id,
-          brief,
-          extras: { extra: 'photo', photoMediaId: snapshot.weiboPhoto.mediaId },
-          dedupeKey: `weibo-photo:${snapshot.weiboPhoto.updateId}:${userId}`,
-        });
-        return r.ok
-          ? { ok: true, chargedMicros: r.chargedMicros }
-          : { ok: false, chargedMicros: r.chargedMicros ?? 0, reason: r.reason };
-      }
-      case 'sticker':
-        return viaChat('sticker');
-      case 'nudge': {
-        // 10-28 总经理：拍一拍夹在聊天里，不能只拍不说话。先发一句话（发不出去就整项不做），再顺手拍一拍；
-        // 拍一拍没成功不影响这一项（话已经说了）。用户在聊天里点名「拍拍我」走 runRequest，照旧只拍。
-        const said = await viaChat(null);
-        if (!said.ok) return said;
-        await this.proactive.sendNudge(userId, characterId, run.id);
-        return said;
-      }
+        return viaChat(true);
       case 'moment_post': {
         const r = await this.momentsAi.postForEcology({ userId, characterId, runId: run.id });
-        return r.ok
-          ? { ok: true, chargedMicros: r.chargedMicros }
-          : { ok: false, chargedMicros: 0, reason: r.reason };
-      }
-      case 'moment_interact':
-      case 'moment_peer': {
-        const post = targetWith('postId');
-        if (!post?.postId) return { ok: false, chargedMicros: 0, reason: 'no_target' };
-        // 点赞和评论是分开的两件事（对照表 v3 §4，照抄旧版）：点赞立即执行、不调模型；
-        // 评论另排一个任务（延迟 1–15 分钟、单独去重键），旧版概率：用户动态 45%、角色动态 35%。
-        // 评论任务失败不影响点赞这一项的结果。
-        const r = await this.momentsAi.reactForEcology({
-          userId,
-          postId: post.postId,
-          characterId,
-          action: 'like',
-          like: true,
-          ecologyRunId: run.id,
-        });
-        if (!r.ok) return { ok: false, chargedMicros: 0, reason: r.reason };
-        const commentProbability = action === 'moment_peer' ? 0.35 : 0.45;
-        if (ecoRandom(run.id, 'moments-comment') < commentProbability) {
-          const job: MomentsReactJob = {
-            userId,
-            postId: post.postId,
-            characterId,
-            action: 'comment',
-            ecologyRunId: run.id,
-          };
-          await this.jobs
-            .send(MOMENTS_REACT_JOB, job, {
-              delayMs: momentsReactDelayMs(ecoRandom(run.id, 'moments-delay')),
-              singletonKey: `moments-comment:${post.postId}:${characterId}`,
-              retryLimit: 1,
-              retryBackoff: true,
-            })
-            .catch(() => undefined);
-        }
-        return { ok: true, chargedMicros: r.chargedMicros };
-      }
-      case 'moment_reply': {
-        const comment = targetWith('commentId');
-        if (!comment?.postId || !comment.commentId)
-          return { ok: false, chargedMicros: 0, reason: 'no_target' };
-        const r = await this.momentsAi.reactForEcology({
-          userId,
-          postId: comment.postId,
-          characterId,
-          action: 'reply',
-          replyToCommentId: comment.commentId,
-          ecologyRunId: run.id,
-          // H2：私密模式期间用该用户的私密模型写回复（输出仍按日常范围检查）。
-          ...(snapshot.privateMode ? { privateConversationId: snapshot.conversationId } : {}),
-        });
         return r.ok
           ? { ok: true, chargedMicros: r.chargedMicros }
           : { ok: false, chargedMicros: 0, reason: r.reason };
@@ -876,7 +840,6 @@ export class EcologyService {
         return { ok: true, chargedMicros: generated.chargedMicros };
       }
       case 'group_talk': {
-        const group = targetWith('conversationId');
         if (!group?.conversationId) return { ok: false, chargedMicros: 0, reason: 'no_target' };
         const r = await this.groups.startTopicForEcology({
           userId,
@@ -980,7 +943,8 @@ export class EcologyService {
   // =========================================================================
   /**
    * 批 EJ：组装判定所需的**结构化特征**与候选。只读日常范围；不再拼聊天 / 记忆 / 朋友圈原文
-   * （Jev 只收白名单数字与布尔值）。目标（朋友圈评论、群）由程序记下，执行时使用，不交给 Jev。
+   * （Jev 只收白名单数字与布尔值）。目标（共同的群）由程序记下，执行时使用，不交给 Jev。
+   * 2026-11-03（对照表 v3）：候选只剩生态层动作，基础层（聊天形式、朋友圈互动）不再算。
    */
   private async buildSnapshot(run: RunRow): Promise<Snapshot | null> {
     const { userId, characterId } = run;
@@ -995,7 +959,7 @@ export class EcologyService {
     const privateMode = conversation?.contentScope === 'adult' && policy.adultModeEligible;
     const config = await this.settings.config();
     const userRow = await this.settings.row(userId);
-    const disabled = new Set(userRow?.disabledActions ?? []);
+    const disabled = userRow?.disabledActions ?? [];
     const now = this.clock.now();
     const nowMs = now.getTime();
     const local = localParts(now, profile.timeZone);
@@ -1006,7 +970,7 @@ export class EcologyService {
       .catch(() => 1);
     const targets: Snapshot['targets'] = new Map();
 
-    // 聊天：只数时间（日常范围），不读正文给判定（压制检测只看用户原话里的明确关键词）。
+    // 聊天：只数时间（日常范围），不读正文给判定。
     const history = await this.chat
       .readMessages({ conversationId: contact.conversationId, scopes: ['normal'], limit: 30 })
       .catch(() => []);
@@ -1046,33 +1010,7 @@ export class EcologyService {
     const absenceGreeted = absenceGreetedSince(runCounts, lastUserAtMs);
     const greeting = greetingDone(runCounts, local.date);
     const anniversaryDoneToday = separateLineDoneToday(runCounts, 'care_anniversary', local.date);
-    const lateNightDoneToday = separateLineDoneToday(runCounts, 'care_late_night', local.date);
-    const nudgeDoneToday = runCounts.some(
-      (row) => row.actionKey === 'nudge' && row.localDate === local.date,
-    );
-    // 拍一拍绝不在每天第一条自动拍：今天角色已经主动做过事（或已在聊天里说过话）才进候选。
-    const actedToday =
-      runCounts.some((row) => row.localDate === local.date) ||
-      visible.some(
-        (m) =>
-          m.senderKind === 'character' &&
-          localParts(new Date(m.createdAt), profile.timeZone).date === local.date,
-      );
     const autoOff = shouldAutoOff({ nowMs, lastUserAtMs, mainUnreplied });
-    // 会话压制：用户在聊天里明确说过不喜欢某一种形式，就不进对应候选；后来明确要了就恢复。
-    const userTexts = visible
-      .filter((m) => m.senderKind === 'user')
-      .slice(-30)
-      .flatMap((m) => {
-        const raw =
-          m.content?.type === 'text'
-            ? m.content.text
-            : m.content?.type === 'voice'
-              ? (m.content.transcript ?? '')
-              : '';
-        return raw.trim() ? [raw] : [];
-      });
-    const suppressedForms = detectFormSuppressions(userTexts).suppressed;
     const [activity] = await this.db.db
       .select({ at: sql<Date>`max(${userChatActivity.lastAt})` })
       .from(userChatActivity)
@@ -1117,47 +1055,6 @@ export class EcologyService {
     const known = await this.growth.getDaysKnown(userId, characterId).catch(() => null);
     for (const a of known?.anniversaries ?? [])
       if (a.nextOccurrence === local.date) specialDay = true;
-
-    // 朋友圈：只记目标编号与数量。
-    const since = new Date(nowMs - 7 * 86400_000).toISOString();
-    const mine = await this.moments.listCharacterPosts(userId, characterId, since).catch(() => []);
-    const userPosts = await this.moments
-      .listUserPostsVisibleTo(userId, characterId, since)
-      .catch(() => [] as MomentsPost[]);
-    let c = 0;
-    for (const p of mine.slice(0, 3)) {
-      const replied = new Set(
-        p.comments
-          .filter((x) => x.author.kind === 'character' && x.author.refId === characterId)
-          .map((x) => x.replyToCommentId),
-      );
-      for (const cm of p.comments.slice(-5)) {
-        if (cm.author.kind === 'character' && cm.author.refId === characterId) continue;
-        if (replied.has(cm.commentId)) continue;
-        targets.set(`C${++c}`, { postId: p.postId, commentId: cm.commentId });
-      }
-    }
-    let u = 0;
-    for (const p of userPosts.slice(0, 3)) {
-      const interacted =
-        p.likes.some((l) => l.kind === 'character' && l.refId === characterId) ||
-        p.comments.some((x) => x.author.kind === 'character' && x.author.refId === characterId);
-      if (interacted) continue;
-      targets.set(`U${++u}`, { postId: p.postId });
-    }
-    let pc = 0;
-    const related = await this.social
-      .relatedContacts(userId, characterId)
-      .catch(() => ({ added: [] }));
-    for (const r of related.added.slice(0, 4)) {
-      const posts = await this.moments
-        .listCharacterPosts(userId, r.characterId, since)
-        .catch(() => []);
-      const p = posts[0];
-      if (!p) continue;
-      if (p.likes.some((l) => l.kind === 'character' && l.refId === characterId)) continue;
-      targets.set(`P${++pc}`, { postId: p.postId });
-    }
 
     // 群。
     const groups = await this.groups.ecologyGroups(userId, characterId).catch(() => []);
@@ -1213,7 +1110,6 @@ export class EcologyService {
     const busyBlocked = sinceUserMs < BUSY_MS;
     const lateNight = local.hour >= 23 || local.hour < 4;
     const tools: EcologyRunKind[] = [];
-    const stickers = await this.mediaAi.hasStickers(characterId).catch(() => false);
     const signatureRecent =
       !!ep?.signatureUpdatedAt && nowMs - ep.signatureUpdatedAt.getTime() < 3 * 86400_000;
     const weiboReady = await this.weibo.offer(userId, characterId).catch(() => false);
@@ -1221,32 +1117,24 @@ export class EcologyService {
     const momentMaterial = await this.momentsAi
       .hasWeiboMaterial(userId, characterId)
       .catch(() => false);
-    const weiboPhoto = await this.momentsAi
-      .weiboPhotoForEcology(userId, characterId)
-      .catch(() => null);
-    // 候选 = 决策模式的动作 + 并入 message 的内部 kind（greeting / care_anniversary）。
-    // 内部 kind 没有自己的开关：用户开关与平台可用性一律按门控 key（message）查，
-    // 绝不能把内部 kind 传给 actionAvailable（契约里已无此 key，会被判「即将上线」）。
-    const candidates: Array<{ key: EcologyRunKind; gateKey: EcologyActionKey }> = [
-      ...[...ACTION_DEF.values()]
-        .filter((def) => def.mode === 'decision')
-        .map((def) => ({ key: def.key as EcologyRunKind, gateKey: def.key })),
-      { key: 'greeting' as const, gateKey: 'message' as const },
-      { key: 'care_anniversary' as const, gateKey: 'message' as const },
+    // 候选 = 决策模式的动作（基础层 mode = 'base' 不算）+ 并入 message 的内部 kind（greeting /
+    // care_anniversary）。用户开关按所属开关查（weibo_sync / moment_post → 私人朋友圈；
+    // care_absence / care_follow_up / 内部 kind → 主动消息），平台可用性按动作自己的定义查。
+    const candidates: EcologyRunKind[] = [
+      ...[...ACTION_DEF.values()].filter((def) => def.mode === 'decision').map((def) => def.key),
+      'greeting',
+      'care_anniversary',
     ];
-    for (const { key, gateKey } of candidates) {
-      if (disabled.has(gateKey)) continue;
-      if (await this.settings.actionAvailable(gateKey, config)) continue;
+    for (const key of candidates) {
+      const gateKey = gateKeyForRunKind(key);
+      if (!gateKey || !switchEnabled(disabled, gateKey)) continue;
+      if (await this.settings.actionAvailable(key, config)) continue;
       if (CHAT_ACTIONS.has(key)) {
         if (busyBlocked) continue;
         if (!chatActionCountAllowed(key, { mainUnreplied, absenceGreeted })) continue;
-        // 会话压制：用户说过不喜欢，就不进候选（只压说的那一种）。
-        if (key === 'sticker' && suppressedForms.has('sticker')) continue;
-        if (key === 'voice' && suppressedForms.has('voice')) continue;
-        if (key === 'nudge' && suppressedForms.has('nudge')) continue;
       }
-      // H2：私密模式只开放文字与图片（不发语音），且仅单角色（不去群里说话）。
-      if (privateMode && (key === 'voice' || key === 'group_talk')) continue;
+      // H2：私密模式仅单角色（不去群里说话）。
+      if (privateMode && key === 'group_talk') continue;
       if (TEXT_MODEL_ACTIONS.has(gateKey) && !textReady) continue;
       const ok = await (async () => {
         switch (key) {
@@ -1254,12 +1142,6 @@ export class EcologyService {
             return weiboReady;
           case 'moment_post':
             return momentMaterial;
-          case 'photo':
-            // 3.29：只发该条微博已审核图片；没有图就不提供，不 AI 生图/不用风景图。
-            return Boolean(weiboPhoto);
-          case 'voice':
-            // 文字由用户文字模型写、声音由用户语音消息模型合成；音色与所选模型不兼容就不提供。
-            return this.voiceReady(userId, characterId);
           case 'greeting': {
             const inWindow =
               (local.hour >= 6 && local.hour < 10) || local.hour >= 21 || local.hour < 1;
@@ -1268,8 +1150,6 @@ export class EcologyService {
             const isMorning = local.hour >= 6 && local.hour < 10;
             return isMorning ? !greeting.morningDone : !greeting.eveningDone;
           }
-          case 'care_late_night':
-            return lateNight && lastAppMs < 30 * 60_000 && !lateNightDoneToday;
           case 'care_absence':
             return absenceMs >= ABSENCE_MS;
           case 'care_anniversary':
@@ -1277,17 +1157,6 @@ export class EcologyService {
           case 'care_follow_up':
             // 定时跟进：只有 follow_ups 里到点、没问过、今天没超 2 条的事项才进候选。
             return followUpDue !== null;
-          case 'sticker':
-            return stickers;
-          case 'nudge':
-            // 约每天 1 次、看场合、绝不在每天第一条自动拍：今天已拍过或今天还没动过时不进候选。
-            return !nudgeDoneToday && actedToday;
-          case 'moment_interact':
-            return u > 0;
-          case 'moment_reply':
-            return c > 0;
-          case 'moment_peer':
-            return pc > 0;
           case 'group_talk':
             return groups.length > 0;
           case 'signature':
@@ -1316,9 +1185,6 @@ export class EcologyService {
       userActiveInApp30m: lastAppMs < 30 * 60_000,
       daysSinceLastChat: Math.min(365, Math.floor(absenceMs / 86400_000)),
       pendingFollowUp: followUpDue !== null,
-      pendingCommentReplies: c,
-      userPostsToInteract: u,
-      friendPostsToInteract: pc,
       sharedGroups: Math.min(3, groups.length),
       weiboLeadAvailable: weiboReady,
       signatureChangedRecently: signatureRecent,
@@ -1356,10 +1222,11 @@ export class EcologyService {
       balanceInsufficient: spend?.insufficient === true,
       privateMode,
       conversationId: contact.conversationId,
+      local,
+      weekday,
       tools,
       targets,
       hasFollowUps: followUpDue !== null,
-      weiboPhoto,
       mainUnreplied,
       absenceGreeted,
       autoOff,
@@ -1514,18 +1381,6 @@ export class EcologyService {
       })
       .where(eq(followUps.id, id))
       .catch(() => undefined);
-  }
-
-  /** 语音候选预检：陪伴设置里的音色（没有就用角色默认）必须和用户为语音消息选的模型一致。 */
-  private async voiceReady(userId: string, characterId: string): Promise<boolean> {
-    if (!this.media.speechSynthesisReady) return false;
-    if (!(await this.media.isServiceEnabled('speech_synthesis').catch(() => false))) return false;
-    const settings = await this.companion.get(userId, characterId).catch(() => null);
-    const voiceId = await this.mediaAi
-      .resolveVoice(characterId, settings?.voiceId ?? null)
-      .catch(() => null);
-    if (!voiceId) return false;
-    return this.media.speechSynthesisReady({ userId, characterId, voiceId }).catch(() => false);
   }
 
   // =========================================================================

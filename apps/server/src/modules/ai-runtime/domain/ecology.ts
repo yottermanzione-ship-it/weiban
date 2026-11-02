@@ -20,9 +20,13 @@ import {
  * 执行方式：
  * - decision：生态唤醒时由决策模型从工具里挑；
  * - flow：由已有的专门流程自己触发，开关只决定流程是否运行（经期关怀：隐私规则更严，沿用 health-care）；
- * - reserved：留口子，v1 未接通（界面置灰「即将上线」）。
+ * - reserved：留口子，v1 未接通（界面置灰「即将上线」）；
+ * - base：基础层（对照表 v3）：所有人默认都有，不展示开关、不进生态候选、不看生态闸门。
+ *   聊天里的语音 / 图片 / 表情包 / 拍一拍 / 熬夜催睡由聊天流程自己判断（用户说过不要某种形式就不发，
+ *   见 chat-form-suppression），朋友圈三种互动由朋友圈事件按旧版机制排期（moments-ai）。
+ *   定义留着：旧运行记录的摘要、用户在聊天里点名「拍拍我」等仍要用。
  */
-export type EcologyExecMode = 'decision' | 'flow' | 'reserved';
+export type EcologyExecMode = 'decision' | 'flow' | 'reserved' | 'base';
 
 export interface EcologyActionDef {
   key: EcologyActionKey;
@@ -40,10 +44,12 @@ export interface EcologyActionDef {
 }
 
 /**
- * 2026-11-02 清理后的动作清单（17 个）：用户开关只到这里为止。greeting / care_anniversary /
+ * 动作目录（运行 kind 里属于契约 key 的部分，17 个）。2026-11-02 清理：greeting / care_anniversary /
  * care_period 已并入 message（见 ecology-counters.ts 的 EcologyInternalKind 与下面的
  * INTERNAL_ACTION_INFO），不再出现在这张表里；share_link / care_weather / play_letter /
  * play_wish / play_focus / play_daily_question / play_reminder 已删除。
+ * 2026-11-03 按对照表 v3：这张表不再等于用户开关（开关见下面的 ECOLOGY_SWITCHES，只有 6 个）；
+ * 基础层动作改为 mode = 'base'。private_moments 只是开关、不是动作，不在这张表里。
  */
 export const ECOLOGY_ACTIONS: readonly EcologyActionDef[] = [
   {
@@ -68,7 +74,7 @@ export const ECOLOGY_ACTIONS: readonly EcologyActionDef[] = [
     group: 'chat',
     label: '发语音消息',
     tool: '用语音消息说一两句话（短，口语）。brief 写要说的意思。',
-    mode: 'decision',
+    mode: 'base',
     needs: 'speech_synthesis',
     summary: '给你发了条语音',
   },
@@ -77,7 +83,7 @@ export const ECOLOGY_ACTIONS: readonly EcologyActionDef[] = [
     group: 'chat',
     label: '分享图片',
     tool: '分享这张角色微博里的一张公开图片，配一句话；不得声称是刚拍的照片或自拍。',
-    mode: 'decision',
+    mode: 'base',
     summary: '给你分享了张图片',
   },
   {
@@ -85,7 +91,7 @@ export const ECOLOGY_ACTIONS: readonly EcologyActionDef[] = [
     group: 'chat',
     label: '发表情包',
     tool: '发一个表情包（可配一句很短的话）。brief 写想表达的情绪。',
-    mode: 'decision',
+    mode: 'base',
     summary: '给你发了个表情',
   },
   {
@@ -94,7 +100,7 @@ export const ECOLOGY_ACTIONS: readonly EcologyActionDef[] = [
     label: '拍一拍你',
     // 10-28 总经理：拍一拍是夹在聊天里的小动作，不单独发——执行时先发一句话再拍。
     tool: '在聊天里「拍一拍」对方，并顺带说一句话（拍一拍不单独发）。',
-    mode: 'decision',
+    mode: 'base',
     summary: '拍了拍你，还说了句话',
   },
   {
@@ -110,7 +116,7 @@ export const ECOLOGY_ACTIONS: readonly EcologyActionDef[] = [
     group: 'moments',
     label: '给你的朋友圈点赞、评论',
     tool: '给对方最近的一条朋友圈点赞或评论。target 填快照里对方动态的编号；brief 写 like 或想评论的意思。',
-    mode: 'decision',
+    mode: 'base',
     summary: '给你的朋友圈点了赞 / 评论',
   },
   {
@@ -118,7 +124,7 @@ export const ECOLOGY_ACTIONS: readonly EcologyActionDef[] = [
     group: 'moments',
     label: '回复 TA 朋友圈下的评论',
     tool: '回复自己朋友圈下还没回的评论。target 填快照里评论的编号。',
-    mode: 'decision',
+    mode: 'base',
     summary: '回复了朋友圈评论',
   },
   {
@@ -126,7 +132,7 @@ export const ECOLOGY_ACTIONS: readonly EcologyActionDef[] = [
     group: 'moments',
     label: '去其他角色的朋友圈互动',
     tool: '去其他认识的角色的朋友圈点赞或评论（对方能在共同好友处看到）。target 填快照里动态的编号；brief 写 like 或评论的意思。',
-    mode: 'decision',
+    mode: 'base',
     summary: '去朋友的朋友圈互动了',
   },
   {
@@ -158,7 +164,7 @@ export const ECOLOGY_ACTIONS: readonly EcologyActionDef[] = [
     group: 'care',
     label: '熬夜了催你睡',
     tool: '对方深夜还在活跃（快照里有最近活跃时间）时，催对方早点睡。',
-    mode: 'decision',
+    mode: 'base',
     summary: '催你早点睡',
   },
   {
@@ -189,16 +195,98 @@ export const ECOLOGY_ACTIONS: readonly EcologyActionDef[] = [
 ];
 
 export const ACTION_DEF = new Map(ECOLOGY_ACTIONS.map((a) => [a.key, a]));
-// 编译期保证契约里的每个动作都有定义。
-const _all: Record<EcologyActionKey, true> = Object.fromEntries(
-  ECOLOGY_ACTION_KEYS.map((k) => [k, true]),
-) as Record<EcologyActionKey, true>;
-void _all;
+
+// ===========================================================================
+// 用户开关（对照表 v3，总经理 2026-11-03 确认；docs/product/ecology-display-v3.md）
+// ===========================================================================
+
+export interface EcologySwitchDef {
+  key: EcologyActionKey;
+  group: EcologyActionGroup;
+  label: string;
+  /** 这个开关管的运行 kind（执行、计数仍按各自的 kind 记）。 */
+  covers: readonly EcologyRunKind[];
+}
+
+/**
+ * 设置页「按动作」只展示这 6 个开关（顺序即展示顺序，分组沿用原分组）。碎碎念没有开关。
+ * 存储沿用 ecology_settings.disabled_actions，不迁移数据：
+ * - private_moments 不单独存，关掉 = 同时写入 weibo_sync 与 moment_post，打开 = 两个都去掉；
+ * - care_absence / care_follow_up 改由 message 管，旧数据里单独关掉的这两项读取时忽略。
+ * 基础层动作（mode = 'base'）不属于任何开关。
+ */
+export const ECOLOGY_SWITCHES: readonly EcologySwitchDef[] = [
+  {
+    key: 'message',
+    group: 'chat',
+    label: '主动消息',
+    covers: ['message', 'greeting', 'care_anniversary', 'care_absence', 'care_follow_up'],
+  },
+  {
+    key: 'private_moments',
+    group: 'moments',
+    label: '私人朋友圈',
+    covers: ['weibo_sync', 'moment_post'],
+  },
+  { key: 'status', group: 'life', label: '更新状态', covers: ['status'] },
+  { key: 'signature', group: 'life', label: '改个性签名', covers: ['signature'] },
+  { key: 'play_pet', group: 'play', label: '照顾宠物', covers: ['play_pet'] },
+  { key: 'group_talk', group: 'group', label: '群聊主动话题', covers: ['group_talk'] },
+];
+
+const SWITCH_OF = new Map<EcologyRunKind, EcologyActionKey>(
+  ECOLOGY_SWITCHES.flatMap((s) => s.covers.map((kind) => [kind, s.key] as const)),
+);
+const SWITCH_KEYS: ReadonlySet<EcologyActionKey> = new Set(ECOLOGY_SWITCHES.map((s) => s.key));
+/** private_moments 在 disabled_actions 里的落地形式。 */
+const PRIVATE_MOMENTS_STORAGE: readonly EcologyActionKey[] = ['weibo_sync', 'moment_post'];
+
+/**
+ * 运行 kind 的门控开关：返回管它的那个开关 key；基础层动作（或不认识的 kind）返回 null，
+ * 表示不走生态闸门。绝不能把内部 kind（greeting 等）直接当开关查。
+ */
+export function gateKeyForRunKind(kind: EcologyRunKind): EcologyActionKey | null {
+  return SWITCH_OF.get(kind) ?? null;
+}
+
+/**
+ * 某个开关在用户设置里是否打开（只看 disabled_actions，不看平台、会员、总开关）。
+ * private_moments：weibo_sync 与 moment_post 都被关才算关；旧数据只关了其中一个时显示为开
+ * （任务卡 T-20261103b），下次切换时两个一起写。
+ */
+export function switchEnabled(disabled: readonly string[], key: EcologyActionKey): boolean {
+  if (key === 'private_moments') return !PRIVATE_MOMENTS_STORAGE.every((k) => disabled.includes(k));
+  return !disabled.includes(key);
+}
+
+/**
+ * 合并用户开关变更，返回新的 disabled_actions（排序后写回）：
+ * - private_moments 一次写两个存储 key；
+ * - 不是开关的 key（已收进别的开关或已归基础层，旧客户端可能还会发）照收但不起作用；
+ * - 存量里契约已删的未知 key 剥掉，避免垃圾永久累积；其余存量原样保留（读取时会被忽略）。
+ */
+export function mergeDisabledActions(
+  current: readonly string[],
+  changes: ReadonlyArray<{ key: EcologyActionKey; enabled: boolean }>,
+): string[] {
+  const disabled = new Set(current);
+  for (const change of changes) {
+    if (!SWITCH_KEYS.has(change.key)) continue;
+    const keys = change.key === 'private_moments' ? PRIVATE_MOMENTS_STORAGE : [change.key];
+    for (const key of keys) {
+      if (change.enabled) disabled.delete(key);
+      else disabled.add(key);
+    }
+  }
+  return [...disabled]
+    .filter((k): k is EcologyActionKey => (ECOLOGY_ACTION_KEYS as readonly string[]).includes(k))
+    .sort();
+}
 
 /**
  * 并入 message 的内部 kind 的展示信息（只给决策模型题干与运行记录摘要用，不进用户开关）。
- * 门控一律查 message 开关：调用方用 gateKeyForRunKind() 取门控 key，绝不能把内部 kind
- * 传给 actionAvailable / isActive（契约里已无此 key，会被判「即将上线」/ 直接走不通）。
+ * 门控一律查 message 开关：调用方用 gateKeyForRunKind() 取门控开关；平台可用性按 message 的定义查
+ * （见 EcologySettingsService.actionAvailable）。
  */
 export const INTERNAL_ACTION_INFO: Record<
   EcologyInternalKind,
@@ -215,11 +303,6 @@ export const INTERNAL_ACTION_INFO: Record<
     summary: '记得今天是特别的日子',
   },
 };
-
-/** 内部 kind 的门控动作：目前都并入 message。普通 key 的门控就是它自己。 */
-export function gateKeyForRunKind(kind: EcologyRunKind): EcologyActionKey {
-  return kind === 'greeting' || kind === 'care_anniversary' ? 'message' : kind;
-}
 
 /** 候选 / 运行的展示 label：先查动作表，再查内部 kind。 */
 export function ecologyRunLabel(kind: EcologyRunKind): string {

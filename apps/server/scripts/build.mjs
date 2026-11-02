@@ -33,6 +33,7 @@ await build({
     'import-legacy-character-avatars': 'src/cli/import-legacy-character-avatars.ts',
     'import-legacy-character-voices': 'src/cli/import-legacy-character-voices.ts',
     'import-sticker-assets': 'src/cli/import-sticker-assets.ts',
+    'seed-sticker-labels': 'src/cli/seed-sticker-labels.ts',
     'ecology-config': 'src/cli/ecology-config.ts',
     'voice-call-pipeline': 'src/cli/voice-call-pipeline.ts',
     'voice-catalog': 'src/cli/voice-catalog.ts',

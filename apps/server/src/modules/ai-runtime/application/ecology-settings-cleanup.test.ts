@@ -49,9 +49,13 @@ describe('mergeDisabledActions', () => {
     expect(
       mergeDisabledActions(
         ['share_link', 'message', 'play_wish'],
-        [{ key: 'voice', enabled: false }],
+        [{ key: 'status', enabled: false }],
       ),
-    ).toEqual(['message', 'voice']);
+    ).toEqual(['message', 'status']);
+    // 2026-11-03：voice 已归基础层，旧客户端发来照收但不写入。
+    expect(
+      mergeDisabledActions(['message', 'share_link'], [{ key: 'voice', enabled: false }]),
+    ).toEqual(['message']);
     // 关掉 message 后再打开：从禁用集合里移除。
     expect(
       mergeDisabledActions(['message', 'share_link'], [{ key: 'message', enabled: true }]),

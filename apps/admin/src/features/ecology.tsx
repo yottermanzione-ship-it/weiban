@@ -38,6 +38,8 @@ const LEVELS = [
 
 // 2026-11-02 生态动作清理：只留现行 17 个 key。已删 / 并入 message 的 key 不再列出，
 // 运行记录里旧行的 actionKey 由 tolerantEnum 读成 'unsupported' 时显示原值兜底（见下表渲染）。
+// 2026-11-03（契约 5.2）：新增 private_moments（私人朋友圈开关，平台关掉 = 微博同步与转发都不做）。
+// 语音、表情包、拍一拍、朋友圈互动等已归基础层，平台在这里关掉它们不再起作用。
 const ACTION_NAMES: Record<string, string> = {
   message: '主动发消息',
   voice: '发语音消息',
@@ -48,6 +50,7 @@ const ACTION_NAMES: Record<string, string> = {
   moment_interact: '点赞评论用户朋友圈',
   moment_reply: '回复朋友圈评论',
   moment_peer: '其他角色朋友圈互动',
+  private_moments: '私人朋友圈',
   status: '更新状态',
   signature: '改个性签名',
   care_absence: '久未联系问候',

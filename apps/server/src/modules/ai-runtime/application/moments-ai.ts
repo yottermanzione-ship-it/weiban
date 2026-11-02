@@ -7,6 +7,10 @@
  * - 不含成人模式内容（素材里没有聊天记录）和经期内容（healthPrivate 拦截）。
  * - 互动：用户评论角色动态 → 该角色一定回复（P-29 两小时内）；角色互评只在有关系的角色之间，按亲疏抽签；
  *   用户动态 → 可见角色按熟悉度点赞评论（至少 1 个 L2 及以上的角色互动）。
+ * - 2026-11-03（对照表 v3，T-20261103b）：这三种互动是基础层，所有人默认都有，不再看会员、生态总开关、
+ *   角色生态开关或动作开关；只要账号正常、角色是通讯录里的好友，可见范围在执行时按用户 + 角色再核一次。
+ *   模型费用按「后台消耗由用户承担」扣用户积分（billingOwner = user + countAsBackground，不再标生态任务）；
+ *   积分不足 / 后台额度用完就跳过，不报错、不重试。
  * 说明见 docs/ai/runtime-overview.md 7.6 节。
  */
 import { stageLabel } from '../domain/relationship-stage.js';
@@ -420,22 +424,6 @@ export class MomentsAiService {
   }
 
   /**
-   * 生态 photo：从同一条微博素材的图片里稳定选一张，交给既有聊天媒体路径发送。
-   * 只读 e0fac 已入库的媒体；没有图返回 null（调用方 skip），绝不生图/找风景图。
-   */
-  async weiboPhotoForEcology(
-    userId: string,
-    characterId: string,
-  ): Promise<{ mediaId: string; updateId: string } | null> {
-    const material = await this.latestWeiboMaterial(userId, characterId);
-    const images = material?.images ?? [];
-    if (!images.length) return null;
-    const index = Math.floor(ecoRandom(`weibo:${material!.updateId}:${userId}`) * images.length);
-    const image = images[Math.min(index, images.length - 1)];
-    return image ? { mediaId: image.mediaId, updateId: material!.updateId } : null;
-  }
-
-  /**
    * 3.29：moment_post 只同步「对应微博已同步的原文/素材」到用户自己的朋友圈。
    * 没有素材、素材不安全、已经转过 → 明确失败/跳过；**不再回退 AI 编动态，也不用随机风景图**。
    * 图片只从素材代理返回的该条微博图片里稳定随机取一张（幂等键保证重试不重复发）。
@@ -476,13 +464,6 @@ export class MomentsAiService {
     });
     if (!reposted.ok) return { ok: false, reason: `post_failed:${String(reposted.error)}` };
     return { ok: true, chargedMicros: 0, postId: reposted.value.postId };
-  }
-
-  /** v5：角色生态里的点赞 / 评论 / 回复（同 runReact，返回扣费）。 */
-  async reactForEcology(
-    job: MomentsReactJob,
-  ): Promise<{ ok: true; chargedMicros: number } | { ok: false; reason: string }> {
-    return this.react0(job);
   }
 
   /** 今天是否该发、几点发：按「用户 + 角色 + 周」稳定抽日子，不同角色节奏不同。 */
@@ -861,10 +842,10 @@ export class MomentsAiService {
         scored.push({ id, level });
       }
       scored.sort((a, b) => b.level - a.level);
-      // v5：角色自己去点赞评论 = 生态动作「给你的朋友圈点赞、评论」（PRO+、开着生态、角色与动作开关都开）。
+      // 对照表 v3：基础层，不看会员与生态开关；账号正常、角色在通讯录里就排。
+      if (!(await this.baseLayerAccountOk(userId))) return;
       const allowed: typeof scored = [];
-      for (const s of scored)
-        if (await this.ecology.isActive(userId, s.id, 'moment_interact')) allowed.push(s);
+      for (const s of scored) if (await this.isFriend(userId, s.id)) allowed.push(s);
       let planned = planUserPostReactions(
         allowed.map((s) => ({
           characterId: s.id,
@@ -883,6 +864,8 @@ export class MomentsAiService {
     // 点赞和评论分开排（对照表 v3 §4，照抄旧版）：最多 5 个角色、评论最多 1 个，
     // 点赞前 2 个几乎总是、其余 45%，评论 35%；延迟 1–15 分钟、各自去重键。
     if (!payload.authorCharacterId) return;
+    if (!(await this.baseLayerAccountOk(userId))) return;
+    // relatedContacts.added 只含通讯录里的角色（基础层，不看生态开关）。
     const { added } = await this.social.relatedContacts(userId, payload.authorCharacterId);
     const ordered = [...added].sort(
       (a, b) =>
@@ -891,7 +874,6 @@ export class MomentsAiService {
     );
     const candidates: { characterId: string; likeDraw: number; commentDraw: number }[] = [];
     for (const a of ordered) {
-      if (!(await this.ecology.isActive(userId, a.characterId, 'moment_peer'))) continue;
       candidates.push({
         characterId: a.characterId,
         likeDraw: Math.random(),
@@ -975,7 +957,8 @@ export class MomentsAiService {
     if (!target || target === author) return;
     const relation = await this.relations.getRelation(userId, author, target).catch(() => null);
     if (!relation) return;
-    if (!(await this.ecology.isActive(userId, target, 'moment_reply'))) return;
+    // 基础层：不看生态开关；账号正常、被回复的角色在通讯录里就排。
+    if (!(await this.baseLayerAccountOk(userId)) || !(await this.isFriend(userId, target))) return;
     if (Math.random() >= (CLOSENESS_WEIGHT[relation.closeness] ?? 0.3) * 0.5) return;
     await this.react(
       {
@@ -1060,9 +1043,25 @@ export class MomentsAiService {
     }
   }
 
+  /** 基础层闸门的账号部分：账号正常且没被封禁（不看会员、生态开关）。 */
+  private async baseLayerAccountOk(userId: string): Promise<boolean> {
+    try {
+      if ((await this.accounts.getAccountStatus(userId)) !== 'active') return false;
+      return !(await this.accounts.isBanned?.(userId));
+    } catch {
+      return false;
+    }
+  }
+
+  /** 角色是用户通讯录里的好友。 */
+  private async isFriend(userId: string, characterId: string): Promise<boolean> {
+    return !!(await this.contacts.getActiveContact(userId, characterId).catch(() => null));
+  }
+
   async runReact(job: MomentsReactJob): Promise<void> {
     const r = await this.react0(job);
     // P-29 必回：生成失败抛错让任务重试（最多 5 次，仍在 2 小时内）。
+    // 积分不足 / 后台额度用完不是生成失败：跳过，不报错、不重试。
     if (!r.ok && r.reason === 'generation_failed' && job.mustReply)
       throw new Error('moments reply generation failed');
   }
@@ -1094,6 +1093,8 @@ export class MomentsAiService {
       });
     if (job.action === 'like') return { ok: true, chargedMicros: 0 };
     const text = await this.generateComment(job, post);
+    if (text === 'insufficient_balance' || text === 'budget_exceeded')
+      return { ok: false, reason: text };
     if (!text) return { ok: false, reason: 'generation_failed' };
     const result = await this.writer.comment({
       ownerUserId: userId,
@@ -1121,10 +1122,19 @@ export class MomentsAiService {
     return { ok: true, chargedMicros: text.chargedMicros };
   }
 
+  /**
+   * 写评论 / 回复。返回 null = 生成失败或内容不安全；返回 'insufficient_balance' / 'budget_exceeded'
+   * = 用户积分不足或后台额度用完（调用方跳过，不重试）。
+   */
   private async generateComment(
     job: MomentsReactJob,
     post: MomentsPost,
-  ): Promise<{ text: string; mentionsUser: boolean; chargedMicros: number } | null> {
+  ): Promise<
+    | { text: string; mentionsUser: boolean; chargedMicros: number }
+    | 'insufficient_balance'
+    | 'budget_exceeded'
+    | null
+  > {
     const { userId, characterId } = job;
     const role = await this.characters.getForRuntime(userId, characterId);
     const policy = await this.policy.getCharacterPolicy(userId, characterId);
@@ -1272,7 +1282,9 @@ export class MomentsAiService {
             meta: { scenarioMode: 'adult' },
           }
         : { modelRole: 'background' as const }),
-      ...(job.mustReply ? {} : { countAsBackground: true, ecologyTask: true }),
+      // 后台消耗由用户承担（ADR-0032，总经理 11-03 确认）：扣用户积分、计入后台额度；基础层不是生态任务，
+      // 不标 ecologyTask（积分不足时不触发生态暂停提示）。用户评论后的必回（mustReply）同聊天回复，不计后台额度。
+      ...(job.mustReply ? {} : { countAsBackground: true }),
       responseFormat: 'text',
       maxOutputTokens: 120 + slots.length * 200,
       idempotencyKey: `ai:moments-${job.action}:${post.postId}:${characterId}:${job.replyToCommentId ?? 'post'}`,
@@ -1316,7 +1328,10 @@ export class MomentsAiService {
         },
         own && !!job.mustReply,
       );
-    if (!result.ok) return null;
+    if (!result.ok)
+      return result.error === 'insufficient_balance' || result.error === 'budget_exceeded'
+        ? result.error
+        : null;
     const parts = splitCaptionTail(result.value.text, slots.length);
     for (const [index, slot] of slots.entries()) {
       let caption = parts.captions[index];
