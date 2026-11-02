@@ -2,6 +2,8 @@
 
 > 2026-10-22：photo 动作为分享公开图片/库图，不再依赖生图开通或调用生图。明确分享动作可付费联网检索固定公开主题，转存失败/无图时保留已经实扣搜索费统计；不声称自拍。其余卡片、宠物、朋友圈配图只走库图。最新边界见[接口说明](../architecture/2026-10-22-character-picture-contract-change.md)。
 
+> 2026-11-03（T-20261103b，契约 5.2）：按 `docs/product/ecology-display-v3.md` 收拢为 6 个开关（主动消息、私人朋友圈、状态、签名、宠物〔置灰〕、群聊主动话题），开关与覆盖关系定义在 `domain/ecology.ts` 的 `ECOLOGY_SWITCHES`。语音、图片、表情包、拍一拍、熬夜催睡、朋友圈三种互动归**基础层**：不再是生态候选，也不看生态闸门；朋友圈互动只看账号正常 + 角色在通讯录 + 可见范围，费用按后台消耗扣用户积分（`billingOwner: 'user'` + `countAsBackground`，不标生态任务），积分不足跳过。碎碎念素材单独组装（`domain/ecology-murmur.ts`），不再复用给 Jev 的快照摘要。下文与此冲突处以本条为准。
+
 > 依据：`docs/refactor/17-ecology-settings.md`（用户可见设置与动作清单的唯一定义处）、`docs/refactor/16-membership-v5.md` §4（收费）、`docs/product/input/2026-10-18-gm-ecology-vision.md`（目标形态）、`docs/backend/model-routing-ecology-plan.md` 块 B/C。
 > 本文只说明「代码怎么做的」，不重复上面文档里的产品规则。批次：v5 批 C（2026-10-20），契约 3.19，迁移 0109–0111。
 
@@ -29,7 +31,7 @@
 | 心愿提议 / 纪念日寄信等经调度器登记的计划 | 心愿计划按 `ecology_off` 丢弃（`play_wish` 已删）；纪念日寄信按 `message` 开关放行（`play_letter` 生态开关已删，Play 慢信本体不动）；安全关怀跟进平台承担，不受影响 |
 | 推演（日常事件）、共同事件、「你不在时」摘要、每周名场面、卡片一句话 | 只给生态开着的用户 + 参与的角色做 |
 | 朋友圈：私人发圈 | 规则排期停用，改为生态动作 `moment_post` |
-| 朋友圈：角色给你的动态点赞评论 / 角色之间互评 / 角色之间接话 | 分别按 `moment_interact` / `moment_peer` / `moment_reply` 放行 |
+| 朋友圈：角色给你的动态点赞评论 / 角色之间互评 / 角色之间接话 | ~~分别按 `moment_interact` / `moment_peer` / `moment_reply` 放行~~ 2026-11-03 起归基础层，不过生态闸门（见文首） |
 | 朋友圈：你评论角色动态 → 角色必回 | 不变（用户发起） |
 | 群里自己聊（规则排期） | 停用（`LEGACY_SELF_CHAT_SCHEDULE = false`），改为生态动作 `group_talk`；节日拉群只给 `group_talk` 开着的用户 |
 | 官方角色公共朋友圈 | **保留且改为平台承担**：每角色每天生成一份文字（`ai_runtime.public_moment_drafts`），所有用户共用；素材只用角色层面的（公开动态 / 节日 / 人设小感受）。自定义角色没有公共朋友圈 |
@@ -45,12 +47,11 @@
 
 | 动作 | 执行 |
 |---|---|
-| message（含内部 kind greeting / care_anniversary：早安晚安与日子提醒仍保留行为、改由 message 开关门控、单独计数） / care_absence / care_late_night / care_follow_up | `ProactiveSchedulerService.sendEcology`：沿用主动消息的生成、守卫、发送事务（聊天模型按人设写），不进旧的主动消息账本 |
-| voice / photo / sticker | 同上，附加语音合成（`MediaAiService.synthesizeForEcology`）/ 图片（`CharacterImageService`）/ 库内表情 |
-| nudge | 发拍一拍（不调模型、不扣费） |
+| message（含内部 kind greeting / care_anniversary：早安晚安与日子提醒仍保留行为、改由 message 开关门控、单独计数） / care_absence / care_follow_up | `ProactiveSchedulerService.sendEcology`：沿用主动消息的生成、守卫、发送事务（聊天模型按人设写），不进旧的主动消息账本 |
+| ~~voice / photo / sticker / nudge / care_late_night~~ | 2026-11-03 起归基础层，由聊天流程自己判断，不再是生态候选 |
 | play_wish（已删） | 生态唤醒不再提议心愿；调度器里已登记的心愿计划按 `ecology_off` 丢弃 |
 | moment_post | `MomentsAiService.postForEcology`（私人朋友圈） |
-| moment_interact / moment_peer / moment_reply | `MomentsAiService.reactForEcology` |
+| ~~moment_interact / moment_peer / moment_reply~~ | 2026-11-03 起不再是生态动作，由朋友圈事件排期（`MomentsAiService.onPostCreated` / `onCommentCreated`）；`reactForEcology` 已删 |
 | status / signature | 决策输出里直接带文字，存 `ai_runtime.ecology_profiles`（只对该用户可见） |
 | group_talk | `GroupChatService.startTopicForEcology`（同自发话题链路与上限，不推送） |
 | care_period（已并入 message） | 走 health-care 自己的流程（不进决策工具），开关查 message |
