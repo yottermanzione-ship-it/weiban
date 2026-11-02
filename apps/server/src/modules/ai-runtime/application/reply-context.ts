@@ -673,6 +673,16 @@ export class ReplyContext {
         order: 1,
         text: keepHint ? `${styleNote}\n${keepHint}` : styleNote,
       });
+    // T-20261103d：表情包由写回复的模型自己决定——这轮能配时告诉它可选的情绪和标记写法
+    // （与发送阶段同一套硬规则；日常范围的普通回复才有，私密、关怀、树洞、涉及健康时不给）。
+    const stickerHint =
+      row.kind === 'message' &&
+      !inCare &&
+      conversation.contentScope === 'normal' &&
+      style !== 'treehole' &&
+      !healthHint.healthUsed
+        ? await this.mediaAi.stickerPrompt({ ctx: mediaCtx, history, userText }).catch(() => '')
+        : '';
     const tail: PromptSection[] = [
       { title: '刚刚一起经历的', text: episodes.recent },
       { title: '相关经历', text: episodes.relevant },
@@ -680,6 +690,7 @@ export class ReplyContext {
         title: '私聊场景',
         text: '现在以角色口吻与用户私聊。只输出聊天纯文本，短句换行，不输出JSON或括号动作。回答前可以先想，想完先单独写一行【正文】，然后只写正文聊天内容；【正文】这行本身不发给用户，正文不能为空。',
       },
+      { title: '表情包', text: stickerHint },
       {
         title: '这轮可能用得上的记忆',
         text: retrieved.length

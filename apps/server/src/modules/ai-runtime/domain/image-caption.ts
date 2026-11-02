@@ -91,7 +91,7 @@ export function captionInstruction(
     opts.scope === 'normal'
       ? '- 不适合日常聊天的裸露 / 色情画面：不描述，按关怀口吻岔开；'
       : '- 看不清或打不开的图：不要猜，可以自然地问问是什么；',
-    `回复正文写完后，另起一行输出图片存档（这是平台存档格式，对方看不到，是本轮唯一允许的例外格式）：`,
+    `回复正文写完后，另起一行输出图片存档（这是平台存档格式，对方看不到，不受「只输出聊天纯文本」的限制）：`,
     `${OPEN}[{"n":1,"kind":"photo","description":"不超过100字的客观描述，多写以后能接话的细节","text":"图中清晰可见的文字，没有就留空","people":[]}]${CLOSE}`,
     `每张图一项。kind 只能是：selfie 自拍、photo 生活照、food 食物、pet 宠物、scenery 风景、screenshot 截图、meme 表情包或梗图、document 证件文档、health 病历检查单经期等健康类、magazine 杂志海报剧照周边、other 其他。`,
     `people 只能填这些名字里非常确定的人：${JSON.stringify(opts.allowed ?? [])}；名单外的人只写外观，不说出或猜测身份。${

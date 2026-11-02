@@ -50,6 +50,8 @@ import {
 import { ImageCaptionStore } from './image-captions.js';
 import { ImagePublicSearch } from './image-public-search.js';
 import { publicImageSource } from '../domain/image-public-search.js';
+import { takeStickerMarker } from '../domain/sticker-marker.js';
+import type { StickerMood } from '../domain/reply-media-candidates.js';
 const Result = z.object({
   bubbles: z.array(z.string().min(1).max(4000)).min(1).max(4),
   snapshot: ReplySnapshot,
@@ -162,6 +164,9 @@ export class ReplyEngine {
     const slots = snapshot.imageSlots;
     const seen: (ImageCaption | null)[] = slots.map(() => null);
     let captionModel: string | null = null;
+    // T-20261103d：模型在正文里写的「[表情:…]」标记——这里剥掉（用户看不到），情绪按这次输出记下，
+    // 最终采用哪次输出的正文，就用哪次输出的情绪；换成兜底说法时不带表情。
+    const moods = new WeakMap<GenerateTextOutput, StickerMood | null>();
     const strip = (
       result: PortResult<GenerateTextOutput, GenerateError>,
       sawImages = true,
@@ -174,7 +179,10 @@ export class ReplyEngine {
           captionModel ??= result.value.modelKey;
         }
       });
-      return { ...result, value: { ...result.value, text: takeAfterFinalMarker(parts.reply) } };
+      const marked = takeStickerMarker(takeAfterFinalMarker(parts.reply));
+      const value = { ...result.value, text: marked.text };
+      moods.set(value, marked.mood);
+      return { ...result, value };
     };
     // 重写调用：已解析出全部描述就换成文字（不再花钱看一次图），否则照旧附图。
     const retryMessages = () =>
@@ -227,13 +235,20 @@ export class ReplyEngine {
     }
     let bubbles: string[] = [];
     let fallbackReason: string | null = null;
-    if (answer.ok && outputAllowed(answer.value.text, snapshot.policy, snapshot.scope === 'adult'))
+    let stickerMood: StickerMood | null = null;
+    if (
+      answer.ok &&
+      outputAllowed(answer.value.text, snapshot.policy, snapshot.scope === 'adult')
+    ) {
       // 2026-10-30 双兜底出站过滤：只清本轮检出的习惯词，删完为空时 stripHabits 原样返回，绝不发空。
       bubbles = splitReply(
         stripHabits(answer.value.text, snapshot.habits ?? []),
         snapshot.splitBubbles,
       );
+      stickerMood = moods.get(answer.value) ?? null;
+    }
     if (!bubbles.length) {
+      stickerMood = null;
       if (inCare) {
         bubbles = careFallback(snapshot.careFallback, snapshot.careVariant, snapshot.addressAs);
         fallbackReason = answer.ok ? 'output_guard' : answer.error;
@@ -287,17 +302,17 @@ export class ReplyEngine {
                 snapshot.splitBubbles,
               )
             : [];
-        bubbles =
-          again.length &&
+        const accepted =
+          again.length > 0 &&
           !(
             await this.mediaAi.offendingNames(
               again.join('\n'),
               snapshot.allowedNames,
               snapshot.userText,
             )
-          ).length
-            ? again
-            : ['图里的人我不太认得呢，你跟我说说？'];
+          ).length;
+        bubbles = accepted ? again : ['图里的人我不太认得呢，你跟我说说？'];
+        stickerMood = accepted && retried.ok ? (moods.get(retried.value) ?? null) : null;
       }
     }
     // H3：把这一轮解析出的图片描述存档（加密，按图片 + 范围；私密范围的只在私密范围被读到）。
@@ -330,6 +345,7 @@ export class ReplyEngine {
           instant: snapshot.instantReply,
           quiet: snapshot.effectiveStyle === 'treehole',
           sensitive: snapshot.healthUsed,
+          stickerMood,
           onSearchCharged: (micros) => {
             charge.chargedMicros += Math.max(0, micros);
           },

@@ -233,7 +233,7 @@ MEM-06「聊到相关话题时调出」。**公开动态（SIM-03）不在这里
 | `moments.imageSubjects` | string[] | 否 | 常配图内容（真人只能是景物、食物、物品） | 「火锅」「天空」 | P、S | |
 | `moments.commentStyle` | string | 否 | 评论别人朋友圈的风格 | 「爱回哈哈哈」 | P | ● |
 | `stickerPacks` | string[] | 否 | 偏好的表情包子集（表情包库 ID，ADM-04） | `["pack_cute_cat"]` | S | |
-| `stickerRate` | enum | 否 | `low` / `mid` / `high`（硬上限 MED-01：每 10 条气泡 ≤2 个） | `mid` | S | |
+| `stickerRate` | enum | 否 | `low` / `mid` / `high`（软上限 MED-01：每 10 条气泡 ≤3 个；带不带由模型自己决定） | `mid` | S | |
 | `voiceId` | string | 否 | 音色库 ID（非克隆，ADM-04） | `voice_bright_f_03` | S | |
 | `proactiveStyle` | string | 否 | 主动找用户的风格 | 「突然丢一张外卖照片」 | P | ● |
 | `callStyle` | string | 否 | 语音通话风格补充 | 「电话里话比较多」 | P | ● |

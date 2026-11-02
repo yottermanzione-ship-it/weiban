@@ -47,7 +47,7 @@
 
 | 取值 | 对应 PRD | 选项（`options` 的全集；每次实际可选的由代码按第 1 节①裁剪） | 保守选项 |
 |---|---|---|---|
-| `reply_form` | PLAN-01 表第 1 行、MED-01、MED-03 | `text`、`voice`、`keep_image`（保留模型写的图片占位）、`keep_sticker`、`keep_link` 的组合；表达为一组是非题 | 只发文字（删除图片 / 表情包 / 链接占位以外按原规则，见 2.3） |
+| `reply_form` | PLAN-01 表第 1 行、MED-01、MED-03 | `text`、`voice`、`keep_image`（保留模型写的图片占位）、`keep_sticker`、`keep_link` 的组合；表达为一组是非题。2026-11-03（T-20261103d）起表情包由写回复的模型用 `[表情:情绪]` 标记自己决定，不再问 `keep_sticker`，实际只剩语音一题（见 media-understanding.md 3.3） | 只发文字（删除图片 / 表情包 / 链接占位以外按原规则，见 2.3） |
 | `reply_timing` | CHAT-04、P-01 | `fast`（按长度下限）、`normal`（按长度中值）、`slow`（按长度上限） | `normal`（与现规则一致） |
 | `quirk` | CHAT-07、CHAT-08 | `none`、`read_no_reply`、`shy_typing`、`recall_resend`、`typo_fix`、`poke` | `none` |
 | `proactive_slot` | SIM-05 第 10 条 | 当天允许的时段编号（由调度器算出的 2～4 个候选时段）+ `skip_today` | 规则版原本抽中的时段 |

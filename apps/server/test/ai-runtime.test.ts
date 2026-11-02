@@ -665,6 +665,28 @@ describeDb('ai-runtime 真实PG：设置/加密计划/合并/幂等/关怀/删�
     expect(calls.length - before).toBe(1);
     expect(Date.parse(calls.at(-1)!.deadlineAt!)).toBeGreaterThan(clock.nowMs());
   });
+  it('模型写的表情标记在发出前剥掉：用户收到的正文里没有「[表情:…]」', async () => {
+    response = '【正文】\n哈哈，太好了\n[表情:开心]';
+    try {
+      const row = await user('我今天考试过了');
+      await finish(row.id);
+      expect((await store.get(row.id))?.status).toBe('done');
+      const messages = await app
+        .get(CHAT_READ_PORT)
+        .readMessages({ conversationId: cid, scopes: ['normal'], limit: 10 });
+      const replies = messages.filter(
+        (m: { senderKind: string; seq: number }) =>
+          m.senderKind === 'character' && m.seq > row.triggerSeq,
+      );
+      expect(replies.map((m: { content: unknown }) => m.content)).toContainEqual({
+        type: 'text',
+        text: '哈哈，太好了',
+      });
+      expect(JSON.stringify(replies)).not.toContain('表情:');
+    } finally {
+      response = '我听着呢\n今天过得怎么样？';
+    }
+  });
   it('生成中删除好友；旧计划不得在恢复的同一会话发言；物理清除与账号清单', async () => {
     const row = await user('再见');
     clock.advance(3000);
