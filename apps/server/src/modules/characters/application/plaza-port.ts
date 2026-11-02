@@ -51,6 +51,7 @@ import {
   stripPresetCard,
   type CustomCharacterPayload,
 } from '../domain/custom-card.js';
+import { officialPersona } from '../domain/official-persona.js';
 import { characters, userSupplements } from '../infra/db/schema.js';
 import { CHARACTER_PLAZA_ORIGIN_STATUS, type CharacterPlazaOriginStatus } from '../tokens.js';
 import { CharacterService } from './characters.js';
@@ -705,20 +706,11 @@ export class CharacterPlazaService
     userId: string,
     characterId: string,
   ): Promise<{ profile: CharacterProfile; persona: PlazaOfficialPersona } | null> {
-    const preset = await this.characters.presetForCopy(characterId);
-    if (!preset) return null;
+    // T-20261103c：口径与 listOfficialIds 一致（preset + 已发布，新卡旧卡都算），不再借用 presetForCopy（旧卡不能复制）。
+    const source = await this.characters.publishedPresetSource(characterId);
+    if (!source) return null;
     const profile = await this.characters.getProfile(userId, characterId);
-    const card = CharacterCard.safeParse(preset.body.card);
-    const d = card.success ? card.data.data : null;
-    // 只摘公开的几项并截断，不返回背景细节、示例对话、禁用词、熟悉度成长等完整提示词内容。
-    return {
-      profile,
-      persona: {
-        summary: clip(d?.persona.summary ?? profile.intro, 300),
-        personality: clip(d?.persona.personality ?? '', 300),
-        speechStyle: clip(d?.speech.tone ?? '', 200),
-        catchphrases: (d?.speech.catchphrases ?? []).slice(0, 5).map((c) => clip(c, 50)),
-      },
-    };
+    // 只摘公开的几项并截断，不返回世界书、示例对话、避免词、开场白等完整提示词内容。
+    return { profile, persona: officialPersona(source, profile.intro) };
   }
 }

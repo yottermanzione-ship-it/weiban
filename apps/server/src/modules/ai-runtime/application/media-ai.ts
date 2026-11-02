@@ -398,6 +398,8 @@ export class MediaAiService {
   /**
    * 在文字回复确定后决定是否改发语音、附表情包或作品链接。返回完整的待发内容列表；不改变时返回 null。
    * history：该会话最近的消息（升序）。只在日常范围、非关怀时调用。
+   * T-20261103c：生态主动消息也走这里（path = 'proactive'，userText 为空），形式判断与聊天回复同一套，
+   * 只是决策层与语音合成按后台消耗计费（countAsBackground + ecologyTask），语音费用经 onMediaCharged 报回。
    */
   async planExtras(input: {
     ctx: MediaCallContext;
@@ -413,7 +415,12 @@ export class MediaAiService {
     onSearchCharged?: (chargedMicros: number) => void;
     /** 涉及健康的普通范围回复也不进入自主多媒体决策。 */
     sensitive?: boolean;
+    /** 默认 reply（聊天回复）；proactive = 主动消息：决策层与语音合成按后台消耗计费。 */
+    path?: 'reply' | 'proactive';
+    /** 语音合成实际扣费（微元）；主动消息要把它并进本次总费用。 */
+    onMediaCharged?: (chargedMicros: number) => void;
   }): Promise<MessageContent[] | null> {
+    const path = input.path ?? 'reply';
     const { ctx, bubbles } = input;
     if (input.sensitive || ctx.modelRole === 'adult') return null;
     const joined = bubbles.join('，');
@@ -560,8 +567,8 @@ export class MediaAiService {
             characterId: ctx.characterId,
             conversationId: ctx.conversationId,
             decisionType: 'reply_form',
-            path: 'reply',
-            idempotencyKey: `reply-media:${seed}`,
+            path,
+            idempotencyKey: `${path === 'reply' ? 'reply' : 'proactive'}-media:${seed}`,
             timeoutMs: input.instant ? 1000 : 3000,
             questions,
           })
@@ -571,9 +578,11 @@ export class MediaAiService {
     let changed = false;
     if (availableVoice && (requested || votes.voice?.choice === 'voice')) {
       // 真正合成前再次检查静默、服务与音色；Jev批准不等于执行能力仍然存在。
-      const voice = await this.synthesizeReply({ ...input, voiceId: availableVoice }).catch(
-        () => null,
-      );
+      const voice = await this.synthesizeReply({
+        ...input,
+        voiceId: availableVoice,
+        background: path === 'proactive',
+      }).catch(() => null);
       if (voice) {
         contents = [voice];
         changed = true;
@@ -622,6 +631,9 @@ export class MediaAiService {
     triggerId: string;
     bubbles: string[];
     voiceId: string | null;
+    /** 主动消息：按后台消耗计费（与原生态「发语音」同口径）。 */
+    background?: boolean;
+    onMediaCharged?: (chargedMicros: number) => void;
   }): Promise<MessageContent | null> {
     const { ctx } = input;
     const until = await this.quiet.getInconvenientUntil(ctx.userId).catch(() => null);
@@ -640,8 +652,10 @@ export class MediaAiService {
       voiceId,
       format: 'ogg_opus',
       idempotencyKey: `tts:${input.triggerId}:${ctx.characterId}`,
+      ...(input.background ? { countAsBackground: true, ecologyTask: true } : {}),
     });
     if (!result.ok) return null;
+    input.onMediaCharged?.(Math.max(0, result.value.chargedMicros));
     return {
       type: 'voice',
       mediaId: result.value.mediaId,

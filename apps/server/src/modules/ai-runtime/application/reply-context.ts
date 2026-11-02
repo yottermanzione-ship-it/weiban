@@ -69,8 +69,8 @@ import {
   roleCareFallback,
   roleDeflect,
   rolePersonaTags,
+  roleDefaultVoiceId,
   roleTypoStyle,
-  roleVoiceIds,
 } from './character-view.js';
 import { memoryLine, type WindowTurn } from '../domain/memory-window.js';
 import { INITIAL_MODES } from '../domain/persona.js';
@@ -943,11 +943,7 @@ export class ReplyContext {
       imageSlots,
       userText: userText.slice(0, 4000),
       voiceId: settings.voiceId ?? null,
-      defaultVoiceId: legacy
-        ? (roleVoiceIds(view)[0] ?? null)
-        : role.profile.kind === 'custom'
-          ? (card?.social.voiceId ?? null)
-          : null,
+      defaultVoiceId: roleDefaultVoiceId(role, view),
       personaFit: settings.personaFit ?? 3,
       personaTags: rolePersonaTags(view),
       typoStyle: roleTypoStyle(view),
