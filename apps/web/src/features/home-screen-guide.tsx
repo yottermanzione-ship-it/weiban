@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { MenuGroup, MenuRow } from './shell-kit.js';
 
 const seenKey = 'weiban:home-screen-guide-seen';
-function device() {
+/** iPhone 主屏幕 / 系统版本判断（首次进入权限流程复用同一判断）。 */
+export function iosDeviceInfo() {
   const ua = navigator.userAgent;
   const version = /OS (\d+)_(\d+)/.exec(ua);
   const supported = !!version && (+version[1]! > 16 || (+version[1]! === 16 && +version[2]! >= 4));
@@ -24,7 +25,7 @@ export function HomeScreenGuide({
 }) {
   const [open, setOpen] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
-  const { phone, supported, installed } = device();
+  const { phone, supported, installed } = iosDeviceInfo();
   useEffect(() => {
     if (manual || !phone || installed || !received) return;
     try {
