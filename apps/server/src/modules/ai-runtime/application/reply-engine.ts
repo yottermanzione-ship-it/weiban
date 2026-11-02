@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import {
@@ -14,6 +14,7 @@ import {
 import {
   AUDIT_LOG,
   CLOCK,
+  LOGGER,
   OUTBOX,
   type Outbox,
   P01_REPLY_DELAY,
@@ -21,6 +22,7 @@ import {
   P28_INSTANT_REPLY_MIN_TYPING_MS,
   type AuditLog,
   type Clock,
+  type Logger,
 } from '../../../platform/index.js';
 import { CHAT_PARTICIPANT_PORT } from '../../chat/index.js';
 import { MODEL_GATEWAY_PORT, MODEL_PLATFORM_GATEWAY_PORT } from '../../model-access/index.js';
@@ -89,6 +91,7 @@ export class ReplyEngine {
     /** H3：图片描述存档。 */
     @Optional() @Inject(ImageCaptionStore) readonly captions?: ImageCaptionStore,
     @Optional() @Inject(ImagePublicSearch) readonly imageSearch?: ImagePublicSearch,
+    @Optional() @Inject(LOGGER) readonly logger?: Logger,
   ) {}
   async run(id: string): Promise<void> {
     if (!z.uuid().safeParse(id).success) return;
@@ -100,12 +103,10 @@ export class ReplyEngine {
       const reason = permanentFailure(error);
       if (!reason) throw error;
       const ended = await this.store.fail(id, reason);
-      new Logger(ReplyEngine.name).error({
-        code: 'ai_reply_permanent_failure',
-        planId: id,
-        reason,
-        ended,
-      });
+      this.logger?.error(
+        { code: 'ai_reply_permanent_failure', planId: id, reason, ended },
+        'ai.generate_reply permanent failure',
+      );
     }
   }
   private async execute(id: string): Promise<void> {

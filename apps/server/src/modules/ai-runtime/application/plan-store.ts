@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { and, count, desc, eq, inArray, lt, lte, ne, or } from 'drizzle-orm';
 import { Id, Timestamp, type IdentityAccountStatusPort, type Tx } from '@weiban/contracts';
 import {
@@ -8,12 +8,14 @@ import {
   DATABASE,
   ENVELOPE_CRYPTO,
   JOB_QUEUE,
+  LOGGER,
   newId,
   type Clock,
   type Database,
   type DbTx,
   type EnvelopeCrypto,
   type JobQueue,
+  type Logger,
 } from '../../../platform/index.js';
 import { IDENTITY_ACCOUNT_STATUS_PORT } from '../../identity/index.js';
 import {
@@ -94,6 +96,7 @@ export class ReplyPlanStore {
     @Inject(ENVELOPE_CRYPTO) readonly crypto: EnvelopeCrypto,
     @Inject(JOB_QUEUE) readonly jobs: JobQueue,
     @Inject(IDENTITY_ACCOUNT_STATUS_PORT) readonly accounts: IdentityAccountStatusPort,
+    @Optional() @Inject(LOGGER) readonly logger?: Logger,
   ) {}
   async lock(tx: DbTx, userId: string, conversationId?: string): Promise<boolean> {
     await tx.query("SELECT pg_advisory_xact_lock(hashtextextended('ai_runtime:user:' || $1,0))", [
@@ -357,11 +360,10 @@ export class ReplyPlanStore {
       )
         recovered++;
     if (expired.length || recovered)
-      new Logger(ReplyPlanStore.name).log({
-        code: 'ai_reply_wait_sweep',
-        expired: expired.length,
-        recovered,
-      });
+      this.logger?.info(
+        { code: 'ai_reply_wait_sweep', expired: expired.length, recovered },
+        'ai.sweep_waiting_replies',
+      );
     return { expired: expired.length, recovered };
   }
   /**

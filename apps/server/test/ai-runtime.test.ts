@@ -399,9 +399,18 @@ describeDb('ai-runtime 真实PG：设置/加密计划/合并/幂等/关怀/删�
     ).toContain('生成中补充的第二批');
   });
   it('已生成并发送第一气泡后重启应用，继续剩余气泡、不重新生成或重发第一条', async () => {
+    // T-20261103e：小巧思按 Math.random 抽签，抽中「撤回」会多发一条草稿（共 3 条），这正是 CI 上偶发
+    // 「expected 3 to be 2」的来源。本用例只验证重启续发，固定不演小巧思（撤回续发由下面的撤回用例覆盖）。
+    const choice = vi
+      .spyOn(engine.quirks, 'choose')
+      .mockResolvedValue({ kind: 'none', respondAt: null, typingCycles: 0 });
     const row = await user('重启前的问题');
     clock.advance(3000);
-    await engine.run(row.id);
+    try {
+      await engine.run(row.id);
+    } finally {
+      choice.mockRestore();
+    }
     const generated = (await store.get(row.id))!;
     clock.advance(Math.max(0, generated.dueAt.getTime() - clock.nowMs()));
     await engine.run(row.id);
@@ -685,6 +694,191 @@ describeDb('ai-runtime 真实PG：设置/加密计划/合并/幂等/关怀/删�
       expect(JSON.stringify(replies)).not.toContain('表情:');
     } finally {
       response = '我听着呢\n今天过得怎么样？';
+    }
+  });
+  const repliesAfter = async (seq: number) =>
+    (
+      await app
+        .get(CHAT_READ_PORT)
+        .readMessages({ conversationId: cid, scopes: ['normal'], limit: 100 })
+    ).filter(
+      (m: { seq: number; senderKind: string }) => m.seq > seq && m.senderKind === 'character',
+    );
+  it('T-20261103e 四条正文 + 撤回草稿共 5 条：封顶 4 条发完，不违反 reply_plan_counters', async () => {
+    clock.advance(24 * 3600_000);
+    response = '第一句\n第二句\n第三句\n第四句';
+    const choice = vi.spyOn(engine.quirks, 'choose').mockResolvedValue({
+      kind: 'recall',
+      respondAt: clock.now().toISOString(),
+      typingCycles: 0,
+    });
+    try {
+      const row = await user('给我讲讲今天发生的事');
+      await finish(row.id);
+      const ended = (await store.get(row.id))!;
+      expect(ended).toMatchObject({ status: 'done', nextBubble: 4, resultCiphertext: null });
+      const sent = await repliesAfter(row.triggerSeq);
+      expect(sent).toHaveLength(4);
+      const recalled = sent.filter((m: { status: string }) => m.status === 'recalled');
+      expect(recalled).toHaveLength(1);
+      expect(recalled[0]).toMatchObject({ labels: ['quirk_draft'] });
+      expect(
+        sent
+          .filter((m: { status: string }) => m.status === 'normal')
+          .map((m: { content: { text: string } }) => m.content.text)
+          .sort(),
+      ).toEqual(['第一句', '第二句', '第三句\n第四句'].sort());
+    } finally {
+      choice.mockRestore();
+      response = '我听着呢\n今天过得怎么样？';
+    }
+  });
+  it('T-20261103e 上线前已发到第 4 条、结果里还有第 5 条的旧计划：直接收尾，不再写 next_bubble=5', async () => {
+    const choice = vi
+      .spyOn(engine.quirks, 'choose')
+      .mockResolvedValue({ kind: 'none', respondAt: null, typingCycles: 0 });
+    const row = await user('旧结果里有五条');
+    clock.advance(3000);
+    try {
+      await engine.run(row.id);
+    } finally {
+      choice.mockRestore();
+    }
+    const pending = (await store.get(row.id))!;
+    expect(pending.status).toBe('sending');
+    const result = (await store.open(pending, 'result')) as Record<string, unknown>;
+    result.contents = ['一', '二', '三', '四', '五'].map((text) => ({ type: 'text', text }));
+    await db.transaction(async (tx) => {
+      const cipher = await store.seal(tx, pending, 'result', result);
+      await tx.db
+        .update(replyPlans)
+        .set({ resultCiphertext: cipher, nextBubble: 4 })
+        .where(eq(replyPlans.id, row.id));
+    });
+    await finish(row.id);
+    expect(await store.get(row.id)).toMatchObject({
+      status: 'done',
+      nextBubble: 4,
+      resultCiphertext: null,
+    });
+    expect(await repliesAfter(row.triggerSeq)).toHaveLength(0);
+  });
+  it('T-20261103e 确定性数据库错误直接作废、不交给队列反复重试、已发的不重发；临时错误仍照常重试', async () => {
+    const choice = vi
+      .spyOn(engine.quirks, 'choose')
+      .mockResolvedValue({ kind: 'none', respondAt: null, typingCycles: 0 });
+    const row = await user('这句会碰到确定性错误');
+    clock.advance(3000);
+    try {
+      await engine.run(row.id);
+    } finally {
+      choice.mockRestore();
+    }
+    let pending = (await store.get(row.id))!;
+    clock.advance(Math.max(0, pending.dueAt.getTime() - clock.nowMs()));
+    await engine.run(row.id);
+    pending = (await store.get(row.id))!;
+    expect(pending.nextBubble).toBe(1);
+    clock.advance(Math.max(0, pending.dueAt.getTime() - clock.nowMs()));
+    const post = vi.spyOn(engine.writer, 'postMessage');
+    try {
+      // 临时错误：照旧抛给任务队列重试，计划保持发送中。
+      post.mockRejectedValueOnce(
+        Object.assign(new Error('connection reset'), { code: 'ECONNRESET' }),
+      );
+      await expect(engine.run(row.id)).rejects.toThrow('connection reset');
+      expect((await store.get(row.id))?.status).toBe('sending');
+      // 确定性错误（违反检查约束，Drizzle 把驱动错误包在 cause 里）：不再抛，计划作废并记原因。
+      post.mockRejectedValueOnce(
+        Object.assign(new Error('Failed query'), {
+          cause: Object.assign(new Error('violates check constraint "reply_plan_counters"'), {
+            code: '23514',
+          }),
+        }),
+      );
+      await expect(engine.run(row.id)).resolves.toBeUndefined();
+    } finally {
+      post.mockRestore();
+    }
+    expect(await store.get(row.id)).toMatchObject({
+      status: 'cancelled',
+      failure: 'db_23514',
+      nextBubble: 1,
+      resultCiphertext: null,
+      inputCiphertext: null,
+    });
+    expect(logs.capture.text).toContain('ai_reply_permanent_failure');
+    // 队列再投、对账再跑都不会再发：已发的第一条只有一条，第二条不发。
+    await store.reconcile();
+    await engine.run(row.id);
+    expect(await repliesAfter(row.triggerSeq)).toHaveLength(1);
+  });
+  it('T-20261103e 等待巡检：临时故障按退避恢复并带「稍等」提示；超过 6 小时作废；积分不足的不碰', async () => {
+    const choice = vi
+      .spyOn(engine.quirks, 'choose')
+      .mockResolvedValue({ kind: 'none', respondAt: null, typingCycles: 0 });
+    try {
+      // 1. 单次调用失败、没有「模型恢复」事件：巡检到点后恢复。
+      failure = 'provider_unavailable';
+      const row = await user('模型临时不可用时发的话');
+      await finish(row.id);
+      const waiting = (await store.get(row.id))!;
+      expect(waiting.status).toBe('waiting');
+      expect(waiting.dueAt.getTime()).toBe(clock.nowMs() + 5 * 60_000);
+      failure = null;
+      await store.sweepWaiting();
+      expect((await store.get(row.id))?.status).toBe('waiting');
+      clock.advance(5 * 60_000);
+      const before = calls.length;
+      expect((await store.sweepWaiting()).recovered).toBe(1);
+      expect(await store.get(row.id)).toMatchObject({ status: 'queued', retryEpoch: 1 });
+      await finish(row.id);
+      expect((await store.get(row.id))?.status).toBe('done');
+      expect(calls.length - before).toBe(1);
+      expect(
+        calls
+          .at(-1)!
+          .messages.some((m) => m.role === 'system' && String(m.content).includes('有意稍等')),
+      ).toBe(true);
+
+      // 2. 再次失败按退避推迟；从用户发消息算起超过 6 小时就作废，不再回复。
+      failure = 'provider_unavailable';
+      const old = await user('一直没等到回复的话');
+      await finish(old.id);
+      clock.advance(5 * 60_000);
+      expect((await store.sweepWaiting()).recovered).toBe(1);
+      await finish(old.id);
+      const again = (await store.get(old.id))!;
+      expect(again).toMatchObject({ status: 'waiting', retryEpoch: 1 });
+      expect(again.dueAt.getTime()).toBe(clock.nowMs() + 10 * 60_000);
+      failure = null;
+      clock.advance(6 * 3600_000);
+      const beforeExpire = calls.length;
+      expect((await store.sweepWaiting()).expired).toBeGreaterThanOrEqual(1);
+      expect(await store.get(old.id)).toMatchObject({
+        status: 'cancelled',
+        failure: 'wait_expired',
+      });
+      expect(calls.length).toBe(beforeExpire);
+
+      // 3. 积分不足：巡检不碰，过了 6 小时也不作废；仍由原触发点（积分恢复 → recover）恢复。
+      failure = 'insufficient_balance';
+      const broke = await user('积分不足时发的话');
+      await finish(broke.id);
+      failure = null;
+      clock.advance(7 * 3600_000);
+      await store.sweepWaiting();
+      expect(await store.get(broke.id)).toMatchObject({
+        status: 'waiting',
+        failure: 'insufficient_balance',
+      });
+      await store.recover(userId);
+      expect((await store.get(broke.id))?.status).toBe('queued');
+      await finish(broke.id);
+      expect((await store.get(broke.id))?.status).toBe('done');
+    } finally {
+      failure = null;
+      choice.mockRestore();
     }
   });
   it('生成中删除好友；旧计划不得在恢复的同一会话发言；物理清除与账号清单', async () => {
