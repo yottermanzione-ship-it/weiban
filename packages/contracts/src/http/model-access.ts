@@ -48,7 +48,14 @@ export const ModelLeaderboardInfo = z.object({
   fetchedAt: Timestamp.nullable().optional(),
   method: z.enum(['fetch', 'paste']).nullable().optional(),
   lastError: z.string().max(300).nullable().optional(),
+  /** 旧客户端兼容保留（新版网页不再显示选用人数）。 */
   popular: z.array(z.object({ modelKey: z.string(), users: z.number().int().nonnegative() })),
+  /**
+   * 5.1：热门榜顺序（服务端算好，只含模型键）：第一位是利润率最高的 DeepSeek 模型，其余按利润率
+   * 从高到低，缺价的排最后。算利润率用的成本价是后台内部数据，不随响应下发；客户端只按这个顺序排，
+   * 不在列表里的模型排最后。
+   */
+  hotOrder: z.array(z.string()).max(1000).optional(),
 });
 
 /**
@@ -420,7 +427,8 @@ export const ModelAccessEndpoints = {
     path: `${API_PREFIX}/model/leaderboard-info`,
     auth: 'user',
     response: ModelLeaderboardInfo,
-    summary: '3.14：管理员榜单来源与当前全局聊天模型选择人数（非调用量）',
+    summary:
+      '3.14：管理员榜单来源与当前全局聊天模型选择人数（非调用量）；5.1：热门榜顺序 hotOrder（不含成本价）',
   }),
   listModels: defineEndpoint({
     method: 'GET',

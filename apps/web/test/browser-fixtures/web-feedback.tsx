@@ -70,6 +70,8 @@ Object.assign(api, {
         fetchedAt: '2026-10-22T08:00:00Z',
         method: 'fetch',
         popular: [{ modelKey: 'test/known', users: 12 }],
+        // 5.1：热门榜按服务端顺序排（与排行榜顺序相反，便于确认用的是 hotOrder 而不是名次或选用人数）。
+        hotOrder: ['test/unknown', 'test/known'],
       };
     if (endpoint === ModelAccessEndpoints.updateScenarioConfig)
       chosen = options.body?.selections?.chat?.modelKey ?? chosen;

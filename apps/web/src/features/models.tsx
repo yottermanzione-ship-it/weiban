@@ -315,14 +315,17 @@ function ScenarioModelPicker({ scenario }: { scenario: ModelScenario }) {
         ? previousIndex.get(m.modelKey)! - rankIndex.get(m.modelKey)!
         : null,
   }));
-  const counts = new Map(info.data?.popular.map((p) => [p.modelKey, p.users]));
+  // 11-03：热门榜不再显示选用人数，按服务端算好的 hotOrder 排（DeepSeek 置顶 + 利润率；成本价不下发），
+  // 不在列表里的模型排最后。
+  const hotIndex = new Map(info.data?.hotOrder?.map((key, i) => [key, i]));
   const ranked = [...all].sort((a, b) => {
     if (tab === 'rank' && (a.leaderboardRank == null) !== (b.leaderboardRank == null))
       return a.leaderboardRank == null ? 1 : -1;
     const difference =
       tab === 'rank'
         ? (a.leaderboardRank ?? Infinity) - (b.leaderboardRank ?? Infinity)
-        : (counts.get(b.modelKey) ?? 0) - (counts.get(a.modelKey) ?? 0);
+        : (hotIndex.get(a.modelKey) ?? Infinity) - (hotIndex.get(b.modelKey) ?? Infinity);
+    // 两边都不在 hotOrder 时差值是 NaN（假值），同样落到按名称排。
     return difference || a.displayName.localeCompare(b.displayName);
   });
   const positions = new Map(ranked.map((m, i) => [m.modelKey, i + 1]));
@@ -363,7 +366,6 @@ function ScenarioModelPicker({ scenario }: { scenario: ModelScenario }) {
             model.leaderboardChange != null &&
             model.leaderboardChange !== 0 &&
             ` · ${model.leaderboardChange > 0 ? '↑' : '↓'}${Math.abs(model.leaderboardChange)}`}
-          {onBoard && tab === 'popular' && ` · ${counts.get(model.modelKey) ?? 0} 人选用`}
         </>
       }
       chevron={false}
@@ -386,18 +388,14 @@ function ScenarioModelPicker({ scenario }: { scenario: ModelScenario }) {
             value={tab}
             onChange={setTab}
           />
-          {tab === 'rank' ? (
-            info.data?.source && (
-              <p className="hint page-note">
-                <a href={info.data.source.url} target="_blank" rel="noreferrer">
-                  来源：Arena 的文本聊天排行榜
-                </a>
-                {info.data.method === 'paste' && <span> · 管理员手工导入</span>}
-                {info.data.lastError && <span> · 同步失败，保留上次有效数据</span>}
-              </p>
-            )
-          ) : (
-            <p className="hint page-note">按「文本聊天」选用人数排序，不含角色单独设置。</p>
+          {tab === 'rank' && info.data?.source && (
+            <p className="hint page-note">
+              <a href={info.data.source.url} target="_blank" rel="noreferrer">
+                来源：Arena 的文本聊天排行榜
+              </a>
+              {info.data.method === 'paste' && <span> · 管理员手工导入</span>}
+              {info.data.lastError && <span> · 同步失败，保留上次有效数据</span>}
+            </p>
           )}
           <MenuGroup>
             {ranked.map((m) =>
@@ -409,7 +407,7 @@ function ScenarioModelPicker({ scenario }: { scenario: ModelScenario }) {
             )}
           </MenuGroup>
           {!models.loading && !info.loading && ranked.length === 0 && (
-            <p className="empty">{tab === 'rank' ? '暂未配置模型排名' : '还没有选用数据'}</p>
+            <p className="empty">{tab === 'rank' ? '暂未配置模型排名' : '暂无可显示的模型'}</p>
           )}
         </>
       )}
