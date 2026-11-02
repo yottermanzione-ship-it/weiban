@@ -22,6 +22,8 @@ export default defineConfig({
     // 预置该标记（与各用例 addInitScript 预置首访标记是同一机制，只是提到配置层，
     // 避免每个用例重复写、避免新用例重蹈）；生产代码一字未动，真机行为不变。
     // 往这里加键前先核对：不得干扰首访断言（如 home-screen-guide-seen 的断言）。
+    // 新手引导的自动弹出（按账号记在 weiban:guided-tour:v1:<用户ID>，用户 ID 由测试服务器临时生成，
+    // 写不进这个静态文件）由 test/e2e/fixtures.ts 统一记为已看过：新用例请从 './fixtures.js' 引入 test。
     storageState: join(configDir, 'test/e2e/storage-state.json'),
   },
   webServer: [

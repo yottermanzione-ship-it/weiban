@@ -80,6 +80,7 @@ import { ForwardPicker, ForwardedRecordBubble } from './chat-forward.js';
 import { OldIcon } from './old-icons.js';
 import { getReadReceiptVisible } from '../data/display-prefs.js';
 import { useModelSetupGate } from './models.js';
+import { useAutoGuide } from './onboarding-auto.js';
 import { REPLY_UNAVAILABLE_TEXT } from './model-unavailable.js';
 import {
   ActionSheet,
@@ -559,6 +560,8 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   // 服务端在发送入口按同一条规则返回 403 membership_required，这里只提前引导，不作为唯一防线。
   const membership = useRemote(MembershipEndpoints.get);
   const groupLocked = group && membership.data?.tier === 'free';
+  // 11-03：第一次进入私聊页时自动弹「情景预设」引导（一生一次，规则见 guide-triggers.ts）。
+  useAutoGuide('scenario', !group);
   const location = useLocation();
   const prefill = (location.state as { prefill?: string } | null)?.prefill;
   const [text, setText] = useState(prefill ?? '');

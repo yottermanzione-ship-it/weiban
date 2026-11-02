@@ -97,3 +97,48 @@ test('真实桌面尺寸与窄屏：提示不遮目标，页面没有演示壳�
   await at(page, 'live-ecology-me');
   await page.screenshot({ path: '.ci-onboarding-live-mobile.png', animations: 'disabled' });
 });
+test('自动弹出：第一次进私聊页弹情景预设，退出后再进不再弹', async ({ page }) => {
+  await page.goto(`${fixture}?start=chat`);
+  await page.getByRole('link', { name: /引导测试角色/ }).click();
+  await at(page, 'live-scenario-plus');
+  await page.getByRole('button', { name: '稍后再学，退出引导' }).click();
+  await expect(layer(page)).toHaveCount(0);
+  const record = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('weiban:guided-tour:v1:01920000-0000-7000-8000-000000000014')!),
+  );
+  expect(record).toMatchObject({ shown: ['scenario'], paused: 'scenario', tier: 'free' });
+  await page.goto(`${fixture}?start=chat`);
+  await page.getByRole('link', { name: /引导测试角色/ }).click();
+  await expect(page.locator('[data-guide="chat-plus"]')).toBeVisible();
+  await page.waitForTimeout(1500);
+  await expect(layer(page)).toHaveCount(0);
+  await noWrites(page);
+});
+test('自动弹出：第一次下拉打开小程序面板弹面板版引导，走完回到聊天列表，再下拉不再弹', async ({
+  page,
+}) => {
+  await page.goto(`${fixture}?start=chat`);
+  const panel = page.getByRole('dialog', { name: '小程序', exact: true });
+  async function pullOpen() {
+    const head = await page.locator('.chat-list-head').boundingBox();
+    await page.mouse.move(head!.x + 24, head!.y + head!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(head!.x + 24, head!.y + 620, { steps: 20 });
+    await page.mouse.up();
+    await expect(panel).toBeVisible();
+  }
+  await pullOpen();
+  await at(page, 'live-pull-grid');
+  await page.getByRole('button', { name: '继续' }).click();
+  await at(page, 'live-pull-cards');
+  await page.locator('[data-guide="pull-cards"]').click();
+  await at(page, 'live-pull-close');
+  await page.locator('[data-guide="miniapp-close"]').click();
+  await expect(page.getByRole('dialog', { name: '这一节完成了' })).toBeVisible();
+  await page.getByRole('button', { name: '我自己试试' }).click();
+  await expect(page.locator('.chat-list-head')).toBeVisible();
+  await pullOpen();
+  await page.waitForTimeout(1500);
+  await expect(layer(page)).toHaveCount(0);
+  await noWrites(page);
+});

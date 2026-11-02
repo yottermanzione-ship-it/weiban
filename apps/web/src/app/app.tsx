@@ -309,6 +309,7 @@ function Shell() {
       <OnboardingGuideProvider
         key={`${auth.session.user.userId}:${auth.session.session.sessionId}`}
         userId={auth.session.user.userId}
+        autoEnabled={!onboarding}
       >
         <div
           className={`app-shell ${showTabs ? 'with-tabs' : ''} ${location.pathname === '/chat' ? 'on-chat-list' : ''}`}

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.js';
 test('我页64px与资料页40px昵称头像，私有图片失败后保持主题对比与圆角', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: '登录', exact: true }).click();

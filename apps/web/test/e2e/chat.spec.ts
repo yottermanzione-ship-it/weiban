@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 async function openChat(page: Page) {
   await page.goto('/');
   await page.getByRole('button', { name: '登录', exact: true }).click();

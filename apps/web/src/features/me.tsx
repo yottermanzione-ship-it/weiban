@@ -18,6 +18,8 @@ import { useAnnouncementUnread } from './release.js';
 import { pointsText } from './points.js';
 import { MyStatusChip } from './user-status.js';
 import { usePageBackdrop } from '../data/display-prefs.js';
+import { useAutoGuide } from './onboarding-auto.js';
+import { servicesGuideWanted } from './guide-triggers.js';
 
 export function MePage() {
   usePageBackdrop('me');
@@ -96,6 +98,8 @@ export function ServicesPage() {
     (wallet.data.availablePoints ?? 0) <= (wallet.data.lowBalanceThresholdPoints ?? 0);
   const chatModel = scenarios.data?.scenarios.find((s) => s.scenario === 'chat')?.selection
     ?.modelKey;
+  // 11-03：老会员（本次更新前就开通）第一次进「服务」时弹「角色生态」引导；新会员开通时已弹过的不再弹。
+  useAutoGuide('ecology-services', servicesGuideWanted(membership.data?.tier));
 
   return (
     <main>

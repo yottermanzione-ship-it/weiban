@@ -80,10 +80,7 @@ async function microphoneStatus(): Promise<PermissionStatus> {
   if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia)
     return 'unsupported';
   try {
-    const result = await withTimeout(
-      navigator.permissions.query({ name: 'microphone' as PermissionName }),
-      1500,
-    );
+    const result = await withTimeout(navigator.permissions.query({ name: 'microphone' }), 1500);
     if (result.state === 'granted') return 'granted';
     if (result.state === 'denied') return 'denied';
   } catch {
@@ -192,11 +189,16 @@ export function PermissionsOnboarding() {
       if (document.querySelector('.guided-tour-layer')) return;
       setStage('checking');
       // 查状态不发系统申请；系统申请只在说明框的按钮点击里发起。
-      void readPlan().then((value) => {
-        plan.current = value;
-        flow.current = new PermissionFlow(plannedSteps(value.status), requestStep);
-        next();
-      });
+      void readPlan()
+        .then((value) => {
+          plan.current = value;
+          flow.current = new PermissionFlow(plannedSteps(value.status), requestStep);
+          next();
+        })
+        .catch(() => {
+          // 查不了状态（极少见）：本次不打扰，不记 done，下次启动再试。
+          if (alive.current) setStage('done');
+        });
     };
     document.addEventListener('pointerdown', arm, true);
     document.addEventListener('keydown', arm, true);
@@ -214,7 +216,10 @@ export function PermissionsOnboarding() {
     // 系统申请在本次点击的同步调用链内发出（confirm 里立即调用 request）；结果回来前不显示下一步。
     const pending = current.confirm();
     setStage('requesting');
-    void pending.then(next);
+    // null = 上一次申请还没结果（重复点击）：由那一次的结果推进，这里不动。
+    void pending.then((result) => {
+      if (result) next();
+    });
   };
   const skip = () => {
     current.skip();
