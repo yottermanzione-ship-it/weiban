@@ -218,6 +218,26 @@ export const PLAY_WISH_PROPOSE_SOURCE = 'play_wish_propose:';
 export const PLAY_WISH_FOLLOW_SOURCE = 'play_wish_follow:';
 export const PLAY_LETTER_ANNIV_SOURCE = 'play_letter_anniv:';
 
+/**
+ * 旧计划对应的生态门控动作（2026-11-02 生态动作清理后）：
+ * - 经期关怀计划（care:…）：care_period 已并入 message，改按总开关 + 角色开关 + message 开关门控；
+ * - 纪念日寄信计划（play_letter_anniv:…）：play_letter 生态开关已删，寄信本体（Play）不动，
+ *   改按总开关 + 角色开关 + message 开关门控；
+ * - 心愿计划（play_wish_propose: / play_wish_follow:…）：心愿清单已去掉，生态里不再有对应的
+ *   门控动作，返回 null，调用方按 ecology_off 丢弃到期计划（不送达、不崩溃）；
+ * - 其余计划：按 message 门控（现行语义不变）。
+ */
+export function planActionForSourceRef(sourceRef: string): EcologyActionKey | null {
+  if (sourceRef.startsWith(CARE_SOURCE_PREFIX)) return 'message';
+  if (
+    sourceRef.startsWith(PLAY_WISH_PROPOSE_SOURCE) ||
+    sourceRef.startsWith(PLAY_WISH_FOLLOW_SOURCE)
+  )
+    return null;
+  if (sourceRef.startsWith(PLAY_LETTER_ANNIV_SOURCE)) return 'message';
+  return 'message';
+}
+
 interface UserContext {
   userId: string;
   timeZone: string;
@@ -624,12 +644,8 @@ export class ProactiveSchedulerService {
   }
 
   /** 旧计划对应的生态动作（计划仍由登记方现取内容发送，开关按动作走）。 */
-  private planAction(plan: Plan): EcologyActionKey {
-    if (plan.sourceRef.startsWith(CARE_SOURCE_PREFIX)) return 'care_period';
-    if (plan.sourceRef.startsWith(PLAY_WISH_PROPOSE_SOURCE)) return 'play_wish';
-    if (plan.sourceRef.startsWith(PLAY_WISH_FOLLOW_SOURCE)) return 'play_wish';
-    if (plan.sourceRef.startsWith(PLAY_LETTER_ANNIV_SOURCE)) return 'play_letter';
-    return 'message';
+  private planAction(plan: Plan): EcologyActionKey | null {
+    return planActionForSourceRef(plan.sourceRef);
   }
 
   // -------------------------------------------------------------------------
@@ -983,10 +999,13 @@ export class ProactiveSchedulerService {
         await this.drop(plan, 'character_off');
         continue;
       }
-      // v5：旧计划（经期关怀、心愿、纪念日寄信）按生态的角色开关 + 动作开关放行；安全关怀跟进平台承担，不受影响。
+      // v5：旧计划（经期关怀、纪念日寄信）按生态的角色开关 + 动作开关放行；安全关怀跟进平台承担，不受影响。
+      // 门控动作为 null（心愿计划：已删动作、无门控可查）时同样按 ecology_off 丢弃，不崩溃、不送达。
+      const gateAction = this.planAction(plan);
       if (
         plan.reason !== 'safety_follow_up' &&
-        !(await this.ecology.isActive(ctx.userId, plan.characterId, this.planAction(plan)))
+        (gateAction === null ||
+          !(await this.ecology.isActive(ctx.userId, plan.characterId, gateAction)))
       ) {
         await this.drop(plan, 'ecology_off');
         continue;

@@ -95,6 +95,12 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 5.0（2026-11-02，生态动作清单清理）
+
+- `ECOLOGY_ACTION_KEYS` 删除 10 个取值：`share_link`、`care_weather`、`play_letter`、`play_wish`、`play_focus`、`play_daily_question`、`play_reminder` 直接删除；`greeting`、`care_anniversary`、`care_period` 并入 `message`（行为保留，开关改由 `message` 门控），不再是用户开关。`UpdateEcologySettings.actions[].key` 与 `EcologyConfig.disabledActions` 是严格枚举，旧客户端再传已删 key 会收到 400；响应侧 `EcologyAction.actionKey` 等仍是 `tolerantEnum`，旧运行记录里的已删 key 读成 `unsupported`，不报错。
+- 存量兼容在服务器侧：用户级 `disabled_actions` 写回时剥离未知 key；平台级 `ecology_config` 解析时先剥离 `disabledActions` 中的未知 key 再校验，不因含已删 key 就整体回退默认。均无新迁移。
+- 删除严格枚举取值属于不兼容改动，按版本规则升主版本；Android 生成产物同步版本号。`group_talk` 的用户可见文案改为「群聊主动话题」（仅改 label）。
+
 ### 4.6（2026-10-28，V3：实时通话复刻费由用户承担）
 
 - 计价单位 `PriceUnit` / `ServicePriceUnit` 新增 `voice_clone`（元 / 个），用量 `UsageQuantities` 新增可选 `voiceClones`（一次成功复刻 = 1）。后台服务单价表单可登记「音色复刻」价；没登记价格的模型复刻不向用户收费（平台承担）。

@@ -36,33 +36,25 @@ const LEVELS = [
   ['inseparable', '形影不离'],
 ] as const;
 
+// 2026-11-02 生态动作清理：只留现行 17 个 key。已删 / 并入 message 的 key 不再列出，
+// 运行记录里旧行的 actionKey 由 tolerantEnum 读成 'unsupported' 时显示原值兜底（见下表渲染）。
 const ACTION_NAMES: Record<string, string> = {
   message: '主动发消息',
-  greeting: '早安 / 晚安',
   voice: '发语音消息',
   photo: '发照片',
   sticker: '发表情包',
   nudge: '拍一拍',
-  share_link: '分享链接',
   moment_post: '发朋友圈',
   moment_interact: '点赞评论用户朋友圈',
   moment_reply: '回复朋友圈评论',
   moment_peer: '其他角色朋友圈互动',
   status: '更新状态',
   signature: '改个性签名',
-  care_period: '经期关心',
-  care_weather: '天气提醒',
-  care_anniversary: '日子提醒',
   care_absence: '久未联系问候',
   care_late_night: '熬夜催睡',
   care_follow_up: '跟进说过的事',
-  play_letter: '慢信',
-  play_wish: '心愿',
-  play_focus: '专注邀请',
-  play_daily_question: '每日一问',
   play_pet: '宠物',
-  play_reminder: '记约定',
-  group_talk: '群里说话',
+  group_talk: '群聊主动话题',
 };
 
 const STATUS_NAMES: Record<

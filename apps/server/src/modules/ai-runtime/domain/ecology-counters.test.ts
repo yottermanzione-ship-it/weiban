@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { EcologyActionKey } from '@weiban/contracts';
 import {
+  MAIN_LINE_ACTIONS,
   MAIN_UNREPLIED_LIMIT,
+  SEPARATE_LINE_ACTIONS,
   absenceGreetedSince,
   chatActionCountAllowed,
   countMainUnreplied,
@@ -37,18 +39,26 @@ describe('主线计数：只数主线动作、只数最后用户消息之后', (
     expect(countMainUnreplied(runs, T0)).toBe(1);
     expect(countMainUnreplied(runs, T0 + 2000)).toBe(0);
   });
-  it('主线动作都计入：语音、表情、拍一拍、链接、心愿', () => {
-    const actions: EcologyActionKey[] = [
-      'message',
-      'voice',
-      'photo',
-      'sticker',
-      'nudge',
-      'share_link',
-      'play_wish',
-    ];
+  it('主线动作都计入：语音、照片、表情、拍一拍（链接、心愿已删，不再计入）', () => {
+    const actions: EcologyActionKey[] = ['message', 'voice', 'photo', 'sticker', 'nudge'];
     const runs = actions.map((a, i) => run(a, T0 + (i + 1) * 1000));
     expect(countMainUnreplied(runs, T0)).toBe(actions.length);
+    // 已删 key 的历史行也不计入主线：它们不在 MAIN_LINE_ACTIONS 里。
+    expect([...MAIN_LINE_ACTIONS]).not.toContain('share_link');
+    expect([...MAIN_LINE_ACTIONS]).not.toContain('play_wish');
+    expect(
+      countMainUnreplied([run('share_link', T0 + 1000), run('play_wish', T0 + 2000)], T0),
+    ).toBe(0);
+  });
+  it('经期关怀不在任何计数线里（flow，走 health-care 自己的账本）', () => {
+    expect([...SEPARATE_LINE_ACTIONS]).not.toContain('care_period');
+    expect([...MAIN_LINE_ACTIONS]).not.toContain('care_period');
+    expect(
+      chatActionCountAllowed('care_period' as never, {
+        mainUnreplied: 3,
+        absenceGreeted: false,
+      }),
+    ).toBe(true);
   });
   it('久未问候不计入主线，但单独记', () => {
     const runs = [run('message', T0 + 1000), run('care_absence', T0 + 2000)];
