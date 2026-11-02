@@ -828,102 +828,11 @@ export function MomentsFeedPage() {
   );
 }
 
-function dateParts(iso: string): { key: string; label: string } {
-  const d = new Date(iso);
-  const key = d.toDateString();
-  const today = new Date();
-  if (key === today.toDateString()) return { key, label: '今天' };
-  if (key === new Date(today.getTime() - 86400000).toDateString()) return { key, label: '昨天' };
-  return { key, label: `${d.getDate()} ${d.getMonth() + 1}月` };
-}
-
-/** 个人朋友圈相册页（资料页 › 朋友圈；我 › 朋友圈）：同样有封面。 */
-function Album({
-  title,
-  mine,
-  fetchPage,
-  back,
-  name,
-  avatar,
-  profileLink,
-}: {
-  title: string;
-  mine: boolean;
-  fetchPage(
-    cursor: string | undefined,
-  ): Promise<{ items: MomentsPost[]; nextCursor: string | null }>;
-  back: string;
-  name: string;
-  avatar: ReactNode;
-  profileLink: string;
-}) {
-  const list = usePostList(fetchPage);
-  const sentinel = useRef<HTMLDivElement>(null);
-  const { load, done, error } = list;
-  useEffect(() => {
-    const element = sentinel.current;
-    if (!element || done || error) return;
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((e) => e.isIntersecting)) void load();
-    });
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [load, done, error]);
-  let previous = '';
-  return (
-    <main className="moments-album">
-      <NavBar
-        transparent
-        title={mine ? undefined : title}
-        fallback={back}
-        right={
-          mine ? (
-            <NavIcon name="wechat/camera" label="发朋友圈" to="/moments/new" size={24} />
-          ) : undefined
-        }
-      />
-      <MomentsCover name={name} avatar={avatar} to={profileLink} editable={mine} />
-      {list.items.length === 0 && list.loading && (
-        <div className="stack" role="status" aria-label="正在读取">
-          <div className="skeleton-row" />
-          <div className="skeleton-row" />
-        </div>
-      )}
-      {list.items.length === 0 && list.done && (
-        <p className="moments-empty">{mine ? '你还没有发过朋友圈' : 'TA 还没有发过朋友圈'}</p>
-      )}
-      <div className="album">
-        {list.items.map((post) => {
-          const { key, label } = dateParts(post.createdAt);
-          const showDate = key !== previous;
-          previous = key;
-          return (
-            <Link key={post.postId} to={`/moments/posts/${post.postId}`} className="album-row">
-              <span className="album-date">{showDate ? label : ''}</span>
-              {post.images[0] && <MomentImage mediaId={post.images[0].mediaId} single={false} />}
-              <span className={post.images.length ? 'album-text' : 'album-text plain-block'}>
-                {post.text || `${post.images.length} 张图片`}
-              </span>
-            </Link>
-          );
-        })}
-      </div>
-      {list.error && (
-        <p className="notice-bar" role="alert">
-          {list.error}{' '}
-          <button className="text-button" onClick={() => void list.load()}>
-            重试
-          </button>
-        </p>
-      )}
-      {!list.done && <div ref={sentinel} className="timeline-sentinel" aria-hidden />}
-    </main>
-  );
-}
-
+/** 角色朋友圈（资料页 › 朋友圈；聊天信息 › 成员 › 资料页 › 朋友圈）：与发现页同一套 feed 形态，当页可点赞/评论。 */
 export function CharacterMomentsPage() {
   const { characterId = '' } = useParams();
   const { state } = useChat();
+  const actors = useActorName();
   const names = useCharacterNames([characterId]);
   const name =
     state.contacts.find((c) => c.characterId === characterId)?.remark || names[characterId] || 'TA';
@@ -936,36 +845,144 @@ export function CharacterMomentsPage() {
       }),
     [characterId],
   );
+  const list = usePostList(fetchPage);
+  type Row =
+    | MomentsPost
+    | { postId: '__cover__' }
+    | { postId: '__more__' }
+    | { postId: '__end__' | '__empty__' };
+  const rows: Row[] = [
+    { postId: '__cover__' },
+    ...list.items,
+    ...(list.done
+      ? [{ postId: list.items.length ? ('__end__' as const) : ('__empty__' as const) }]
+      : [{ postId: '__more__' as const }]),
+  ];
   return (
-    <Album
-      title={`${name}的朋友圈`}
-      mine={false}
-      fetchPage={fetchPage}
-      back={`/characters/${characterId}`}
-      name={name}
-      avatar={<CharacterAvatar id={characterId} size={70} radius={8} />}
-      profileLink={`/characters/${characterId}`}
-    />
+    <main className="moments-page moments-feed">
+      <NavBar transparent title={`${name}的朋友圈`} fallback={`/characters/${characterId}`} />
+      <VirtualList
+        items={rows}
+        itemKey={(item) => item.postId}
+        label={`${name}的朋友圈`}
+        estimate={260}
+        render={(item) =>
+          item.postId === '__cover__' ? (
+            <>
+              <MomentsCover
+                editable={false}
+                name={name}
+                avatar={<CharacterAvatar id={characterId} size={70} radius={8} />}
+                to={`/characters/${characterId}`}
+              />
+              {list.items.length === 0 && list.error && (
+                <div className="empty">
+                  <p>加载失败</p>
+                  <button onClick={() => void list.load()}>重试</button>
+                </div>
+              )}
+            </>
+          ) : item.postId === '__more__' ? (
+            list.error ? (
+              <button className="text-button full" onClick={() => void list.load()}>
+                加载失败，点击重试
+              </button>
+            ) : (
+              <LoadMore onVisible={() => void list.load()} />
+            )
+          ) : item.postId === '__end__' ? (
+            <p className="hint center moments-end">没有更多了</p>
+          ) : item.postId === '__empty__' ? (
+            <p className="moments-empty">TA 还没有发过朋友圈</p>
+          ) : (
+            <MomentCard
+              post={item as MomentsPost}
+              actors={actors}
+              onChange={list.replace}
+              onDeleted={() => list.remove(item.postId)}
+            />
+          )
+        }
+      />
+    </main>
   );
 }
 
+/** 我的朋友圈：与发现页同一套 feed 形态，当页可点赞/评论。 */
 export function MyMomentsPage() {
   const profile = useRemote(IdentityEndpoints.getProfile);
+  const actors = useActorName();
   const fetchPage = useCallback(
     (cursor: string | undefined) =>
       api.call(MomentsEndpoints.listMyPosts, { query: { cursor, limit: 10 }, networkOnly: true }),
     [],
   );
+  const list = usePostList(fetchPage);
+  type Row =
+    | MomentsPost
+    | { postId: '__cover__' }
+    | { postId: '__more__' }
+    | { postId: '__end__' | '__empty__' };
+  const rows: Row[] = [
+    { postId: '__cover__' },
+    ...list.items,
+    ...(list.done
+      ? [{ postId: list.items.length ? ('__end__' as const) : ('__empty__' as const) }]
+      : [{ postId: '__more__' as const }]),
+  ];
+  const name = profile.data?.nickname || '我';
   return (
-    <Album
-      title="我的朋友圈"
-      mine
-      fetchPage={fetchPage}
-      back="/me"
-      name={profile.data?.nickname || '我'}
-      avatar={<UserAvatar profile={profile.data} size={70} radius={8} />}
-      profileLink="/profile"
-    />
+    <main className="moments-page moments-feed">
+      <NavBar
+        transparent
+        title="我的朋友圈"
+        fallback="/me"
+        right={<NavIcon name="wechat/camera" label="发朋友圈" to="/moments/new" size={24} />}
+      />
+      <VirtualList
+        items={rows}
+        itemKey={(item) => item.postId}
+        label="我的朋友圈"
+        estimate={260}
+        render={(item) =>
+          item.postId === '__cover__' ? (
+            <>
+              <MomentsCover
+                editable
+                name={name}
+                avatar={<UserAvatar profile={profile.data} size={70} radius={8} />}
+                to="/profile"
+              />
+              {list.items.length === 0 && list.error && (
+                <div className="empty">
+                  <p>加载失败</p>
+                  <button onClick={() => void list.load()}>重试</button>
+                </div>
+              )}
+            </>
+          ) : item.postId === '__more__' ? (
+            list.error ? (
+              <button className="text-button full" onClick={() => void list.load()}>
+                加载失败，点击重试
+              </button>
+            ) : (
+              <LoadMore onVisible={() => void list.load()} />
+            )
+          ) : item.postId === '__end__' ? (
+            <p className="hint center moments-end">没有更多了</p>
+          ) : item.postId === '__empty__' ? (
+            <p className="moments-empty">你还没有发过朋友圈</p>
+          ) : (
+            <MomentCard
+              post={item as MomentsPost}
+              actors={actors}
+              onChange={list.replace}
+              onDeleted={() => list.remove(item.postId)}
+            />
+          )
+        }
+      />
+    </main>
   );
 }
 

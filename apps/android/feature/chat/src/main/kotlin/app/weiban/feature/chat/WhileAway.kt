@@ -3,6 +3,7 @@
 package app.weiban.feature.chat
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -114,6 +115,7 @@ internal fun timelineKindLabel(kind: String): String =
 
 @Composable internal fun WhileAwayCard(
     state: WhileAwayState,
+    onOpenTimeline: () -> Unit = {},
     onAsk: (String) -> Unit,
 ) {
     val data = state.data ?: return
@@ -122,7 +124,7 @@ internal fun timelineKindLabel(kind: String): String =
     BackHandler(state.expanded) { state.expanded = false }
     if (!state.expanded) {
         Row(Modifier.fillMaxWidth().padding(horizontal = WbSpace.S5), horizontalArrangement = Arrangement.End) {
-            AssistChip(onClick = { state.expanded = true }, label = { Text("TA 的近况") })
+            AssistChip(onClick = { state.expanded = true }, label = { Text("TA 的动态") })
         }
         return
     }
@@ -141,13 +143,18 @@ internal fun timelineKindLabel(kind: String): String =
             }
             Text(summary, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
             events.forEach { event ->
-                Row(horizontalArrangement = Arrangement.spacedBy(WbSpace.S3)) {
+                Row(
+                    Modifier.fillMaxWidth().clickable(onClick = onOpenTimeline),
+                    horizontalArrangement = Arrangement.spacedBy(WbSpace.S3),
+                ) {
                     Text(timelineKindLabel(event.kind), color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
                     Text(event.summary, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
                 }
             }
-            events.firstOrNull()?.let { first ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onOpenTimeline) { Text("TA 的动态 ›") }
+                Spacer(Modifier.weight(1f))
+                events.firstOrNull()?.let { first ->
                     TextButton(onClick = {
                         onAsk("${first.summary}是怎么回事？")
                         state.expanded = false
