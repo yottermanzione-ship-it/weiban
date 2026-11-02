@@ -135,9 +135,8 @@ class ChatInformationTest {
                     initial,
                     initial.conversations.single(),
                     InformationNavigation({ closed.set(true) }, { modelsOpened.set(true) }),
-                ) {
-                    removed.set(true)
-                }
+                    onRemoved = { removed.set(true) },
+                )
             }
         }
     }

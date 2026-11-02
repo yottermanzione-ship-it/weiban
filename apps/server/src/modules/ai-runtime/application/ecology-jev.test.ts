@@ -228,7 +228,8 @@ describe('executeWake 接入原生判定', () => {
   });
 
   // 打扰情形（2 条未回）不触发保底，用来单独验证「不通过就不做」。
-  const DISTURBING = { localHour: 20, unansweredCount: 2, lateNight: false, pointsLow: false };
+  // 打扰情形：主线未回复已满 3 次（对照表 v3 上限），保底也不触发。
+  const DISTURBING = { localHour: 20, unansweredCount: 3, lateNight: false, pointsLow: false };
 
   it('低把握不做（不补批、不重试），费用照记判定一次', async () => {
     const s = service({
