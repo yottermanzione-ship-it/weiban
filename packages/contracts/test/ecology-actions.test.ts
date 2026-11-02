@@ -1,5 +1,6 @@
 /**
  * 2026-11-02 生态动作清单清理（契约 5.0）：删 10 个 key 的严格 / 容错行为。
+ * 2026-11-03 按对照表 v3 收拢（契约 5.2）：新增 private_moments，旧 key 仍留在枚举里兼容旧客户端。
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -27,7 +28,7 @@ const ID = '01920000-0000-7000-8000-000000000001';
 const NOW = '2026-11-02T09:00:00.000Z';
 
 describe('生态动作清单（契约 5.0）', () => {
-  it('key 集合恰好是清理后的 17 个', () => {
+  it('key 集合恰好是清理后的 17 个 + 5.2 新增的 private_moments', () => {
     expect([...ECOLOGY_ACTION_KEYS]).toEqual([
       'message',
       'voice',
@@ -39,6 +40,7 @@ describe('生态动作清单（契约 5.0）', () => {
       'moment_reply',
       'moment_peer',
       'weibo_sync',
+      'private_moments',
       'status',
       'signature',
       'care_absence',
@@ -48,6 +50,31 @@ describe('生态动作清单（契约 5.0）', () => {
       'group_talk',
     ]);
     for (const key of REMOVED_KEYS) expect(ECOLOGY_ACTION_KEYS).not.toContain(key);
+  });
+
+  it('5.2：PATCH 接受新 key private_moments，也继续接受已收拢 / 归基础层的旧 key（兼容旧客户端）', () => {
+    for (const key of [
+      'private_moments',
+      'weibo_sync',
+      'moment_post',
+      'care_absence',
+      'care_follow_up',
+      'voice',
+      'moment_interact',
+    ]) {
+      expect(UpdateEcologySettings.safeParse({ actions: [{ key, enabled: false }] }).success).toBe(
+        true,
+      );
+    }
+    const parsed = EcologyAction.safeParse({
+      key: 'private_moments',
+      group: 'moments',
+      label: '私人朋友圈',
+      available: true,
+      unavailableReason: null,
+      enabled: true,
+    });
+    expect(parsed.success && parsed.data.key).toBe('private_moments');
   });
 
   it('严格请求枚举：已删 key 一律拒绝（PATCH 400 的契约侧）', () => {
