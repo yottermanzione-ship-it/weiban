@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.js';
 test.use({ hasTouch: true });
 test('拍照选图裁剪支持真实鼠标拖动、双指缩放和512px私有上传', async ({ page }) => {
   await page.goto('/');

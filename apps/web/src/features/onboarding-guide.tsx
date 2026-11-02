@@ -9,15 +9,27 @@ import {
   type ReactNode,
 } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { MembershipEndpoints } from '@weiban/contracts';
 import { useChat } from '../app/chat.js';
+import { useRemote } from '../data/use-remote.js';
 import { Name } from './chat.js';
 import { GuidedTour, type GuidedTourStep } from './guided-tour.js';
 import { isGuideBlockingDialog } from './guided-tour-policy.js';
+import {
+  FLOW_CHAPTER,
+  canAutoStart,
+  markShown,
+  observeTier,
+  parseGuideRecord,
+  type AutoFlow,
+  type ChapterId,
+  type GuideRecord,
+} from './guide-triggers.js';
+import { AutoGuideContext, type AutoGuideApi } from './onboarding-auto.js';
 import { GroupHeader, MenuGroup, MenuRow, NavBar, Sheet } from './shell-kit.js';
 import { Dialog, showToast } from './toast.js';
 import './onboarding-guide.css';
 
-type ChapterId = 'scenario' | 'miniapps' | 'ecology';
 interface LiveStep extends GuidedTourStep {
   present?: string;
   absent?: string;
@@ -163,14 +175,53 @@ export const onboardingChapters: Record<ChapterId, Chapter> = {
     ],
   },
 };
+/**
+ * 小程序引导的「下拉面板版」（11-03：第一次下拉打开小程序面板时自动弹）：在面板里认识宫格、打开卡册、
+ * 用圆形按钮退回聊天列表。目录里手动学的仍是「发现 › 小程序」那一版；两版学完都记为「小程序」已学会。
+ */
+const pullPanel = '[role="dialog"][aria-label="小程序"]';
+const pullMiniappSteps: LiveStep[] = [
+  {
+    id: 'live-pull-grid',
+    target: target('pull-grid'),
+    allowedDialog: pullPanel,
+    kind: 'read',
+    title: '往下拉，小程序就在这里',
+    description:
+      '在聊天列表顶部往下拉，就能打开小程序。卡册、宠物和其他玩法都在这里，长按图标可以调整顺序。',
+  },
+  {
+    id: 'live-pull-cards',
+    target: target('pull-cards'),
+    present: target('miniapp-close'),
+    allowedDialog: pullPanel,
+    kind: 'action',
+    title: '先打开「卡册」看看',
+    description: '和 TA 相处的纪念，可以在卡册里收藏。还没有卡片也没关系，先看看它在哪儿。',
+  },
+  {
+    id: 'live-pull-close',
+    target: target('miniapp-close'),
+    absent: target('miniapp-close'),
+    allowedDialog: pullPanel,
+    kind: 'action',
+    title: '记住这个圆形关闭按钮',
+    description: '点它退出小程序，回到聊天列表，不是退出整个微伴。',
+  },
+];
+/** 各自动入口从哪一步开始（新会员入口先弹说明框，点「带我看看」再从「我」走完整一节）。 */
+const AUTO_STEPS: Record<Exclude<AutoFlow, 'ecology-member'>, LiveStep[]> = {
+  // 第一次进私聊页：就在聊天页，从「＋」开始。
+  scenario: onboardingChapters.scenario.steps,
+  'miniapps-pull': pullMiniappSteps,
+  // 老会员第一次进「服务」：已经在服务页，从「找到角色生态」开始。
+  'ecology-services': onboardingChapters.ecology.steps.slice(2),
+};
 interface Progress {
   chapter: ChapterId;
+  steps: LiveStep[];
   index: number;
   armed: boolean;
-}
-interface Saved {
-  completed: ChapterId[];
-  paused: ChapterId | null;
 }
 interface GuideContext {
   completed: ChapterId[];
@@ -179,41 +230,46 @@ interface GuideContext {
   reset(): void;
 }
 const Context = createContext<GuideContext | null>(null);
-function load(key: string): Saved {
+function load(key: string): GuideRecord {
   try {
-    const saved = JSON.parse(localStorage.getItem(key) ?? 'null') as Partial<Saved> | null;
-    return {
-      completed: Array.isArray(saved?.completed)
-        ? saved.completed.filter(
-            (id) => typeof id === 'string' && Object.hasOwn(onboardingChapters, id),
-          )
-        : [],
-      paused:
-        typeof saved?.paused === 'string' && Object.hasOwn(onboardingChapters, saved.paused)
-          ? saved.paused
-          : null,
-    };
+    return parseGuideRecord(JSON.parse(localStorage.getItem(key) ?? 'null'));
   } catch {
-    return { completed: [], paused: null };
+    return parseGuideRecord(null);
   }
 }
+/** 等待自动弹出的请求：页面满足条件后，等其他弹窗关掉、目标位置稳定再开始。 */
+interface Pending {
+  flow: AutoFlow;
+  token: number;
+}
+const POLL_MS = 250;
 export function OnboardingGuideProvider({
   userId,
+  autoEnabled = true,
   children,
 }: {
   userId: string;
+  /** 首次填资料 / 选第一个角色的新手流程里不自动弹引导。 */
+  autoEnabled?: boolean;
   children: ReactNode;
 }) {
   const navigate = useNavigate();
   const location = useLocation();
   const storageKey = `weiban:guided-tour:v1:${userId}`;
-  const [saved, setSaved] = useState<Saved>(() => load(storageKey));
+  const [saved, setSaved] = useState<GuideRecord>(() => load(storageKey));
   const [active, setActive] = useState<Progress | null>(null);
   const [done, setDone] = useState<ChapterId | null>(null);
+  const [pending, setPending] = useState<Pending | null>(null);
+  const [memberIntro, setMemberIntro] = useState(false);
   const owner = useRef(userId);
   const activeRef = useRef(active);
   activeRef.current = active;
-  const current = active ? onboardingChapters[active.chapter].steps[active.index]! : null;
+  const savedRef = useRef(saved);
+  savedRef.current = saved;
+  const autoRef = useRef(autoEnabled);
+  autoRef.current = autoEnabled;
+  const tokenRef = useRef(0);
+  const current = active ? active.steps[active.index]! : null;
   useEffect(() => {
     if (owner.current !== userId) return;
     try {
@@ -232,7 +288,7 @@ export function OnboardingGuideProvider({
     const old = activeRef.current;
     // A DOM observer from the preceding step must never advance the new step.
     if (!old || old !== expected) return;
-    if (old.index + 1 < onboardingChapters[old.chapter].steps.length) {
+    if (old.index + 1 < old.steps.length) {
       const next = { ...old, index: old.index + 1, armed: false };
       activeRef.current = next;
       setActive(next);
@@ -240,12 +296,85 @@ export function OnboardingGuideProvider({
     }
     activeRef.current = null;
     setSaved((record) => ({
+      ...record,
       completed: [...new Set([...record.completed, old.chapter])],
       paused: null,
     }));
     setDone(old.chapter);
     setActive(null);
   }, []);
+  /** 自动弹出真正开始的那一刻才记「已看过」（被别的弹窗挡住、没弹出来就离开页面的不算）。 */
+  const begin = useCallback((flow: AutoFlow) => {
+    const chapter = FLOW_CHAPTER[flow];
+    setPending(null);
+    setSaved((record) => markShown(record, chapter));
+    if (flow === 'ecology-member') {
+      setMemberIntro(true);
+      return;
+    }
+    const next: Progress = { chapter, steps: AUTO_STEPS[flow], index: 0, armed: false };
+    activeRef.current = next;
+    setDone(null);
+    setSaved((record) => ({ ...record, paused: chapter }));
+    setActive(next);
+  }, []);
+  const request = useCallback((flow: AutoFlow) => {
+    if (!autoRef.current || !canAutoStart(savedRef.current, flow)) return () => {};
+    const token = ++tokenRef.current;
+    // 新会员入口优先（「开通后马上弹」）：它在等待时，其他页面的请求不顶替它，那些页面下次进入再弹。
+    setPending((old) => (old?.flow === 'ecology-member' ? old : { flow, token }));
+    return () => setPending((old) => (old?.token === token ? null : old));
+  }, []);
+  useEffect(() => {
+    if (!autoEnabled) setPending(null);
+  }, [autoEnabled]);
+  // 等待中的自动弹出：没有别的弹窗、没有正在进行的引导、目标元素出现且位置稳定（动画结束）后再开始。
+  useEffect(() => {
+    if (!pending || active || done || memberIntro) return;
+    if (!canAutoStart(saved, pending.flow)) {
+      setPending(null);
+      return;
+    }
+    const flow = pending.flow;
+    const first = flow === 'ecology-member' ? null : AUTO_STEPS[flow][0]!;
+    let last: string | null = null;
+    const timer = window.setInterval(() => {
+      const blocked =
+        !!document.querySelector('.guided-tour-layer') ||
+        [...document.querySelectorAll<HTMLElement>('[role="dialog"]')].some((element) =>
+          isGuideBlockingDialog(element, first?.allowedDialog),
+        );
+      let place = 'ready';
+      if (!blocked && first) {
+        const element = document.querySelector<HTMLElement>(first.target);
+        const box = element?.getClientRects().length ? element.getBoundingClientRect() : null;
+        place =
+          box && box.width > 0 && box.height > 0
+            ? [box.left, box.top, box.width, box.height].map(Math.round).join(',')
+            : '';
+      }
+      if (blocked || !place || place !== last) {
+        last = blocked ? null : place || null;
+        return;
+      }
+      window.clearInterval(timer);
+      begin(flow);
+    }, POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [pending, active, done, memberIntro, saved, begin]);
+  // 新会员：这台设备上先看到「免费」、后看到「PRO+」= 第一次开通成功，马上弹（guide-triggers.ts）。
+  // 只认实时结果（networkOnly），不拿本机缓存的旧档位当依据；余额 / 设置变化时 useRemote 会自动重新拉取。
+  const membership = useRemote(MembershipEndpoints.get, { networkOnly: true }, autoEnabled);
+  const tier = membership.data?.tier;
+  useEffect(() => {
+    if (!tier) return;
+    const { record, newMember } = observeTier(savedRef.current, tier);
+    if (record !== savedRef.current) {
+      savedRef.current = record;
+      setSaved((old) => observeTier(old, tier).record);
+    }
+    if (newMember) request('ecology-member');
+  }, [tier, request]);
   useEffect(() => {
     if (!current || !active) return;
     let frame = 0;
@@ -286,8 +415,10 @@ export function OnboardingGuideProvider({
     (chapter: ChapterId, conversationId?: string) => {
       if (chapter === 'scenario' && !conversationId) return;
       setDone(null);
-      setSaved((record) => ({ ...record, paused: chapter }));
-      setActive({ chapter, index: 0, armed: false });
+      setPending(null);
+      // 在目录里手动开始过的章节也算看过：中途「稍后再学」后不会在当前页面又被自动弹出。
+      setSaved((record) => ({ ...markShown(record, chapter), paused: chapter }));
+      setActive({ chapter, steps: onboardingChapters[chapter].steps, index: 0, armed: false });
       navigate(chapter === 'scenario' ? `/chat/${encodeURIComponent(conversationId!)}` : '/chat');
     },
     [navigate],
@@ -298,23 +429,25 @@ export function OnboardingGuideProvider({
       paused: saved.paused,
       start,
       reset: () => {
-        setSaved({ completed: [], paused: null });
+        // 只重置目录里的学习进度；「已自动弹过」不清，自动引导仍然一生只弹一次。
+        setSaved((record) => ({ ...record, completed: [], paused: null }));
         setActive(null);
         setDone(null);
       },
     }),
     [saved.completed, saved.paused, start],
   );
+  const auto = useMemo<AutoGuideApi>(() => ({ request }), [request]);
   return (
     <Context.Provider value={value}>
-      {children}
+      <AutoGuideContext.Provider value={auto}>{children}</AutoGuideContext.Provider>
       {current && active && (
         <GuidedTour
-          key={`${active.chapter}:${active.index}`}
+          key={`${active.chapter}:${active.steps[0]!.id}:${active.index}`}
           step={current}
           chapter={onboardingChapters[active.chapter].title}
           index={active.index}
-          total={onboardingChapters[active.chapter].steps.length}
+          total={active.steps.length}
           onNext={() => advance(active)}
           onPause={pause}
           backLabel="返回目录"
@@ -324,12 +457,29 @@ export function OnboardingGuideProvider({
           }}
           onTargetAction={(id) =>
             setActive((old) =>
-              old && onboardingChapters[old.chapter].steps[old.index]?.id === id
-                ? { ...old, armed: true }
-                : old,
+              old && old.steps[old.index]?.id === id ? { ...old, armed: true } : old,
             )
           }
         />
+      )}
+      {memberIntro && (
+        <Dialog
+          title="PRO+ 已开通"
+          actions={[
+            { label: '以后再说', onClick: () => setMemberIntro(false) },
+            {
+              label: '带我看看',
+              tone: 'primary',
+              onClick: () => {
+                setMemberIntro(false);
+                start('ecology');
+              },
+            },
+          ]}
+        >
+          <p>会员专属的「角色生态」可以用了：打开后，TA 会像真人一样主动找你聊天、分享生活。</p>
+          <p>运行时会消耗积分。跟着提示走一遍，认识入口和花费，开不开由你决定。</p>
+        </Dialog>
       )}
       {done && (
         <Dialog

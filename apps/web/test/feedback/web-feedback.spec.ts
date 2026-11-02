@@ -42,8 +42,12 @@ test('排行榜保持默认顺序和唯一列表，不再提供搜索或反向�
     /无数据模型/,
   ]);
   await page.getByRole('tab', { name: '热门榜' }).click();
-  await expect(page.getByText(/12 人选用/)).toBeVisible();
-  await expect(page.getByText(/0 人选用/)).toBeVisible();
+  // 11-03：不再显示选用人数与「按选用人数排序」提示，按服务端 hotOrder 排。
+  await expect(page.getByText(/人选用|选用人数/)).toHaveCount(0);
+  await expect(page.locator('.menu-row').filter({ hasText: /已排名模型|无数据模型/ })).toHaveText([
+    /无数据模型/,
+    /已排名模型/,
+  ]);
   await page.getByRole('button').filter({ hasText: '无数据模型' }).click();
   await expect(page.getByRole('status')).toContainText('已保存');
   await page.goto(`${fixture}?page=models`);

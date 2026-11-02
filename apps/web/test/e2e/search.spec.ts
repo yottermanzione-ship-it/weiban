@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.js';
 import { selectWheelDate } from './persona-ui.js';
 
 test('会话图片、链接和日期定位使用真实服务器接口', async ({ page }) => {

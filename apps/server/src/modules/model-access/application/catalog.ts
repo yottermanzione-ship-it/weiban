@@ -57,6 +57,7 @@ import {
   relativeRanks,
   type LeaderboardEntry,
 } from '../domain/leaderboard.js';
+import { hotModelOrder } from '../domain/hot-order.js';
 import {
   modelCatalog,
   modelRoutes,
@@ -657,10 +658,38 @@ export class CatalogService {
     return {
       source,
       popular,
+      hotOrder: await this.hotOrder(),
       fetchedAt: snapshot?.fetchedAt ?? null,
       method: snapshot?.method ?? null,
       lastError: snapshot?.lastError ?? null,
     };
+  }
+
+  /**
+   * 5.1：热门榜顺序（domain/hot-order.ts）。范围同用户端「文本聊天」模型列表（启用、可用于 chat 场景），
+   * 价格取当前生效价目表的文字输入 / 输出全天价。只返回模型键：利润率和成本价不出这个方法。
+   */
+  async hotOrder(): Promise<string[]> {
+    const rows = await this.database.db
+      .select({
+        modelKey: modelCatalog.modelKey,
+        vendorName: modelCatalog.vendorName,
+        scenarios: modelCatalog.scenarios,
+      })
+      .from(modelCatalog)
+      .where(eq(modelCatalog.enabled, true))
+      .orderBy(asc(modelCatalog.sortOrder), asc(modelCatalog.modelKey));
+    const chat = rows.filter((row) => row.scenarios.includes('chat'));
+    const rates = chat.length
+      ? await this.rates?.getActiveTokenRates(chat.map((row) => row.modelKey))
+      : undefined;
+    return hotModelOrder(
+      chat.map((row) => ({
+        modelKey: row.modelKey,
+        vendorName: row.vendorName,
+        rates: rates?.get(row.modelKey),
+      })),
+    );
   }
 
   /** 后台目录（含停用的；3.23 起也含已删除的，deletedAt 非空，排在最后）。 */
