@@ -205,10 +205,12 @@ private fun timelineDay(occurredAt: String): java.time.LocalDate =
 private fun timelineDayLabel(day: java.time.LocalDate): String {
     val zone = java.time.ZoneId.systemDefault()
     val today = java.time.LocalDate.now(zone)
-    if (day == today) return "今天"
-    if (day == today.minusDays(1)) return "昨天"
     val week = arrayOf("日", "一", "二", "三", "四", "五", "六")[day.dayOfWeek.value % 7]
-    return "${day.monthValue} 月 ${day.dayOfMonth} 日 星期$week"
+    return when {
+        day == today -> "今天"
+        day == today.minusDays(1) -> "昨天"
+        else -> "${day.monthValue} 月 ${day.dayOfMonth} 日 星期$week"
+    }
 }
 
 /** 行内时间：时钟 HH:mm（网页版 TimelineItem 同款）。 */
