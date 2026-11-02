@@ -1,5 +1,5 @@
-import { Inject, Injectable } from '@nestjs/common';
-import { and, count, desc, eq, inArray, lte, ne, or } from 'drizzle-orm';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import { and, count, desc, eq, inArray, lt, lte, ne, or } from 'drizzle-orm';
 import { Id, Timestamp, type IdentityAccountStatusPort, type Tx } from '@weiban/contracts';
 import {
   AppError,
@@ -8,12 +8,14 @@ import {
   DATABASE,
   ENVELOPE_CRYPTO,
   JOB_QUEUE,
+  LOGGER,
   newId,
   type Clock,
   type Database,
   type DbTx,
   type EnvelopeCrypto,
   type JobQueue,
+  type Logger,
 } from '../../../platform/index.js';
 import { IDENTITY_ACCOUNT_STATUS_PORT } from '../../identity/index.js';
 import {
@@ -34,7 +36,14 @@ import {
   groupReplyPlans,
 } from '../infra/db/schema.js';
 import { USER_BATCH_DELAY_MS } from '../domain/reply-rules.js';
+import {
+  REPLY_WAIT_MAX_MS,
+  RETRYABLE_WAIT_FAILURES,
+  retryableWait,
+} from '../domain/reply-delivery.js';
 export const GENERATE_REPLY_JOB = 'ai.generate_reply';
+/** T-20261103e：等待中回复的定时巡检。 */
+export const SWEEP_WAITING_REPLIES_JOB = 'ai.sweep_waiting_replies';
 export type ReplyPlan = typeof replyPlans.$inferSelect;
 export interface EnqueueReply {
   userId: string;
@@ -87,6 +96,7 @@ export class ReplyPlanStore {
     @Inject(ENVELOPE_CRYPTO) readonly crypto: EnvelopeCrypto,
     @Inject(JOB_QUEUE) readonly jobs: JobQueue,
     @Inject(IDENTITY_ACCOUNT_STATUS_PORT) readonly accounts: IdentityAccountStatusPort,
+    @Optional() @Inject(LOGGER) readonly logger?: Logger,
   ) {}
   async lock(tx: DbTx, userId: string, conversationId?: string): Promise<boolean> {
     await tx.query("SELECT pg_advisory_xact_lock(hashtextextended('ai_runtime:user:' || $1,0))", [
@@ -235,6 +245,27 @@ export class ReplyPlanStore {
       })
       .where(eq(replyPlans.id, id));
   }
+  /**
+   * T-20261103e：确定性失败直接作废，failure 记原因（如 db_23514）。只动还在进行中的计划；
+   * 已发出的气泡不受影响，作废后也不会再发。返回是否真的改了。
+   */
+  async fail(id: string, reason: string): Promise<boolean> {
+    const rows = await this.db.db
+      .update(replyPlans)
+      .set({
+        status: 'cancelled',
+        failure: reason,
+        inputCiphertext: null,
+        resultCiphertext: null,
+        leaseId: null,
+        leaseUntil: null,
+      })
+      .where(
+        and(eq(replyPlans.id, id), inArray(replyPlans.status, ['queued', 'generating', 'sending'])),
+      )
+      .returning({ id: replyPlans.id });
+    return rows.length > 0;
+  }
   async reconcile(): Promise<void> {
     const rows = await this.db.db
       .select()
@@ -272,44 +303,128 @@ export class ReplyPlanStore {
         desc(replyPlans.createdAt),
       )
       .limit(200);
-    for (const row of rows)
-      await this.db.transaction(async (tx) => {
-        const active = await this.lock(tx, row.userId, row.conversationId);
-        await tx.db
-          .update(replyPlans)
-          .set({
-            status: 'cancelled',
-            inputCiphertext: null,
-            resultCiphertext: null,
-            leaseId: null,
-            leaseUntil: null,
-          })
-          .where(
-            and(
-              eq(replyPlans.conversationId, row.conversationId),
-              eq(replyPlans.userId, row.userId),
-              eq(replyPlans.status, 'waiting'),
-              active ? ne(replyPlans.id, row.id) : undefined,
-            ),
-          );
-        if (!active) return;
-        const [updated] = await tx.db
-          .update(replyPlans)
-          .set({
-            status: 'queued',
-            inputCiphertext: null,
-            retryEpoch: row.retryEpoch + 1,
-            dueAt: this.clock.now(),
-          })
-          .where(and(eq(replyPlans.id, row.id), eq(replyPlans.status, 'waiting')))
-          .returning();
-        if (updated) await this.schedule(tx, row.id, this.clock.now());
-      });
+    for (const row of rows) await this.requeueLatestWaiting(row.userId, row.conversationId);
     if (rows.length === 200)
       await this.jobs.send('ai.recover_replies', userId ? { userId } : {}, {
         retryLimit: 10,
         retryBackoff: true,
       });
+  }
+  /**
+   * T-20261103e 定时巡检（每 5 分钟）：模型临时不可用而等待的回复，退避重试，最长等 6 小时。
+   * 1. 可重试类等待、用户消息已超过 6 小时的：作废（failure = wait_expired），不再回复；
+   * 2. 每个会话看最新的 waiting：属于可重试类、到了重试时间（due_at，按已恢复次数退避）、没超时的，
+   *    复用 recover 的做法——只恢复最新批次、旧 waiting 一起取消、retry_epoch + 1（换新的幂等键）。
+   * 积分不足、没选模型这类要用户自己处理的等待不碰：会话最新批次是这类时整段跳过，仍由原触发点恢复。
+   */
+  async sweepWaiting(): Promise<{ expired: number; recovered: number }> {
+    const now = this.clock.now();
+    const cutoff = new Date(now.getTime() - REPLY_WAIT_MAX_MS);
+    const retryable = [...RETRYABLE_WAIT_FAILURES];
+    const expired = await this.db.db
+      .update(replyPlans)
+      .set({
+        status: 'cancelled',
+        failure: 'wait_expired',
+        inputCiphertext: null,
+        resultCiphertext: null,
+        leaseId: null,
+        leaseUntil: null,
+      })
+      .where(
+        and(
+          eq(replyPlans.status, 'waiting'),
+          inArray(replyPlans.failure, retryable),
+          lt(replyPlans.createdAt, cutoff),
+        ),
+      )
+      .returning({ id: replyPlans.id });
+    const candidates = await this.db.query<{ user_id: string; conversation_id: string }>(
+      `SELECT user_id, conversation_id FROM (
+         SELECT DISTINCT ON (user_id, conversation_id) user_id, conversation_id, failure, due_at, created_at
+         FROM ai_runtime.reply_plans WHERE status='waiting'
+         ORDER BY user_id, conversation_id, trigger_seq DESC, created_at DESC
+       ) latest
+       WHERE failure = ANY($1::text[]) AND due_at <= $2 AND created_at >= $3
+       LIMIT 200`,
+      [retryable, now, cutoff],
+    );
+    let recovered = 0;
+    for (const c of candidates.rows)
+      if (
+        await this.requeueLatestWaiting(
+          c.user_id,
+          c.conversation_id,
+          (row) => retryableWait(row.failure) && row.dueAt <= now && row.createdAt >= cutoff,
+        )
+      )
+        recovered++;
+    if (expired.length || recovered)
+      this.logger?.info(
+        { code: 'ai_reply_wait_sweep', expired: expired.length, recovered },
+        'ai.sweep_waiting_replies',
+      );
+    return { expired: expired.length, recovered };
+  }
+  /**
+   * 每个会话只恢复最新批次，旧 waiting 一起取消（账号不可用时全部取消、不恢复）。
+   * 在会话锁里重新找最新的 waiting；只取消不比它新的，选出之后才进入等待的新批次不会被误取消。
+   * accept（巡检用）：最新批次不符合条件时整段不动。返回是否恢复了一个批次。
+   */
+  private async requeueLatestWaiting(
+    userId: string,
+    conversationId: string,
+    accept?: (row: ReplyPlan) => boolean,
+  ): Promise<boolean> {
+    return this.db.transaction(async (tx) => {
+      const active = await this.lock(tx, userId, conversationId);
+      const [latest] = await tx.db
+        .select()
+        .from(replyPlans)
+        .where(
+          and(
+            eq(replyPlans.userId, userId),
+            eq(replyPlans.conversationId, conversationId),
+            eq(replyPlans.status, 'waiting'),
+          ),
+        )
+        .orderBy(desc(replyPlans.triggerSeq), desc(replyPlans.createdAt))
+        .limit(1)
+        .for('update');
+      if (!latest || (accept && !accept(latest))) return false;
+      await tx.db
+        .update(replyPlans)
+        .set({
+          status: 'cancelled',
+          inputCiphertext: null,
+          resultCiphertext: null,
+          leaseId: null,
+          leaseUntil: null,
+        })
+        .where(
+          and(
+            eq(replyPlans.conversationId, conversationId),
+            eq(replyPlans.userId, userId),
+            eq(replyPlans.status, 'waiting'),
+            active
+              ? and(ne(replyPlans.id, latest.id), lte(replyPlans.triggerSeq, latest.triggerSeq))
+              : undefined,
+          ),
+        );
+      if (!active) return false;
+      const [updated] = await tx.db
+        .update(replyPlans)
+        .set({
+          status: 'queued',
+          inputCiphertext: null,
+          retryEpoch: latest.retryEpoch + 1,
+          dueAt: this.clock.now(),
+        })
+        .where(and(eq(replyPlans.id, latest.id), eq(replyPlans.status, 'waiting')))
+        .returning();
+      if (updated) await this.schedule(tx, latest.id, this.clock.now());
+      return !!updated;
+    });
   }
   async purgeTrial(
     transaction: Tx,

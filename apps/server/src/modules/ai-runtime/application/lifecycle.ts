@@ -26,7 +26,8 @@ import {
   dailyEvents,
   moodStates,
 } from '../infra/db/schema.js';
-import { GENERATE_REPLY_JOB, ReplyPlanStore } from './plan-store.js';
+import { GENERATE_REPLY_JOB, ReplyPlanStore, SWEEP_WAITING_REPLIES_JOB } from './plan-store.js';
+import { REPLY_WAIT_SWEEP_CRON } from '../domain/reply-delivery.js';
 import { MemoryService, EXTRACT_MEMORY_JOB, type MemoryJob } from './memory.js';
 import { PrivateDigestService, PRIVATE_DIGEST_JOB } from './private-digest.js';
 import { CHAT_SUMMARY_JOB } from './chat-summary.js';
@@ -174,6 +175,11 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       await this.privateDigest.reconcile();
     });
     await this.jobs.schedule('ai.reconcile', '* * * * *');
+    // T-20261103e：模型临时不可用而等待的回复，事件之外再加定时巡检兜底（退避重试，最长 6 小时）。
+    await this.jobs.work(SWEEP_WAITING_REPLIES_JOB, async () => {
+      await this.store.sweepWaiting();
+    });
+    await this.jobs.schedule(SWEEP_WAITING_REPLIES_JOB, REPLY_WAIT_SWEEP_CRON);
 
     // 推演引擎（T-051）：每角色日常事件与心情
     await this.jobs.work<{ userId: string; characterId: string }>(
