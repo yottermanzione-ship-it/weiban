@@ -86,6 +86,8 @@ import { QuietStateService } from './quiet-state.js';
 import { PlannerService } from './planner.js';
 import { PlayContinuityStore } from './play-continuity.js';
 import { EcologySettingsService } from './ecology-settings.js';
+import { characterView, roleDefaultVoiceId } from './character-view.js';
+import { healthPrivate } from '../domain/memory.js';
 import type { EcologyActionKey } from '@weiban/contracts';
 
 /**
@@ -1265,6 +1267,52 @@ ${careNote}`
     let charged = charge.chargedMicros;
     let voice: MessageContent | null = null;
     let link: MessageContent | null = null;
+    /** 形式判断附带的内容（表情包等），跟在文字 / 语音后面发。 */
+    let formExtras: MessageContent[] = [];
+    // T-20261103c（对照表 v3：语音、表情包是基础层）：没指定形式的生态主动消息，交给聊天回复同一套形式判断
+    // （media-ai planExtras：语音占比 / 间隔 / 长度、表情包完整标签选图与配额、决策层斟酌），不另定概率。
+    // 用户在聊天里说过不要的形式不发（suppressedForms，按最近的用户原话算）；私密模式（成人范围）与聊天回复一样
+    // 不进入这套判断，只发文字、不发语音。决策层与语音合成按后台消耗计费，语音费用并进本次总费用。
+    if (
+      eco &&
+      eco.extra === null &&
+      !care &&
+      !adultUsed &&
+      conversation.contentScope === 'normal'
+    ) {
+      const formHistory = await this.chat
+        .readMessages({
+          conversationId: conversation.conversationId,
+          scopes: ['normal'],
+          limit: 100,
+        })
+        .catch(() => []);
+      const planned = await this.mediaAi
+        .planExtras({
+          ctx: {
+            userId: ctx.userId,
+            characterId: plan.characterId,
+            conversationId: conversation.conversationId,
+            defaultVoiceId: roleDefaultVoiceId(role, characterView(role)),
+          },
+          triggerId: `proactive:${plan.id}`,
+          bubbles,
+          userText: '',
+          history: formHistory,
+          voiceId: settings.voiceId ?? null,
+          quiet: settings.scenarioMode === 'treehole',
+          sensitive: healthPrivate(bubbles.join('\n')),
+          path: 'proactive',
+          onMediaCharged: (micros) => {
+            charged += micros;
+          },
+        })
+        .catch(() => null);
+      if (planned) {
+        voice = planned.find((c) => c.type === 'voice') ?? null;
+        formExtras = planned.filter((c) => c.type !== 'text' && c.type !== 'voice');
+      }
+    }
     // H2：私密模式只开放文字与图片，角色不发语音。
     if (eco?.extra === 'voice' && conversation.contentScope === 'adult')
       return this.fail(plan, 'voice_private_mode');
@@ -1426,6 +1474,19 @@ ${careNote}`
           );
           if (!posted.ok) throw new Error(`post_failed:${posted.error}`);
           firstId ??= posted.value.messageId;
+        }
+        for (let j = 0; j < formExtras.length; j++) {
+          const posted = await this.writer.postMessage(
+            {
+              conversationId: conversation.conversationId,
+              senderParticipantId: participant.participantId,
+              content: formExtras[j]!,
+              idempotencyKey: `proactive:${plan.id}:form:${j}`,
+              expectedScope: conversation.contentScope,
+            },
+            tx,
+          );
+          if (!posted.ok) throw new Error(`post_failed:${posted.error}`);
         }
         if (link) {
           const posted = await this.writer.postMessage(

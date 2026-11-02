@@ -97,6 +97,18 @@ export function roleVoiceIds(view: CharacterView): string[] {
   return view.legacy?.voiceIds ?? [];
 }
 
+/**
+ * 回复 / 主动消息共用的「角色自带默认音色」（media-ai resolveVoice 的第二顺位）：
+ * 旧卡取 voice_json / qwen_voice_id 第一项；自定义新卡取卡里的音色；预设新卡交给角色音色端口（这里给 null）。
+ */
+export function roleDefaultVoiceId(
+  role: Pick<CharacterForRuntime, 'profile'>,
+  view: CharacterView,
+): string | null {
+  if (view.legacy) return roleVoiceIds(view)[0] ?? null;
+  return role.profile.kind === 'custom' ? (view.card?.social.voiceId ?? null) : null;
+}
+
 /** 关怀兜底话术；旧卡没有安全风格字段，用代码层兜底。 */
 export function roleCareFallback(view: CharacterView): string {
   return view.card?.safetyStyle.careFallbackText ?? LEGACY_CARE_FALLBACK;

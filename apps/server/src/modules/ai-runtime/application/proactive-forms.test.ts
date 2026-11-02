@@ -1,0 +1,275 @@
+/**
+ * T-20261103c：生态主动消息接回语音 / 表情包等形式（对照表 v3：这些是基础层，聊天里按场景自己斟酌）。
+ *
+ * 主动消息发送（ProactiveSchedulerService.send，生态 extras.extra = null）复用聊天回复同一套形式判断
+ * （MediaAiService.planExtras）。这里用真实的 planExtras + 桩依赖跑一遍发送：
+ * - 形式判断确实被调用（path = proactive、没有用户原话），批准语音 / 表情包时照发；
+ *   决策层、语音合成按后台消耗计费，语音费用并进本次总费用，记在第一条消息上；
+ * - 用户在聊天里说过「别发语音」「别发表情包」：那种形式不发（suppressedForms）；
+ * - 私密模式（成人范围）不进入形式判断，只发文字、不发语音。
+ */
+import 'reflect-metadata';
+import { describe, expect, it, vi } from 'vitest';
+import type { Message, MessageContent, ModelGatewayMediaPort } from '@weiban/contracts';
+import { MediaAiService } from './media-ai.js';
+import type { PlanBatchRequest, PlanResult } from './planner.js';
+import { ProactiveSchedulerService, type EcologySendExtras } from './proactive-scheduler.js';
+
+const USER = 'user-1';
+const CHARACTER = 'character-1';
+const CONVERSATION = 'conversation-1';
+const REPLY = '哈哈，好开心';
+const happy = { stickerId: 'happy', mediaId: 'happy-media', description: '开心哈哈大笑' };
+
+function message(i: number, sender: 'user' | 'character', text: string): Message {
+  return {
+    messageId: `${sender}-${i}`,
+    conversationId: CONVERSATION,
+    seq: i,
+    senderParticipantId: sender === 'user' ? 'user-participant' : 'character-participant',
+    senderKind: sender,
+    content: { type: 'text', text },
+    status: 'normal',
+    scope: 'normal',
+    quote: null,
+    clientMsgId: null,
+    createdAt: new Date(i * 1000).toISOString(),
+    recalledAt: null,
+  };
+}
+
+/** 十条角色文字消息：语音占比、间隔、表情包配额都满足。 */
+const tenTexts = () =>
+  Array.from({ length: 10 }, (_, i) => message(i + 1, 'character', '普通消息'));
+
+/** 真实的 MediaAiService，桩掉网关 / 素材 / 决策层；决策层对每个问题都批准（语音、附表情）。 */
+function mediaAi() {
+  const synthesizeSpeech = vi.fn((async () => ({
+    ok: true,
+    value: {
+      mediaId: 'voice-media',
+      durationMs: 1000,
+      chargedMicros: 200,
+      usageRecordId: 'tts-usage',
+      latencyMs: 1,
+      modelKey: 'tts',
+    },
+  })) as ModelGatewayMediaPort['synthesizeSpeech']);
+  const decideBatch = vi.fn(async (req: PlanBatchRequest): Promise<Record<string, PlanResult>> =>
+    Object.fromEntries(
+      req.questions.map((q) => [
+        q.questionId,
+        {
+          choice: q.questionId === 'voice' ? 'voice' : 'keep_sticker',
+          confidence: 0.9,
+          reason: 'test',
+          implementation: 'jev',
+          fallback: null,
+          usageRecordId: 'plan-usage',
+        },
+      ]),
+    ),
+  );
+  const service = new MediaAiService(
+    ...([
+      { isServiceEnabled: async () => true, synthesizeSpeech },
+      {},
+      {
+        listStickersForCharacter: async () => [happy],
+        getVoice: async () => ({ enabled: true }),
+      },
+      { preview: vi.fn() },
+      { listUsableWorkLinks: async () => [] },
+      { getDefaultVoiceId: async () => 'preset-voice' },
+      {},
+      {},
+      {},
+      { getInconvenientUntil: async (): Promise<string | null> => null },
+      { nowMs: () => 1000 },
+      {},
+      { decideBatch },
+    ] as unknown as ConstructorParameters<typeof MediaAiService>),
+  );
+  const planExtras = vi.spyOn(service, 'planExtras');
+  return { service, synthesizeSpeech, decideBatch, planExtras };
+}
+
+function harness(opts: { history?: Message[]; privateMode?: boolean } = {}) {
+  const media = mediaAi();
+  const posted: Array<{ content: MessageContent; idempotencyKey: string; charge?: unknown }> = [];
+  const generate = vi.fn(async (_req: Record<string, unknown>, _privateModel: boolean) => ({
+    ok: true as const,
+    value: { text: REPLY, usageRecordId: 'text-usage', chargedMicros: 100 },
+  }));
+  const readMessages = vi.fn(async () => opts.history ?? tenTexts());
+  const update = () => ({ set: () => ({ where: async () => undefined }) });
+  const tx = { query: async () => undefined, db: { update } };
+  const service = Object.create(ProactiveSchedulerService.prototype) as ProactiveSchedulerService;
+  Object.assign(service, {
+    handlers: [],
+    clock: { now: () => new Date('2026-11-03T12:00:00Z'), nowMs: () => 1000 },
+    db: { db: { update }, transaction: async (fn: (t: typeof tx) => unknown) => fn(tx) },
+    contacts: { getActiveContactEpoch: async () => ({ version: 1 }) },
+    characters: {
+      getForRuntime: async () => ({ profile: { kind: 'preset' }, card: null, legacyCard: null }),
+    },
+    policy: {
+      getCharacterPolicy: async () => ({
+        adultModeEligible: !!opts.privateMode,
+        isRealPerson: false,
+        isMinor: false,
+        romanceAllowed: true,
+      }),
+    },
+    chat: {
+      getConversation: async () => ({
+        conversationId: CONVERSATION,
+        contentScope: opts.privateMode ? 'adult' : 'normal',
+        participants: [
+          { kind: 'character', refId: CHARACTER, participantId: 'character-participant' },
+          { kind: 'user', refId: USER, participantId: 'user-participant' },
+        ],
+      }),
+      readMessages,
+    },
+    settings: {
+      get: async () => ({
+        splitBubbles: true,
+        voiceId: null,
+        scenarioMode: 'daily',
+        proactiveFrequency: 'medium',
+      }),
+    },
+    growth: { getFamiliarity: async () => ({ level: 1 }) },
+    brain: {
+      build: async (_u: string, _c: string, scope: 'normal' | 'adult') => ({
+        scope,
+        prefix: '人设',
+        recall: '',
+      }),
+    },
+    adultBoundary: { generate },
+    accounts: { getAccountStatus: async () => 'active' },
+    quota: { recordSent: vi.fn() },
+    writer: {
+      postMessage: vi.fn(
+        async (input: { content: MessageContent; idempotencyKey: string; charge?: unknown }) => {
+          posted.push(input);
+          return { ok: true, value: { messageId: `msg-${posted.length}` } };
+        },
+      ),
+    },
+    episodes: { record: async () => undefined },
+    audit: { record: async () => undefined },
+    mediaAi: media.service,
+  });
+  const plan = {
+    id: 'plan-1',
+    userId: USER,
+    characterId: CHARACTER,
+    reason: 'ecology',
+    sourceRef: 'ecology:run-1',
+    topicKey: 'ecology:run-1',
+    brief: '想和对方分享一件开心的小事',
+    localDate: '2026-11-03',
+    isHoliday: false,
+  };
+  const ctx = {
+    userId: USER,
+    timeZone: 'Asia/Shanghai',
+    localDate: '2026-11-03',
+    localHour: 20,
+    nickname: '小明',
+    birthday: null,
+  };
+  const send = (eco: EcologySendExtras = { extra: null }) =>
+    (
+      service as unknown as {
+        send(c: unknown, p: unknown, contact: unknown, e: EcologySendExtras): Promise<unknown>;
+      }
+    ).send(ctx, plan, { conversationId: CONVERSATION }, eco);
+  return { ...media, send, posted, generate };
+}
+
+describe('生态主动消息复用聊天回复的形式判断', () => {
+  it('形式判断被调用：批准语音和表情包时发语音 + 表情包，按后台消耗计费、费用并进总额', async () => {
+    const h = harness();
+    const outcome = await h.send();
+    expect(h.planExtras).toHaveBeenCalledOnce();
+    expect(h.planExtras.mock.calls[0]![0]).toMatchObject({
+      bubbles: [REPLY],
+      userText: '',
+      path: 'proactive',
+      triggerId: 'proactive:plan-1',
+      ctx: { userId: USER, characterId: CHARACTER, conversationId: CONVERSATION },
+    });
+    // 决策层：主动消息路径（后台消耗）。
+    expect(h.decideBatch.mock.calls[0]![0]).toMatchObject({
+      path: 'proactive',
+      decisionType: 'reply_form',
+    });
+    // 语音合成：按后台消耗、生态任务计费（与原生态「发语音」同口径）。
+    expect(h.synthesizeSpeech).toHaveBeenCalledOnce();
+    expect(h.synthesizeSpeech.mock.calls[0]![0]).toMatchObject({
+      billingOwner: 'user',
+      countAsBackground: true,
+      ecologyTask: true,
+      text: REPLY,
+    });
+    expect(h.posted.map((p) => p.content.type)).toEqual(['voice', 'sticker']);
+    expect(h.posted[1]!.content).toMatchObject({ stickerId: 'happy' });
+    // 文字 100 + 语音 200，记在第一条消息上；结果把总费用带回生态。
+    expect(h.posted[0]!.charge).toEqual({ usageRecordId: 'text-usage', chargedMicros: 300 });
+    expect(h.posted[1]!.charge).toBeUndefined();
+    expect(outcome).toEqual({ ok: true, chargedMicros: 300, messageId: 'msg-1' });
+    // 文字生成本身的计费参数不变。
+    expect(h.generate.mock.calls[0]![0]).toMatchObject({
+      billingOwner: 'user',
+      countAsBackground: true,
+      ecologyTask: true,
+      purpose: 'proactive',
+    });
+  });
+
+  it('suppressedForms 生效：用户说过别发语音、别发表情包，就只发文字', async () => {
+    const h = harness({
+      history: [
+        message(0, 'user', '别发语音了'),
+        message(1, 'user', '也别发表情包'),
+        ...tenTexts(),
+      ],
+    });
+    const outcome = await h.send();
+    expect(h.planExtras).toHaveBeenCalledOnce();
+    // 两种形式都被压制：不问决策层、不合成语音。
+    expect(h.decideBatch).not.toHaveBeenCalled();
+    expect(h.synthesizeSpeech).not.toHaveBeenCalled();
+    expect(h.posted.map((p) => p.content)).toEqual([{ type: 'text', text: REPLY }]);
+    expect(outcome).toEqual({ ok: true, chargedMicros: 100, messageId: 'msg-1' });
+  });
+
+  it('只压制说过的那一种：别发语音时表情包照常斟酌', async () => {
+    const h = harness({ history: [message(0, 'user', '别发语音了'), ...tenTexts()] });
+    await h.send();
+    expect(h.decideBatch.mock.calls[0]![0].questions.map((q) => q.questionId)).toEqual(['sticker']);
+    expect(h.synthesizeSpeech).not.toHaveBeenCalled();
+    expect(h.posted.map((p) => p.content.type)).toEqual(['text', 'sticker']);
+  });
+
+  it('私密模式不进入形式判断：只发文字、不发语音', async () => {
+    const h = harness({ privateMode: true });
+    const outcome = await h.send();
+    expect(h.generate.mock.calls[0]![1]).toBe(true);
+    expect(h.planExtras).not.toHaveBeenCalled();
+    expect(h.synthesizeSpeech).not.toHaveBeenCalled();
+    expect(h.posted.map((p) => p.content)).toEqual([{ type: 'text', text: REPLY }]);
+    expect(outcome).toEqual({ ok: true, chargedMicros: 100, messageId: 'msg-1' });
+  });
+
+  it('私密模式点名发语音仍按原规则拒绝', async () => {
+    const h = harness({ privateMode: true });
+    const outcome = await h.send({ extra: 'voice' });
+    expect(outcome).toMatchObject({ ok: false, reason: 'voice_private_mode' });
+    expect(h.posted).toEqual([]);
+  });
+});
