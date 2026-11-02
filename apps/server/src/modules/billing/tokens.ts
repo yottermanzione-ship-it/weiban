@@ -26,4 +26,7 @@ export const BILLING_PAID_HISTORY_PORT = Symbol('weiban.billing.paid-history-por
 
 /** 契约 3.8 BillingServiceFeePort（固定金额服务费：冻结 / 扣除 / 退回）。调用方：plaza 申请制作。 */
 export const BILLING_SERVICE_FEE_PORT = Symbol('weiban.billing.service-fee-port');
+
+/** 契约 BillingCustomerConfigReadPort（会员/充值配置只读）。调用方：小V同学客服简报。 */
+export const BILLING_CUSTOMER_CONFIG_PORT = Symbol('weiban.billing.customer-config-port');
 export const BILLING_SHARED_SEARCH_PORT = Symbol('weiban.billing.shared-search');

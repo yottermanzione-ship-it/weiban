@@ -123,7 +123,9 @@ export class PushLifecycle implements OnModuleInit, OnApplicationBootstrap {
           if (!profile || !settings) continue;
           const name = await this.source.name(
             userId,
-            context.senderKind === 'character' ? context.senderRefId : null,
+            context.senderKind === 'character' || context.senderKind === 'official'
+              ? context.senderRefId
+              : null,
             tx,
           );
           const notification = messageNotification({

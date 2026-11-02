@@ -51,6 +51,11 @@ import { POLICY_PORT } from '../../policy/index.js';
 import { HOLIDAY_EVENT_PORT } from '../../proactive/index.js';
 import { healthPrivate } from '../domain/memory.js';
 import { ecoRandom } from '../domain/ecology.js';
+import {
+  momentsReactDelayMs,
+  planPeerPostReactions,
+  planUserPostReactions,
+} from '../domain/moments-reactions.js';
 import { momentsTopicsText } from '../domain/character-prompt.js';
 import { BrainContextService, brainMessages, brainTail } from './brain.js';
 import { outputAllowed } from '../domain/reply-rules.js';
@@ -136,10 +141,6 @@ export interface MomentsReactJob {
 
 const MOMENTS_FORBIDDEN_REAL =
   /官宣|新剧|新歌|新专辑|定档|杀青|开机|合作|代言|官方|声明|宣布|回应|网传|热搜|新闻|政府|政策|战争|选举|疫情/u;
-
-function fam(level: number): number {
-  return [0, 0.15, 0.45, 0.65, 0.8, 0.9][Math.max(0, Math.min(5, level))] ?? 0.15;
-}
 
 @Injectable()
 export class MomentsAiService {
@@ -848,6 +849,8 @@ export class MomentsAiService {
     const userId = payload.ownerUserId;
     if (payload.authorKind === 'user') {
       // SOC-09 第 3 条：可见角色按熟悉度决定点赞、评论；至少 1 个 L2+ 角色互动。
+      // 点赞和评论分开排（对照表 v3 §4，照抄旧版）：各是一个任务、各自延迟 1–15 分钟、
+      // 各自去重键；最多 4 个角色、评论最多 2 个。
       const ids = payload.visibleCharacterIds;
       const scored: { id: string; level: number }[] = [];
       for (const id of ids) {
@@ -858,60 +861,69 @@ export class MomentsAiService {
         scored.push({ id, level });
       }
       scored.sort((a, b) => b.level - a.level);
-      let any = false;
       // v5：角色自己去点赞评论 = 生态动作「给你的朋友圈点赞、评论」（PRO+、开着生态、角色与动作开关都开）。
       const allowed: typeof scored = [];
       for (const s of scored)
         if (await this.ecology.isActive(userId, s.id, 'moment_interact')) allowed.push(s);
-      scored.splice(0, scored.length, ...allowed);
-      for (const s of scored) {
-        const p = fam(s.level);
-        const comment = Math.random() < p * 0.8;
-        const like = Math.random() < Math.min(1, p + 0.2);
-        if (!comment && !like) continue;
-        any = true;
-        await this.react(
-          {
-            userId,
-            postId: payload.postId,
-            characterId: s.id,
-            action: comment ? 'comment' : 'like',
-            like,
-          },
-          this.delay(2 * 60_000, 80 * 60_000),
-          `moments-react:${payload.postId}:${s.id}`,
-        );
-      }
-      const top = scored[0];
-      if (!any && top && top.level >= 2)
-        await this.react(
-          { userId, postId: payload.postId, characterId: top.id, action: 'comment', like: true },
-          this.delay(5 * 60_000, 60 * 60_000),
-          `moments-react:${payload.postId}:${top.id}`,
-        );
+      let planned = planUserPostReactions(
+        allowed.map((s) => ({
+          characterId: s.id,
+          familiarityLevel: s.level,
+          likeDraw: Math.random(),
+          commentDraw: Math.random(),
+        })),
+      );
+      const top = allowed[0];
+      if (!planned.length && top && top.level >= 2)
+        planned = [{ characterId: top.id, like: true, comment: true }];
+      for (const p of planned) await this.scheduleReaction(userId, payload.postId, p);
       return;
     }
     // 角色动态：只有与作者有关系、且在通讯录里的角色会互动（SOC-08 第 2、3 条）。
+    // 点赞和评论分开排（对照表 v3 §4，照抄旧版）：最多 5 个角色、评论最多 1 个，
+    // 点赞前 2 个几乎总是、其余 45%，评论 35%；延迟 1–15 分钟、各自去重键。
     if (!payload.authorCharacterId) return;
     const { added } = await this.social.relatedContacts(userId, payload.authorCharacterId);
-    for (const a of added) {
+    const ordered = [...added].sort(
+      (a, b) =>
+        (CLOSENESS_WEIGHT[b.relation.closeness] ?? 0.3) -
+        (CLOSENESS_WEIGHT[a.relation.closeness] ?? 0.3),
+    );
+    const candidates: { characterId: string; likeDraw: number; commentDraw: number }[] = [];
+    for (const a of ordered) {
       if (!(await this.ecology.isActive(userId, a.characterId, 'moment_peer'))) continue;
-      const w = CLOSENESS_WEIGHT[a.relation.closeness] ?? 0.3;
-      const comment = Math.random() < w * 0.5;
-      const like = Math.random() < w * 0.8;
-      if (!comment && !like) continue;
-      await this.react(
-        {
-          userId,
-          postId: payload.postId,
-          characterId: a.characterId,
-          action: comment ? 'comment' : 'like',
-          like,
-        },
-        this.delay(10 * 60_000, 95 * 60_000),
-        `moments-react:${payload.postId}:${a.characterId}`,
-      );
+      candidates.push({
+        characterId: a.characterId,
+        likeDraw: Math.random(),
+        commentDraw: Math.random(),
+      });
     }
+    for (const p of planPeerPostReactions(candidates))
+      await this.scheduleReaction(userId, payload.postId, p);
+  }
+
+  /**
+   * 点赞任务与评论任务分开排：延迟各自独立抽（1–15 分钟），去重键也分开，
+   * 点赞任务跑完不影响评论任务、评论任务跑完也不影响点赞任务。
+   * 可见范围仍由 react0 里的 getPostVisibleToCharacter 按用户 + 角色核对。
+   */
+  private async scheduleReaction(
+    userId: string,
+    postId: string,
+    planned: { characterId: string; like: boolean; comment: boolean },
+  ): Promise<void> {
+    if (planned.like)
+      await this.react(
+        { userId, postId, characterId: planned.characterId, action: 'like', like: true },
+        momentsReactDelayMs(Math.random()),
+        `moments-like:${postId}:${planned.characterId}`,
+      );
+    if (planned.comment)
+      await this.react(
+        { userId, postId, characterId: planned.characterId, action: 'comment', like: false },
+        momentsReactDelayMs(Math.random()),
+        `moments-comment:${postId}:${planned.characterId}`,
+      );
   }
 
   async onCommentCreated(payload: {

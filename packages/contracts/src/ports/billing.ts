@@ -12,6 +12,8 @@
 import type { ServicePriceUnit } from '../price-unit.js';
 import type { ModelPurpose } from './model-gateway.js';
 import type { PortResult, Tx } from './common.js';
+import type { MembershipSettings } from '../http/membership.js';
+import type { RechargeOptions } from '../http/billing.js';
 
 /** 计费账户：用户钱包，或平台账户（管理员侧任务）。 */
 export type BillingAccountRef = { kind: 'user'; userId: string } | { kind: 'platform' };
@@ -216,6 +218,17 @@ export interface BillingPaidHistoryPort {
 /** 只读计费端口：任何模块都可以用（例如 ai-runtime 判断要不要安排后台任务）。 */
 export interface BillingReadPort {
   getSpendStatus(userId: string): Promise<SpendStatus>;
+}
+
+/**
+ * 面向用户的计费配置只读端口（小V同学客服简报用）：会员档位配置与充值档位配置。
+ * 一律读数据库现行配置（含代码默认值兜底，与后台「会员与订单/充值」同一来源）；
+ * 客服回答里的会员价、赠送积分、充值档位只准用这里返回的值，不得在客服代码里硬编码。
+ * 模型价格不在此列——模型价格一律走 BillingModelRatePort 读现行生效价目表。
+ */
+export interface BillingCustomerConfigReadPort {
+  getMembershipSettings(): Promise<MembershipSettings>;
+  getRechargeOptions(): Promise<RechargeOptions>;
 }
 
 /**

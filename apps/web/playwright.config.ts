@@ -1,4 +1,11 @@
 import { defineConfig } from '@playwright/test';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// storageState 须按 config 文件位置解析为绝对路径：CI 在仓库根目录跑时，
+// 相对路径会被 playwright 按根目录解，找不到 apps/web/test/e2e 下的文件。
+// 按 config 所在目录拼，根目录与 apps/web 两种跑法都找得到。
+const configDir = dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   testDir: 'test/e2e',
   fullyParallel: false,
@@ -9,6 +16,13 @@ export default defineConfig({
     headless: true,
     viewport: { width: 390, height: 844 },
     trace: 'retain-on-failure',
+    // 首次进入权限引导弹窗（permissions-onboarding）只认本机 localStorage 的
+    // permissions-onboarded 标记：全新测试上下文里标记为空，登录后第一次点击即弹
+    // 模态弹窗、盖住全屏，导致全套 e2e 点击超时。测试上下文统一按“已完成引导”
+    // 预置该标记（与各用例 addInitScript 预置首访标记是同一机制，只是提到配置层，
+    // 避免每个用例重复写、避免新用例重蹈）；生产代码一字未动，真机行为不变。
+    // 往这里加键前先核对：不得干扰首访断言（如 home-screen-guide-seen 的断言）。
+    storageState: join(configDir, 'test/e2e/storage-state.json'),
   },
   webServer: [
     {

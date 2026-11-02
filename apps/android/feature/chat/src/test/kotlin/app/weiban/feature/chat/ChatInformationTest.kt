@@ -134,16 +134,17 @@ class ChatInformationTest {
                     initial,
                     initial.conversations.single(),
                     InformationNavigation({}, { modelsOpened.set(true) }),
-                ) {
-                    val durable = runBlocking { repository.loadSync(owner)!! }
-                    assertTrue(durable.messages.isEmpty())
-                    assertTrue(
-                        durable.conversations
-                            .single()
-                            .state.hidden,
-                    )
-                    removed.set(true)
-                }
+                    onRemoved = {
+                        val durable = runBlocking { repository.loadSync(owner)!! }
+                        assertTrue(durable.messages.isEmpty())
+                        assertTrue(
+                            durable.conversations
+                                .single()
+                                .state.hidden,
+                        )
+                        removed.set(true)
+                    },
+                )
             }
         }
     }

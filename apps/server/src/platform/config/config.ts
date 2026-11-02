@@ -86,6 +86,15 @@ export const EnvSchema = z.object({
   /** 开发调试：日志里打印模型请求全文。生产环境强制关闭（engineering-standards.md 第 6 节）。 */
   DEBUG_LLM_PAYLOAD: booleanFlag,
   /**
+   * 小V同学官方身份（方向 B）：默认开启；设为 0/false 可关掉入口（联系人/会话补齐/回复引擎停用，
+   * 已有会话与消息不删）。公告群发默认关闭，须显式开启。
+   */
+  OFFICIAL_ASSISTANT_ENABLED: z
+    .enum(['0', '1', 'true', 'false'])
+    .optional()
+    .transform((value) => value !== '0' && value !== 'false'),
+  OFFICIAL_ASSISTANT_BROADCAST_ENABLED: booleanFlag,
+  /**
    * 平台每日总上限（按成本价，微元；billing.md 第 7 节第 2 条，紧急刹车）。生产必填（数值由运维定，D-L0-14）；
    * 开发 / 测试不填时用 DEV_PLATFORM_DAILY_CAP_MICROS。
    */
@@ -227,6 +236,11 @@ export interface AppConfig {
     readonly safetyOverdraftLimitMicros: number | null;
     readonly upstreamDiffRatio: number;
   };
+  /** 小V同学官方身份（方向 B）：enabled 关掉则入口消失、已有数据不删；群发默认关。 */
+  readonly officialAssistant: {
+    readonly enabled: boolean;
+    readonly broadcastEnabled: boolean;
+  };
 }
 
 export class ConfigError extends Error {
@@ -330,6 +344,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       platformDailyCapMicros: e.BILLING_PLATFORM_DAILY_CAP_MICROS ?? DEV_PLATFORM_DAILY_CAP_MICROS,
       safetyOverdraftLimitMicros: e.BILLING_SAFETY_OVERDRAFT_LIMIT_MICROS ?? null,
       upstreamDiffRatio: e.BILLING_UPSTREAM_DIFF_RATIO,
+    },
+    officialAssistant: {
+      enabled: e.OFFICIAL_ASSISTANT_ENABLED,
+      broadcastEnabled: e.OFFICIAL_ASSISTANT_BROADCAST_ENABLED,
     },
   };
 }
