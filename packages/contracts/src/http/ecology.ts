@@ -9,17 +9,20 @@
 import { z } from 'zod';
 import { API_PREFIX, Id, Timestamp, defineEndpoint, tolerantEnum } from '../common.js';
 
-// ---------- 动作清单（17 号 §4；新增动作 = 次版本变更，接收端容错） ----------
+// ---------- 动作清单（17 号 §4；新增动作 = 次版本变更，删除动作 = 主版本变更，接收端容错） ----------
+// 2026-11-02 生态动作清理（契约 5.0）：删 10 个 key。share_link / care_weather / play_letter /
+// play_wish / play_focus / play_daily_question / play_reminder 直接删除；greeting /
+// care_anniversary / care_period 并入 message（行为保留、开关改由 message 门控），不再是用户开关。
+// ecology_runs.action_key 是无约束 plain text 列，'greeting' / 'care_anniversary' 作为内部运行 kind
+// 继续记账（见 ecology-counters.ts），响应侧 tolerantEnum 会把旧行读成 'unsupported'。
 
 export const ECOLOGY_ACTION_KEYS = [
   // 4.1 和你聊天
   'message',
-  'greeting',
   'voice',
   'photo',
   'sticker',
   'nudge',
-  'share_link',
   // 4.2 朋友圈
   'moment_post',
   'moment_interact',
@@ -30,19 +33,11 @@ export const ECOLOGY_ACTION_KEYS = [
   'status',
   'signature',
   // 4.4 关心你
-  'care_period',
-  'care_weather',
-  'care_anniversary',
   'care_absence',
   'care_late_night',
   'care_follow_up',
-  // 4.5 小程序与玩法
-  'play_letter',
-  'play_wish',
-  'play_focus',
-  'play_daily_question',
+  // 4.5 小程序与玩法（只剩留口子的照顾宠物）
   'play_pet',
-  'play_reminder',
   // 4.6 群聊
   'group_talk',
 ] as const;

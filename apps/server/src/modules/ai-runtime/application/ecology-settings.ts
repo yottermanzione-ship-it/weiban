@@ -10,6 +10,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, count, eq, gte, inArray, sql } from 'drizzle-orm';
 import {
+  ECOLOGY_ACTION_KEYS,
   EcologyConfig,
   Id,
   UpdateEcologySettings,
@@ -63,6 +64,42 @@ import {
 const DECISION_ESTIMATE = { inputTokens: 1500, outputTokens: 0 };
 const CONFIG_CACHE_MS = 30_000;
 
+/**
+ * 平台配置的容错解析：先剥离 disabledActions 里的未知 key（已删动作的存量值），再严格校验；
+ * 其余配置原样保留。解析仍失败返回 null（调用方回退默认）。绝不能因存量里含已删 key
+ * 就把整个平台配置丢弃（2026-11-02 生态动作清理）。
+ */
+export function parseEcologyConfigLenient(raw: unknown): EcologyConfig | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null;
+  const candidate = raw as Record<string, unknown>;
+  const disabledActions = Array.isArray(candidate.disabledActions)
+    ? candidate.disabledActions.filter(
+        (k): k is EcologyActionKey =>
+          typeof k === 'string' && (ECOLOGY_ACTION_KEYS as readonly string[]).includes(k),
+      )
+    : candidate.disabledActions;
+  const parsed = EcologyConfig.safeParse({ ...candidate, disabledActions });
+  return parsed.success ? parsed.data : null;
+}
+
+/**
+ * 合并用户开关变更并剥离存量未知 key（已删动作）：只保留现行 key，排序后写回，
+ * 避免存量垃圾永久累积。读取时未知 key 本就被忽略（不在动作表里），这里只清写回路径。
+ */
+export function mergeDisabledActions(
+  current: readonly string[],
+  changes: ReadonlyArray<{ key: EcologyActionKey; enabled: boolean }>,
+): string[] {
+  const disabled = new Set(current);
+  for (const a of changes) {
+    if (a.enabled) disabled.delete(a.key);
+    else disabled.add(a.key);
+  }
+  return [...disabled]
+    .filter((k): k is EcologyActionKey => (ECOLOGY_ACTION_KEYS as readonly string[]).includes(k))
+    .sort();
+}
+
 type SettingsRow = typeof ecologySettings.$inferSelect;
 
 @Injectable()
@@ -90,8 +127,8 @@ export class EcologySettingsService {
       .select()
       .from(ecologyConfigTable)
       .where(eq(ecologyConfigTable.id, 'default'));
-    const parsed = row ? EcologyConfig.safeParse(row.config) : null;
-    const config = parsed?.success ? parsed.data : DEFAULT_ECOLOGY_CONFIG;
+    const parsed = row ? parseEcologyConfigLenient(row.config) : null;
+    const config = parsed ?? DEFAULT_ECOLOGY_CONFIG;
     this.cache = { at: now, config };
     return config;
   }
@@ -377,15 +414,11 @@ export class EcologySettingsService {
       throw new AppError('forbidden', '角色生态是 PRO+ 会员专属');
     const now = this.clock.now();
     const current = await this.row(userId);
-    const disabled = new Set(current?.disabledActions ?? []);
-    for (const a of body.actions ?? []) {
-      if (a.enabled) disabled.delete(a.key);
-      else disabled.add(a.key);
-    }
+    const disabled = mergeDisabledActions(current?.disabledActions ?? [], body.actions ?? []);
     const values = {
       enabled: body.enabled ?? current?.enabled ?? false,
       activityLevel: body.activityLevel ?? current?.activityLevel ?? 'often',
-      disabledActions: [...disabled].sort(),
+      disabledActions: disabled,
       introSeen: body.introSeen ?? current?.introSeen ?? false,
       // 用户重新打开总开关时清掉暂停（充值后也会自动清）。
       ...(body.enabled === true ? { pausedReason: null, pausedAt: null } : {}),

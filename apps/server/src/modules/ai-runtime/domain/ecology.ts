@@ -10,7 +10,11 @@ import {
   type EcologyActivityLevel,
   type EcologyConfig,
 } from '@weiban/contracts';
-import { MAIN_UNREPLIED_LIMIT } from './ecology-counters.js';
+import {
+  MAIN_UNREPLIED_LIMIT,
+  type EcologyInternalKind,
+  type EcologyRunKind,
+} from './ecology-counters.js';
 
 /**
  * 执行方式：
@@ -35,6 +39,12 @@ export interface EcologyActionDef {
   summary: string;
 }
 
+/**
+ * 2026-11-02 清理后的动作清单（17 个）：用户开关只到这里为止。greeting / care_anniversary /
+ * care_period 已并入 message（见 ecology-counters.ts 的 EcologyInternalKind 与下面的
+ * INTERNAL_ACTION_INFO），不再出现在这张表里；share_link / care_weather / play_letter /
+ * play_wish / play_focus / play_daily_question / play_reminder 已删除。
+ */
 export const ECOLOGY_ACTIONS: readonly EcologyActionDef[] = [
   {
     key: 'weibo_sync',
@@ -52,14 +62,6 @@ export const ECOLOGY_ACTIONS: readonly EcologyActionDef[] = [
     tool: '主动给对方发私聊消息：分享一件事、接着上次的话题、想到对方了。brief 写清这次想说什么（具体内容，不要空洞问候）。',
     mode: 'decision',
     summary: '给你发了条消息',
-  },
-  {
-    key: 'greeting',
-    group: 'chat',
-    label: '早安 / 晚安',
-    tool: '早上或睡前跟对方道早安 / 晚安（要结合今天的具体情况，不要套话）。只在合适的时间用。',
-    mode: 'decision',
-    summary: '跟你道了早安 / 晚安',
   },
   {
     key: 'voice',
@@ -94,14 +96,6 @@ export const ECOLOGY_ACTIONS: readonly EcologyActionDef[] = [
     tool: '在聊天里「拍一拍」对方，并顺带说一句话（拍一拍不单独发）。',
     mode: 'decision',
     summary: '拍了拍你，还说了句话',
-  },
-  {
-    key: 'share_link',
-    group: 'chat',
-    label: '分享歌曲 / 链接',
-    tool: '把自己作品库里的一首歌 / 一个链接分享给对方，配一句为什么想分享。brief 写想分享的理由。',
-    mode: 'decision',
-    summary: '给你分享了一个链接',
   },
   {
     key: 'moment_post',
@@ -152,31 +146,6 @@ export const ECOLOGY_ACTIONS: readonly EcologyActionDef[] = [
     summary: '改了个性签名',
   },
   {
-    key: 'care_period',
-    group: 'care',
-    label: '经期前后关心',
-    tool: '',
-    mode: 'flow',
-    summary: '关心了你的身体',
-  },
-  {
-    key: 'care_weather',
-    group: 'care',
-    label: '天气变化提醒',
-    tool: '',
-    mode: 'reserved',
-    reservedReason: '暂无天气数据',
-    summary: '提醒你注意天气',
-  },
-  {
-    key: 'care_anniversary',
-    group: 'care',
-    label: '生日、纪念日、约定的日子',
-    tool: '快照里今天有生日 / 纪念日 / 节日 / 约定的日子时，发消息表达心意。brief 写是哪个日子、想说什么。',
-    mode: 'decision',
-    summary: '记得今天是特别的日子',
-  },
-  {
     key: 'care_absence',
     group: 'care',
     label: '很久没说话时问候',
@@ -201,41 +170,6 @@ export const ECOLOGY_ACTIONS: readonly EcologyActionDef[] = [
     summary: '问了问你说过的事',
   },
   {
-    key: 'play_letter',
-    group: 'play',
-    label: '寄一封慢信',
-    tool: '',
-    mode: 'reserved',
-    reservedReason: '即将上线',
-    summary: '给你寄了一封信',
-  },
-  {
-    key: 'play_wish',
-    group: 'play',
-    label: '心愿清单',
-    tool: '提议和对方一起完成一个小心愿（每周最多一次）。',
-    mode: 'decision',
-    summary: '提了一个心愿',
-  },
-  {
-    key: 'play_focus',
-    group: 'play',
-    label: '邀请你一起专注',
-    tool: '',
-    mode: 'reserved',
-    reservedReason: '即将上线',
-    summary: '邀请你一起专注',
-  },
-  {
-    key: 'play_daily_question',
-    group: 'play',
-    label: '出今天的每日一问',
-    tool: '',
-    mode: 'reserved',
-    reservedReason: '即将上线',
-    summary: '出了今天的每日一问',
-  },
-  {
     key: 'play_pet',
     group: 'play',
     label: '照顾宠物',
@@ -245,18 +179,9 @@ export const ECOLOGY_ACTIONS: readonly EcologyActionDef[] = [
     summary: '照顾了宠物',
   },
   {
-    key: 'play_reminder',
-    group: 'play',
-    label: '帮你记下约好的事',
-    tool: '',
-    mode: 'reserved',
-    reservedReason: '即将上线',
-    summary: '帮你记下了约好的事',
-  },
-  {
     key: 'group_talk',
     group: 'group',
-    label: '在群里主动说话',
+    label: '群聊主动话题',
     tool: '在你和对方都在的群里起个话头，其他角色会接话。target 填快照里群的编号；brief 写话题。',
     mode: 'decision',
     summary: '在群里聊了起来',
@@ -269,6 +194,50 @@ const _all: Record<EcologyActionKey, true> = Object.fromEntries(
   ECOLOGY_ACTION_KEYS.map((k) => [k, true]),
 ) as Record<EcologyActionKey, true>;
 void _all;
+
+/**
+ * 并入 message 的内部 kind 的展示信息（只给决策模型题干与运行记录摘要用，不进用户开关）。
+ * 门控一律查 message 开关：调用方用 gateKeyForRunKind() 取门控 key，绝不能把内部 kind
+ * 传给 actionAvailable / isActive（契约里已无此 key，会被判「即将上线」/ 直接走不通）。
+ */
+export const INTERNAL_ACTION_INFO: Record<
+  EcologyInternalKind,
+  { label: string; hint: string; summary: string }
+> = {
+  greeting: {
+    label: '早安 / 晚安',
+    hint: '只在早上或睡前合适。',
+    summary: '跟你道了早安 / 晚安',
+  },
+  care_anniversary: {
+    label: '生日、纪念日、约定的日子',
+    hint: '今天是特别的日子时表达心意。',
+    summary: '记得今天是特别的日子',
+  },
+};
+
+/** 内部 kind 的门控动作：目前都并入 message。普通 key 的门控就是它自己。 */
+export function gateKeyForRunKind(kind: EcologyRunKind): EcologyActionKey {
+  return kind === 'greeting' || kind === 'care_anniversary' ? 'message' : kind;
+}
+
+/** 候选 / 运行的展示 label：先查动作表，再查内部 kind。 */
+export function ecologyRunLabel(kind: EcologyRunKind): string {
+  return (
+    ACTION_DEF.get(kind as EcologyActionKey)?.label ??
+    INTERNAL_ACTION_INFO[kind as EcologyInternalKind]?.label ??
+    kind
+  );
+}
+
+/** 运行记录摘要（碎碎念灰字）：先查动作表，再查内部 kind。 */
+export function ecologyRunSummary(kind: EcologyRunKind): string {
+  return (
+    ACTION_DEF.get(kind as EcologyActionKey)?.summary ??
+    INTERNAL_ACTION_INFO[kind as EcologyInternalKind]?.summary ??
+    kind
+  );
+}
 
 export const LEVEL_LABELS: Record<EcologyActivityLevel, string> = {
   occasional: '偶尔冒泡',
@@ -352,16 +321,12 @@ export const JEV_OPTIONS = ['act', 'defer'] as const;
  */
 export const TEXT_MODEL_ACTIONS: ReadonlySet<EcologyActionKey> = new Set([
   'message',
-  'greeting',
   'voice',
   'photo',
   'sticker',
-  'share_link',
-  'care_anniversary',
   'care_absence',
   'care_late_night',
   'care_follow_up',
-  'play_wish',
   'moment_reply',
   'status',
   'signature',
@@ -369,7 +334,7 @@ export const TEXT_MODEL_ACTIONS: ReadonlySet<EcologyActionKey> = new Set([
 ]);
 
 /** 给 Jev 的每题补充说明（固定程序文字，不含任何用户或角色原文）。 */
-const JEV_HINT: Partial<Record<EcologyActionKey, string>> = {
+const JEV_HINT: Partial<Record<EcologyRunKind, string>> = {
   weibo_sync: '看 state.features.weiboLeadAvailable：有新公开线索时才适合；没有必要就不做。',
   message: '主动发一条有具体内容的私聊消息。对方刚聊过或有未回复消息时克制。',
   greeting: '只在早上或睡前合适。',
@@ -377,7 +342,6 @@ const JEV_HINT: Partial<Record<EcologyActionKey, string>> = {
   photo: '分享角色微博里的一张公开图片。',
   sticker: '发一个表情包。',
   nudge: '拍一拍对方并顺带说一句话。',
-  share_link: '分享自己作品库里的一首歌或链接。',
   moment_post: '把已同步的公开微博转到私人朋友圈。',
   moment_interact: '给对方最近的朋友圈点赞或评论（点赞和评论是分开的两件事，都做也可以）。',
   moment_reply: '回复自己朋友圈下还没回的评论。',
@@ -388,26 +352,25 @@ const JEV_HINT: Partial<Record<EcologyActionKey, string>> = {
   care_absence: '对方很久没来时问候一句，不制造愧疚。',
   care_late_night: '对方深夜还活跃时催对方早点睡。',
   care_follow_up: '跟进对方之前提过的事。',
-  play_wish: '提议一起完成一个小心愿（每周最多一次）。',
   group_talk: '在共同的群里起一个话头。',
 };
 
 /** 每个候选的判定题干：只问做不做，不让 Jev 写内容。 */
-export function jevPrompt(action: EcologyActionKey): string {
-  const label = ACTION_DEF.get(action)?.label ?? action;
+export function jevPrompt(action: EcologyRunKind): string {
+  const label = ecologyRunLabel(action);
   return `陪伴应用里的角色此刻是否适合「${label}」？${JEV_HINT[action] ?? ''}依据 state.summary 的对话现状和 state.features 中的时间、活跃情况、未回复条数、今天已做过的次数独立判断这一项（与其他题互不影响）；state.features.userActivityLevel 是用户主动选择的活跃程度（1 偶尔冒泡、2 时常出现、3 常伴左右、4 形影不离），这次唤醒本身就是按用户期望安排的主动机会：档位越高越应该主动，3、4 档时只要不会明显打扰（深夜、对方刚说要忙或已有多条未回复）就倾向 act；1 档时更克制。act 表示现在适合做；defer 表示会打扰或明显不合时宜。`;
 }
 
 export interface JevVerdict {
-  approved: Array<{ action: EcologyActionKey; confidence: number }>;
+  approved: Array<{ action: EcologyRunKind; confidence: number }>;
   /** 选了 act 但把握不足（不做）。 */
-  lowConfidence: EcologyActionKey[];
+  lowConfidence: EcologyRunKind[];
   /** 明确 defer。 */
-  declined: EcologyActionKey[];
+  declined: EcologyRunKind[];
   /** 返回里不认识的题号个数（忽略，不做任何事）。 */
   unknownIds: number;
   /** 重复题号 / 选项不合法 / 把握值不合法 / 缺答案：一律不做。 */
-  invalid: EcologyActionKey[];
+  invalid: EcologyRunKind[];
 }
 
 /**
@@ -415,7 +378,7 @@ export interface JevVerdict {
  * 陌生 ID 忽略、重复 ID / 缺答案 / 非法值都不做，绝不用概率抽签或规则补批。
  */
 export function interpretJevAnswers(
-  candidates: readonly EcologyActionKey[],
+  candidates: readonly EcologyRunKind[],
   answers: ReadonlyArray<{ questionId: string; choice: string; confidence: number }>,
   threshold = ECOLOGY_JEV_MIN_CONFIDENCE,
 ): JevVerdict {
@@ -464,7 +427,7 @@ export function interpretJevAnswers(
  * 打扰的情形不保底：深夜、已有 3 条以上未回（主线次数，见 ecology-counters）、对方在用应用却没回。
  */
 export function ecologyFallback(
-  candidates: readonly EcologyActionKey[],
+  candidates: readonly EcologyRunKind[],
   answers: ReadonlyArray<{ questionId: string; choice: string; confidence: number }>,
   context: { lateNight: boolean; unansweredCount: number; userActiveInApp30m: boolean },
 ): { action: EcologyActionKey; score: number } | null {
@@ -489,29 +452,27 @@ export function ecologyFallback(
 }
 
 /** 同一轮最多一个「给对方发聊天」的动作（拍一拍也算），避免连发打扰。 */
-const CHAT_FAMILY: ReadonlySet<EcologyActionKey> = new Set([
+const CHAT_FAMILY: ReadonlySet<EcologyRunKind> = new Set([
   'message',
   'greeting',
   'voice',
   'photo',
   'sticker',
   'nudge',
-  'share_link',
   'care_anniversary',
   'care_absence',
   'care_late_night',
   'care_follow_up',
-  'play_wish',
 ]);
 /** 互斥组：组内同一轮只做一个。 */
-const EXCLUSIVE_GROUPS: ReadonlyArray<ReadonlySet<EcologyActionKey>> = [
+const EXCLUSIVE_GROUPS: ReadonlyArray<ReadonlySet<EcologyRunKind>> = [
   CHAT_FAMILY,
   new Set(['status', 'signature']),
   // 微博同步本身会推到私人朋友圈，和「转发已同步素材」重复。
   new Set(['weibo_sync', 'moment_post']),
 ];
 /** 把握相同时的先后（关怀与特别日子优先，拍一拍最后）。 */
-const PRIORITY: readonly EcologyActionKey[] = [
+const PRIORITY: readonly EcologyRunKind[] = [
   'care_anniversary',
   'care_follow_up',
   'care_late_night',
@@ -519,9 +480,7 @@ const PRIORITY: readonly EcologyActionKey[] = [
   'greeting',
   'message',
   'voice',
-  'share_link',
   'photo',
-  'play_wish',
   'sticker',
   'nudge',
   'moment_reply',
@@ -539,18 +498,18 @@ const PRIORITY: readonly EcologyActionKey[] = [
  * 返回被选中的动作与因冲突放弃的动作。
  */
 export function resolveEcologyConflicts(
-  approved: ReadonlyArray<{ action: EcologyActionKey; confidence: number }>,
+  approved: ReadonlyArray<{ action: EcologyRunKind; confidence: number }>,
   max: number,
-): { selected: EcologyActionKey[]; dropped: EcologyActionKey[] } {
-  const rank = (a: EcologyActionKey) => {
+): { selected: EcologyRunKind[]; dropped: EcologyRunKind[] } {
+  const rank = (a: EcologyRunKind) => {
     const i = PRIORITY.indexOf(a);
     return i < 0 ? PRIORITY.length : i;
   };
   const ordered = [...approved].sort(
     (x, y) => y.confidence - x.confidence || rank(x.action) - rank(y.action),
   );
-  const selected: EcologyActionKey[] = [];
-  const dropped: EcologyActionKey[] = [];
+  const selected: EcologyRunKind[] = [];
+  const dropped: EcologyRunKind[] = [];
   for (const { action } of ordered) {
     const clash =
       selected.includes(action) ||

@@ -74,6 +74,9 @@ import {
   detectUserRequest,
   ecoRandom,
   ecologyFallback,
+  ecologyRunLabel,
+  ecologyRunSummary,
+  gateKeyForRunKind,
   interpretJevAnswers,
   jevPrompt,
   microsToPoints,
@@ -88,6 +91,7 @@ import {
   separateLineDoneToday,
   shouldAutoOff,
   type EcologyRunCount,
+  type EcologyRunKind,
 } from '../domain/ecology-counters.js';
 import {
   FOLLOW_UP_DAILY_MAX,
@@ -112,7 +116,6 @@ import { CompanionSettingsService } from './settings.js';
 import { SharedEpisodesService } from './shared-episodes.js';
 import { MomentsAiService } from './moments-ai.js';
 import {
-  PLAY_WISH_PROPOSE_SOURCE,
   ProactiveChargeError,
   ProactiveSchedulerService,
   localParts,
@@ -138,19 +141,17 @@ const RUN_RETENTION_DAYS = 90;
 /** 用户在聊天里让角色做的动作：回复发出后再执行。 */
 const REQUEST_DELAY_MS = 90_000;
 
-const CHAT_ACTIONS: ReadonlySet<EcologyActionKey> = new Set([
+const CHAT_ACTIONS: ReadonlySet<EcologyRunKind> = new Set([
   'message',
   'greeting',
   'voice',
   'photo',
   'sticker',
   'nudge',
-  'share_link',
   'care_anniversary',
   'care_absence',
   'care_late_night',
   'care_follow_up',
-  'play_wish',
 ]);
 
 /** 3.29：每轮最多执行几个动作。候选全部交给 Jev 评估；这里只防一轮刷屏。 */
@@ -162,19 +163,17 @@ const JEV_TIMEOUT_MS = 10_000;
  * 3.29：动作正文由用户自己的场景模型生成；这里只给生成器一句**程序侧**的任务说明。
  * Gate（Jev）不再提供 brief/target/text，避免它越权写正文。
  */
-const ACTION_BRIEF: Partial<Record<EcologyActionKey, string>> = {
+const ACTION_BRIEF: Partial<Record<EcologyRunKind, string>> = {
   message: '主动给对方发一条私聊消息，结合你们最近的聊天和今天的情况，说一件具体的小事。',
   greeting: '跟对方道早安或晚安，结合今天的具体情况，不要用套话。',
   voice: '用一两句口语的话给对方发一条语音消息。',
   sticker: '发一个表情包，配一句很短的话。',
   nudge:
     '主动给对方发一条私聊消息，结合你们最近的聊天和今天的情况，说一件具体的小事；发完会顺手「拍一拍」对方，话里不用提拍一拍。',
-  share_link: '分享一个合适的作品链接，配一句为什么想分享。',
   care_anniversary: '今天是特别的日子，发一条表达心意的消息。',
   care_absence: '对方很久没来聊天，问候一句，不制造愧疚、不追问。',
   care_late_night: '对方深夜还活跃，催对方早点睡。',
   care_follow_up: '跟进对方之前提过的事，问问结果怎么样。',
-  play_wish: '提议和对方一起完成一个小心愿。',
   moment_reply: '回复这条朋友圈评论，语气自然、简短。',
   group_talk: '主动在群里起一个自然的话头，结合最近聊天。',
 };
@@ -205,7 +204,7 @@ interface Snapshot {
    */
   privateMode: boolean;
   conversationId: string;
-  tools: EcologyActionKey[];
+  tools: EcologyRunKind[];
   targets: Map<string, { postId?: string; commentId?: string; conversationId?: string }>;
   hasFollowUps: boolean;
   /** 3.29：这条微博已有可消费的图片；photo 用它走既有聊天媒体路径，不生图。 */
@@ -378,7 +377,7 @@ export class EcologyService {
     patch: {
       status: EcologyRunStatus;
       outcome?: string | null;
-      actionKey?: EcologyActionKey | null;
+      actionKey?: EcologyRunKind | null;
       actionSummary?: string | null;
       modelKey?: string | null;
       chargedMicros?: number;
@@ -511,7 +510,7 @@ export class EcologyService {
         `${verdict.lowConfidence.length ? 'jev_low_confidence' : verdict.invalid.length ? 'jev_invalid' : 'jev_declined'}${trace}`,
         { modelKey: asked.modelKey, chargedMicros: charged },
       );
-    const done: Array<{ action: EcologyActionKey; result: ActionResult }> = [];
+    const done: Array<{ action: EcologyRunKind; result: ActionResult }> = [];
     for (const action of selected) {
       // 每项执行前再核对：生态仍开着、动作没被关掉、平台仍开放。
       const recheck = await this.stillAllowed(userId, action);
@@ -548,10 +547,10 @@ export class EcologyService {
     }
     const succeeded = done.filter((item) => item.result.ok);
     // 成功才说做了：没做成的写「没做成」，不假装成功。
-    const summaries = done.map(({ action, result: r }) => {
-      const def = ACTION_DEF.get(action)!;
-      return r.ok ? def.summary : `${def.label}没做成`;
-    });
+    // 内部 kind（greeting / care_anniversary）不在动作表里，摘要与 label 走内部信息。
+    const summaries = done.map(({ action, result: r }) =>
+      r.ok ? ecologyRunSummary(action) : `${ecologyRunLabel(action)}没做成`,
+    );
     const murmur = await this.generateMurmur(run, snapshot, summaries);
     await this.finish(run.id, {
       status: succeeded.length ? 'done' : 'failed',
@@ -578,7 +577,7 @@ export class EcologyService {
     run: RunRow,
     modelKey: string,
     state: { features: JevState; summary: string },
-    candidates: readonly EcologyActionKey[],
+    candidates: readonly EcologyRunKind[],
   ): Promise<
     | {
         ok: true;
@@ -701,24 +700,33 @@ export class EcologyService {
     return { text, chargedMicros: r.value.chargedMicros };
   }
 
-  /** 执行前复核；返回 null = 可以执行，否则返回不执行的原因。 */
-  private async stillAllowed(userId: string, action: EcologyActionKey): Promise<string | null> {
+  /**
+   * 执行前复核；返回 null = 可以执行，否则返回不执行的原因。
+   * 内部 kind（greeting / care_anniversary）按门控 key（message）查开关与平台可用性，
+   * 绝不能把内部 kind 本身传给 actionAvailable（契约里已无此 key，会被判「即将上线」）。
+   */
+  private async stillAllowed(userId: string, action: EcologyRunKind): Promise<string | null> {
     if (!(await this.settings.isActive(userId))) return 'ecology_inactive';
+    const gateKey = gateKeyForRunKind(action);
     const row = await this.settings.row(userId);
-    if (row?.disabledActions?.includes(action)) return 'action_disabled';
-    if (await this.settings.actionAvailable(action)) return 'action_unavailable';
+    if (row?.disabledActions?.includes(gateKey)) return 'action_disabled';
+    if (await this.settings.actionAvailable(gateKey)) return 'action_unavailable';
     return null;
   }
 
   /** 执行一个动作（复用现有模块）。Gate 只决定做不做，内容参数由程序/用户场景模型决定。 */
   private async perform(
     run: RunRow,
-    action: EcologyActionKey,
+    action: EcologyRunKind,
     snapshot: Snapshot,
   ): Promise<ActionResult> {
     const { userId, characterId } = run;
     // Gate 不写正文；这里只给用户场景模型一句程序侧说明，target 由程序从快照里选。
-    const brief = (ACTION_BRIEF[action] ?? ACTION_DEF.get(action)?.tool ?? '').slice(0, 500);
+    const brief = (
+      ACTION_BRIEF[action] ??
+      ACTION_DEF.get(action as EcologyActionKey)?.tool ??
+      ''
+    ).slice(0, 500);
     const targetWith = (field: 'postId' | 'commentId' | 'conversationId') =>
       [...snapshot.targets.values()].find((target) => target[field]);
     const viaChat = async (extra: 'voice' | 'sticker' | 'link' | null, greeting = false) => {
@@ -785,8 +793,6 @@ export class EcologyService {
       }
       case 'sticker':
         return viaChat('sticker');
-      case 'share_link':
-        return viaChat('link');
       case 'nudge': {
         // 10-28 总经理：拍一拍夹在聊天里，不能只拍不说话。先发一句话（发不出去就整项不做），再顺手拍一拍；
         // 拍一拍没成功不影响这一项（话已经说了）。用户在聊天里点名「拍拍我」走 runRequest，照旧只拍。
@@ -794,21 +800,6 @@ export class EcologyService {
         if (!said.ok) return said;
         await this.proactive.sendNudge(userId, characterId, run.id);
         return said;
-      }
-      case 'play_wish': {
-        const profile = await this.identity.getProfile(userId);
-        const local = localParts(this.clock.now(), profile?.timeZone ?? 'Asia/Shanghai');
-        const r = await this.proactive.sendEcology({
-          userId,
-          characterId,
-          runId: run.id,
-          brief,
-          extras: { extra: null },
-          sourceRef: `${PLAY_WISH_PROPOSE_SOURCE}${characterId}:${mondayOf(local.date)}`,
-        });
-        return r.ok
-          ? { ok: true, chargedMicros: r.chargedMicros }
-          : { ok: false, chargedMicros: 0, reason: r.reason };
       }
       case 'moment_post': {
         const r = await this.momentsAi.postForEcology({ userId, characterId, runId: run.id });
@@ -1221,9 +1212,8 @@ export class EcologyService {
     // 用户 5 分钟内在聊天时不插聊天类动作（忙碌保护，不是计数）。
     const busyBlocked = sinceUserMs < BUSY_MS;
     const lateNight = local.hour >= 23 || local.hour < 4;
-    const tools: EcologyActionKey[] = [];
+    const tools: EcologyRunKind[] = [];
     const stickers = await this.mediaAi.hasStickers(characterId).catch(() => false);
-    const works = (await this.mediaAi.listShareableWorks(characterId).catch(() => [])).length > 0;
     const signatureRecent =
       !!ep?.signatureUpdatedAt && nowMs - ep.signatureUpdatedAt.getTime() < 3 * 86400_000;
     const weiboReady = await this.weibo.offer(userId, characterId).catch(() => false);
@@ -1234,23 +1224,32 @@ export class EcologyService {
     const weiboPhoto = await this.momentsAi
       .weiboPhotoForEcology(userId, characterId)
       .catch(() => null);
-    for (const def of ACTION_DEF.values()) {
-      if (def.mode !== 'decision') continue;
-      if (disabled.has(def.key)) continue;
-      if (await this.settings.actionAvailable(def.key, config)) continue;
-      if (CHAT_ACTIONS.has(def.key)) {
+    // 候选 = 决策模式的动作 + 并入 message 的内部 kind（greeting / care_anniversary）。
+    // 内部 kind 没有自己的开关：用户开关与平台可用性一律按门控 key（message）查，
+    // 绝不能把内部 kind 传给 actionAvailable（契约里已无此 key，会被判「即将上线」）。
+    const candidates: Array<{ key: EcologyRunKind; gateKey: EcologyActionKey }> = [
+      ...[...ACTION_DEF.values()]
+        .filter((def) => def.mode === 'decision')
+        .map((def) => ({ key: def.key as EcologyRunKind, gateKey: def.key })),
+      { key: 'greeting' as const, gateKey: 'message' as const },
+      { key: 'care_anniversary' as const, gateKey: 'message' as const },
+    ];
+    for (const { key, gateKey } of candidates) {
+      if (disabled.has(gateKey)) continue;
+      if (await this.settings.actionAvailable(gateKey, config)) continue;
+      if (CHAT_ACTIONS.has(key)) {
         if (busyBlocked) continue;
-        if (!chatActionCountAllowed(def.key, { mainUnreplied, absenceGreeted })) continue;
+        if (!chatActionCountAllowed(key, { mainUnreplied, absenceGreeted })) continue;
         // 会话压制：用户说过不喜欢，就不进候选（只压说的那一种）。
-        if (def.key === 'sticker' && suppressedForms.has('sticker')) continue;
-        if (def.key === 'voice' && suppressedForms.has('voice')) continue;
-        if (def.key === 'nudge' && suppressedForms.has('nudge')) continue;
+        if (key === 'sticker' && suppressedForms.has('sticker')) continue;
+        if (key === 'voice' && suppressedForms.has('voice')) continue;
+        if (key === 'nudge' && suppressedForms.has('nudge')) continue;
       }
       // H2：私密模式只开放文字与图片（不发语音），且仅单角色（不去群里说话）。
-      if (privateMode && (def.key === 'voice' || def.key === 'group_talk')) continue;
-      if (TEXT_MODEL_ACTIONS.has(def.key) && !textReady) continue;
+      if (privateMode && (key === 'voice' || key === 'group_talk')) continue;
+      if (TEXT_MODEL_ACTIONS.has(gateKey) && !textReady) continue;
       const ok = await (async () => {
-        switch (def.key) {
+        switch (key) {
           case 'weibo_sync':
             return weiboReady;
           case 'moment_post':
@@ -1280,8 +1279,6 @@ export class EcologyService {
             return followUpDue !== null;
           case 'sticker':
             return stickers;
-          case 'share_link':
-            return works;
           case 'nudge':
             // 约每天 1 次、看场合、绝不在每天第一条自动拍：今天已拍过或今天还没动过时不进候选。
             return !nudgeDoneToday && actedToday;
@@ -1299,7 +1296,7 @@ export class EcologyService {
             return true;
         }
       })();
-      if (ok) tools.push(def.key);
+      if (ok) tools.push(key);
     }
     const features: JevState = {
       // 10-27：用户在生态设置里选的活跃程度（1 偶尔冒泡 … 4 形影不离），Jev 据此决定主动的力度。
@@ -1806,7 +1803,7 @@ export function jevSummary(input: {
  */
 export function jevTrace(
   verdict: ReturnType<typeof interpretJevAnswers>,
-  dropped: readonly EcologyActionKey[],
+  dropped: readonly EcologyRunKind[],
 ): string {
   const parts = [
     verdict.approved.length
@@ -1819,13 +1816,6 @@ export function jevTrace(
     verdict.unknownIds ? `unk=${verdict.unknownIds}` : '',
   ].filter(Boolean);
   return parts.length ? ` | ${parts.join(' ')}` : '';
-}
-
-function mondayOf(localDate: string): string {
-  const d = new Date(`${localDate}T00:00:00Z`);
-  const dow = (d.getUTCDay() + 6) % 7;
-  d.setUTCDate(d.getUTCDate() - dow);
-  return d.toISOString().slice(0, 10);
 }
 
 function decodeCursor(raw?: string): { at: Date; id: string } | null {
