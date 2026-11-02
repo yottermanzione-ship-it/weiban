@@ -14,6 +14,7 @@ export interface StickerLabelRow {
  * 标签行拼成 tags：主标签 + 五项完整意思（完整描述、图里原文字、字面意思、使用意思、适合场合）。
  * 「不适合场合」不拼入：否定语境里的词（如「不适合安慰」里的「安慰」）不能反过来当肯定含义匹配。
  * 图里无文字时打标为「无」，不是标签，丢掉；没有标签行或拼不出任何文本时返回 undefined（退回旧逻辑）。
+ * 主标签固定在第一位：ai-runtime 按 tags[0] 读情绪（T-20261103d，契约只有 tags 数组，不另加字段）。
  */
 export function buildStickerLabelTags(
   label: StickerLabelRow | null | undefined,

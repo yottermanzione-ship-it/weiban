@@ -3,7 +3,8 @@
  * 说明见 docs/ai/media-understanding.md。
  *
  * 规则（PRD 原文见任务卡）：
- * - MED-01 第 4 条：每角色每 10 条气泡中表情包不超过 2 个；只用该角色可用的库内表情（素材库指定子集）。
+ * - MED-01 第 4 条：只用该角色可用的库内表情（素材库指定子集）。频率：原文每 10 条气泡不超过 2 个，
+ *   T-20261103d 起放宽为软上限 3 个；带不带、带什么情绪由写回复的聊天模型自己决定（见 planExtras）。
  * - MED-03：角色主动发语音不超过该角色消息的 10%；用户要求时照做；P-45「不方便」静默期内不发；
  *   语音服务未开通时不发语音，用户语音标记「无法识别」，消息保留；只从转出的文字感知情绪。
  *   音色只用音色库（非克隆）：陪伴设置 voiceId → 预设角色默认音色；都没有就不发语音。
@@ -56,17 +57,28 @@ import {
 import { MODEL_GATEWAY_MEDIA_PORT } from '../../model-access/index.js';
 import { CharacterImageService } from './character-image.js';
 import { PlannerService, type PlanBatchRequest, type PlanResult } from './planner.js';
-import { replyTone, selectReplySticker, voiceSpacingOk } from '../domain/reply-media-candidates.js';
+import {
+  availableStickerMoods,
+  pickStickerForMood,
+  replyTone,
+  textMoods,
+  voiceSpacingOk,
+  type StickerMood,
+} from '../domain/reply-media-candidates.js';
+import { stickerPromptText } from '../domain/sticker-marker.js';
 import { detectFormSuppressions } from '../domain/chat-form-suppression.js';
 
 /** P-45 静默查询（契约 UserQuietStatePort，由 QuietStateService 提供，T-072）。 */
 export const AI_USER_QUIET_STATE = Symbol('weiban.ai-runtime.user-quiet-state');
 
-/** MED-01 第 4 条：每 10 条气泡最多 2 个表情包。 */
+/**
+ * 表情包软上限（安全阀，不是目标）：每 10 条角色气泡最多 3 个。
+ * T-20261103d 按任务卡从 MED-01 原文的 2 个放宽到 3 个（PRD 待同步，见交接）。
+ */
 export const STICKER_WINDOW = 10;
-export const STICKER_MAX_IN_WINDOW = 2;
-/** 规则版下每次回复附表情包的概率（在上限之内）；T-090 起作为决策层 reply_form 的规则版与退路。 */
-const STICKER_CHANCE = 0.28;
+export const STICKER_MAX_IN_WINDOW = 3;
+/** 保底：连续这么多条角色消息没带表情包，提示词里提醒一句「可以配个表情」（不是服务端硬塞）。 */
+export const STICKER_NUDGE_AFTER = 9;
 /** MED-03 第 2 条：角色主动发语音不超过该角色消息的 10%。 */
 export const VOICE_MAX_RATIO = 0.1;
 /** 规则版：上限内主动发语音的概率（T-090 起作为决策层 reply_form 的规则版与退路）。 */
@@ -140,6 +152,78 @@ function seededChance(seed: string): number {
   let h = 2166136261;
   for (const c of seed) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
   return ((h >>> 0) % 10000) / 10000;
+}
+
+/** 该会话最近的角色消息（日常范围、未撤回），升序。 */
+function characterMessages(history: readonly Message[]): Message[] {
+  return history.filter(
+    (m) => m.senderKind === 'character' && m.status === 'normal' && m.scope === 'normal',
+  );
+}
+
+/**
+ * 会话压制用的用户原话：最近 30 条用户原话 + 本轮原话（本轮原话在最后，后说的覆盖先说的）。
+ * 用户在聊天里明确说过不喜欢某一种形式，就不发那一种；后来明确要了就恢复。
+ */
+function recentUserTexts(history: readonly Message[], userText: string): string[] {
+  return [
+    ...history
+      .filter((m) => m.senderKind === 'user')
+      .slice(-30)
+      .map((m) =>
+        m.content?.type === 'text'
+          ? m.content.text
+          : m.content?.type === 'voice'
+            ? (m.content.transcript ?? '')
+            : '',
+      ),
+    userText,
+  ];
+}
+
+/**
+ * 表情包硬规则（提示词阶段与发送阶段共用同一套，T-20261103d）：
+ * - 用户说过不要表情包就不发（suppressedForms）；
+ * - 不连发：上一条角色消息是表情包，这轮不配；
+ * - 软上限：每 10 条角色气泡最多 3 个；
+ * - 20 条内不重复同一张（excludedIds）；
+ * - sinceLast：上次表情包之后连续几条角色消息没带（保底提醒用，数到 STICKER_NUDGE_AFTER 为止）。
+ * 私密 / 成人、涉及健康、树洞、关怀由调用方先挡掉。
+ */
+function stickerRoom(history: readonly Message[], userText: string) {
+  const mine = characterMessages(history);
+  const suppressed = detectFormSuppressions(recentUserTexts(history, userText)).suppressed.has(
+    'sticker',
+  );
+  /** 本轮要发 contentCount 条内容（含表情本身之前的条数）时，表情还剩几个名额。 */
+  const quota = (contentCount: number) => {
+    const previousCount = Math.max(0, STICKER_WINDOW - contentCount - 1);
+    const previous = previousCount ? mine.slice(-previousCount) : [];
+    return STICKER_MAX_IN_WINDOW - previous.filter((m) => m.content?.type === 'sticker').length;
+  };
+  const excludedIds = new Set(
+    mine
+      .filter((m) => m.content?.type === 'sticker')
+      .slice(-20)
+      .flatMap((m) => (m.content?.type === 'sticker' ? [m.content.stickerId] : [])),
+  );
+  let sinceLast = 0;
+  for (let i = mine.length - 1; i >= 0 && sinceLast < STICKER_NUDGE_AFTER; i--) {
+    if (mine[i]!.content?.type === 'sticker') break;
+    sinceLast++;
+  }
+  return {
+    suppressed,
+    excludedIds,
+    sinceLast,
+    quota,
+    /** 本轮 contentCount 条内容之后还能不能再附一个表情。 */
+    open: (contentCount: number) =>
+      !suppressed &&
+      contentCount < 6 &&
+      mine.at(-1)?.content?.type !== 'sticker' &&
+      Math.min(quota(contentCount), quota(1)) > 0,
+  };
 }
 
 @Injectable()
@@ -396,10 +480,38 @@ export class MediaAiService {
   // ---------------------------------------------------------------------------
 
   /**
+   * T-20261103d：这轮回复的提示词里要不要告诉角色「可以配表情包」，要的话返回说明文字（否则空串）。
+   * 与 planExtras 同一套硬规则（stickerRoom）：用户说过不要、上一条就是表情、10 条里已有 3 个、
+   * 私密 / 成人、涉及健康、树洞时都不给；只列该角色这轮挑得出图的情绪，严肃场景只列安慰；
+   * 连续 9 条角色消息没带表情且这轮不严肃时，加一句提醒（保底，不是服务端硬塞）。
+   */
+  async stickerPrompt(input: {
+    ctx: MediaCallContext;
+    history: readonly Message[];
+    userText: string;
+    quiet?: boolean;
+    sensitive?: boolean;
+  }): Promise<string> {
+    if (input.quiet || input.sensitive || input.ctx.modelRole === 'adult') return '';
+    const room = stickerRoom(input.history, input.userText);
+    if (!room.open(1)) return '';
+    const list = await this.assets.listStickersForCharacter(input.ctx.characterId).catch(() => []);
+    const serious = replyTone(input.userText, '') === 'serious';
+    const moods = availableStickerMoods(list, room.excludedIds, serious);
+    return stickerPromptText({
+      moods,
+      serious,
+      nudge: !serious && room.sinceLast >= STICKER_NUDGE_AFTER,
+    });
+  }
+
+  /**
    * 在文字回复确定后决定是否改发语音、附表情包或作品链接。返回完整的待发内容列表；不改变时返回 null。
    * history：该会话最近的消息（升序）。只在日常范围、非关怀时调用。
    * T-20261103c：生态主动消息也走这里（path = 'proactive'，userText 为空），形式判断与聊天回复同一套，
    * 只是决策层与语音合成按后台消耗计费（countAsBackground + ecologyTask），语音费用经 onMediaCharged 报回。
+   * T-20261103d：表情包由写回复的模型自己决定（stickerMood，来自回复里的「[表情:…]」标记）：
+   * 没有标记就不发；有标记时只过硬规则、按情绪挑图，不再有关键词闸门、抽签和决策层审批。
    */
   async planExtras(input: {
     ctx: MediaCallContext;
@@ -419,33 +531,21 @@ export class MediaAiService {
     path?: 'reply' | 'proactive';
     /** 语音合成实际扣费（微元）；主动消息要把它并进本次总费用。 */
     onMediaCharged?: (chargedMicros: number) => void;
+    /** 模型在回复里选的表情情绪（已从正文剥掉）；没有 = 这轮不发表情包。 */
+    stickerMood?: StickerMood | null;
   }): Promise<MessageContent[] | null> {
     const path = input.path ?? 'reply';
     const { ctx, bubbles } = input;
     if (input.sensitive || ctx.modelRole === 'adult') return null;
     const joined = bubbles.join('，');
-    const mine = input.history.filter(
-      (m) => m.senderKind === 'character' && m.status === 'normal' && m.scope === 'normal',
-    );
+    const mine = characterMessages(input.history);
     const seed = `${input.triggerId}:${ctx.characterId}`;
     const requested = VOICE_REQUEST.test(input.userText);
     const recent = mine.slice(-100);
     // 会话压制：用户在聊天里明确说过不喜欢某一种形式，就不发那一种；后来明确要了就恢复。
-    // 最近的用户原话 + 本轮原话一起算（本轮原话在最后，后说的覆盖先说的）。
-    const userTexts = [
-      ...input.history
-        .filter((m) => m.senderKind === 'user')
-        .slice(-30)
-        .map((m) =>
-          m.content?.type === 'text'
-            ? m.content.text
-            : m.content?.type === 'voice'
-              ? (m.content.transcript ?? '')
-              : '',
-        ),
-      input.userText,
-    ];
-    const suppressedForms = detectFormSuppressions(userTexts).suppressed;
+    const suppressedForms = detectFormSuppressions(
+      recentUserTexts(input.history, input.userText),
+    ).suppressed;
     const voiceCount = recent.filter((m) => m.content?.type === 'voice').length;
     // 语音会替代本轮所有文字气泡，不能用尚未发送的文字气泡虚增分母。
     const ratioOk = (voiceCount + 1) / (recent.length + 1) <= VOICE_MAX_RATIO;
@@ -475,41 +575,6 @@ export class MediaAiService {
           ctx.defaultVoiceId,
         ).catch(() => null);
     }
-    // 20 条内不重复同一张表情：排除最近 20 条角色消息里发过的图。
-    const recentStickers = mine.filter((m) => m.content?.type === 'sticker').slice(-20);
-    const excludedIds = new Set(
-      recentStickers.flatMap((m) => (m.content?.type === 'sticker' ? [m.content.stickerId] : [])),
-    );
-    // 保底：最近 9 条角色回复都没带表情包、且本轮有合义候选时，直接带上（不再等决策层抽签）。
-    let trailingTextOnly = 0;
-    for (let i = mine.length - 1; i >= 0 && trailingTextOnly < 9; i--) {
-      if (mine[i]!.content?.type === 'sticker') break;
-      trailingTextOnly++;
-    }
-    const stickerFloor = trailingTextOnly >= 9;
-    const stickerQuota = (contentCount: number) => {
-      const previousCount = Math.max(0, STICKER_WINDOW - contentCount - 1);
-      const previous = previousCount ? mine.slice(-previousCount) : [];
-      return STICKER_MAX_IN_WINDOW - previous.filter((m) => m.content?.type === 'sticker').length;
-    };
-    const canSticker =
-      !input.quiet &&
-      !suppressedForms.has('sticker') &&
-      bubbles.length < 6 &&
-      mine.at(-1)?.content?.type !== 'sticker' &&
-      Math.min(stickerQuota(bubbles.length), stickerQuota(1)) > 0;
-    const candidate = canSticker
-      ? selectReplySticker(
-          await this.assets.listStickersForCharacter(ctx.characterId).catch(() => []),
-          joined,
-          input.userText,
-          seededChance(`pick:${seed}`),
-          excludedIds,
-        )
-      : null;
-    // 保底：最近 9 条角色回复都没带表情包时，规则版与保守版都倾向保留候选
-    // （决策层仍可按场景否决；判定调用失败时不兜底，见 media-ai-batch.test.ts）。
-    const floorSticker = !!candidate && stickerFloor;
     const lastUser = [...input.history].reverse().find((m) => m.senderKind === 'user');
     const baseFeatures = {
       userMsgLength: [...input.userText].length,
@@ -535,28 +600,6 @@ export class MediaAiService {
           quotaLeft: {
             voice: Math.max(0, Math.floor((recent.length + 1) * VOICE_MAX_RATIO) - voiceCount),
           },
-        },
-      });
-    }
-    if (candidate) {
-      const ruleSticker = floorSticker || seededChance(`sticker:${seed}`) < STICKER_CHANCE;
-      questions.push({
-        questionId: 'sticker',
-        options: ['no_sticker', 'keep_sticker'],
-        ruleChoice: ruleSticker ? 'keep_sticker' : 'no_sticker',
-        ruleReason: floorSticker
-          ? '保底：最近多条回复都没带表情包'
-          : ruleSticker
-            ? '规则版附合义表情'
-            : '规则版不附表情',
-        conservative: floorSticker ? 'keep_sticker' : 'no_sticker',
-        question:
-          '是否附带已匹配的表情？stickerMeaning是候选含义，replyTone是回复语气。仅在相符且不显得轻浮时选keep_sticker，否则no_sticker；允许与语音同时批准。',
-        features: {
-          ...baseFeatures,
-          stickerMeaning: candidate.meaning,
-          candidateCount: 1,
-          quotaLeft: { sticker: Math.min(stickerQuota(bubbles.length), stickerQuota(1)) },
         },
       });
     }
@@ -596,30 +639,37 @@ export class MediaAiService {
         changed = true;
       }
     }
-    if (
-      candidate &&
-      votes.sticker?.choice === 'keep_sticker' &&
-      contents.length < 6 &&
-      stickerQuota(contents.length) > 0
-    ) {
-      // 等待决策期间素材可能被停用；核对仍是同一候选，不临时换另一张。
-      const stillAvailable = (
-        await this.assets.listStickersForCharacter(ctx.characterId).catch(() => [])
-      ).some(
-        (s) =>
-          s.stickerId === candidate.sticker.stickerId &&
-          s.mediaId === candidate.sticker.mediaId &&
-          s.description === candidate.sticker.description,
-      );
-      if (stillAvailable) {
-        contents.push({
-          type: 'sticker',
-          source: 'library',
-          stickerId: candidate.sticker.stickerId,
-          mediaId: candidate.sticker.mediaId,
-          description: candidate.sticker.description.slice(0, 40) || null,
-        });
-        changed = true;
+    // T-20261103d：表情包——模型写了「[表情:…]」才发；只过硬规则（stickerRoom：用户说过不要、不连发、
+    // 软上限、20 条内不重复；树洞不发；严肃场景只允许安慰），按情绪挑图。决策层期间（语音判断）素材
+    // 可能被停用，所以在这里才读素材列表。
+    const mood = input.stickerMood ?? null;
+    if (mood && !input.quiet) {
+      const room = stickerRoom(input.history, input.userText);
+      const serious = replyTone(input.userText, joined) === 'serious';
+      if (
+        (!serious || mood === 'comfort') &&
+        room.open(bubbles.length) &&
+        contents.length < 6 &&
+        room.quota(contents.length) > 0
+      ) {
+        const sticker = pickStickerForMood(
+          await this.assets.listStickersForCharacter(ctx.characterId).catch(() => []),
+          mood,
+          `${joined}\n${input.userText}`,
+          seededChance(`pick:${seed}`),
+          room.excludedIds,
+          serious,
+        );
+        if (sticker) {
+          contents.push({
+            type: 'sticker',
+            source: 'library',
+            stickerId: sticker.stickerId,
+            mediaId: sticker.mediaId,
+            description: sticker.description.slice(0, 40) || null,
+          });
+          changed = true;
+        }
       }
     }
     return changed ? contents : null;
@@ -753,10 +803,20 @@ export class MediaAiService {
     reply: string,
     seed: string,
   ): Promise<MessageContent | null> {
+    // 生态「发表情包」动作（不在 T-20261103d 范围内）：情绪仍从写好的那句话里按关键词取，再按情绪挑图。
     const list = await this.assets.listStickersForCharacter(characterId);
-    const candidate = selectReplySticker(list, reply, '', seededChance(`pick:${seed}`));
-    if (!candidate) return null;
-    const { sticker } = candidate;
+    const serious = replyTone('', reply) === 'serious';
+    const mood = textMoods(reply).find((m) => !serious || m === 'comfort');
+    if (!mood) return null;
+    const sticker = pickStickerForMood(
+      list,
+      mood,
+      reply,
+      seededChance(`pick:${seed}`),
+      new Set(),
+      serious,
+    );
+    if (!sticker) return null;
     return {
       type: 'sticker',
       stickerId: sticker.stickerId,

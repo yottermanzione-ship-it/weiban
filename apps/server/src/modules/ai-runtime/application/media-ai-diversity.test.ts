@@ -1,5 +1,6 @@
 /**
- * 聊天多样性护栏（对照表 v3、草案 §1）：会话压制、语音护栏、表情包 20 条去重与保底偏置。
+ * 聊天多样性护栏（对照表 v3、草案 §1）：会话压制、语音护栏、表情包 20 条去重与保底提醒。
+ * T-20261103d：表情包由模型标记的情绪决定（stickerMood），决策层只剩语音一个问题。
  * 只用桩，不发起真实模型调用。
  */
 import 'reflect-metadata';
@@ -63,7 +64,7 @@ function setup() {
       req.questions.map((q) => [
         q.questionId,
         {
-          choice: q.questionId === 'voice' ? 'voice' : 'keep_sticker',
+          choice: 'voice',
           confidence: 0.9,
           reason: 'test',
           implementation: 'jev',
@@ -113,7 +114,12 @@ function setup() {
   return { service, decideBatch, listStickersForCharacter };
 }
 
-function baseInput(history: Message[], userText = '今天有好事', bubbles = ['哈哈，好开心']) {
+function baseInput(
+  history: Message[],
+  userText = '今天有好事',
+  bubbles = ['哈哈，好开心'],
+  stickerMood: 'happy' | null = 'happy',
+) {
   return {
     ctx: { userId: 'user', characterId: 'character', conversationId: 'conversation' },
     triggerId: 'turn',
@@ -121,35 +127,36 @@ function baseInput(history: Message[], userText = '今天有好事', bubbles = [
     userText,
     history,
     voiceId: 'selected-voice',
+    stickerMood,
   };
 }
 
 const tenTexts = () => Array.from({ length: 10 }, (_, i) => characterMessage(i));
+const questions = (s: ReturnType<typeof setup>) =>
+  s.decideBatch.mock.calls[0]?.[0].questions.map((q) => q.questionId) ?? [];
 
 describe('会话压制', () => {
-  it('用户说「别发表情包了」：不问表情包，只问语音', async () => {
+  it('用户说「别发表情包了」：模型标了表情也不发，语音照常问', async () => {
     const s = setup();
     const history = [userMessage(0, '别发表情包了'), ...tenTexts()];
     const result = await s.service.planExtras(baseInput(history));
-    expect(s.decideBatch.mock.calls[0]![0].questions.map((q) => q.questionId)).toEqual(['voice']);
+    expect(questions(s)).toEqual(['voice']);
     expect(result?.map((c) => c.type)).toEqual(['voice']);
   });
 
   it('用户后来明确要表情包：压制恢复', async () => {
     const s = setup();
     const history = [userMessage(0, '别发表情包了'), ...tenTexts(), userMessage(99, '发个表情包')];
-    await s.service.planExtras(baseInput(history));
-    expect(s.decideBatch.mock.calls[0]![0].questions.map((q) => q.questionId)).toEqual([
-      'voice',
-      'sticker',
-    ]);
+    const result = await s.service.planExtras(baseInput(history));
+    expect(result?.map((c) => c.type)).toEqual(['voice', 'sticker']);
   });
 
-  it('用户说「不要发语音」：不问语音', async () => {
+  it('用户说「不要发语音」：不问语音，表情照模型标记发', async () => {
     const s = setup();
     const history = [userMessage(0, '不要发语音'), ...tenTexts()];
-    await s.service.planExtras(baseInput(history));
-    expect(s.decideBatch.mock.calls[0]![0].questions.map((q) => q.questionId)).toEqual(['sticker']);
+    const result = await s.service.planExtras(baseInput(history));
+    expect(s.decideBatch).not.toHaveBeenCalled();
+    expect(result?.map((c) => c.type)).toEqual(['text', 'sticker']);
   });
 });
 
@@ -160,7 +167,7 @@ describe('语音护栏', () => {
       characterMessage(i, i === 15 || i === 25 ? 'voice' : 'text'),
     );
     await s.service.planExtras(baseInput(history));
-    expect(s.decideBatch.mock.calls[0]![0].questions.map((q) => q.questionId)).toEqual(['sticker']);
+    expect(s.decideBatch).not.toHaveBeenCalled();
   });
 
   it('上次语音后不足 5 条文字：不连发语音', async () => {
@@ -173,17 +180,17 @@ describe('语音护栏', () => {
       characterMessage(28),
     ];
     await s.service.planExtras(baseInput(history));
-    expect(s.decideBatch.mock.calls[0]![0].questions.map((q) => q.questionId)).toEqual(['sticker']);
+    expect(s.decideBatch).not.toHaveBeenCalled();
   });
 
   it('主动穿插只挑 80 字以内；用户明确要语音时放宽到 120 字硬上限', async () => {
     const s = setup();
     const bubbles90 = ['啊'.repeat(90)];
-    const result = await s.service.planExtras(baseInput(tenTexts(), '今天有好事', bubbles90));
+    const result = await s.service.planExtras(baseInput(tenTexts(), '今天有好事', bubbles90, null));
     expect(result).toBeNull();
     expect(s.decideBatch).not.toHaveBeenCalled();
     const s2 = setup();
-    const requested = await s2.service.planExtras(baseInput([], '发条语音', bubbles90));
+    const requested = await s2.service.planExtras(baseInput([], '发条语音', bubbles90, null));
     // 明确要语音时不问决策层，直接合成。
     expect(s2.decideBatch).not.toHaveBeenCalled();
     expect(requested?.map((c) => c.type)).toEqual(['voice']);
@@ -202,18 +209,18 @@ describe('表情包去重与保底', () => {
       description: '开心哈哈大笑',
     };
     const result = await s.service.planExtras(baseInput(history));
-    // 唯一合义的图在 20 条内发过：不选它；语音仍可正常问。
+    // 唯一同情绪的图在 20 条内发过：不选它；语音仍可正常问。
     expect(result?.map((c) => c.type)).toEqual(['voice']);
-    expect(s.decideBatch.mock.calls[0]![0].questions.map((q) => q.questionId)).toEqual(['voice']);
+    expect(questions(s)).toEqual(['voice']);
   });
 
-  it('保底：最近 9 条都没带表情包时，规则版与保守版都倾向保留', async () => {
+  it('保底只在提示词里提醒，不由服务端硬塞：连续多条没带、模型也没标时不发', async () => {
     const s = setup();
-    await s.service.planExtras(baseInput(tenTexts()));
-    const stickerQ = s.decideBatch.mock.calls[0]![0].questions.find(
-      (q) => q.questionId === 'sticker',
+    const history = Array.from({ length: 30 }, (_, i) => characterMessage(i));
+    const result = await s.service.planExtras(baseInput(history, '今天有好事', ['哈哈'], null));
+    expect(result?.map((c) => c.type)).toEqual(['voice']);
+    expect(await s.service.stickerPrompt({ ...baseInput(history), history })).toContain(
+      '你已经连着好几条没配表情了',
     );
-    expect(stickerQ?.ruleChoice).toBe('keep_sticker');
-    expect(stickerQ?.conservative).toBe('keep_sticker');
   });
 });

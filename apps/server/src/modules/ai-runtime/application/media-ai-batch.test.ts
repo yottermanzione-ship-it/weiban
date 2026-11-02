@@ -3,10 +3,20 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Message, ModelGatewayMediaPort } from '@weiban/contracts';
 import { MediaAiService } from './media-ai.js';
 import type { PlanBatchRequest, PlanResult } from './planner.js';
-import { replyTone, selectReplySticker } from '../domain/reply-media-candidates.js';
 
-const happy = { stickerId: 'happy', mediaId: 'happy-media', description: '开心哈哈大笑' };
-const comfort = { stickerId: 'comfort', mediaId: 'comfort-media', description: '抱抱安慰' };
+/** 回填后的标签：tags[0] 是主标签。 */
+const happy = {
+  stickerId: 'happy',
+  mediaId: 'happy-media',
+  description: '表情 1',
+  tags: ['happy', '小猫捧腹大笑', '适合聊到开心事时'],
+};
+const comfort = {
+  stickerId: 'comfort',
+  mediaId: 'comfort-media',
+  description: '表情 2',
+  tags: ['comfort', '小熊抱抱', '适合对方难过时安慰'],
+};
 const textMessage = (i: number): Message => ({
   messageId: `m${i}`,
   conversationId: 'conversation',
@@ -21,6 +31,15 @@ const textMessage = (i: number): Message => ({
   createdAt: new Date(i).toISOString(),
   recalledAt: null,
 });
+const stickerAt = (list: Message[], i: number, s: typeof happy = comfort) => {
+  list[i]!.content = {
+    type: 'sticker',
+    source: 'library',
+    stickerId: s.stickerId,
+    mediaId: s.mediaId,
+    description: s.description,
+  };
+};
 const history = () => Array.from({ length: 10 }, (_, i) => textMessage(i));
 const input = () => ({
   ctx: { userId: 'user', characterId: 'character', conversationId: 'conversation' },
@@ -29,6 +48,7 @@ const input = () => ({
   userText: '今天有好事',
   history: history(),
   voiceId: 'selected-voice',
+  stickerMood: 'happy' as const,
 });
 
 function setup() {
@@ -44,7 +64,7 @@ function setup() {
       modelKey: 'selected-tts',
     },
   }));
-  const listStickersForCharacter = vi.fn(async () => [happy]);
+  const listStickersForCharacter = vi.fn(async () => [happy, comfort]);
   const getVoice = vi.fn(async () => ({ enabled: true }));
   const getInconvenientUntil = vi.fn(async (): Promise<string | null> => null);
   const decideBatch = vi.fn(async (req: PlanBatchRequest): Promise<Record<string, PlanResult>> =>
@@ -52,7 +72,7 @@ function setup() {
       req.questions.map((q) => [
         q.questionId,
         {
-          choice: q.questionId === 'voice' ? 'voice' : 'keep_sticker',
+          choice: 'voice',
           confidence: 0.9,
           reason: 'test',
           implementation: 'jev',
@@ -99,37 +119,106 @@ function setup() {
   };
 }
 
-describe('reply candidates without random substitutes', () => {
-  it('requires a known matching meaning, not a matching character or a random fallback', () => {
-    expect(selectReplySticker([happy], '我在看一本书', '', 0.1)).toBeNull();
-    expect(
-      selectReplySticker([{ ...happy, description: '开心鸭 038' }], '开心', '', 0.1),
-    ).toBeNull();
-    expect(selectReplySticker([happy], '哈哈，开心', '', 0.1)?.meaning).toBe('happy');
+describe('T-20261103d 表情包由模型标记决定：没有关键词闸门、抽签和决策层审批', () => {
+  it('模型标了情绪就挑对应情绪的图，决策层只问语音、不再问表情', async () => {
+    const s = setup();
+    s.isServiceEnabled.mockResolvedValue(false);
+    const result = await s.service.planExtras(input());
+    expect(result).toEqual([
+      { type: 'text', text: '哈哈，好开心' },
+      expect.objectContaining({ type: 'sticker', stickerId: 'happy', mediaId: 'happy-media' }),
+    ]);
+    expect(s.decideBatch).not.toHaveBeenCalled();
   });
-  it('does not interpret negated happiness or a serious topic as laughter', () => {
-    expect(replyTone('我失业了很难过', '哈哈')).toBe('serious');
-    expect(selectReplySticker([happy], '今天不开心', '', 0.1)).toBeNull();
-    expect(
-      selectReplySticker([happy, comfort], '抱抱，我陪着你', '我失业了很难过', 0.1)?.sticker,
-    ).toEqual(comfort);
+  it('没有标记就不发，哪怕回复里写着「哈哈、开心」', async () => {
+    const s = setup();
+    s.isServiceEnabled.mockResolvedValue(false);
+    expect(await s.service.planExtras({ ...input(), stickerMood: null })).toBeNull();
+    expect(s.listStickersForCharacter).not.toHaveBeenCalled();
   });
-  it('never repeats an excluded sticker or makes up a meaning for an unlabelled series', () => {
-    expect(selectReplySticker([happy], '哈哈', '', 0.1, new Set(['happy']))).toBeNull();
-    expect(selectReplySticker([{ ...happy, description: '猫咪日常' }], '你好', '', 0.1)).toBeNull();
+  it('回复里没有任何关键词时，模型标了情绪照样能发（关键词闸门已去掉）', async () => {
+    const s = setup();
+    s.isServiceEnabled.mockResolvedValue(false);
+    const result = await s.service.planExtras({
+      ...input(),
+      bubbles: ['那我们周末去公园走走'],
+      userText: '我考完试了',
+    });
+    expect(result?.at(-1)).toMatchObject({ type: 'sticker', stickerId: 'happy' });
+  });
+  it('该情绪没有可用的图：不发、不换别的情绪兜底、不报错', async () => {
+    const s = setup();
+    s.isServiceEnabled.mockResolvedValue(false);
+    expect(await s.service.planExtras({ ...input(), stickerMood: 'goodnight' })).toBeNull();
+  });
+  it('用户说过不要表情包（suppressedForms）：标了也不发', async () => {
+    const s = setup();
+    s.isServiceEnabled.mockResolvedValue(false);
+    const recent = history();
+    recent[2] = {
+      ...textMessage(2),
+      senderKind: 'user',
+      content: { type: 'text', text: '别发表情包了' },
+    };
+    expect(await s.service.planExtras({ ...input(), history: recent })).toBeNull();
+  });
+  it('严肃场景只允许安慰：标开心不发，标安慰发安慰图', async () => {
+    const s = setup();
+    s.isServiceEnabled.mockResolvedValue(false);
+    const serious = { ...input(), userText: '我失业了很难过', bubbles: ['我陪着你'] };
+    expect(await s.service.planExtras(serious)).toBeNull();
+    expect(
+      (await s.service.planExtras({ ...serious, stickerMood: 'comfort' }))?.at(-1),
+    ).toMatchObject({ type: 'sticker', stickerId: 'comfort' });
+  });
+  it('不连发：上一条角色消息是表情包，这轮标了也不发', async () => {
+    const s = setup();
+    s.isServiceEnabled.mockResolvedValue(false);
+    const recent = history();
+    stickerAt(recent, 9);
+    expect(await s.service.planExtras({ ...input(), history: recent })).toBeNull();
+  });
+  it('软上限：10 条里已有 3 个就不发；2 个时还能发（放宽后的安全阀）', async () => {
+    const s = setup();
+    s.isServiceEnabled.mockResolvedValue(false);
+    const three = history();
+    stickerAt(three, 2);
+    stickerAt(three, 4);
+    stickerAt(three, 6);
+    expect(await s.service.planExtras({ ...input(), history: three })).toBeNull();
+    const two = history();
+    stickerAt(two, 4);
+    stickerAt(two, 6);
+    expect((await s.service.planExtras({ ...input(), history: two }))?.at(-1)).toMatchObject({
+      type: 'sticker',
+      stickerId: 'happy',
+    });
+  });
+  it('20 条内发过的同一张不重复', async () => {
+    const s = setup();
+    s.isServiceEnabled.mockResolvedValue(false);
+    const recent = history();
+    stickerAt(recent, 3, happy);
+    expect(await s.service.planExtras({ ...input(), history: recent })).toBeNull();
+  });
+  it('素材列表在语音判断之后才读：等待期间被停用的图不会发出', async () => {
+    const s = setup();
+    s.decideBatch.mockImplementation(async () => {
+      s.listStickersForCharacter.mockResolvedValue([]);
+      return { voice: { choice: 'voice' } } as never;
+    });
+    const result = await s.service.planExtras(input());
+    expect(result?.map((c) => c.type)).toEqual(['voice']);
   });
 });
 
 describe('independent voice and sticker decisions in real planExtras', () => {
-  it('evaluates both in one batch and returns voice plus sticker without duplicate text', async () => {
+  it('asks only the voice question and returns voice plus sticker without duplicate text', async () => {
     const s = setup();
     const result = await s.service.planExtras(input());
     expect(result?.map((content) => content.type)).toEqual(['voice', 'sticker']);
     expect(s.decideBatch).toHaveBeenCalledTimes(1);
-    expect(s.decideBatch.mock.calls[0]![0].questions.map((q) => q.questionId)).toEqual([
-      'voice',
-      'sticker',
-    ]);
+    expect(s.decideBatch.mock.calls[0]![0].questions.map((q) => q.questionId)).toEqual(['voice']);
     expect(s.synthesizeSpeech).toHaveBeenCalledWith(
       expect.objectContaining({
         billingOwner: 'user',
@@ -140,11 +229,9 @@ describe('independent voice and sticker decisions in real planExtras', () => {
     expect(s.generate).not.toHaveBeenCalled();
     expect(s.webSearch).not.toHaveBeenCalled();
   });
-  it('keeps approved sticker independent of denied voice', async () => {
+  it('keeps the marked sticker independent of denied voice', async () => {
     const s = setup();
-    s.decideBatch.mockImplementation(
-      async () => ({ voice: { choice: 'text' }, sticker: { choice: 'keep_sticker' } }) as never,
-    );
+    s.decideBatch.mockImplementation(async () => ({ voice: { choice: 'text' } }) as never);
     expect((await s.service.planExtras(input()))?.map((content) => content.type)).toEqual([
       'text',
       'sticker',
@@ -162,7 +249,7 @@ describe('independent voice and sticker decisions in real planExtras', () => {
     const s = setup();
     s.isServiceEnabled.mockResolvedValue(false);
     await s.service.planExtras(input());
-    expect(s.decideBatch.mock.calls[0]![0].questions.map((q) => q.questionId)).toEqual(['sticker']);
+    expect(s.decideBatch).not.toHaveBeenCalled();
     expect(s.synthesizeSpeech).not.toHaveBeenCalled();
   });
   it('does not make a decision call if no eligible optional action remains', async () => {
@@ -172,7 +259,7 @@ describe('independent voice and sticker decisions in real planExtras', () => {
     expect(await s.service.planExtras(input())).toBeNull();
     expect(s.decideBatch).not.toHaveBeenCalled();
   });
-  it('keeps text and the independent sticker when synthesis fails', async () => {
+  it('keeps text and the marked sticker when synthesis fails', async () => {
     const s = setup();
     s.synthesizeSpeech.mockResolvedValue({ ok: false, error: 'insufficient_balance' });
     const result = await s.service.planExtras(input());
@@ -182,7 +269,7 @@ describe('independent voice and sticker decisions in real planExtras', () => {
   it('uses no random positive fallback after judgment failure', async () => {
     const s = setup();
     s.decideBatch.mockRejectedValue(new Error('timeout'));
-    expect(await s.service.planExtras(input())).toBeNull();
+    expect(await s.service.planExtras({ ...input(), stickerMood: null })).toBeNull();
     expect(s.synthesizeSpeech).not.toHaveBeenCalled();
   });
   it('never includes current user or role text in the batch payload', async () => {
@@ -194,10 +281,9 @@ describe('independent voice and sticker decisions in real planExtras', () => {
     });
     const payload = JSON.stringify(s.decideBatch.mock.calls[0]);
     expect(payload).not.toContain('金丝雀');
-    expect(payload).toContain('happy');
   });
   it.each(['private', 'health'] as const)(
-    'skips autonomous media judgment for %s replies',
+    'skips autonomous media for %s replies even when a sticker was marked',
     async (mode) => {
       const s = setup();
       const req = input();
@@ -218,10 +304,12 @@ describe('independent voice and sticker decisions in real planExtras', () => {
     expect(await s.service.planExtras({ ...input(), quiet: true })).toBeNull();
     expect(s.decideBatch).not.toHaveBeenCalled();
     expect(
-      (await s.service.planExtras({ ...input(), quiet: true, userText: '发条语音' }))?.[0]?.type,
-    ).toBe('voice');
+      (await s.service.planExtras({ ...input(), quiet: true, userText: '发条语音' }))?.map(
+        (c) => c.type,
+      ),
+    ).toEqual(['voice']);
   });
-  it('rechecks inconvenient status after approval without discarding the approved sticker', async () => {
+  it('rechecks inconvenient status after approval without discarding the marked sticker', async () => {
     const s = setup();
     s.getInconvenientUntil
       .mockResolvedValueOnce(null)
@@ -230,27 +318,59 @@ describe('independent voice and sticker decisions in real planExtras', () => {
     expect(result?.map((content) => content.type)).toEqual(['text', 'sticker']);
     expect(s.synthesizeSpeech).not.toHaveBeenCalled();
   });
-  it('does not send an approved sticker after it is disabled while waiting', async () => {
-    const s = setup();
-    s.isServiceEnabled.mockResolvedValue(false);
-    s.listStickersForCharacter.mockResolvedValueOnce([happy]).mockResolvedValueOnce([]);
-    expect(await s.service.planExtras(input())).toBeNull();
+});
+
+describe('T-20261103d 提示词阶段：stickerPrompt 与发送阶段同一套硬规则', () => {
+  const promptInput = (recent = history(), userText = '今天有好事') => ({
+    ctx: { userId: 'user', characterId: 'character', conversationId: 'conversation' },
+    history: recent,
+    userText,
   });
-  it('never appends another sticker immediately after a character sticker', async () => {
+  it('能配时列出该角色挑得出图的情绪（中文名）和标记写法', async () => {
     const s = setup();
-    s.isServiceEnabled.mockResolvedValue(false);
-    const recent = history();
-    recent[9]!.content = { type: 'sticker', source: 'library', ...happy };
-    expect(await s.service.planExtras({ ...input(), history: recent })).toBeNull();
-    expect(s.decideBatch).not.toHaveBeenCalled();
+    const text = await s.service.stickerPrompt(promptInput());
+    expect(text).toContain('开心、安慰');
+    expect(text).toContain('[表情:情绪]');
+    expect(text).toContain('你已经连着好几条没配表情了');
   });
-  it('respects the two-per-ten window before asking the decision model', async () => {
+  it('最近刚配过：不加保底提醒', async () => {
     const s = setup();
-    s.isServiceEnabled.mockResolvedValue(false);
     const recent = history();
-    recent[3]!.content = { type: 'sticker', source: 'library', ...comfort };
-    recent[6]!.content = { type: 'sticker', source: 'library', ...comfort };
-    expect(await s.service.planExtras({ ...input(), history: recent })).toBeNull();
-    expect(s.decideBatch).not.toHaveBeenCalled();
+    stickerAt(recent, 5);
+    expect(await s.service.stickerPrompt(promptInput(recent))).not.toContain('好几条没配');
+  });
+  it('严肃场景只列安慰，也不催', async () => {
+    const s = setup();
+    const text = await s.service.stickerPrompt(promptInput(history(), '我失业了很难过'));
+    expect(text).toContain('只能从这几个里选一个：安慰。');
+    expect(text).not.toContain('好几条没配');
+  });
+  it('用户说过不要、上一条就是表情、软上限、私密、健康、树洞、没有可用图：都不给说明', async () => {
+    const s = setup();
+    const suppressed = history();
+    suppressed[1] = {
+      ...textMessage(1),
+      senderKind: 'user',
+      content: { type: 'text', text: '不要表情包' },
+    };
+    const last = history();
+    stickerAt(last, 9);
+    const full = history();
+    stickerAt(full, 7);
+    stickerAt(full, 3);
+    stickerAt(full, 5);
+    expect(await s.service.stickerPrompt(promptInput(suppressed))).toBe('');
+    expect(await s.service.stickerPrompt(promptInput(last))).toBe('');
+    expect(await s.service.stickerPrompt(promptInput(full))).toBe('');
+    expect(
+      await s.service.stickerPrompt({
+        ...promptInput(),
+        ctx: { ...promptInput().ctx, modelRole: 'adult' },
+      }),
+    ).toBe('');
+    expect(await s.service.stickerPrompt({ ...promptInput(), sensitive: true })).toBe('');
+    expect(await s.service.stickerPrompt({ ...promptInput(), quiet: true })).toBe('');
+    s.listStickersForCharacter.mockResolvedValue([]);
+    expect(await s.service.stickerPrompt(promptInput())).toBe('');
   });
 });

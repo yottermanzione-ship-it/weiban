@@ -201,6 +201,7 @@ describe('普通图片不再走随机图库、网页封面或生图', () => {
         userText: '你好',
         history: [],
         voiceId: null,
+        stickerMood: 'happy',
       }),
     ).toContainEqual(
       expect.objectContaining({ type: 'sticker', stickerId: 'sticker', mediaId: 'sticker-media' }),

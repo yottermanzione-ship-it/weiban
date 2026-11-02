@@ -69,7 +69,8 @@ import {
   HOLIDAY_EVENT_PORT,
   PROACTIVE_MESSAGE_PORT,
 } from '../../proactive/index.js';
-import { outputAllowed, splitReply } from '../domain/reply-rules.js';
+import { outputAllowed, splitReply, takeAfterFinalMarker } from '../domain/reply-rules.js';
+import { takeStickerMarker } from '../domain/sticker-marker.js';
 import {
   petProposals,
   proactivePlans,
@@ -1194,6 +1195,34 @@ export class ProactiveSchedulerService {
     const careNote = care
       ? '这次是安全关怀跟进：完全不涉及亲密或成人内容，温和地问候对方现在好不好、是否安全，建议联系身边信任的人或拨打 12356，紧急时 110/120；不提供任何方法，不说教。'
       : '';
+    // T-20261103c：没指定形式的生态主动消息，交给聊天回复同一套形式判断（planExtras）。私密模式（成人范围）、
+    // 关怀不进入这套判断。T-20261103d：表情包由写这条消息的模型自己决定，所以先按同一套硬规则算好
+    // 「这次能不能配表情」，能配就在提示里告诉它情绪清单和标记写法。
+    const formsEligible =
+      !!eco && eco.extra === null && !care && !adult && conversation.contentScope === 'normal';
+    const formHistory = formsEligible
+      ? await this.chat
+          .readMessages({
+            conversationId: conversation.conversationId,
+            scopes: ['normal'],
+            limit: 100,
+          })
+          .catch(() => [])
+      : [];
+    const stickerHint = formsEligible
+      ? await this.mediaAi
+          .stickerPrompt({
+            ctx: {
+              userId: ctx.userId,
+              characterId: plan.characterId,
+              conversationId: conversation.conversationId,
+            },
+            history: formHistory,
+            userText: '',
+            quiet: settings.scenarioMode === 'treehole',
+          })
+          .catch(() => '')
+      : '';
     const generateWith = (privateModel: boolean, turns: typeof recent) =>
       this.adultBoundary.generate(
         {
@@ -1230,7 +1259,7 @@ export class ProactiveSchedulerService {
                   ? `
 ${careNote}`
                   : ''
-              }`,
+              }${stickerHint && !privateModel ? `\n${stickerHint}` : ''}`,
             },
           ],
           meta: {
@@ -1258,7 +1287,9 @@ ${careNote}`
       usageRecordId: result.value.usageRecordId,
       chargedMicros: result.value.chargedMicros,
     };
-    const bubbles = splitReply(result.value.text, settings.splitBubbles).slice(0, 3);
+    // T-20261103d：剥掉模型写的「[表情:…]」标记（任何主动消息都剥，用户绝不能看到），情绪交给形式判断。
+    const marked = takeStickerMarker(takeAfterFinalMarker(result.value.text));
+    const bubbles = splitReply(marked.text, settings.splitBubbles).slice(0, 3);
     // 关怀跟进的输出按日常范围检查（不放行成人用词）。
     if (!bubbles.length || !bubbles.every((b) => outputAllowed(b, policy, adultUsed && !care))) {
       return this.fail(plan, 'output_guard');
@@ -1270,23 +1301,10 @@ ${careNote}`
     /** 形式判断附带的内容（表情包等），跟在文字 / 语音后面发。 */
     let formExtras: MessageContent[] = [];
     // T-20261103c（对照表 v3：语音、表情包是基础层）：没指定形式的生态主动消息，交给聊天回复同一套形式判断
-    // （media-ai planExtras：语音占比 / 间隔 / 长度、表情包完整标签选图与配额、决策层斟酌），不另定概率。
-    // 用户在聊天里说过不要的形式不发（suppressedForms，按最近的用户原话算）；私密模式（成人范围）与聊天回复一样
-    // 不进入这套判断，只发文字、不发语音。决策层与语音合成按后台消耗计费，语音费用并进本次总费用。
-    if (
-      eco &&
-      eco.extra === null &&
-      !care &&
-      !adultUsed &&
-      conversation.contentScope === 'normal'
-    ) {
-      const formHistory = await this.chat
-        .readMessages({
-          conversationId: conversation.conversationId,
-          scopes: ['normal'],
-          limit: 100,
-        })
-        .catch(() => []);
+    // （media-ai planExtras：语音占比 / 间隔 / 长度与决策层斟酌；表情包由模型标记的情绪决定、按完整标签选图与配额），
+    // 不另定概率。用户在聊天里说过不要的形式不发（suppressedForms，按最近的用户原话算）；私密模式（成人范围）与
+    // 聊天回复一样不进入这套判断，只发文字、不发语音。决策层与语音合成按后台消耗计费，语音费用并进本次总费用。
+    if (formsEligible) {
       const planned = await this.mediaAi
         .planExtras({
           ctx: {
@@ -1303,6 +1321,7 @@ ${careNote}`
           quiet: settings.scenarioMode === 'treehole',
           sensitive: healthPrivate(bubbles.join('\n')),
           path: 'proactive',
+          stickerMood: marked.mood,
           onMediaCharged: (micros) => {
             charged += micros;
           },
