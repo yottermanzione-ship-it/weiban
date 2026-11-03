@@ -365,3 +365,34 @@ export const plazaSettings = plazaSchema.table('settings', {
 
 export type OfficialCommentRow = typeof officialComments.$inferSelect;
 export type RoleRequestRow = typeof roleRequests.$inferSelect;
+
+/**
+ * 迁移 0157（T-20261104b）：广场作品的站内搜索投影（作品名、预设改版「基于的角色」及其拼音）。
+ * 由 PlazaSearchIndex 按 search_dirty 刷新；查询时仍按 works（上架中）与 bans（作者未停权）再核一次。
+ */
+export const searchTerms = plazaSchema.table(
+  'search_terms',
+  {
+    workId: uuid('work_id')
+      .notNull()
+      .references(() => works.id, { onDelete: 'cascade' }),
+    termKey: text('term_key').notNull(),
+    term: text('term').notNull(),
+    kind: text('kind').$type<'name' | 'based_on'>().notNull(),
+    pinyin: text('pinyin').notNull().default(''),
+    initials: text('initials').notNull().default(''),
+    authorUserId: uuid('author_user_id').notNull(),
+    displayName: text('display_name').notNull(),
+    updatedAt: time('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.workId, t.termKey] })],
+);
+
+/** 迁移 0157：待刷新登记（数据库触发器在相关列变化时写入，version 自增）。 */
+export const searchDirty = plazaSchema.table('search_dirty', {
+  workId: uuid('work_id')
+    .primaryKey()
+    .references(() => works.id, { onDelete: 'cascade' }),
+  version: integer('version').notNull().default(1),
+  markedAt: time('marked_at').notNull().defaultNow(),
+});

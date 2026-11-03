@@ -18,7 +18,9 @@ export {
   type CharacterPlazaOriginStatus,
   CHARACTER_CHILD_FEATURES_WRITER,
   type CharacterChildFeaturesWriter,
+  CHARACTER_SEARCH_PORT,
 } from './tokens.js';
+export { CHARACTER_SEARCH_REFRESH_JOB, CharacterSearchIndex } from './application/search-index.js';
 export { seedPresetCharacters, type PresetSeedResult } from './application/preset-seed.js';
 export { WEIBO_PUBLICATION_PORT } from './tokens.js';
 export {

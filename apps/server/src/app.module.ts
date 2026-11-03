@@ -61,6 +61,7 @@ import {
   CHARACTER_PLAZA_PORT,
   CHARACTER_PLAZA_ORIGIN_STATUS,
   CHARACTER_PERSONA_SUMMARIZER,
+  CHARACTER_SEARCH_PORT,
   CHARACTER_VOICE_READ_PORT,
   type CharacterPlazaOriginStatus,
 } from './modules/characters/index.js';
@@ -119,6 +120,7 @@ import { RecapModule } from './modules/recap/index.js';
 import { OfficialAssistantModule } from './modules/official-assistant/index.js';
 import {
   PlazaModule,
+  PLAZA_CHARACTER_SEARCH,
   PLAZA_CHARACTERS,
   PLAZA_CLASSIFICATION_POLICY,
   PLAZA_ORIGIN_STATUS,
@@ -398,6 +400,7 @@ class PlayCompositionModule {}
  * T-088：PLAZA_CHARACTERS 绑定 characters 的 CharacterPlazaPort；PLAZA_CLASSIFICATION_POLICY 绑定 policy 的
  * compareClassification（「只能更严」的唯一判定处）。PLAZA_PUBLISH_CHECK（PlazaPublishCheckPort）已由 T-089
  * 在 CallAgentCompositionModule 绑定到 ai-runtime；检测失败时发布返回 plaza_check_unavailable，绝不跳过检查。
+ * 5.5（T-20261104b）：PLAZA_CHARACTER_SEARCH 绑定 characters 的 CharacterSearchPort（站内角色搜索的官方 / 本人投影）。
  */
 @Global()
 @Module({
@@ -406,6 +409,7 @@ class PlayCompositionModule {}
     { provide: PLAZA_PRESET_NAMES, useExisting: CHARACTER_NAME_READ_PORT },
     { provide: PLAZA_SUPPLEMENT_READ, useExisting: CHARACTER_SUPPLEMENT_PORT },
     { provide: PLAZA_CHARACTERS, useExisting: CHARACTER_PLAZA_PORT },
+    { provide: PLAZA_CHARACTER_SEARCH, useExisting: CHARACTER_SEARCH_PORT },
     {
       provide: PLAZA_CLASSIFICATION_POLICY,
       useValue: { compareClassification } satisfies PlazaClassificationPolicy,
@@ -415,6 +419,7 @@ class PlayCompositionModule {}
     PLAZA_PRESET_NAMES,
     PLAZA_SUPPLEMENT_READ,
     PLAZA_CHARACTERS,
+    PLAZA_CHARACTER_SEARCH,
     PLAZA_CLASSIFICATION_POLICY,
   ],
 })

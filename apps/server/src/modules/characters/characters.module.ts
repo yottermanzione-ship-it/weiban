@@ -12,6 +12,7 @@ import { CharacterService } from './application/characters.js';
 import { CharacterEligibilityService } from './application/eligibility.js';
 import { CharacterLegacyAdminService } from './application/legacy-admin.js';
 import { CharacterPurgeService } from './application/purge.js';
+import { CharacterSearchIndex } from './application/search-index.js';
 import { CharacterCheckWorker } from './application/check-worker.js';
 import { CustomCharacterService } from './application/custom-character.js';
 import { CharacterTrialService } from './application/trials.js';
@@ -44,6 +45,7 @@ import {
   CHARACTER_SUPPLEMENT_CONFLICTS,
   CHARACTER_PLAZA_PORT,
   CHARACTER_CHILD_FEATURES_WRITER,
+  CHARACTER_SEARCH_PORT,
 } from './tokens.js';
 @Module({
   imports: [MediaModule, ChatModule, IdentityModule, RealtimeModule],
@@ -69,6 +71,8 @@ import {
     { provide: CHARACTER_SUPPLEMENT_CONFLICTS, useExisting: CharacterSupplementService },
     CharacterService,
     CharacterPurgeService,
+    CharacterSearchIndex,
+    { provide: CHARACTER_SEARCH_PORT, useExisting: CharacterSearchIndex },
     CharacterEligibilityService,
     CharacterLegacyAdminService,
     CharacterCheckWorker,
@@ -108,6 +112,7 @@ import {
     CHARACTER_SUPPLEMENT_CONFLICTS,
     CHARACTER_PLAZA_PORT,
     CHARACTER_CHILD_FEATURES_WRITER,
+    CHARACTER_SEARCH_PORT,
   ],
 })
 export class CharactersModule {}

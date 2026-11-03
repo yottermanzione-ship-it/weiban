@@ -3,7 +3,8 @@
  * 3.5：角色广场「微伴角色」tab（官方预设角色点赞评论）与角色创建 › 申请制作。
  * 需要（由装配入口 app.module.ts 绑定，见 tokens.ts）：
  *   PLAZA_CHARACTERS / PLAZA_SUPPLEMENT_READ / PLAZA_PRESET_NAMES（characters，T-088）、
- *   PLAZA_PUBLISH_CHECK（ai-runtime，T-089）、PLAZA_CLASSIFICATION_POLICY（policy，T-088）。
+ *   PLAZA_PUBLISH_CHECK（ai-runtime，T-089）、PLAZA_CLASSIFICATION_POLICY（policy，T-088）、
+ *   PLAZA_CHARACTER_SEARCH（characters，5.5 站内角色搜索 T-20261104b）。
  */
 import { Module } from '@nestjs/common';
 import { BillingModule } from '../billing/index.js';
@@ -18,6 +19,8 @@ import { PlazaStore } from './application/plaza-store.js';
 import { PlazaOfficialService } from './application/plaza-official.service.js';
 import { PlazaService } from './application/plaza.service.js';
 import { RoleRequestService } from './application/role-requests.service.js';
+import { PlazaSearchIndex } from './application/search-index.js';
+import { SiteSearchService } from './application/site-search.service.js';
 import { PlazaAdminController } from './http/plaza-admin.controller.js';
 import { PlazaController } from './http/plaza.controller.js';
 import {
@@ -28,6 +31,7 @@ import {
   RoleRequestAdminController,
   RoleRequestController,
 } from './http/role-requests.controller.js';
+import { SiteSearchController } from './http/site-search.controller.js';
 import { PLAZA_ORIGIN_STATUS } from './tokens.js';
 
 @Module({
@@ -39,6 +43,7 @@ import { PLAZA_ORIGIN_STATUS } from './tokens.js';
     RoleRequestAdminController,
     PlazaController,
     PlazaAdminController,
+    SiteSearchController,
   ],
   providers: [
     PlazaStore,
@@ -47,6 +52,8 @@ import { PLAZA_ORIGIN_STATUS } from './tokens.js';
     RoleRequestService,
     PlazaAdminService,
     PlazaLifecycle,
+    PlazaSearchIndex,
+    SiteSearchService,
     { provide: PLAZA_ORIGIN_STATUS, useExisting: PlazaService },
   ],
   exports: [PLAZA_ORIGIN_STATUS],

@@ -57,3 +57,5 @@ export const CHARACTER_CHILD_FEATURES_WRITER = Symbol('weiban.characters.child-f
 /** 兼容旧名：等同契约 CharacterChildFeaturesWritePort。 */
 export type CharacterChildFeaturesWriter = CharacterChildFeaturesWritePort;
 export const WEIBO_PUBLICATION_PORT = Symbol('weiban.characters.weibo-publication');
+/** 5.5（T-20261104b）：契约 CharacterSearchPort（站内搜索的角色投影；调用方 plaza 聚合层，装配入口绑定）。 */
+export const CHARACTER_SEARCH_PORT = Symbol('weiban.characters.search');

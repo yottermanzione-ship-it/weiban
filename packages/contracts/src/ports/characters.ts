@@ -230,3 +230,59 @@ export interface PersonaUpdateSummarizerPort {
     version: number;
   }): Promise<string | null>;
 }
+
+/**
+ * 5.5（T-20261104b）：站内搜索的查询。由服务端平台内核标准化（NFKC、大小写、空白与固定标点；
+ * 拼音在本地生成），各投影的提供方用同一套打分，分数可以直接比较。
+ */
+export interface SiteSearchTextQuery {
+  key: string;
+  chars: number;
+  ascii: boolean;
+  hasCjk: boolean;
+  pinyin: string;
+  tooLong: boolean;
+}
+
+/** 5.5：角色投影的一条命中（每个角色只给最好的一条）。 */
+export interface CharacterSearchNameHit {
+  characterId: string;
+  /** official = 已上架预设；own = 本人的非试聊自定义角色（只会出现在本人的查询里）。 */
+  scope: 'official' | 'own';
+  displayName: string;
+  score: number;
+  match: 'exact' | 'prefix' | 'pinyin' | 'initials' | 'contains';
+  /** 不是名字本身命中时，命中的别名 / 关键词。 */
+  matchedTerm: { text: string; kind: 'alias' | 'keyword' } | null;
+  /** 本站已审核资料生成的一句身份说明；没有为 null。 */
+  identity: string | null;
+}
+
+/** 5.5：错字近似（只用于「你是否想找」，不进结果）。 */
+export interface CharacterSearchTypoHit {
+  text: string;
+  kind: 'homophone' | 'edit';
+  scope: 'official' | 'own';
+}
+
+/** 5.5：结果卡片（重新核对过资格）。 */
+export interface CharacterSearchCard {
+  summary: CharacterSummary;
+  scope: 'official' | 'own';
+  /** 本人角色是从广场复制来的：来源作品 ID；否则 null。 */
+  plazaWorkId: string | null;
+}
+
+/**
+ * 5.5：站内搜索的角色一侧（提供方 characters，调用方 plaza 的聚合层）。
+ * 官方角色只算已上架预设；本人角色只按 owner 查，私人卡片、导入资料绝不进别人的结果。
+ * 不调用模型、不收费。
+ */
+export interface CharacterSearchPort {
+  /** 名字 / 别名 / 关键词命中（精确、前缀、拼音、首字母、包含），每个角色一条，最多 400 个角色。 */
+  matchNames(userId: string, query: SiteSearchTextQuery): Promise<CharacterSearchNameHit[]>;
+  /** 错字近似（同音字、单处编辑），只给建议用。 */
+  typoNames(userId: string, query: SiteSearchTextQuery): Promise<CharacterSearchTypoHit[]>;
+  /** 按给定顺序返回结果卡片；不再可搜（下架、不是本人、试聊）的跳过。 */
+  searchCards(userId: string, characterIds: string[]): Promise<CharacterSearchCard[]>;
+}
