@@ -48,7 +48,7 @@ const tenTexts = () =>
   Array.from({ length: 10 }, (_, i) => message(i + 1, 'character', '普通消息'));
 
 /** 真实的 MediaAiService，桩掉网关 / 素材 / 决策层；决策层对每个问题都批准（语音、附表情）。 */
-function mediaAi() {
+function mediaAi(photos?: unknown) {
   const synthesizeSpeech = vi.fn((async () => ({
     ok: true,
     value: {
@@ -93,14 +93,43 @@ function mediaAi() {
       { nowMs: () => 1000 },
       {},
       { decideBatch },
+      photos,
     ] as unknown as ConstructorParameters<typeof MediaAiService>),
   );
   const planExtras = vi.spyOn(service, 'planExtras');
   return { service, synthesizeSpeech, decideBatch, planExtras };
 }
 
-function harness(opts: { history?: Message[]; privateMode?: boolean; text?: string } = {}) {
-  const media = mediaAi();
+/** T-20261103g：私聊分享照片的素材服务桩（一张这个用户没收到过的微博配图）。 */
+const OFFER = {
+  mediaId: 'photo-1',
+  updateId: 'update-1',
+  excerpt: '今天去海边拍了日落',
+  publishedOn: '2026-10-30',
+};
+function photoStub() {
+  return {
+    offer: vi.fn(async () => OFFER),
+    content: vi.fn(async (_u: string, _c: string, mediaId: string) => ({
+      type: 'image' as const,
+      mediaId,
+      width: 800,
+      height: 600,
+      sizeBytes: 1234,
+    })),
+    remember: vi.fn(async () => undefined),
+  };
+}
+
+function harness(
+  opts: {
+    history?: Message[];
+    privateMode?: boolean;
+    text?: string;
+    photos?: ReturnType<typeof photoStub>;
+  } = {},
+) {
+  const media = mediaAi(opts.photos);
   const posted: Array<{ content: MessageContent; idempotencyKey: string; charge?: unknown }> = [];
   const generate = vi.fn(async (_req: Record<string, unknown>, _privateModel: boolean) => ({
     ok: true as const,
@@ -199,7 +228,11 @@ function harness(opts: { history?: Message[]; privateMode?: boolean; text?: stri
       { messages?: Array<{ content: string }> } | undefined;
     return (req?.messages?.at(-1)?.content ?? '').includes('[表情:情绪]');
   };
-  return { ...media, send, posted, generate, hinted };
+  const prompt = () =>
+    (
+      generate.mock.calls[0]?.[0] as { messages?: Array<{ content: string }> } | undefined
+    )?.messages?.at(-1)?.content ?? '';
+  return { ...media, send, posted, generate, hinted, prompt };
 }
 
 describe('生态主动消息复用聊天回复的形式判断', () => {
@@ -289,6 +322,42 @@ describe('生态主动消息复用聊天回复的形式判断', () => {
     await h.send();
     expect(h.planExtras.mock.calls[0]![0]).toMatchObject({ bubbles: [REPLY], stickerMood: null });
     expect(h.posted.map((p) => p.content.type)).toEqual(['voice']);
+  });
+
+  it('T-20261103g：主动消息同样可以分享照片——提示里给出那张图，模型写 [照片] 后剥掉标记、照片跟在文字后面', async () => {
+    const photos = photoStub();
+    const h = harness({
+      photos,
+      text: `${REPLY}
+[照片]`,
+      // 压掉语音，只看照片。
+      history: [message(0, 'user', '别发语音了'), ...tenTexts()],
+    });
+    await h.send();
+    expect(h.prompt()).toContain('这轮可以分享一张你最近的照片');
+    expect(h.prompt()).toContain('「今天去海边拍了日落」');
+    expect(h.prompt()).toContain('这轮照片和表情包最多选一样');
+    expect(h.planExtras.mock.calls[0]![0]).toMatchObject({ photo: OFFER, stickerMood: null });
+    expect(h.posted.map((p) => p.content)).toEqual([
+      { type: 'text', text: REPLY },
+      { type: 'image', mediaId: 'photo-1', width: 800, height: 600, sizeBytes: 1234 },
+    ]);
+    expect(JSON.stringify(h.posted)).not.toContain('[照片]');
+    expect(photos.remember).toHaveBeenCalledWith({
+      userId: USER,
+      conversationId: CONVERSATION,
+      messageId: 'msg-2',
+      offer: OFFER,
+    });
+  });
+
+  it('T-20261103g：给了照片但模型只写了表情标记：只发表情，不发图、不记存档', async () => {
+    const photos = photoStub();
+    const h = harness({ photos, history: [message(0, 'user', '别发语音了'), ...tenTexts()] });
+    await h.send();
+    expect(h.posted.map((p) => p.content.type)).toEqual(['text', 'sticker']);
+    expect(photos.content).not.toHaveBeenCalled();
+    expect(photos.remember).not.toHaveBeenCalled();
   });
 
   it('私密模式点名发语音仍按原规则拒绝', async () => {

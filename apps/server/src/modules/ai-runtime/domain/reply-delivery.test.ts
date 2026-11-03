@@ -25,69 +25,99 @@ const link = {
   title: '作品',
 } as unknown as MessageContent;
 
-describe('fitReplyContents：一次回复最多发 4 条（P-02）', () => {
-  it('不超过 4 条时原样返回', () => {
-    const contents = [text('一'), text('二'), sticker];
+describe('fitReplyContents：一次回复文字最多 6 条、总共最多 8 条（P-02，T-20261103h）', () => {
+  const photo: MessageContent = {
+    type: 'image',
+    mediaId: '00000000-0000-4000-8000-000000000003',
+    width: null,
+    height: null,
+  };
+  const six = () => ['一', '二', '三', '四', '五', '六'].map(text);
+  it('6 条文字 + 表情包 = 7 条：不超过 8 条，原样返回', () => {
+    const contents = [...six(), sticker];
     expect(fitReplyContents(contents)).toBe(contents);
   });
-  it('4 条文字 + 表情包：最后两条文字合并，表情包保留', () => {
-    expect(fitReplyContents([text('一'), text('二'), text('三'), text('四'), sticker])).toEqual([
+  it('6 条文字 + 照片、6 条文字 + 链接都是 7 条：照片和链接也只算一条，原样发', () => {
+    for (const extra of [photo, link]) {
+      const contents = [...six(), extra];
+      expect(fitReplyContents(contents)).toBe(contents);
+    }
+  });
+  it('撤回草稿 + 6 条、错字 + 更正 + 5 条都是 7 条：原样返回', () => {
+    const recall = [text('唔，一'), ...six()];
+    expect(fitReplyContents(recall, fixedPrefix('recall'))).toBe(recall);
+    const typo = [text('我以经到了'), text('*已经'), ...six().slice(1)];
+    expect(fitReplyContents(typo, fixedPrefix('typo'))).toBe(typo);
+  });
+  it('正好 8 条时原样返回', () => {
+    const contents = [...six(), text('七'), sticker];
+    expect(fitReplyContents(contents)).toBe(contents);
+  });
+  it('超过 8 条：先从后往前合并相邻文字，附加内容都保留', () => {
+    expect(fitReplyContents([...six(), link, photo, sticker])).toEqual([
       text('一'),
       text('二'),
-      text('三\n四'),
+      text('三'),
+      text('四'),
+      text('五\n六'),
+      link,
+      photo,
+      sticker,
+    ]);
+    // 10 条：多出的文字都并进靠后的文字里。
+    expect(fitReplyContents([...six(), text('七'), text('八'), text('九'), sticker])).toEqual([
+      ...six().slice(0, 5),
+      text('六'),
+      text('七\n八\n九'),
       sticker,
     ]);
   });
-  it('4 条文字 + 链接 + 表情包：多出的文字都并进最后一条文字', () => {
-    expect(
-      fitReplyContents([text('一'), text('二'), text('三'), text('四'), link, sticker]),
-    ).toEqual([text('一'), text('二\n三\n四'), link, sticker]);
-  });
-  it('撤回草稿 + 4 条：草稿原样留在第 1 条，不和正文合并', () => {
-    const fitted = fitReplyContents(
-      [text('唔，草'), text('一'), text('二'), text('三'), text('四')],
-      fixedPrefix('recall'),
-    );
-    expect(fitted).toEqual([text('唔，草'), text('一'), text('二'), text('三\n四')]);
-  });
-  it('错字 + 更正 + 3 条：前两条不动', () => {
-    const fitted = fitReplyContents(
-      [text('我以经到了'), text('*已经'), text('二'), text('三'), text('四')],
-      fixedPrefix('typo'),
-    );
-    expect(fitted).toEqual([text('我以经到了'), text('*已经'), text('二'), text('三\n四')]);
-  });
-  it('文字太长合并不下：先去掉表情包，再去掉链接', () => {
-    const long = 'a'.repeat(2500);
-    expect(fitReplyContents([text(long), text(long), text(long), text(long), sticker])).toEqual([
-      text(long),
-      text(long),
-      text(long),
-      text(long),
+  it('撤回草稿、错字和更正原样留在前面，不和正文合并', () => {
+    const eight = [...six(), text('七'), text('八')];
+    expect(fitReplyContents([text('唔，一'), ...eight], fixedPrefix('recall'))).toEqual([
+      text('唔，一'),
+      ...six().slice(0, 5),
+      text('六'),
+      text('七\n八'),
     ]);
     expect(
-      fitReplyContents([text(long), text(long), text(long), link, text(long), sticker]),
-    ).toEqual([text(long), text(long), text(long), text(long)]);
+      fitReplyContents([text('我以经到了'), text('*已经'), ...eight.slice(1)], fixedPrefix('typo')),
+    ).toEqual([text('我以经到了'), text('*已经'), ...eight.slice(1, 6), text('七\n八')]);
   });
-  it('怎么都压不到 4 条时返回 null（调用方退回只发文字气泡）', () => {
-    const long = 'a'.repeat(2500);
+  it('文字太长合并不下：从后往前先去掉表情包，再去掉链接', () => {
+    const long = text('a'.repeat(2500));
+    const sevenLong = Array<MessageContent>(7).fill(long);
+    expect(fitReplyContents([...sevenLong, link, long, sticker])).toEqual(
+      Array<MessageContent>(8).fill(long),
+    );
+    // 照片和表情包一样可以去掉；只多一条时只去最后那一个。
+    const sixLong = Array<MessageContent>(6).fill(long);
+    expect(fitReplyContents([...sixLong, long, photo, sticker])).toEqual([...sixLong, long, photo]);
+  });
+  it('怎么都压不到 8 条时返回 null（调用方退回只发文字气泡，文字本身不超过 6 条）', () => {
+    const long = text('a'.repeat(2500));
     expect(
-      fitReplyContents(
-        [text('唔'), text(long), text(long), text(long), text(long)],
-        fixedPrefix('recall'),
-      ),
+      fitReplyContents([text('唔'), ...Array<MessageContent>(8).fill(long)], fixedPrefix('recall')),
     ).toBeNull();
   });
   it('合并后每条仍不超过 4000 字', () => {
     const fitted = fitReplyContents([
       text('a'.repeat(3000)),
       text('b'.repeat(900)),
-      text('c'.repeat(3000)),
-      text('d'.repeat(3000)),
-      text('e'.repeat(99)),
+      ...['c', 'd', 'e', 'f', 'g', 'h', 'i'].map((c) => text(c.repeat(3000))),
     ])!;
-    expect(fitted).toHaveLength(4);
+    expect(fitted).toHaveLength(8);
+    // 从后往前找：第一对合得下的是 b（900 字）和 c（3000 字），a 不动。
+    expect(fitted[0]).toEqual(text('a'.repeat(3000)));
+    expect(fitted[1]).toEqual(text(`${'b'.repeat(900)}\n${'c'.repeat(3000)}`));
     for (const c of fitted) expect(c.type === 'text' && c.text.length <= 4000).toBe(true);
+  });
+  it('显式传入更小的上限时按传入的封顶', () => {
+    expect(fitReplyContents([text('一'), text('二'), text('三'), sticker], 0, 3)).toEqual([
+      text('一'),
+      text('二\n三'),
+      sticker,
+    ]);
   });
 });
 

@@ -71,6 +71,7 @@ import {
 } from '../../proactive/index.js';
 import { outputAllowed, splitReply, takeAfterFinalMarker } from '../domain/reply-rules.js';
 import { takeStickerMarker } from '../domain/sticker-marker.js';
+import { takePhotoMarker } from '../domain/photo-marker.js';
 import {
   petProposals,
   proactivePlans,
@@ -149,15 +150,15 @@ export type ProactiveReason =
   /** v5 角色生态：生态唤醒挑中的聊天类动作（sourceRef = ecology:{runId}），不进旧账本。 */
   | 'ecology';
 
-/** 生态 v1：聊天类动作的附加形式。 */
+/**
+ * 生态 v1：聊天类动作的附加形式。
+ * T-20261103g：生态的「发表情包」「分享图片」动作早已不是候选（#44），点名形式 'sticker' / 'photo' 的分支
+ * 走不到，已删除；表情包、照片现在由写这条消息的模型自己决定（extra = null 时走 planExtras）。
+ */
 export interface EcologySendExtras {
-  extra: 'voice' | 'photo' | 'sticker' | 'link' | null;
+  extra: 'voice' | 'link' | null;
   /** 早安 / 晚安：放开「不说早安晚安套话」。 */
   greeting?: boolean;
-  /** 照片内容（默认用 brief）。 */
-  scene?: string;
-  /** 3.29：已审核的微博图片媒体 ID；有它时只走既有媒体发送，不生图。 */
-  photoMediaId?: string;
 }
 
 /** 已发生实扣后记录失败：仅用于内部把费用带回生态结果，不再次扣款。 */
@@ -417,7 +418,7 @@ export class ProactiveSchedulerService {
   }
 
   // -------------------------------------------------------------------------
-  // v5 角色生态：执行聊天类动作（消息、早晚安、关心、语音、照片、表情、作品链接、心愿提议）
+  // v5 角色生态：执行聊天类动作（消息、早晚安、关心、语音、作品链接、心愿提议；表情包、照片由形式判断决定）
   // -------------------------------------------------------------------------
   /**
    * 立即发一条生态主动消息（不走规则排期、不进旧的主动消息账本）。复用 send() 的生成、守卫、发送事务；
@@ -1223,6 +1224,24 @@ export class ProactiveSchedulerService {
           })
           .catch(() => '')
       : '';
+    // T-20261103g：分享照片同理——有这个用户没收到过的微博素材图、规则允许时，提示里告诉模型可以分享哪张。
+    const photo = formsEligible
+      ? await this.mediaAi
+          .photoPrompt({
+            ctx: {
+              userId: ctx.userId,
+              characterId: plan.characterId,
+              conversationId: conversation.conversationId,
+            },
+            history: formHistory,
+            userText: '',
+            policy,
+            quiet: settings.scenarioMode === 'treehole',
+            withSticker: !!stickerHint,
+          })
+          .catch(() => null)
+      : null;
+    const mediaHint = [stickerHint, photo?.text ?? ''].filter(Boolean).join('\n');
     const generateWith = (privateModel: boolean, turns: typeof recent) =>
       this.adultBoundary.generate(
         {
@@ -1259,7 +1278,7 @@ export class ProactiveSchedulerService {
                   ? `
 ${careNote}`
                   : ''
-              }${stickerHint && !privateModel ? `\n${stickerHint}` : ''}`,
+              }${mediaHint && !privateModel ? `\n${mediaHint}` : ''}`,
             },
           ],
           meta: {
@@ -1288,17 +1307,19 @@ ${careNote}`
       chargedMicros: result.value.chargedMicros,
     };
     // T-20261103d：剥掉模型写的「[表情:…]」标记（任何主动消息都剥，用户绝不能看到），情绪交给形式判断。
-    const marked = takeStickerMarker(takeAfterFinalMarker(result.value.text));
+    // T-20261103g：「[照片]」标记同样剥掉；只有提示里给过照片、模型写了标记时才交给形式判断发图。
+    const photoMarked = takePhotoMarker(takeAfterFinalMarker(result.value.text));
+    const marked = takeStickerMarker(photoMarked.text);
     const bubbles = splitReply(marked.text, settings.splitBubbles).slice(0, 3);
     // 关怀跟进的输出按日常范围检查（不放行成人用词）。
     if (!bubbles.length || !bubbles.every((b) => outputAllowed(b, policy, adultUsed && !care))) {
       return this.fail(plan, 'output_guard');
     }
-    // 生态 v1：语音 / 照片 / 表情 / 作品链接（动作工具，docs/ai/ecology-v1.md §5）。
+    // 生态 v1：点名形式的语音 / 作品链接（动作工具，docs/ai/ecology-v1.md §5）；表情包、照片见下面的形式判断。
     let charged = charge.chargedMicros;
     let voice: MessageContent | null = null;
     let link: MessageContent | null = null;
-    /** 形式判断附带的内容（表情包等），跟在文字 / 语音后面发。 */
+    /** 形式判断附带的内容（表情包、照片等），跟在文字 / 语音后面发。 */
     let formExtras: MessageContent[] = [];
     // T-20261103c（对照表 v3：语音、表情包是基础层）：没指定形式的生态主动消息，交给聊天回复同一套形式判断
     // （media-ai planExtras：语音占比 / 间隔 / 长度与决策层斟酌；表情包由模型标记的情绪决定、按完整标签选图与配额），
@@ -1322,6 +1343,7 @@ ${careNote}`
           sensitive: healthPrivate(bubbles.join('\n')),
           path: 'proactive',
           stickerMood: marked.mood,
+          photo: photoMarked.photo ? (photo?.offer ?? null) : null,
           onMediaCharged: (micros) => {
             charged += micros;
           },
@@ -1349,24 +1371,6 @@ ${careNote}`
       if (!v) return this.fail(plan, 'voice_unavailable');
       voice = v.content;
       charged += v.chargedMicros;
-    } else if (eco?.extra === 'photo') {
-      // 3.29：生态照片只投递已审核的微博图片，走既有媒体发送；不生图、不搜索、不扣图片模型费。
-      if (!eco.photoMediaId) return this.fail(plan, 'photo_unavailable', charged);
-      const media = await this.mediaRead.getMedia(ctx.userId, eco.photoMediaId).catch(() => null);
-      if (!media) return this.fail(plan, 'photo_unavailable', charged);
-      link = {
-        type: 'image',
-        mediaId: media.mediaId,
-        width: media.width ?? null,
-        height: media.height ?? null,
-        sizeBytes: media.sizeBytes,
-      };
-      bubbles.push('分享一张微博图片。');
-    } else if (eco?.extra === 'sticker') {
-      link = await this.mediaAi
-        .pickStickerForEcology(plan.characterId, bubbles.join(''), plan.id)
-        .catch(() => null);
-      if (!link) return this.fail(plan, 'no_sticker');
     } else if (eco?.extra === 'link') {
       link = await this.mediaAi.pickWorkLink(plan.characterId, plan.brief).catch(() => null);
       if (!link) return this.fail(plan, 'no_link');
@@ -1388,6 +1392,8 @@ ${careNote}`
         : undefined;
     let petPhoto = false;
     let photoMessageId: string | null = null;
+    /** T-20261103g：发出的素材照片那条消息（事务提交后存档）。 */
+    const sharedPhoto = { messageId: null as string | null };
     if (pet && stableRandom(plan.id, 'petphoto') < 0.5) {
       const scene = /「(.+?)」/u.exec(plan.brief)?.[1] ?? plan.brief.slice(0, 200);
       const image = await this.images
@@ -1506,6 +1512,9 @@ ${careNote}`
             tx,
           );
           if (!posted.ok) throw new Error(`post_failed:${posted.error}`);
+          const extra = formExtras[j]!;
+          if (extra.type === 'image' && extra.mediaId === photo?.offer.mediaId)
+            sharedPhoto.messageId = posted.value.messageId;
         }
         if (link) {
           const posted = await this.writer.postMessage(
@@ -1579,6 +1588,14 @@ ${careNote}`
         return firstId;
       });
       if (!sent) return this.fail(plan, 'relationship_changed', charged);
+      // T-20261103g：分享的素材照片存档（之后上下文看得到是哪条微博的图，这个用户不会再收到同一张）。
+      if (sharedPhoto.messageId && photo)
+        await this.mediaAi.rememberPhoto({
+          userId: ctx.userId,
+          conversationId: conversation.conversationId,
+          messageId: sharedPhoto.messageId,
+          offer: photo.offer,
+        });
       if (petPhoto && link?.type === 'image')
         await this.album
           ?.addCharacterPhoto({

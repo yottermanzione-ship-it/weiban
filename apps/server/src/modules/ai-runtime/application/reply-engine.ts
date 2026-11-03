@@ -61,13 +61,18 @@ import { ImageCaptionStore } from './image-captions.js';
 import { ImagePublicSearch } from './image-public-search.js';
 import { publicImageSource } from '../domain/image-public-search.js';
 import { takeStickerMarker } from '../domain/sticker-marker.js';
+import { takePhotoMarker } from '../domain/photo-marker.js';
 import type { StickerMood } from '../domain/reply-media-candidates.js';
 const Result = z.object({
-  bubbles: z.array(z.string().min(1).max(4000)).min(1).max(4),
+  /** 文字气泡，最多 P-02 文字上限（T-20261103h 起 6 条；之前存下的结果最多 4 条）。 */
+  bubbles: z.array(z.string().min(1).max(4000)).min(1).max(P02_SPLIT_BUBBLES.maxTextBubbles),
   snapshot: ReplySnapshot,
   care: z.boolean(),
-  /** T-071：实际要发的内容（语音替换文字、附表情包 / 作品链接）；没有时按 bubbles 发文字。 */
-  contents: z.array(MessageContent).max(6).optional(),
+  /**
+   * T-071：实际要发的内容（语音替换文字、附表情包 / 照片 / 作品链接、撤回草稿、错字更正）；没有时按 bubbles 发文字。
+   * 存之前已按 P-02 总上限封顶（8 条）；更早存下的旧结果最多 6 条，发送时再封顶。
+   */
+  contents: z.array(MessageContent).max(P02_SPLIT_BUBBLES.maxTotalBubbles).optional(),
   quirkDraftMessageId: z.uuid().optional(),
   /** v3.3：这次回复消耗（各次调用合计），发第一个正式气泡时交给 chat。 */
   charge: z
@@ -192,7 +197,8 @@ export class ReplyEngine {
     let captionModel: string | null = null;
     // T-20261103d：模型在正文里写的「[表情:…]」标记——这里剥掉（用户看不到），情绪按这次输出记下，
     // 最终采用哪次输出的正文，就用哪次输出的情绪；换成兜底说法时不带表情。
-    const moods = new WeakMap<GenerateTextOutput, StickerMood | null>();
+    // T-20261103g：「[照片]」标记同样剥掉、按这次输出记下（只有提示里给过照片时才会真的发）。
+    const marks = new WeakMap<GenerateTextOutput, { mood: StickerMood | null; photo: boolean }>();
     const strip = (
       result: PortResult<GenerateTextOutput, GenerateError>,
       sawImages = true,
@@ -205,9 +211,10 @@ export class ReplyEngine {
           captionModel ??= result.value.modelKey;
         }
       });
-      const marked = takeStickerMarker(takeAfterFinalMarker(parts.reply));
+      const photo = takePhotoMarker(takeAfterFinalMarker(parts.reply));
+      const marked = takeStickerMarker(photo.text);
       const value = { ...result.value, text: marked.text };
-      moods.set(value, marked.mood);
+      marks.set(value, { mood: marked.mood, photo: photo.photo });
       return { ...result, value };
     };
     // 重写调用：已解析出全部描述就换成文字（不再花钱看一次图），否则照旧附图。
@@ -262,6 +269,7 @@ export class ReplyEngine {
     let bubbles: string[] = [];
     let fallbackReason: string | null = null;
     let stickerMood: StickerMood | null = null;
+    let photoWanted = false;
     if (
       answer.ok &&
       outputAllowed(answer.value.text, snapshot.policy, snapshot.scope === 'adult')
@@ -271,10 +279,12 @@ export class ReplyEngine {
         stripHabits(answer.value.text, snapshot.habits ?? []),
         snapshot.splitBubbles,
       );
-      stickerMood = moods.get(answer.value) ?? null;
+      stickerMood = marks.get(answer.value)?.mood ?? null;
+      photoWanted = marks.get(answer.value)?.photo ?? false;
     }
     if (!bubbles.length) {
       stickerMood = null;
+      photoWanted = false;
       if (inCare) {
         bubbles = careFallback(snapshot.careFallback, snapshot.careVariant, snapshot.addressAs);
         fallbackReason = answer.ok ? 'output_guard' : answer.error;
@@ -338,7 +348,9 @@ export class ReplyEngine {
             )
           ).length;
         bubbles = accepted ? again : ['图里的人我不太认得呢，你跟我说说？'];
-        stickerMood = accepted && retried.ok ? (moods.get(retried.value) ?? null) : null;
+        const retriedMarks = accepted && retried.ok ? marks.get(retried.value) : undefined;
+        stickerMood = retriedMarks?.mood ?? null;
+        photoWanted = retriedMarks?.photo ?? false;
       }
     }
     // H3：把这一轮解析出的图片描述存档（加密，按图片 + 范围；私密范围的只在私密范围被读到）。
@@ -372,6 +384,7 @@ export class ReplyEngine {
           quiet: snapshot.effectiveStyle === 'treehole',
           sensitive: snapshot.healthUsed,
           stickerMood,
+          photo: photoWanted ? snapshot.photoOffer : null,
           onSearchCharged: (micros) => {
             charge.chargedMicros += Math.max(0, micros);
           },
@@ -399,9 +412,9 @@ export class ReplyEngine {
         ];
       else snapshot.quirk.kind = 'none';
     }
-    // T-20261103e：表情包 / 链接 / 撤回草稿 / 错字更正都会多出一条，4 条文字再加一条就是 5 条，
-    // 写 next_bubble=5 违反 reply_plan_counters（P-02 上限 4）。统一封顶：相邻文字合并进后一条，
-    // 合并不下再去掉附加内容；仍不行就只发文字气泡（这时撤回 / 错字小巧思不演）。
+    // T-20261103e：表情包 / 照片 / 链接 / 撤回草稿 / 错字更正都会多出一条，统一按 P-02 总上限封顶
+    // （T-20261103h 起文字最多 6 条、总共最多 8 条，与 reply_plan_counters 的 next_bubble ≤ 8 一致）：
+    // 相邻文字合并进后一条，合并不下再去掉附加内容；仍不行就只发文字气泡（这时撤回 / 错字小巧思不演）。
     if (contents) {
       const fitted = fitReplyContents(contents, fixedPrefix(snapshot.quirk.kind));
       if (!fitted && ['recall', 'typo'].includes(snapshot.quirk.kind)) snapshot.quirk.kind = 'none';
@@ -692,7 +705,7 @@ export class ReplyEngine {
           result.snapshot.quirk.kind = 'none';
       }
     }
-    // 已经发到第 4 条的旧计划：多出的不再发，直接收尾（next_bubble 永远不超过 P-02 上限）。
+    // 已经发到总上限的计划：多出的不再发，直接收尾（next_bubble 永远不超过 P-02 总上限）。
     if (row.nextBubble >= deliveryCount(result)) {
       await this.store.db.db
         .update(replyPlans)
@@ -789,6 +802,8 @@ export class ReplyEngine {
       });
       await new Promise<void>((resolve) => setTimeout(resolve, P28_INSTANT_REPLY_MIN_TYPING_MS));
     }
+    /** T-20261103g：这次发出的是分享的素材照片时记下消息 ID，事务提交后存档（失败不影响已发出的消息）。 */
+    const sharedPhoto = { messageId: null as string | null };
     try {
       const current = await this.store.get(row.id);
       if (
@@ -863,6 +878,11 @@ export class ReplyEngine {
             .where(eq(replyPlans.id, row.id));
           return;
         }
+        if (
+          posted.value.content?.type === 'image' &&
+          posted.value.content.mediaId === result.snapshot.photoOffer?.mediaId
+        )
+          sharedPhoto.messageId = posted.value.messageId;
         // T-071：角色发出语音 → 成就第 11 号（ai_runtime.milestone voice_message_sent）。
         if (posted.value.content?.type === 'voice')
           await this.outbox.publish(tx, 'ai_runtime.milestone', 'ai_runtime', {
@@ -896,6 +916,15 @@ export class ReplyEngine {
           );
         if (!done) await this.store.schedule(tx, row.id, dueAt);
       });
+      // 照片存档：之后的上下文里看得到发的是哪条微博的图，这个用户也不会再收到同一张。
+      // 存档会核对消息确实已发出（事务回滚时什么也不写）。
+      if (sharedPhoto.messageId && result.snapshot.photoOffer)
+        await this.mediaAi.rememberPhoto({
+          userId: row.userId,
+          conversationId: row.conversationId,
+          messageId: sharedPhoto.messageId,
+          offer: result.snapshot.photoOffer,
+        });
     } finally {
       await this.writer.setTyping({
         conversationId: row.conversationId,
@@ -906,9 +935,12 @@ export class ReplyEngine {
   }
 }
 
-/** 这次回复一共发几条：有 contents 按 contents，否则按文字气泡；无论如何不超过 P-02 上限（reply_plan_counters）。 */
+/** 这次回复一共发几条：有 contents 按 contents，否则按文字气泡；无论如何不超过 P-02 总上限（reply_plan_counters）。 */
 function deliveryCount(result: z.infer<typeof Result>): number {
-  return Math.min(P02_SPLIT_BUBBLES.maxBubbles, result.contents?.length ?? result.bubbles.length);
+  return Math.min(
+    P02_SPLIT_BUBBLES.maxTotalBubbles,
+    result.contents?.length ?? result.bubbles.length,
+  );
 }
 
 /** v3.3：包一层网关，累计成功调用的扣费；回复类调用（reply / guard / names）的用量记录 ID 记为这次回复的调用。 */

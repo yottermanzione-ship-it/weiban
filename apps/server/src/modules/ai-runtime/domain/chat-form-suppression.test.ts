@@ -35,3 +35,22 @@ describe('会话压制：只认明确说出来的话，只压说的那一种', (
     expect(suppressed.size).toBe(0);
   });
 });
+
+describe('T-20261103g：照片（photo）', () => {
+  it('「别发照片了」「不要再发图了」只压照片', () => {
+    expect([...detectFormSuppressions(['别发照片了']).suppressed]).toEqual(['photo']);
+    expect([...detectFormSuppressions(['不要再发图了']).suppressed]).toEqual(['photo']);
+    expect([...detectFormSuppressions(['别给我发图片']).suppressed]).toEqual(['photo']);
+  });
+  it('明确要角色发照片才恢复；「我给你发张照片」是用户自己要发，不算', () => {
+    expect(detectFormSuppressions(['别发照片了', '给我发张照片']).suppressed.size).toBe(0);
+    expect(detectFormSuppressions(['别发照片了', '想看看你的照片']).suppressed.size).toBe(0);
+    expect([...detectFormSuppressions(['别发照片了', '我给你发张照片']).suppressed]).toEqual([
+      'photo',
+    ]);
+  });
+  it('表情包和照片各管各的', () => {
+    expect([...detectFormSuppressions(['别发表情包了']).suppressed]).toEqual(['sticker']);
+    expect([...detectFormSuppressions(['别发图了，发个表情包']).suppressed]).toEqual(['photo']);
+  });
+});
