@@ -1560,7 +1560,12 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
           ],
         ),
       );
-      await lifecycle.purgeUser(user.userId);
+      // 「已回报」意味着各模块的删除清单都执行过：逐个执行（不只 billing）。注册时补齐的官方会话和欢迎语
+      // 属于 chat 等模块，只删 billing 的话完成判定的复核会发现残留，账号停在「注销中」
+      // （T-20261104c 修好同一事务内补齐之前，新用户没有官方会话，只删 billing 也能通过）。
+      for (const owner of app.get<UserDataRegistry>(USER_DATA_REGISTRY).list()) {
+        if (owner.module !== 'identity') await owner.purgeUser(user.userId);
+      }
       const snapshot = PendingAccountDeletion.parse(
         (
           await http()
