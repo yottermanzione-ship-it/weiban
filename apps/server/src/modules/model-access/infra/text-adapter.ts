@@ -28,6 +28,32 @@ export interface TextUsage {
   estimated: boolean;
 }
 
+/**
+ * 上游安全策略拦截（服务商自己的内容审核）的错误码与错误类型。**全项目只在这里定义**：
+ * OpenAI 兼容适配器（本文件，非流式）、Anthropic 原生适配器（流式 SSE 的 error 事件与 HTTP 错误体）、
+ * 媒体适配器都用 {@link isSafetyPolicyBlock} 判断。命中即归为 `content_rejected`，不管 HTTP 是 400、401 还是 403：
+ * 这是服务商拒绝了这条内容，不是密钥失效，不能把上游标成不可用、也不进冷却。
+ * 2026-11-03（T-20261103j）：Abliteration 对某条消息回 403
+ * `{"error":{"code":"policy_violation","type":"policy_error"}}`，原先落到 401/403 → invalid_key，整个上游被标不可用。
+ */
+export const SAFETY_POLICY_CODES: readonly string[] = [
+  'content_filter',
+  'content_policy_violation',
+  'moderation_blocked',
+  'policy_violation',
+];
+export const SAFETY_POLICY_TYPES: readonly string[] = ['policy_error'];
+
+/** 上游错误体（`error` 对象）是否为安全策略拦截：`code` 或 `type` 在上面的名单里（不区分大小写）。 */
+export function isSafetyPolicyBlock(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const { code, type } = error as { code?: unknown; type?: unknown };
+  return (
+    (typeof code === 'string' && SAFETY_POLICY_CODES.includes(code.toLowerCase())) ||
+    (typeof type === 'string' && SAFETY_POLICY_TYPES.includes(type.toLowerCase()))
+  );
+}
+
 /** 3.24：网关交给计费的用量（只取计价字段，去掉 estimated / reported 等说明字段）。 */
 export function billableUsage(usage: TextUsage): UsageQuantities {
   return {
@@ -412,14 +438,15 @@ export class OpenAiTextAdapter implements TextAdapter {
       } catch {
         if (response.ok) return { ok: false, category: 'provider_error', retryable: true };
       }
-      const error = payload?.error as { code?: unknown } | undefined;
+      const error = payload?.error as { code?: unknown; type?: unknown } | undefined;
       const code = typeof error?.code === 'string' ? error.code : '';
       if (
         ['insufficient_quota', 'insufficient_balance', 'quota_exhausted'].includes(code) ||
         response.status === 402
       )
         return { ok: false, category: 'quota_exhausted', retryable: false };
-      if (['content_filter', 'content_policy_violation', 'moderation_blocked'].includes(code))
+      // 安全策略拦截先于 401/403 判断：服务商拒绝内容 ≠ 密钥失效（T-20261103j）。
+      if (isSafetyPolicyBlock(error))
         return {
           ok: false,
           category: 'content_rejected',

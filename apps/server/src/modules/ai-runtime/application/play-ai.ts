@@ -73,6 +73,7 @@ import { CompanionSettingsService } from './settings.js';
 import { SimulationService } from './simulation.js';
 import { AI_CHARACTER_READ, supplementBlock } from './supplemented-character-read.js';
 import { characterView, rolePersonaSpeechText } from './character-view.js';
+import { withoutBlocked } from './model-blocked-messages.js';
 
 // ---------------------------------------------------------------------------
 // 任务名
@@ -220,6 +221,8 @@ export class PlayAiService {
   private async recentHistory(t: Target, limit = 12) {
     const history = await this.chat
       .readMessages({ conversationId: t.conversationId, scopes: ['normal'], limit })
+      // T-20261103j：被上游安全策略拦过的消息不交给模型。
+      .then((rows) => withoutBlocked(this.db, t.conversationId, rows))
       .catch(() => []);
     return history
       .filter(

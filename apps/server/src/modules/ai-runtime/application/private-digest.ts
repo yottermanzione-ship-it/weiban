@@ -41,6 +41,7 @@ import { readableMessageText } from './content-text.js';
 import { ImageCaptionStore, NO_CAPTIONS } from './image-captions.js';
 import { captionForMemory } from '../domain/image-caption.js';
 import { MemoryService } from './memory.js';
+import { blockedSeqs } from './model-blocked-messages.js';
 
 export const PRIVATE_DIGEST_JOB = 'ai.private_digest';
 type Row = typeof privateDigests.$inferSelect;
@@ -195,11 +196,13 @@ export class PrivateDigestService {
       limit: DIGEST_MAX_MESSAGES,
       excludeLabels: ['health', 'quirk_draft'],
     });
+    // T-20261103j：被上游安全策略拦过的消息不交给模型。
+    const blocked = await blockedSeqs(this.db, row.conversationId);
     const picked: Message[] = [];
     let chars = 0;
     for (const m of [...messages].reverse()) {
       if (m.seq <= fromSeq) break;
-      if (m.status !== 'normal' || m.senderKind === 'system') continue;
+      if (m.status !== 'normal' || m.senderKind === 'system' || blocked.has(m.seq)) continue;
       if (m.content?.type === 'nudge') continue;
       const text = readableMessageText(m);
       if (!text || healthPrivate(text)) continue;

@@ -723,6 +723,12 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
         await this.store.lock(tx, userId);
         // H3：这个会话里的图片描述一并删除。
         if (conversationId) await this.captions.deleteByConversation(tx, userId, conversationId);
+        // T-20261103j：这个会话「不再发给模型」的登记一并删除。
+        if (conversationId)
+          await tx.query(
+            'DELETE FROM ai_runtime.model_blocked_messages WHERE user_id = $1 AND conversation_id = $2',
+            [userId, conversationId],
+          );
         if (conversationId) {
           await tx.db
             .delete(memories)
@@ -923,6 +929,7 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       'memory_states',
       'moment_card_attempts',
       'moments_plans',
+      'model_blocked_messages',
       'mood_states',
       'pending_anniversary_letters',
       'pet_proposals',

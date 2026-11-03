@@ -36,6 +36,7 @@ import {
 import { healthPrivate } from '../domain/memory.js';
 import { readableMessageText } from './content-text.js';
 import { ReplyPlanStore } from './plan-store.js';
+import { blockedSeqs } from './model-blocked-messages.js';
 import { ImageCaptionStore, NO_CAPTIONS } from './image-captions.js';
 import { captionForMemory } from '../domain/image-caption.js';
 
@@ -284,6 +285,8 @@ export class ChatSummaryService {
           (await this.captions?.forMessages(row.p.userId, history, [scope]).catch(() => null)) ??
           NO_CAPTIONS;
         const captions = new Map([...loaded].filter(([, value]) => captionForMemory(value)));
+        // T-20261103j：被上游安全策略拦过的消息不交给模型（与敏感消息一样跳过、序号照常推进）。
+        const blocked = await blockedSeqs(this.db, row.p.conversationId);
         const messages: z.infer<typeof Prepared>['messages'] = [];
         const fingerprints: z.infer<typeof Prepared>['fingerprints'] = [];
         const maxChars = claimed.attempts >= 2 ? 6000 : 12000;
@@ -298,7 +301,8 @@ export class ChatSummaryService {
             m.senderKind === 'system' ||
             !text ||
             healthPrivate(text) ||
-            m.labels?.some((x) => ['health', 'quirk_draft'].includes(x))
+            m.labels?.some((x) => ['health', 'quirk_draft'].includes(x)) ||
+            blocked.has(m.seq)
           ) {
             toSeq = m.seq;
             continue;

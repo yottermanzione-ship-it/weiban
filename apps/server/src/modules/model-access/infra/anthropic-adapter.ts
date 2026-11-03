@@ -24,6 +24,7 @@ import {
   completeJsonPrefix,
   estimateInputTokens,
   estimateTokens,
+  isSafetyPolicyBlock,
   stripReasoning,
   type AdapterMessage,
   type TextAdapter,
@@ -220,6 +221,9 @@ export function classifyAnthropicError(
     /credit balance|insufficient (?:balance|quota|credit)|余额不足|额度不足/i.test(message)
   )
     return { category: 'quota_exhausted', retryable: false };
+  // 安全策略拦截（名单在 text-adapter.ts 唯一定义）：HTTP 错误体与流式 SSE 的 error 事件都走这里，
+  // 先于 401/403 / permission_error 判断，不当成密钥失效（T-20261103j）。
+  if (isSafetyPolicyBlock(error)) return { category: 'content_rejected', retryable: false };
   if (
     status === 401 ||
     status === 403 ||

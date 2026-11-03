@@ -13,6 +13,7 @@
 import type { WebSearchResultItem } from '@weiban/contracts';
 import { SystemClock } from '../../../platform/index.js';
 import { jevDecide } from './jev-adapter.js';
+import { isSafetyPolicyBlock } from './text-adapter.js';
 import { deepseekSearch, deepseekFetch, type SearchRequestGate } from './deepseek-tools.js';
 import { downloadDashscopeAudio } from './dashscope-audio.js';
 import { acquireNativeOpusEncoder } from './native-opus.js';
@@ -134,22 +135,19 @@ const MAX_RESPONSE_BYTES = 12_000_000;
 const TIMEOUT_MS = 30_000;
 const adapterClock = new SystemClock();
 
-function classify(status: number, code: string): MediaFailure | null {
+function classify(status: number, error: unknown): MediaFailure | null {
   if (status >= 200 && status < 300) return null;
+  const code =
+    error && typeof error === 'object' && typeof (error as { code?: unknown }).code === 'string'
+      ? (error as { code: string }).code
+      : '';
   if (
     ['insufficient_quota', 'insufficient_balance', 'quota_exhausted'].includes(code) ||
     status === 402
   )
     return 'quota_exhausted';
-  if (
-    [
-      'content_filter',
-      'content_policy_violation',
-      'moderation_blocked',
-      'data_inspection_failed',
-    ].includes(code)
-  )
-    return 'content_rejected';
+  // 安全策略拦截名单在 text-adapter.ts 唯一定义；data_inspection_failed 是百炼的审核码，只在媒体这里多认一个。
+  if (isSafetyPolicyBlock(error) || code === 'data_inspection_failed') return 'content_rejected';
   if (status === 401 || status === 403) return 'invalid_key';
   if (status === 429) return 'rate_limited';
   if (status >= 500) return 'provider_error';
@@ -179,18 +177,17 @@ async function readLimited(response: Response): Promise<Uint8Array | null> {
 }
 
 async function errorOf(response: Response): Promise<MediaFailure> {
-  let code = '';
+  let error: unknown;
   try {
     const bytes = await readLimited(response);
     const payload = bytes
       ? (JSON.parse(Buffer.from(bytes).toString('utf8')) as Record<string, unknown>)
       : {};
-    const err = payload.error as { code?: unknown } | undefined;
-    if (typeof err?.code === 'string') code = err.code;
+    error = payload?.error;
   } catch {
     // 正文不是 JSON：只按状态码分类。
   }
-  return classify(response.status, code) ?? 'provider_error';
+  return classify(response.status, error) ?? 'provider_error';
 }
 
 function url(base: string, path: string): string {

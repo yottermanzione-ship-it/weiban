@@ -106,6 +106,12 @@ import {
 import { keepChattingCase, keepChattingHint } from '../domain/keep-chatting.js';
 import { PhotoOffer } from '../domain/photo-marker.js';
 import { sinceDay } from '../domain/memory-tier.js';
+import {
+  MAX_BLOCKED_PER_REPLY,
+  blockedSeqs,
+  turnUserSeqs,
+  withoutBlocked,
+} from './model-blocked-messages.js';
 /** 世界书扫描最近几条消息（酒馆默认扫描深度 2，这里含角色回复所以取 4）。 */
 const LORE_SCAN_MESSAGES = 4;
 /** 单条原文上限（防止一条超长消息吃掉预算）。 */
@@ -204,6 +210,11 @@ export const ReplySnapshot = z.object({
   stablePrefixChars: z.number().int().nonnegative().default(0),
   /** T-20261103g：这轮提示里给模型分享的那张素材照片（模型写「[照片]」才发）；没有为 null。 */
   photoOffer: PhotoOffer.nullable().default(null),
+  /**
+   * T-20261103j：这次回复针对的用户消息序号（本轮：上一条角色消息之后的用户消息）。
+   * 回复因上游安全策略拦截（content_rejected）失败时登记为「不再发给模型」；上线前存下的旧快照没有，按触发消息一条算。
+   */
+  turnUserSeqs: z.array(z.number().int().positive()).max(MAX_BLOCKED_PER_REPLY).default([]),
 });
 export type ReplySnapshot = z.infer<typeof ReplySnapshot>;
 @Injectable()
@@ -987,6 +998,7 @@ export class ReplyContext {
       stablePrefixChars: assembled.stats.stablePrefixChars,
       habits,
       photoOffer: photo?.offer ?? null,
+      turnUserSeqs: turnUserSeqs(history),
     });
   }
   /**
@@ -1008,6 +1020,8 @@ export class ReplyContext {
     const sinceDate = sinceDay(this.clock.now(), input.since);
     const sinceMs = sinceDate ? Date.parse(`${sinceDate}T00:00:00.000Z`) : null;
     const candidates: RecallCandidate[] = [];
+    // T-20261103j：被上游安全策略拦过的消息也不翻出来交给模型。
+    const blocked = await blockedSeqs(this.store.db, input.conversationId);
     let before = input.beforeSeq + 1;
     let scanned = 0;
     while (scanned < RECALL_MAX_SCAN) {
@@ -1031,7 +1045,7 @@ export class ReplyContext {
           reachedEnd = true;
           continue;
         }
-        if (m.senderKind === 'system' || m.status !== 'normal') continue;
+        if (m.senderKind === 'system' || m.status !== 'normal' || blocked.has(m.seq)) continue;
         if (
           (m.content?.type === 'image' && !pageCaptions.has(m.content.mediaId)) ||
           (m.content?.type === 'sticker' &&
@@ -1052,7 +1066,10 @@ export class ReplyContext {
     }
     return retrieveRelevantHistory(candidates, input.query, { max: input.max });
   }
-  /** 从新到旧分页读历史，直到覆盖原文起点 floor（最多 3 页、600 条）。 */
+  /**
+   * 从新到旧分页读历史，直到覆盖原文起点 floor（最多 3 页、600 条）。
+   * T-20261103j：去掉登记为「不再发给模型」的消息（被上游安全策略拦过的用户消息），其余照常。
+   */
   private async readHistory(
     conversationId: string,
     scopes: ContentScope[],
@@ -1073,7 +1090,7 @@ export class ReplyContext {
       if (rows.length < 200 || oldest === undefined || oldest <= floor + 1) break;
       before = oldest;
     }
-    return out;
+    return withoutBlocked(this.store.db, conversationId, out);
   }
   async currentEpoch(
     row: ReplyPlan,
@@ -1115,12 +1132,16 @@ export class ReplyContext {
       ? await this.characters.getLegacyContext?.(row.characterId).catch(() => null)
       : null;
     const view = characterView(role, legacyContext);
-    const history = await this.chat.readMessages({
-      conversationId: row.conversationId,
-      scopes: ['normal'],
-      beforeSeq: row.triggerSeq + 1,
-      limit: 40,
-    });
+    const history = await withoutBlocked(
+      this.store.db,
+      row.conversationId,
+      await this.chat.readMessages({
+        conversationId: row.conversationId,
+        scopes: ['normal'],
+        beforeSeq: row.triggerSeq + 1,
+        limit: 40,
+      }),
+    );
     const answered = await this.store.db.query<{ seq: string }>(
       "SELECT coalesce(max(trigger_seq),0)::text seq FROM ai_runtime.reply_plans WHERE conversation_id=$1 AND kind='message' AND (status='done' OR (status='sending' AND next_bubble>0))",
       [row.conversationId],
@@ -1199,6 +1220,7 @@ export class ReplyContext {
       policy,
       userText: userText.slice(0, 4000),
       timeZone: profile.timeZone,
+      turnUserSeqs: turnUserSeqs(history),
     });
   }
 }

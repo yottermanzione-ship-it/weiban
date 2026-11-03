@@ -70,6 +70,7 @@ import { sinceDay, tierFingerprint, type ResolvedMemoryTier } from '../domain/me
 import { MemoryTierService } from './memory-tier.js';
 import { ReplyPlanStore } from './plan-store.js';
 import { invalidateReplyPlans } from './invalidate.js';
+import { blockedSeqs } from './model-blocked-messages.js';
 export const EXTRACT_MEMORY_JOB = 'ai.extract_memory';
 export interface MemoryJob {
   userId: string;
@@ -1557,6 +1558,8 @@ export class MemoryService {
     }
     const policy = await this.policy.getCharacterPolicy(job.userId, job.characterId);
     if (!policy) return;
+    // T-20261103j：被上游安全策略拦过的消息不交给模型（与敏感消息一样，序号照常推进游标）。
+    const blocked = await blockedSeqs(this.db, job.conversationId);
     // Sensitive messages are excluded before calling the model; their seq still advances the cursor.
     let sources = history.filter(
       (m) =>
@@ -1573,7 +1576,8 @@ export class MemoryService {
         // T-060：用经期摘要生成的消息（health 标记）不进入记忆。
         !m.labels?.includes('health') &&
         // A draft can be read by an earlier extraction job before its recall event arrives.
-        !m.labels?.includes('quirk_draft'),
+        !m.labels?.includes('quirk_draft') &&
+        !blocked.has(m.seq),
     );
     if (!job.force) {
       const first = sources.findIndex(

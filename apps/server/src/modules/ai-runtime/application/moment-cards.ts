@@ -49,6 +49,7 @@ import { CharacterImageService } from './character-image.js';
 import { localParts } from './proactive-scheduler.js';
 import { AI_CHARACTER_READ } from './supplemented-character-read.js';
 import { characterView, rolePersonaSpeechText } from './character-view.js';
+import { withoutBlocked } from './model-blocked-messages.js';
 
 export const MOMENT_TICK_JOB = 'ai.moment_cards_tick';
 export const MOMENT_PAIR_JOB = 'ai.moment_card';
@@ -240,14 +241,19 @@ export class MomentCardService implements OnModuleInit {
       (await this.identity.getProfile(userId).catch(() => null))?.timeZone ?? 'Asia/Shanghai';
     const weekBeginMs = this.clock.nowMs() - 8 * 86_400_000;
 
-    // GRW-05 排除：只读日常范围（成人模式对话不读）、排除健康标记、只取文字。
-    const messages = await this.chat.readMessages({
-      conversationId: contact.conversationId,
-      scopes: ['normal'],
-      excludeLabels: ['health'],
-      contentTypes: ['text'],
-      limit: 400,
-    });
+    // GRW-05 排除：只读日常范围（成人模式对话不读）、排除健康标记、只取文字；
+    // T-20261103j：被上游安全策略拦过的消息也不交给模型。
+    const messages = await withoutBlocked(
+      this.db,
+      contact.conversationId,
+      await this.chat.readMessages({
+        conversationId: contact.conversationId,
+        scopes: ['normal'],
+        excludeLabels: ['health'],
+        contentTypes: ['text'],
+        limit: 400,
+      }),
+    );
     // 安全关怀状态中的对话：回复计划 care_until 覆盖的时间段（触发前 30 分钟起）。
     const care = await this.db.db
       .select({ createdAt: replyPlans.createdAt, careUntil: replyPlans.careUntil })

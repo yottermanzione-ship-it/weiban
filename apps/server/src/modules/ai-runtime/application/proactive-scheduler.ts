@@ -89,6 +89,7 @@ import { PlannerService } from './planner.js';
 import { PlayContinuityStore } from './play-continuity.js';
 import { EcologySettingsService } from './ecology-settings.js';
 import { characterView, roleDefaultVoiceId } from './character-view.js';
+import { withoutBlocked } from './model-blocked-messages.js';
 import { healthPrivate } from '../domain/memory.js';
 import type { EcologyActionKey } from '@weiban/contracts';
 
@@ -1134,14 +1135,19 @@ export class ProactiveSchedulerService {
     if (!epoch || !role || !policy || !conversation || !participant || !settings) {
       return this.fail(plan, 'context_unavailable');
     }
-    const history = await this.chat.readMessages({
-      conversationId: conversation.conversationId,
-      scopes:
-        conversation.contentScope === 'adult' && policy.adultModeEligible
-          ? ['normal', 'adult']
-          : ['normal'],
-      limit: 20,
-    });
+    // T-20261103j：被上游安全策略拦过的消息不交给模型。
+    const history = await withoutBlocked(
+      this.db,
+      conversation.conversationId,
+      await this.chat.readMessages({
+        conversationId: conversation.conversationId,
+        scopes:
+          conversation.contentScope === 'adult' && policy.adultModeEligible
+            ? ['normal', 'adult']
+            : ['normal'],
+        limit: 20,
+      }),
+    );
     const toTurns = (list: typeof history) =>
       list
         .filter(
@@ -1208,6 +1214,7 @@ export class ProactiveSchedulerService {
             scopes: ['normal'],
             limit: 100,
           })
+          .then((rows) => withoutBlocked(this.db, conversation.conversationId, rows))
           .catch(() => [])
       : [];
     const stickerHint = formsEligible
