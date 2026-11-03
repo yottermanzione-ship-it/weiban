@@ -8,6 +8,7 @@
  *   群聊表情包（只数这个角色自己的消息；同一轮已有角色带过表情，别人这轮不再配）。
  */
 import type { Message } from '@weiban/contracts';
+import { P02_SPLIT_BUBBLES } from '../../../platform/index.js';
 import { detectFormSuppressions } from './chat-form-suppression.js';
 
 /**
@@ -113,11 +114,14 @@ export function stickerRoom(
     sinceLast,
     roundTaken,
     quota,
-    /** 本轮 contentCount 条内容之后还能不能再附一个表情。 */
+    /**
+     * 本轮 contentCount 条内容之后还能不能再附一个表情。附上后不能超过 P-02 总上限
+     * （T-20261103h 起 8 条，6 条文字 + 表情 = 7 条照常能配；原先写死 6，文字放宽到 6 条后会一个都配不上）。
+     */
     open: (contentCount: number) =>
       !suppressed &&
       !roundTaken &&
-      contentCount < 6 &&
+      contentCount < P02_SPLIT_BUBBLES.maxTotalBubbles &&
       mine.at(-1)?.content?.type !== 'sticker' &&
       Math.min(quota(contentCount), quota(1)) > 0,
   };
@@ -145,10 +149,10 @@ export function photoRoom(history: readonly Message[], userText: string) {
     suppressed,
     received,
     quota,
-    /** 本轮 contentCount 条内容之后还能不能再附一张照片。 */
+    /** 本轮 contentCount 条内容之后还能不能再附一张照片（附上后不超过 P-02 总上限，同表情包）。 */
     open: (contentCount: number) =>
       !suppressed &&
-      contentCount < 6 &&
+      contentCount < P02_SPLIT_BUBBLES.maxTotalBubbles &&
       mine.at(-1)?.content?.type !== 'image' &&
       Math.min(quota(contentCount), quota(1)) > 0,
   };

@@ -1003,6 +1003,13 @@
       "when": 1793473899968,
       "tag": "0154_sticker_labels",
       "breakpoints": true
+    },
+    {
+      "idx": 155,
+      "version": "7",
+      "when": 1793680879559,
+      "tag": "0155_reply_bubble_cap_8",
+      "breakpoints": true
     }
   ]
 }

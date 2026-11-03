@@ -44,7 +44,7 @@ import {
   type ModelImageRef,
   type UserQuietStatePort,
 } from '@weiban/contracts';
-import { CLOCK, type Clock } from '../../../platform/index.js';
+import { CLOCK, P02_SPLIT_BUBBLES, type Clock } from '../../../platform/index.js';
 import {
   CHARACTER_NAME_READ_PORT,
   CHARACTER_REAL_PERSON_NAMES,
@@ -565,7 +565,7 @@ export class MediaAiService {
    * T-20261103d：表情包由写回复的模型自己决定（stickerMood，来自回复里的「[表情:…]」标记）：
    * 没有标记就不发；有标记时只过硬规则、按情绪挑图，不再有关键词闸门、抽签和决策层审批。
    * T-20261103g：照片同理（photo，模型写了「[照片]」时就是提示里给的那张）；同一轮最多一种媒体附加
-   * （链接 > 照片 > 表情包，语音不算附加），总条数由回复引擎封顶 4 条。
+   * （链接 > 照片 > 表情包，语音不算附加），总条数由回复引擎按 P-02 总上限封顶（T-20261103h 起 8 条）。
    */
   async planExtras(input: {
     ctx: MediaCallContext;
@@ -690,7 +690,7 @@ export class MediaAiService {
     // T-20261103g：同一轮最多一种媒体附加（链接 / 照片 / 表情包），语音不算附加。
     let attached = false;
     // 作品链接为用户明确要求，沿用原库与可访问性校验；不因已发语音就静默丢失。
-    if (LINK_REQUEST.test(input.userText) && contents.length < 6) {
+    if (LINK_REQUEST.test(input.userText) && contents.length < P02_SPLIT_BUBBLES.maxTotalBubbles) {
       const link = await this.pickWorkLink(ctx.characterId, joined).catch(() => null);
       if (link) {
         contents.push(link);
@@ -707,7 +707,7 @@ export class MediaAiService {
         replyTone(input.userText, joined) !== 'serious' &&
         !room.received.has(photo.mediaId) &&
         room.open(bubbles.length) &&
-        contents.length < 6 &&
+        contents.length < P02_SPLIT_BUBBLES.maxTotalBubbles &&
         room.quota(contents.length) > 0
       ) {
         const image = await this.photos
@@ -730,7 +730,7 @@ export class MediaAiService {
       if (
         (!serious || mood === 'comfort') &&
         room.open(bubbles.length) &&
-        contents.length < 6 &&
+        contents.length < P02_SPLIT_BUBBLES.maxTotalBubbles &&
         room.quota(contents.length) > 0
       ) {
         const sticker = pickStickerForMood(

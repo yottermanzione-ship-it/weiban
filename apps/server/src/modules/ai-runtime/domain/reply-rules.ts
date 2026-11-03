@@ -188,6 +188,10 @@ export function stripHabits(text: string, habits: string[]): string {
   return out.trim() ? out : text;
 }
 
+/**
+ * 按换行拆成文字气泡：最多 P-02 文字上限（6 条，2026-11-03 起），多出的行并进最后一条。
+ * 群聊、玩法、主动消息在此基础上再截到各自的条数（3 条）。
+ */
 export function splitReply(text: string, split: boolean): string[] {
   const clean = takeAfterFinalMarker(unescapeModelText(text)).trim();
   if (!clean || clean.length > 16000) return [];
@@ -197,7 +201,7 @@ export function splitReply(text: string, split: boolean): string[] {
     .map((s) => s.trim())
     .filter((s) => s && /[\p{L}\p{N}\p{Emoji_Presentation}\p{Extended_Pictographic}]/u.test(s));
   if (!lines.length) return [];
-  const bubbles = lines.slice(0, P02_SPLIT_BUBBLES.maxBubbles);
+  const bubbles = lines.slice(0, P02_SPLIT_BUBBLES.maxTextBubbles);
   if (lines.length > bubbles.length)
     bubbles[bubbles.length - 1] = lines.slice(bubbles.length - 1).join('\n');
   return bubbles.every((s) => s.length <= 4000) ? bubbles : [];

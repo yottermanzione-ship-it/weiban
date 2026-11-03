@@ -166,3 +166,15 @@ describe('stickerRoom：群聊防刷屏', () => {
     );
   });
 });
+
+describe('T-20261103h：附加内容的条数上限跟 P-02 总上限（8 条）走', () => {
+  it('6 条文字之后还能再配一个表情或一张照片（加上就是 7 条）', () => {
+    expect(stickerRoom(texts(10), '').open(6)).toBe(true);
+    expect(photoRoom(texts(10), '').open(6)).toBe(true);
+    expect(stickerRoom(texts(10), '').open(7)).toBe(true);
+  });
+  it('已经 8 条时不再附加（附上会超过总上限）', () => {
+    expect(stickerRoom(texts(10), '').open(8)).toBe(false);
+    expect(photoRoom(texts(10), '').open(8)).toBe(false);
+  });
+});

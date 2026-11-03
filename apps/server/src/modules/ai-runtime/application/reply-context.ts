@@ -25,6 +25,7 @@ import {
 } from '@weiban/contracts';
 import {
   P01_REPLY_DELAY,
+  P02_SPLIT_BUBBLES,
   P28_INSTANT_REPLY_MIN_TYPING_MS,
   CLOCK,
   type Clock,
@@ -705,7 +706,13 @@ export class ReplyContext {
       { title: '相关经历', text: episodes.relevant },
       {
         title: '私聊场景',
-        text: '现在以角色口吻与用户私聊。只输出聊天纯文本，短句换行，不输出JSON或括号动作。回答前可以先想，想完先单独写一行【正文】，然后只写正文聊天内容；【正文】这行本身不发给用户，正文不能为空。',
+        // T-20261103h（总经理 2026-11-03）：文字气泡上限 4 → 6。开着拆条时告诉模型每行发一条、最多几条，
+        // 并强调短话照样一两条（拆几条由内容决定，不为凑条数硬拆）；关着拆条时整段只发一条，不提条数。
+        text: `现在以角色口吻与用户私聊。只输出聊天纯文本，短句换行，不输出JSON或括号动作。${
+          settings.splitBubbles
+            ? `正文每一行会单独发成一条消息，一次最多 ${P02_SPLIT_BUBBLES.maxTextBubbles} 条；话短就一两条，不要为了凑条数硬拆。`
+            : ''
+        }回答前可以先想，想完先单独写一行【正文】，然后只写正文聊天内容；【正文】这行本身不发给用户，正文不能为空。`,
       },
       { title: '表情包', text: stickerHint },
       { title: '分享照片', text: photo?.text ?? '' },
