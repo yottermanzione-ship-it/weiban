@@ -23,10 +23,17 @@ export const P01_REPLY_DELAY = {
   firstBubbleDeadlineMs: 60 * SECOND_MS,
 } as const;
 
-/** 来源：PRD 第 5 节 P-02。拆条：一次回复 1–4 条气泡，气泡间隔 1–4 秒。CHAT-05 */
+/**
+ * 来源：PRD 第 5 节 P-02。拆条：一次回复文字 1–6 条气泡；加上表情包、照片、作品链接，以及「撤回」草稿、
+ * 「打错字」更正这类小习惯多出来的条，总共最多 8 条；气泡间隔 1–4 秒。CHAT-05
+ * 2026-11-03 总经理调整（T-20261103h）：原为一次回复 1–4 条、附带内容也算在这 4 条里。
+ * maxTotalBubbles 同时是数据库 ai_runtime.reply_plans.next_bubble 的上限（约束 reply_plan_counters，迁移 0155）。
+ * 只管私聊回复：群聊一次发言最多 3 条（group-chat.ts GROUP_MAX_BUBBLES），主动消息文字最多 3 条，各自另算。
+ */
 export const P02_SPLIT_BUBBLES = {
   minBubbles: 1,
-  maxBubbles: 4,
+  maxTextBubbles: 6,
+  maxTotalBubbles: 8,
   minIntervalMs: 1 * SECOND_MS,
   maxIntervalMs: 4 * SECOND_MS,
 } as const;

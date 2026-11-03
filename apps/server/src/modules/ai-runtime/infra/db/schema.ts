@@ -489,9 +489,10 @@ export const replyPlans = aiRuntimeSchema.table(
       sql`${t.status} IN ('queued','generating','waiting','sending','done','cancelled')`,
     ),
     check('reply_plan_kind', sql`${t.kind} IN ('message','greeting')`),
+    // next_bubble 上限 = P-02 总上限 P02_SPLIT_BUBBLES.maxTotalBubbles（迁移 0155 由 4 放宽到 8，T-20261103h）。
     check(
       'reply_plan_counters',
-      sql`${t.triggerSeq} >= 0 AND ${t.triggerSeq} <= 9007199254740991 AND ${t.nextBubble} >= 0 AND ${t.nextBubble} <= 4 AND ${t.retryEpoch} >= 0`,
+      sql`${t.triggerSeq} >= 0 AND ${t.triggerSeq} <= 9007199254740991 AND ${t.nextBubble} >= 0 AND ${t.nextBubble} <= 8 AND ${t.retryEpoch} >= 0`,
     ),
     unique('reply_trigger_idx').on(t.userId, t.triggerId),
     index('reply_due_idx').on(t.status, t.dueAt),

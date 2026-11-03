@@ -374,3 +374,15 @@ describe('T-20261103d 提示词阶段：stickerPrompt 与发送阶段同一套�
     expect(await s.service.stickerPrompt(promptInput())).toBe('');
   });
 });
+
+describe('T-20261103h 文字放宽到 6 条后照样能配表情（6 + 1 = 7 条，不超过总上限 8）', () => {
+  it('6 条文字 + 模型标了情绪：表情包跟在第 6 条后面', async () => {
+    const s = setup();
+    s.isServiceEnabled.mockResolvedValue(false);
+    const bubbles = ['哈哈', '好开心', '今天真不错', '你也是吧', '晚上吃什么', '想想都开心'];
+    const result = await s.service.planExtras({ ...input(), bubbles });
+    expect(result).toHaveLength(7);
+    expect(result?.slice(0, 6)).toEqual(bubbles.map((text) => ({ type: 'text', text })));
+    expect(result?.at(-1)).toMatchObject({ type: 'sticker', stickerId: 'happy' });
+  });
+});

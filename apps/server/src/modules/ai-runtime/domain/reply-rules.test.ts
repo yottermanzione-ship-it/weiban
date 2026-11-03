@@ -157,13 +157,25 @@ it('M1 shared reader isolates scopes and characters, preserves retrieval limits 
 import { ModelPurpose, type GenerateTextInput, type ModelGatewayPort } from '@weiban/contracts';
 import { careFallback, callModelForCare } from '../application/safety-care.js';
 import { highRisk, outputAllowed, replyDelay, splitReply } from './reply-rules.js';
-it('纯文本拆条最多四条，不产生标点气泡或截断句子；关闭拆条合并完整文本', () => {
+it('纯文本拆条最多六条（T-20261103h），不产生标点气泡或截断句子；关闭拆条合并完整文本', () => {
   expect(splitReply('你好\n！\n今天好吗\n慢慢来\n我在\n陪你', true)).toEqual([
     '你好',
     '今天好吗',
     '慢慢来',
-    '我在\n陪你',
+    '我在',
+    '陪你',
   ]);
+  // 7 行以上：前 5 行各一条，其余并进第 6 条（文字气泡上限 6）。
+  expect(splitReply('一\n二\n三\n四\n五\n六\n七\n八', true)).toEqual([
+    '一',
+    '二',
+    '三',
+    '四',
+    '五',
+    '六\n七\n八',
+  ]);
+  // 短话照样一两条：拆几条由内容决定，不会凑条数。
+  expect(splitReply('好呀', true)).toEqual(['好呀']);
   expect(splitReply('你好\n我在', false)).toEqual(['你好\n我在']);
   expect(splitReply('！\n。。。', true)).toEqual([]);
   expect(splitReply('❤', true)).toEqual(['❤']);

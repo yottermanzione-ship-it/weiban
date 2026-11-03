@@ -194,7 +194,8 @@ describeDb('ai-runtime 真实PG：设置/加密计划/合并/幂等/关怀/删�
     throw Error('event backlog');
   }
   async function finish(id: string) {
-    for (let i = 0; i < 6; i++) {
+    // 一次生成 + 每条一次发送：T-20261103h 起一次回复最多 8 条（P-02 总上限），留足余量。
+    for (let i = 0; i < 12; i++) {
       const row = await store.get(id);
       if (!row || ['done', 'cancelled', 'waiting'].includes(row.status)) return;
       clock.advance(Math.max(0, row.dueAt.getTime() - clock.nowMs()));
@@ -729,9 +730,10 @@ describeDb('ai-runtime 真实PG：设置/加密计划/合并/幂等/关怀/删�
     ).filter(
       (m: { seq: number; senderKind: string }) => m.seq > seq && m.senderKind === 'character',
     );
-  it('T-20261103e 四条正文 + 撤回草稿共 5 条：封顶 4 条发完，不违反 reply_plan_counters', async () => {
+  const sevenLines = '第一句\n第二句\n第三句\n第四句\n第五句\n第六句\n第七句';
+  it('T-20261103h 六条正文 + 撤回草稿共 7 条：全部发完不合并，next_bubble = 7', async () => {
     clock.advance(24 * 3600_000);
-    response = '第一句\n第二句\n第三句\n第四句';
+    response = '第一句\n第二句\n第三句\n第四句\n第五句\n第六句';
     const choice = vi.spyOn(engine.quirks, 'choose').mockResolvedValue({
       kind: 'recall',
       respondAt: clock.now().toISOString(),
@@ -741,9 +743,9 @@ describeDb('ai-runtime 真实PG：设置/加密计划/合并/幂等/关怀/删�
       const row = await user('给我讲讲今天发生的事');
       await finish(row.id);
       const ended = (await store.get(row.id))!;
-      expect(ended).toMatchObject({ status: 'done', nextBubble: 4, resultCiphertext: null });
+      expect(ended).toMatchObject({ status: 'done', nextBubble: 7, resultCiphertext: null });
       const sent = await repliesAfter(row.triggerSeq);
-      expect(sent).toHaveLength(4);
+      expect(sent).toHaveLength(7);
       const recalled = sent.filter((m: { status: string }) => m.status === 'recalled');
       expect(recalled).toHaveLength(1);
       expect(recalled[0]).toMatchObject({ labels: ['quirk_draft'] });
@@ -752,17 +754,67 @@ describeDb('ai-runtime 真实PG：设置/加密计划/合并/幂等/关怀/删�
           .filter((m: { status: string }) => m.status === 'normal')
           .map((m: { content: { text: string } }) => m.content.text)
           .sort(),
-      ).toEqual(['第一句', '第二句', '第三句\n第四句'].sort());
+      ).toEqual(['第一句', '第二句', '第三句', '第四句', '第五句', '第六句'].sort());
     } finally {
       choice.mockRestore();
       response = '我听着呢\n今天过得怎么样？';
     }
   });
-  it('T-20261103e 上线前已发到第 4 条、结果里还有第 5 条的旧计划：直接收尾，不再写 next_bubble=5', async () => {
+  it('T-20261103h 七行正文并成 6 条文字，再附一个作品链接共 7 条：照常发完', async () => {
+    clock.advance(24 * 3600_000);
+    response = sevenLines;
     const choice = vi
       .spyOn(engine.quirks, 'choose')
       .mockResolvedValue({ kind: 'none', respondAt: null, typingCycles: 0 });
-    const row = await user('旧结果里有五条');
+    const link = {
+      type: 'link' as const,
+      url: 'https://example.com/work',
+      title: '新歌',
+      source: null,
+      description: null,
+      coverMediaId: null,
+      appHint: 'web' as const,
+    };
+    // 附加内容由 planExtras 决定（真实素材库里没有表情 / 作品），这里固定附一个链接：文字 6 条 + 1 = 7 条。
+    const extras = vi
+      .spyOn(engine.mediaAi, 'planExtras')
+      .mockImplementation(async (input) => [
+        ...input.bubbles.map((text) => ({ type: 'text' as const, text })),
+        link,
+      ]);
+    try {
+      const row = await user('推荐一首你的歌');
+      await finish(row.id);
+      expect(extras.mock.calls[0]?.[0].bubbles).toEqual([
+        '第一句',
+        '第二句',
+        '第三句',
+        '第四句',
+        '第五句',
+        '第六句\n第七句',
+      ]);
+      expect(await store.get(row.id)).toMatchObject({
+        status: 'done',
+        nextBubble: 7,
+        resultCiphertext: null,
+      });
+      const sent = await repliesAfter(row.triggerSeq);
+      expect(sent.map((m: { content: { type: string } }) => m.content.type)).toEqual([
+        ...Array<string>(6).fill('text'),
+        'link',
+      ]);
+      expect(sent.at(-1)?.content).toMatchObject({ type: 'link', url: link.url });
+    } finally {
+      extras.mockRestore();
+      choice.mockRestore();
+      response = '我听着呢\n今天过得怎么样？';
+    }
+  });
+  it('T-20261103h next_bubble 能写到 8：结果里有 8 条、已发到第 6 条的计划续发完；回滚迁移把超过 4 的压回', async () => {
+    const choice = vi
+      .spyOn(engine.quirks, 'choose')
+      .mockResolvedValue({ kind: 'none', respondAt: null, typingCycles: 0 });
+    const row = await user('结果里有八条');
     clock.advance(3000);
     try {
       await engine.run(row.id);
@@ -772,21 +824,73 @@ describeDb('ai-runtime 真实PG：设置/加密计划/合并/幂等/关怀/删�
     const pending = (await store.get(row.id))!;
     expect(pending.status).toBe('sending');
     const result = (await store.open(pending, 'result')) as Record<string, unknown>;
-    result.contents = ['一', '二', '三', '四', '五'].map((text) => ({ type: 'text', text }));
+    result.contents = ['一', '二', '三', '四', '五', '六', '七', '八'].map((text) => ({
+      type: 'text',
+      text,
+    }));
     await db.transaction(async (tx) => {
       const cipher = await store.seal(tx, pending, 'result', result);
       await tx.db
         .update(replyPlans)
-        .set({ resultCiphertext: cipher, nextBubble: 4 })
+        .set({ resultCiphertext: cipher, nextBubble: 6 })
         .where(eq(replyPlans.id, row.id));
     });
     await finish(row.id);
     expect(await store.get(row.id)).toMatchObject({
       status: 'done',
-      nextBubble: 4,
+      nextBubble: 8,
       resultCiphertext: null,
     });
-    expect(await repliesAfter(row.triggerSeq)).toHaveLength(0);
+    // 只续发第 7、8 条（前 6 条在这个构造里没真的发过）。
+    expect(
+      (await repliesAfter(row.triggerSeq)).map((m: { content: { text: string } }) => m.content.text),
+    ).toEqual(['七', '八']);
+    // 9 条超出约束：数据库直接拒绝（next_bubble 永远不超过 P-02 总上限 8）。
+    await expect(
+      db.query('UPDATE ai_runtime.reply_plans SET next_bubble=9 WHERE id=$1', [row.id]),
+    ).rejects.toHaveProperty('code', '23514');
+
+    // 回滚 0155：发送中的超 4 计划压回 4 并收尾，已结束的只改计数；之后再执行 0155 恢复 8 条上限。
+    const sending = await user('回滚时还在发第 6 条');
+    clock.advance(3000);
+    const quiet = vi
+      .spyOn(engine.quirks, 'choose')
+      .mockResolvedValue({ kind: 'none', respondAt: null, typingCycles: 0 });
+    try {
+      await engine.run(sending.id);
+    } finally {
+      quiet.mockRestore();
+    }
+    expect((await store.get(sending.id))?.status).toBe('sending');
+    await db.query('UPDATE ai_runtime.reply_plans SET next_bubble=6 WHERE id=$1', [sending.id]);
+    const sql = (name: string) =>
+      readFileSync(resolve(import.meta.dirname, `../drizzle/${name}`), 'utf8');
+    try {
+      await db.query(sql('0155_reply_bubble_cap_8.down.sql'));
+      const rows = (
+        await db.query<{
+          id: string;
+          status: string;
+          next_bubble: number;
+          result_ciphertext: unknown;
+        }>(
+          'SELECT id,status,next_bubble,result_ciphertext FROM ai_runtime.reply_plans WHERE id = ANY($1)',
+          [[row.id, sending.id]],
+        )
+      ).rows;
+      expect(rows.find((r) => r.id === row.id)).toMatchObject({ status: 'done', next_bubble: 4 });
+      expect(rows.find((r) => r.id === sending.id)).toMatchObject({
+        status: 'done',
+        next_bubble: 4,
+        result_ciphertext: null,
+      });
+      await expect(
+        db.query('UPDATE ai_runtime.reply_plans SET next_bubble=5 WHERE id=$1', [row.id]),
+      ).rejects.toHaveProperty('code', '23514');
+    } finally {
+      await db.query(sql('0155_reply_bubble_cap_8.sql'));
+    }
+    await db.query('UPDATE ai_runtime.reply_plans SET next_bubble=8 WHERE id=$1', [row.id]);
   });
   it('T-20261103e 确定性数据库错误直接作废、不交给队列反复重试、已发的不重发；临时错误仍照常重试', async () => {
     const choice = vi
