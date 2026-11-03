@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # 香港服务器加密备份：weiban-backup.timer 每天调用，发版前也用它备份一次。
 # 产物与 deploy/prod/scripts/backup.sh 同格式（weiban-backup-v1），可用 deploy/prod/scripts/restore.sh 恢复。
-# 只保留最近 KEEP 份完整备份；KEK 与 age 解密身份不在备份里，须另行保管。
+# 保留规则（总经理 2026-11-03）：最多 KEEP（默认 2）份完整备份，而且合计不超过 BACKUP_MAX_TOTAL（默认 10G），
+# 超了从最早的删起；最新这一份始终保留，只有它一份也超过上限时登记「严重」提醒。
+# KEK 与 age 解密身份不在备份里，须另行保管。
 #
 # 执行顺序（2026-11-03 数据盘写满、停站约 10 分钟后改成这样）：
 #   1. 先查空间：上一份完整备份的大小加 20% 余量，再留 1G 底线。备份盘不够就直接失败退出，这时还没停应用。
-#   2. 停应用 → 导出数据库和媒体 → 马上恢复应用 → 写校验和与清单 → 清理旧备份。
+#   2. 停应用 → 导出数据库和媒体 → 马上恢复应用 → 写校验和与清单 → 按份数和合计上限清理旧备份。
 #   3. 中途任何一步失败或收到停止信号：先删掉本次半成品腾出空间，再把应用拉起来，并在后台「运行提醒」登记。
 # 默认写到系统盘 /var/backups/weiban，和数据盘（docker、数据库、媒体）分开。
 # 说明见 docs/ops/hk-server.md「六、磁盘、备份与清理」。
@@ -17,6 +19,8 @@ export LC_ALL=C
 RECIPIENT_FILE=${BACKUP_AGE_RECIPIENT_FILE:-/srv/weiban/keys/backup-recipient.txt}
 BACKUP_ROOT=${1:-/var/backups/weiban}
 KEEP=${KEEP:-2}
+# 所有完整备份合计的上限，写成 10G、500M 或字节数。系统盘 50G，每份约 3.2G。
+MAX_TOTAL=${BACKUP_MAX_TOTAL:-10G}
 MARGIN_PERCENT=${BACKUP_SPACE_MARGIN_PERCENT:-20}
 RESERVE_BYTES=${BACKUP_RESERVE_BYTES:-1073741824}
 HEALTH_TIMEOUT=${APP_HEALTH_TIMEOUT_SECONDS:-120}
@@ -31,7 +35,18 @@ fail() {
   exit 1
 }
 
+# 10G / 500M / 纯字节数 → 字节数。
+to_bytes() {
+  [[ $1 =~ ^([0-9]+)([GgMm]?)$ ]] || return 1
+  case ${BASH_REMATCH[2]} in
+    [Gg]) echo $((10#${BASH_REMATCH[1]} * 1073741824)) ;;
+    [Mm]) echo $((10#${BASH_REMATCH[1]} * 1048576)) ;;
+    *) echo $((10#${BASH_REMATCH[1]})) ;;
+  esac
+}
+
 [[ $KEEP =~ ^[1-9][0-9]*$ ]] || fail 'KEEP 必须是正整数'
+MAX_TOTAL_BYTES=$(to_bytes "$MAX_TOTAL") || fail "BACKUP_MAX_TOTAL 格式不对：$MAX_TOTAL（例 10G、500M）"
 [[ $MARGIN_PERCENT =~ ^[0-9]+$ && $RESERVE_BYTES =~ ^[0-9]+$ && $HEALTH_TIMEOUT =~ ^[0-9]+$ ]] || fail '空间余量或等待时间参数不是数字'
 command -v age >/dev/null || fail '服务器缺少 age 命令'
 [[ -s $RECIPIENT_FILE ]] || fail '缺少 age 公钥接收者文件'
@@ -141,16 +156,36 @@ printf '%s\n' 'weiban-backup-v1' "created_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)" 's
 finished=1
 echo "已完成加密备份：$bundle（$(du -sh -- "$bundle" | cut -f1)）"
 
-# ---------- 3. 保留最近 KEEP 份完整备份；删除超过 1 天仍未完成的残留目录 ----------
-# 只管 weiban-* 名字的目录，别的名字的手工备份不在清理范围内。
+# ---------- 3. 保留：最多 KEEP 份，合计不超过 MAX_TOTAL；超了从最早的删起，最新这一份始终保留 ----------
+# 只管 weiban-* 名字的目录，别的名字的手工备份不在清理范围内，也不计入合计。最后删除超过 1 天仍未完成的残留目录。
 complete=("$BACKUP_ROOT"/weiban-*/manifest.txt)
 complete=("${complete[@]%/manifest.txt}")
-for ((i = 0; i < ${#complete[@]} - KEEP; i++)); do
-  rm -rf -- "${complete[i]}"
-  echo "已清理旧备份：${complete[i]}"
+remove_oldest() {
+  rm -rf -- "${complete[0]}"
+  echo "已清理旧备份：${complete[0]}（$1）"
+  complete=("${complete[@]:1}")
+}
+while ((${#complete[@]} > KEEP)); do remove_oldest "超过 $KEEP 份"; done
+sizes=()
+total=0
+for d in "${complete[@]}"; do
+  size=$(du -sb -- "$d" | cut -f1 | tr -dc '0-9') || size=0
+  sizes+=("${size:-0}")
+  total=$((total + ${size:-0}))
 done
+while ((${#complete[@]} > 1 && total > MAX_TOTAL_BYTES)); do
+  total=$((total - sizes[0]))
+  sizes=("${sizes[@]:1}")
+  remove_oldest "合计超过 $(human_bytes "$MAX_TOTAL_BYTES")"
+done
+echo "保留 ${#complete[@]} 份完整备份，合计 $(human_bytes "$total")（上限 $KEEP 份、$(human_bytes "$MAX_TOTAL_BYTES")）"
 find "$BACKUP_ROOT" -mindepth 1 -maxdepth 1 -type d -name 'weiban-*' -mmin +1440 '!' -exec test -e '{}/manifest.txt' ';' -print -exec rm -rf -- '{}' + || true
 df -h -- "$BACKUP_ROOT" | tail -n 1 || true
+
+# 只剩最新这一份也超过上限：按总经理的口径保留它，登记「严重」提醒（备份本身是好的，退出码仍为 0，不挡发版）。
+if ((total > MAX_TOTAL_BYTES)); then
+  ops_alert backup_over_cap:hk critical "备份已完成，但这一份就有 $(human_bytes "$total")，超过合计上限 $(human_bytes "$MAX_TOTAL_BYTES")；已保留这一份、删除其余旧备份。请检查媒体增长，或在 weiban-backup.service 调高 BACKUP_MAX_TOTAL" backup_failed
+fi
 
 if ((!app_ok)); then
   ops_alert backup_app_down:hk critical '备份已完成，但应用没能恢复健康，网站可能已停止，请立即处理' backup_failed

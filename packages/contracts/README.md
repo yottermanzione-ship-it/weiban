@@ -95,6 +95,13 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 5.3（2026-11-03，服务器磁盘与备份提醒种类）
+
+- `AdminAlertKind` 新增 `host_disk_high`（磁盘空间不足）、`backup_failed`（备份失败）。这两种提醒从 5.2 起就由香港服务器运维脚本（`deploy/hk/disk-check.sh`、`deploy/hk/backup.sh`）直接写进表 `push.admin_alerts`，管理后台按接收端容错显示成 `unsupported`；现在正式进契约，后台显示中文名。
+- 这条路径仍然**不推送**到手机，要打开后台才看得到；合并键与触发条件见 `docs/ops/hk-server.md` 第六节。
+- 新增可选取值、不删不改旧字段，按规则升次版本；Android 生成产物同步版本号。旧版后台读到这两种仍显示 `unsupported`，不报错。WebSocket 鉴权已放行 5.x，不用改。
+- 依据：任务卡 `docs/tasks/T-20261103i-backup-retention-release-script.md` 第 4 项（T-20261103f 交接遗留 1）。
+
 ### 5.2（2026-11-03，生态开关按对照表 v3 收拢）
 
 - `ECOLOGY_ACTION_KEYS` 新增取值 `private_moments`（私人朋友圈总开关）：一个开关同时管微博同步与发私人朋友圈。服务器存储仍按 `weibo_sync`、`moment_post` 两个 key 写进 `disabled_actions`（关 = 两个都写入，开 = 两个都去掉），无新迁移。

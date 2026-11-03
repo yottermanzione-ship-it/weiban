@@ -7,7 +7,10 @@ After=docker.service
 Type=oneshot
 # Backups go to the system disk, separate from the data disk (docker, database, media),
 # so filling one disk cannot take the other down. See docs/ops/hk-server.md section 6.
+# Retention (2026-11-03): at most KEEP complete backups AND at most BACKUP_MAX_TOTAL in total,
+# oldest deleted first; the newest is always kept (critical alert if it alone exceeds the cap).
 Environment=KEEP=2
+Environment=BACKUP_MAX_TOTAL=10G
 ExecStart=/bin/bash /srv/weiban/src/deploy/hk/backup.sh /var/backups/weiban
 # A stuck backup is stopped after 45 minutes. On SIGTERM the script deletes the partial
 # bundle and restarts the app (health wait up to 120 s), so leave it time to finish.

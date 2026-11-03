@@ -20,6 +20,8 @@ const KIND_LABELS: Record<string, string> = {
   upstream_unavailable: '上游故障',
   upstream_recovered: '上游恢复',
   client_error_spike: '客户端报错激增',
+  host_disk_high: '磁盘空间不足',
+  backup_failed: '备份失败',
 };
 
 const SEVERITY: Record<string, { tone: 'error' | 'warning' | 'default'; label: string }> = {
