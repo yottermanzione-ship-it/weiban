@@ -41,9 +41,9 @@ describe('takePhotoMarker：剥掉照片标记，用户正文不残留', () => {
   });
 
   it('照着聊天记录学写的「[你发了一张图片：…]」只剥不发', () => {
-    expect(takePhotoMarker('[你发了一张图片：微博配图（10月30日的微博：「日落」）]\n好看吗')).toEqual(
-      { text: '好看吗', photo: false },
-    );
+    expect(
+      takePhotoMarker('[你发了一张图片：微博配图（10月30日的微博：「日落」）]\n好看吗'),
+    ).toEqual({ text: '好看吗', photo: false });
   });
 
   it('没有标记时原样返回，一个字不改', () => {

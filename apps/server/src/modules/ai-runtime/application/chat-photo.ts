@@ -30,10 +30,9 @@ export class ChatPhotoService {
     @Inject(WeiboMaterialService)
     private readonly weibo: Pick<WeiboMaterialService, 'shareable'>,
     @Inject(MEDIA_READ_PORT) private readonly mediaRead: MediaReadPort,
-    @Optional() @Inject(ImageCaptionStore) private readonly captions?: Pick<
-      ImageCaptionStore,
-      'load' | 'save'
-    >,
+    @Optional()
+    @Inject(ImageCaptionStore)
+    private readonly captions?: Pick<ImageCaptionStore, 'load' | 'save'>,
   ) {}
 
   /** 这个用户还没收到过的一张可分享素材图；没有返回 null。 */

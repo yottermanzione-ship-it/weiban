@@ -352,7 +352,9 @@ export class MediaAiService {
         if (mine) {
           // T-20261103g：分享的素材照片发出时存了描述（出自哪条微博），接着聊时角色知道发的是什么。
           const shared = opts.captions.get(c.mediaId);
-          return { text: shared ? `[你发了一张图片：${captionPhrase(shared)}]` : '[你发了一张图片]' };
+          return {
+            text: shared ? `[你发了一张图片：${captionPhrase(shared)}]` : '[你发了一张图片]',
+          };
         }
         const seen = opts.captions.get(c.mediaId);
         if (seen)

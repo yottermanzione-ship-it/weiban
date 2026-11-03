@@ -10,7 +10,11 @@ import type { ShareableWeiboPhotos, WeiboMaterialService } from './weibo-materia
 const policy = { isMinor: false, isRealPerson: false, romanceAllowed: false };
 const none = new Set<string>();
 
-function post(updateId: string, mediaIds: string[], content = '今天去海边拍了日落'): ShareableWeiboPhotos {
+function post(
+  updateId: string,
+  mediaIds: string[],
+  content = '今天去海边拍了日落',
+): ShareableWeiboPhotos {
   return { updateId, content, publishedOn: '2026-10-30', mediaIds };
 }
 
@@ -55,7 +59,10 @@ function harness(
 
 describe('ChatPhotoService.offer：选一张这个用户没收到过的素材图', () => {
   it('从最新那条微博里挑，带上日期和摘录', async () => {
-    const { service } = harness([post('u-new', ['n1', 'n2']), post('u-old', ['o1'], '旧的一条微博')]);
+    const { service } = harness([
+      post('u-new', ['n1', 'n2']),
+      post('u-old', ['o1'], '旧的一条微博'),
+    ]);
     const offer = await service.offer({ userId: 'user', characterId: 'c', received: none, policy });
     expect(offer).not.toBeNull();
     expect(['n1', 'n2']).toContain(offer!.mediaId);
@@ -67,9 +74,12 @@ describe('ChatPhotoService.offer：选一张这个用户没收到过的素材图
   });
 
   it('聊天记录里发过的、存档里记过的都排除；最新那条用完了换下一条', async () => {
-    const { service } = harness([post('u-new', ['n1', 'n2']), post('u-old', ['o1'], '旧的一条微博')], {
-      archived: ['n2'],
-    });
+    const { service } = harness(
+      [post('u-new', ['n1', 'n2']), post('u-old', ['o1'], '旧的一条微博')],
+      {
+        archived: ['n2'],
+      },
+    );
     const offer = await service.offer({
       userId: 'user',
       characterId: 'c',
@@ -81,9 +91,9 @@ describe('ChatPhotoService.offer：选一张这个用户没收到过的素材图
 
   it('全都收到过、没有素材、素材文字涉及健康隐私：都返回 null，不去找别的图', async () => {
     const all = harness([post('u', ['a'])], { archived: ['a'] });
-    expect(await all.service.offer({ userId: 'user', characterId: 'c', received: none, policy })).toBe(
-      null,
-    );
+    expect(
+      await all.service.offer({ userId: 'user', characterId: 'c', received: none, policy }),
+    ).toBe(null);
     const empty = harness([]);
     expect(
       await empty.service.offer({ userId: 'user', characterId: 'c', received: none, policy }),
@@ -117,9 +127,9 @@ describe('ChatPhotoService.content：发送前复核', () => {
 
   it('素材已撤下、媒体不在、不是图片：不发', async () => {
     expect(await harness([post('u', ['b'])]).service.content('user', 'c', 'a')).toBe(null);
-    expect(await harness([post('u', ['a'])], { missing: true }).service.content('user', 'c', 'a')).toBe(
-      null,
-    );
+    expect(
+      await harness([post('u', ['a'])], { missing: true }).service.content('user', 'c', 'a'),
+    ).toBe(null);
     expect(
       await harness([post('u', ['a'])], { mime: 'video/mp4' }).service.content('user', 'c', 'a'),
     ).toBe(null);
@@ -133,7 +143,12 @@ describe('ChatPhotoService.remember：发出后记进图片描述存档', () => 
       userId: 'user',
       conversationId: 'conv',
       messageId: 'msg',
-      offer: { mediaId: 'a', updateId: 'u', excerpt: '今天去海边拍了日落', publishedOn: '2026-10-30' },
+      offer: {
+        mediaId: 'a',
+        updateId: 'u',
+        excerpt: '今天去海边拍了日落',
+        publishedOn: '2026-10-30',
+      },
     });
     expect(saved).toEqual([
       {

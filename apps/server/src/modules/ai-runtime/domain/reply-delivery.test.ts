@@ -53,8 +53,7 @@ describe('fitReplyContents：一次回复最多发 4 条（P-02）', () => {
     expect(fitReplyContents([text('一'), text('二'), text('三'), text('四'), photo])).toEqual([
       text('一'),
       text('二'),
-      text('三
-四'),
+      text('三\n四'),
       photo,
     ]);
     // 文字长到合并不下时，照片和表情包一样可以去掉。

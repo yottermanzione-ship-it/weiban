@@ -34,7 +34,8 @@ const EXCERPT_MAX = 80;
 const MARKER =
   /[[【［]\s*(?:分享|发)?(?:一张|张)?(?:照片|图片|相片|photo|image)\s*(?:[:：][^\]】］\n]{0,60})?\s*[\]】］]/giu;
 /** 模型照着聊天记录里自己发过的图（「[你发了一张图片：…]」）学着写的：只剥，不当成要发图。 */
-const ECHO = /[[【［]\s*你(?:发了|分享了)(?:一张|张)?(?:图片|照片)(?:[:：][^\]】］\n]{0,400})?\s*[\]】］]/gu;
+const ECHO =
+  /[[【［]\s*你(?:发了|分享了)(?:一张|张)?(?:图片|照片)(?:[:：][^\]】］\n]{0,400})?\s*[\]】］]/gu;
 
 /** 正文只剩标记时补一句很短的话（绝不发空回复）；正常情况下提示词要求正文必须有文字。 */
 const BARE = '给你看看这张';
@@ -87,7 +88,9 @@ export function photoMaterialAllowed(
   content: string,
   policy: { isMinor: boolean; isRealPerson: boolean; romanceAllowed: boolean },
 ): boolean {
-  return content.trim().length >= 4 && !healthPrivate(content) && outputAllowed(content, policy, false);
+  return (
+    content.trim().length >= 4 && !healthPrivate(content) && outputAllowed(content, policy, false)
+  );
 }
 
 /**

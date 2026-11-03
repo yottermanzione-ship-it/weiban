@@ -56,7 +56,12 @@ describe('photoRoom：私聊照片硬规则', () => {
   });
 
   it('软上限：20 条角色消息里已有 2 张就不发，挤出窗口后又能发', () => {
-    const two = [msg('character', image('a')), ...texts(5), msg('character', image('b')), ...texts(5)];
+    const two = [
+      msg('character', image('a')),
+      ...texts(5),
+      msg('character', image('b')),
+      ...texts(5),
+    ];
     expect(photoRoom(two, '').open(1)).toBe(false);
     const old = [msg('character', image('a')), msg('character', image('b')), ...texts(25)];
     expect(photoRoom(old, '').open(1)).toBe(true);
@@ -73,7 +78,10 @@ describe('photoRoom：私聊照片硬规则', () => {
   });
 
   it('聊天记录里角色发过的图记为收到过', () => {
-    const room = photoRoom([msg('character', image('a')), ...texts(3), msg('user', image('u'))], '');
+    const room = photoRoom(
+      [msg('character', image('a')), ...texts(3), msg('user', image('u'))],
+      '',
+    );
     expect([...room.received]).toEqual(['a']);
   });
 });

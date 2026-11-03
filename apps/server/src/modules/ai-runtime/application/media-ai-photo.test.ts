@@ -102,9 +102,7 @@ function setup(opts: { photos?: boolean; reachableLink?: boolean } = {}) {
       { nowMs: () => 1000 },
       {},
       { decideBatch },
-      opts.photos === false
-        ? undefined
-        : { offer: photoOffer, content: photoContent, remember },
+      opts.photos === false ? undefined : { offer: photoOffer, content: photoContent, remember },
     ] as unknown as ConstructorParameters<typeof MediaAiService>),
   );
   return { service, photoContent, photoOffer, remember, decideBatch };
@@ -153,12 +151,19 @@ describe('planExtras：模型写了 [照片] 才发提示里给的那张', () =>
     const history = [msg('user', text('别发照片了')), ...texts(10)];
     expect(await setup().service.planExtras(extras(history))).toBeNull();
     expect(
-      types(await setup().service.planExtras(extras(history, { userText: '发张你的照片给我看看' }))),
+      types(
+        await setup().service.planExtras(extras(history, { userText: '发张你的照片给我看看' })),
+      ),
     ).toEqual(['text', 'image']);
   });
 
   it('软上限：20 条里已有 2 张就不发；上一条就是图也不发', async () => {
-    const two = [msg('character', image('a')), ...texts(4), msg('character', image('b')), ...texts(4)];
+    const two = [
+      msg('character', image('a')),
+      ...texts(4),
+      msg('character', image('b')),
+      ...texts(4),
+    ];
     expect(await setup().service.planExtras(extras(two))).toBeNull();
     expect(
       await setup().service.planExtras(extras([...texts(5), msg('character', image('a'))])),
@@ -187,9 +192,9 @@ describe('planExtras：模型写了 [照片] 才发提示里给的那张', () =>
     // 照片复核不通过时，表情照常可以补上。
     const s2 = setup();
     s2.photoContent.mockResolvedValueOnce(null);
-    expect(
-      types(await s2.service.planExtras(extras(texts(10), { stickerMood: 'happy' }))),
-    ).toEqual(['text', 'sticker']);
+    expect(types(await s2.service.planExtras(extras(texts(10), { stickerMood: 'happy' })))).toEqual(
+      ['text', 'sticker'],
+    );
   });
 });
 
@@ -284,10 +289,18 @@ describe('群聊表情包', () => {
     const open = await s.service.groupStickerPrompt(base([...texts(3), trigger], trigger.seq));
     expect(open).toContain('这条群消息可以配一个表情包');
     expect(open).toContain('开心');
-    const taken = [...texts(3), trigger, msg('character', text('哈哈'), 'char-b'), stickerMsg('char-b')];
+    const taken = [
+      ...texts(3),
+      trigger,
+      msg('character', text('哈哈'), 'char-b'),
+      stickerMsg('char-b'),
+    ];
     expect(await s.service.groupStickerPrompt(base(taken, trigger.seq))).toBe('');
     expect(
-      await s.service.groupStickerPrompt({ ...base([...texts(3), trigger], trigger.seq), quiet: true }),
+      await s.service.groupStickerPrompt({
+        ...base([...texts(3), trigger], trigger.seq),
+        quiet: true,
+      }),
     ).toBe('');
   });
 
