@@ -90,6 +90,8 @@
 - 可用性翻转（active ↔ 非 active）时，对指向它的每个**启用**模型发 `model_access.model_status_changed`（`provider_unavailable` / `recovered`）；
 - 发 `platform.admin_alert_raised`（billing.md 8.4）：`quota_exhausted` → `upstream_quota_exhausted`（critical）、`invalid` → `upstream_invalid`（critical）、`unavailable` → `upstream_unavailable`（warning）、从异常回到 active → `upstream_recovered`（info）；合并键 `{kind}:{upstreamId}`，说明只含上游展示名，不含用户信息和密钥。
 
+**网关报「密钥失效」前先自检**（T-20261104a）：网关（文本、媒体、语音）报 `invalid` 之前，先用同一把密钥做一次连通测试（`UpstreamService.keyStillWorks`，与后台「测试」同一个探测）；测试通过就不改状态。详见文末「T-20261104a」一节。
+
 目录条目启用 / 停用、改指上游导致可用性翻转时也发 `model_status_changed`（停用为 `model_removed`）。新建条目不发。选择变化发 `model_access.selection_changed`。
 
 ## 7. 每日用量对账（第 ② 层，契约 1.3）
@@ -107,7 +109,9 @@
 |---|---|
 | 解析模型 + 闸门 + 识图回退 | `ModelResolver.resolve({ userId, modelRole, purpose, characterId })` → `PortResult<ResolvedModel, GenerateError>` |
 | 解密密钥 | `UpstreamService.withApiKey(upstreamId, async (apiKey) => …)`：只在回调里用，不要记录 |
-| 报告上游状态 | `UpstreamService.reportStatus(upstreamId, status, 'gateway' \| 'probe', failure?)`（自动发事件和提醒） |
+| 报告上游状态 | `UpstreamService.reportStatus(upstreamId, status, 'gateway' \| 'probe', failure?)`（自动发事件和提醒；`gateway` 报 `invalid` 时先经 `keyStillWorks` 自检，T-20261104a） |
+| 401 / 403 密钥自检 | `UpstreamService.keyStillWorks(upstreamId)`：true = 密钥没坏，这次按 `content_rejected` 处理；结论按上游缓存 `KEY_SELF_CHECK_TTL_MS`（60 秒）；`forgetKeyCheck` 清掉（换密钥、手动测试、改地址 / 协议时自动清） |
+| 私密回复限制 | `PrivateBlockLimiter.skips(input)`：同一用户近期多次被私密模型服务商拦截时为 true，网关直接返回 `content_rejected`（T-20261104a） |
 | 用量记录 | `UsageRecorder.start`（同幂等键返回已有记录，`created = false`）→ `attachHold` → `finish` → `writeSettleSnapshot` / `writeReleaseSnapshot` |
 | 模型状态 | `ModelStatusService.getModelStatus(userId, characterId)` = 契约 `ModelGatewayPort.getModelStatus` |
 
@@ -140,8 +144,36 @@
 - **表（0089）**：`upstreams` 一行 = 一个上游账号，新增 `provider / priority / weight / max_concurrency / rpm_limit / enabled / note / cooldown_until / consecutive_failures / last_error / last_used_at`；新表 `model_routes(model_key, upstream_id, upstream_model_id, priority, weight, enabled)`（迁移时把每个目录条目的主上游写成第一条路由）；新表 `settings`（`gateway_limits`）。
 - **调度**（`application/scheduler.ts`）：候选 = 该模型启用路由 × 启用账号；状态正常且不在暂停中的在前，暂停到期但仍标「不可用」的排最后（试探）；先比路由优先级、再比账号优先级，组内用加权一致性散列排序（分数 = −ln(u) / (路由权重 × 账号权重)，u = 散列「会话 ID | 模型 | 账号」）：同一会话稳定落在同一账号（粘性，利于缓存命中），无会话时按权重随机。
 - **网关**（`gateway.ts` 的 `callUpstreams`）：先占每用户槽位（每用户并发 / 每分钟上限，超出直接 `provider_unavailable`，不冻结不扣费）；冻结一次；按候选顺序占账号槽位（账号并发 / 每分钟上限，满了跳到下一个；全满记 `account_limited` 失败，不算账号故障）；可切换的失败（`network_error / provider_error / rate_limited / quota_exhausted / invalid_key / timeout`）立即换下一个账号（不等待），用量记录与生成缓存改记实际账号；只剩最后一个账号时沿用原 2 / 5 / 15 秒退避。
-- **健康**：成功清零连续失败、清暂停，状态非正常则恢复；失败累加，达到阈值（默认 3 次）暂停（默认 300 秒）并标 `unavailable`；`invalid_key / quota_exhausted` 立即标对应状态并暂停。上游安全策略拦截（`policy_violation` / `policy_error` 等，名单见 `docs/ai/runtime-overview.md` 适配器「错误归类」）一律是 `content_rejected`，即使 HTTP 是 401 / 403：不切换账号、不记失败、不标状态、不冷却线路（T-20261103j）。`GatewayMaintenance` 每分钟探测启用、暂停到期、24 小时内变为不可用的账号，连通即恢复。手动测试通过也清暂停。
+- **健康**：成功清零连续失败、清暂停，状态非正常则恢复；失败累加，达到阈值（默认 3 次）暂停（默认 300 秒）并标 `unavailable`；`invalid_key / quota_exhausted` 立即标对应状态并暂停。上游安全策略拦截（`policy_violation` / `policy_error` 等，名单见 `docs/ai/runtime-overview.md` 适配器「错误归类」）一律是 `content_rejected`，即使 HTTP 是 401 / 403：不切换账号、不记失败、不标状态、不冷却线路（T-20261103j）。401 / 403 而正文不是安全策略格式的（`invalid_key`），先用同一把密钥自检，自检也失败才标 `invalid`；自检通过按 `content_rejected` 处理（T-20261104a，见文末）。`GatewayMaintenance` 每分钟探测启用、暂停到期、24 小时内变为不可用的账号，连通即恢复。手动测试通过也清暂停。
 - **模型可用性**：`CatalogService.routeStatus` —— 任一启用路由指向「启用且正常」的账号即可用；单个账号故障不再发 `model_status_changed`，只有经它路由、且没有别的正常账号的模型才发。旧接口 `upsertCatalogEntry` 保存后同步主路由（0～1 条路由时替换，多条时更新 / 补上）；`upsertModel` 传 `routes` 时整体替换，目录主上游 = 主路由（媒体网关仍按目录主上游调用）。
 - **限流计数在进程内存**（单实例部署够用；多实例需改共享存储）。
 - **用量监控**（`usage.ts`）：汇总新增 `chargedPoints / avgLatencyMs / failureRate / cacheHitRate`，维度新增 `hour`；明细新增 `chargedPoints / upstreamModelId`；`POST /admin/model/usage/overview` 给看板（本期与上一等长时段、账号可用数、最近 24 小时错误按账号 + 模型 + 错误合并）。
 - **新接口**：`PATCH /admin/model/upstreams/:id`、`POST /admin/model/upstreams/batch`、`GET /admin/model/upstreams/:id/models`（拉取账号可用模型）、`GET/PUT /admin/model/limits`、`POST /admin/model/usage/overview`；创建账号可带调度参数与 `saveOnTestFailure`。
+
+## T-20261104a：上游判定自检与用户之间拦截隔离（2026-11-04）
+
+来源：总经理 11-04 两条要求——① 用户再触发服务商拦截，绝不能影响后台的上游账号判断；② 用户之间的拦截互不影响。
+
+**① 401 / 403 先自检，再决定是不是密钥失效**
+
+| 上游返回 | 归类 | 上游状态 | 调用方拿到 |
+|---|---|---|---|
+| 安全策略正文（`policy_violation` 等，名单见 `docs/ai/runtime-overview.md` 2.2「错误归类」），不管 HTTP 码 | `content_rejected` | 不变 | `content_rejected` |
+| 401 / 403 普通正文，**同一把密钥自检通过** | 改按 `content_rejected` | 不变：不暂停、不累计失败、不冷却线路、不换账号 | `content_rejected` |
+| 401 / 403 普通正文，**自检也失败**（任何失败类别，或读不到密钥） | `invalid_key` | 标 `invalid` 并暂停（原逻辑） | 文本 `provider_unavailable`（同原来） |
+| 402、余额 / 额度类错误码 | `quota_exhausted` | 标 `quota_exhausted`（原逻辑，不自检） | `provider_unavailable` |
+
+- **自检**：`UpstreamService.keyStillWorks(upstreamId)`，用后台「测试」同一个探测（`UPSTREAM_PROBE`：OpenAI 兼容 `GET /models`，Anthropic `GET /v1/models`，没有模型列表时发不完整的 Messages 请求）。不产生费用。
+- **缓存**：同一上游的结论在进程内保留 `KEY_SELF_CHECK_TTL_MS`（60 秒，`upstreams.ts` 常量）；缓存的是进行中的测试，同一时间的多个请求共用一次。管理员换密钥、手动测试、改地址或协议时清掉。
+- **在哪判断**：上游状态被改成 `invalid` 的入口只有 `UpstreamService.reportStatus(…, 'invalid', 'gateway')`，这里先问 `keyStillWorks`；文本网关走的 `UpstreamScheduler.recordFailure` 在累计失败、写暂停之前也先问。这两处保证任何网关路径都不会因为内容被拦把上游标 `invalid`。
+- **调用方拿到的类别**：文本网关（`gateway.ts` `callUpstreams`）拿到上游回答后立刻自检，通过就把这次结果改成 `content_rejected`，后面的用量记录、解冻原因（`call_rejected`）、返回值都按内容被拒；媒体网关（`media-gateway.ts` `withTarget`，合成、识别、图片、搜索、实时通话、复刻都经过它）同样改写。所以回复引擎拿到的是 `content_rejected`（回推托语、登记被拦消息），不会进等待被巡检反复重试。
+- **日志**：每次真正发出自检打一条 `upstream_key_self_check`（上游 ID + 结果类别），不含密钥和上游原文。
+
+**② 同一用户反复被拦只限制他自己**（`application/private-block-limit.ts`）
+
+- 参数只在 `platform/config/product-params.ts` 的 `PRIVATE_BLOCK_LIMIT` 定义：1 小时内 5 次 → 限制 1 小时（总负责人 2026-11-04 定，总经理可调）。
+- 计数：`usage_records` 里该用户 `model_role = 'adult'`、`error_code = 'content_rejected'` 的记录（每次真正发给服务商、被拦下的私密模型调用一条，含上面自检通过后改按内容被拒的）。不新建表，不存内存状态，重启不丢。
+- 判定：某一次被拦时往前 1 小时内（含这次）累计达到 5 次 → 从这一次起 1 小时内受限。
+- 受限期间：该用户的**私密回复**（`modelRole = 'adult'`、`purpose = 'chat_reply'`、用户付费）在网关里直接返回 `content_rejected`，不请求服务商、不冻结、不扣费、不写用量记录（所以限制不会因为受限期间的回复自己延长）。生效时打一条 `private_block_limited`（用户 ID、次数、到期时间，不含内容）。
+- 私聊回复、私密群聊发言、私密通话回合都是 `chat_reply` + `adult`，都受限，各自已有的 `content_rejected` 处理照旧（私聊回推托语并登记被拦消息，群聊、通话回推托语）。
+- 不受限的：其他用户；这个用户的非私密调用（日常聊天、日常群聊、日常通话）；安全判断与关怀回合（`safety_check` / `safety_followup`，安全优先）；记忆整理、摘要、主动消息等后台调用（原因见交接 `docs/handoffs/2026-11-04-upstream-isolation.md`）。

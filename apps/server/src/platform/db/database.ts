@@ -7,6 +7,13 @@
  * - 把 tx 原样传给其他模块的端口（契约里的 Tx 类型），多个模块的写入就落在同一个事务里
  *   （例如：消息 + 每用户更新 + 发件箱事件）。
  * - `tx.afterCommit(fn)`：登记「提交成功后再做」的事（例如推送 WebSocket、唤醒事件分发器）；回滚则不执行。
+ *
+ * 事务规则（T-20261104c 生产事故）：拿着 tx 时，被调用的端口一律传 tx，不能另开 `database.transaction`
+ * 或用 `database.db` 去锁 / 改这个 tx 已经锁过、改过的行——外层等内层返回、内层等外层提交，
+ * 数据库看不出这种「应用层死锁」（外层连接只是 idle in transaction）。
+ * 兜底：连接池每条连接都带会话参数 idle_in_transaction_session_timeout（30 秒）和 lock_timeout（10 秒），
+ * 卡住的事务最多 30 秒被数据库断开、等锁最多 10 秒报错，只影响这一个请求，不会拖垮整个连接池。
+ * 事务连接被数据库断开时只让这次事务失败（记日志、丢弃这条连接），进程照常服务。
  */
 import type { Tx } from '@weiban/contracts';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -58,32 +65,61 @@ export function asDbTx(tx: Tx): DbTx {
   return tx;
 }
 
+/** 事务两条语句之间空闲超过这么久，数据库断开这条连接（会话参数 idle_in_transaction_session_timeout）。 */
+export const DB_IDLE_IN_TRANSACTION_TIMEOUT_MS = 30_000;
+/** 等行锁 / 咨询锁超过这么久报错 55P03（会话参数 lock_timeout）。 */
+export const DB_LOCK_TIMEOUT_MS = 10_000;
+
 export interface DatabaseOptions {
   url: string;
   poolMax?: number;
   /** 连接失败或出错时的回调（写日志用）。 */
   onError?: (error: Error) => void;
+  /** 默认 DB_IDLE_IN_TRANSACTION_TIMEOUT_MS；传 0 = 不设置，沿用数据库 / 角色的默认值（测试用）。 */
+  idleInTransactionTimeoutMs?: number;
+  /** 默认 DB_LOCK_TIMEOUT_MS；传 0 = 不设置，沿用数据库 / 角色的默认值。 */
+  lockTimeoutMs?: number;
 }
 
 export class Database {
   readonly pool: pg.Pool;
   readonly db: Db;
+  private readonly onError: ((error: Error) => void) | undefined;
 
   constructor(options: DatabaseOptions) {
+    this.onError = options.onError;
     this.pool = new pg.Pool({
       connectionString: options.url,
       max: options.poolMax ?? 10,
       connectionTimeoutMillis: 5_000,
       application_name: 'weiban-server',
+      // 连接建立时作为启动参数发给数据库，每条新连接都生效（单位毫秒；pg 不发送 0）
+      idle_in_transaction_session_timeout:
+        options.idleInTransactionTimeoutMs ?? DB_IDLE_IN_TRANSACTION_TIMEOUT_MS,
+      lock_timeout: options.lockTimeoutMs ?? DB_LOCK_TIMEOUT_MS,
     });
     // 空闲连接被数据库断开时 pg 会发 error 事件；不监听会让进程崩溃
-    this.pool.on('error', (error) => options.onError?.(error));
+    this.pool.on('error', (error) => this.onError?.(error));
     this.db = drizzle({ client: this.pool });
   }
 
   /** 在事务里执行 fn。fn 抛错则回滚并原样抛出。 */
   async transaction<T>(fn: (tx: DbTx) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();
+    // 借出去的连接不再挂连接池的 error 监听：事务进行中连接被数据库断开（管理员终止、
+    // idle_in_transaction 超时、网络断开）时 pg 会在这条连接上发 error 事件，没人监听就是未捕获异常、
+    // 整个进程退出（2026-11-04 事故）。这里接住：记日志，这次事务后续语句自然失败，归还时丢弃这条连接。
+    let broken: Error | undefined;
+    const onClientError = (error: Error) => {
+      if (!broken) this.onError?.(error);
+      broken ??= error;
+    };
+    client.on('error', onClientError);
+    const release = (error?: Error) => {
+      client.removeListener('error', onClientError);
+      // 传入错误 = 连接状态不明，从连接池移除并关闭，不交给下一个请求
+      client.release(error ?? broken);
+    };
     const tx = new PgTx(client);
     let result: T;
     try {
@@ -91,11 +127,14 @@ export class Database {
       result = await fn(tx);
       await client.query('COMMIT');
     } catch (error) {
-      await client.query('ROLLBACK').catch(() => undefined);
-      client.release();
+      const rollbackError = await client.query('ROLLBACK').then(
+        () => undefined,
+        (e: unknown) => (e instanceof Error ? e : new Error(String(e))),
+      );
+      release(rollbackError);
       throw error;
     }
-    client.release();
+    release();
     for (const hook of tx.hooks) {
       // 提交后的动作失败不影响已提交的事务；调用方自己负责记录错误
       await Promise.resolve()

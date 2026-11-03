@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { Id, LocalDate, Seq, Timestamp } from './common.js';
 import { CharacterBasis, PortraitPolicy, RealPersonKind } from './http/characters.js';
 import { ContentScope, ConversationType, ParticipantKind } from './http/chat.js';
+import { FamiliarityLevel } from './http/growth.js';
 import { ModelKey } from './http/model-access.js';
 import { AdminAlertFacts } from './http/push.js';
 
@@ -586,11 +587,14 @@ export const AiMilestone = event(
   }),
 );
 
-/** 熟悉度升级（AI 变更申请第 8 条）：ai-runtime 解锁行为（来电询问、拉群）；growth 自己发熟悉度卡。 */
+/**
+ * 熟悉度升级（AI 变更申请第 8 条）：ai-runtime 解锁行为（来电询问、拉群）；growth 自己发熟悉度卡。
+ * 5.4：level 的上限跟 FamiliarityLevel 走（3.25 起六阶段，升到第 6 阶段「伴侣」也发）；最低 2（升级后的阶段）。
+ */
 export const FamiliarityLeveledUp = event(
   'growth.familiarity_leveled_up',
   'growth',
-  z.object({ userId: Id, characterId: Id, level: z.number().int().min(2).max(5) }),
+  z.object({ userId: Id, characterId: Id, level: FamiliarityLevel.min(2) }),
 );
 
 /** 纪念日到达（用户时区当天）：ai-runtime 发纪念消息 / 寄信。 */

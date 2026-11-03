@@ -57,6 +57,7 @@ import { FAILOVER_CATEGORIES, UpstreamScheduler } from './scheduler.js';
 import { UpstreamService } from './upstreams.js';
 import { UsageRecorder } from './usage.js';
 import { CatalogService } from './catalog.js';
+import { PrivateBlockLimiter } from './private-block-limit.js';
 import {
   BillingBoundsService,
   boundsEvidence,
@@ -160,6 +161,7 @@ export class ModelGateway implements ModelGatewayPort {
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(MEDIA_SYSTEM_PORT) private readonly media: MediaSystemPort,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Inject(PrivateBlockLimiter) private readonly blockLimit: PrivateBlockLimiter,
     @Optional() @Inject(BillingBoundsService) private readonly bounds?: BillingBoundsService,
   ) {}
   getModelStatus(userId: string, characterId: string | null) {
@@ -448,6 +450,13 @@ export class ModelGateway implements ModelGatewayPort {
       return result;
     }
     const row = claim.row;
+    // T-20261104a：同一用户近期多次被私密模型服务商拦截时，限制期内他的私密回复不请求服务商（保护共用账号），
+    // 直接按内容被拒返回：回复引擎照常回推托语；不冻结、不扣费、不写用量记录。只看这个用户，别的用户不受影响。
+    if (await this.blockLimit.skips(input)) {
+      const result: CachedResult = { ok: false, error: 'content_rejected' };
+      await this.cache.save(row, result, 'complete');
+      return result;
+    }
     if (
       (input.purpose === 'small_v' || input.purpose === 'search_candidates') &&
       !(await this.bounds?.consumePurpose(input.userId, input.purpose))
@@ -767,6 +776,15 @@ export class ModelGateway implements ModelGatewayPort {
           } catch {
             answer = { ok: false, category: 'network_error', retryable: true };
           }
+          // T-20261104a：401 / 403 而正文不是已知安全策略格式时，先用同一把密钥自检（与后台「测试」同一个探测，
+          // 结果按上游缓存 60 秒）。自检通过 = 密钥没坏，这次只算内容被拒：下面不换账号、不记失败、不标上游、
+          // 用量记录记 content_rejected，调用方拿到 content_rejected（回推托语、登记被拦消息），不会进等待被巡检反复重试。
+          if (
+            !answer.ok &&
+            answer.category === 'invalid_key' &&
+            (await this.upstreams.keyStillWorks(route.upstreamId))
+          )
+            answer = { ...answer, category: 'content_rejected', retryable: false };
         } else answer = { ok: false, category: 'provider_error', retryable: false };
         // 3.26（G3-2）：上游没报用量时不再算「成本未知、暂停线路」，改按本地分词估算计费并标记「估算」。
         // 失败且连估算都没有（HTTP 报错、网络中断）时：上游明确拒绝的错误按 0 计；其余按估算的输入 token 由平台吸收。

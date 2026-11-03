@@ -14,7 +14,7 @@
  */
 export interface MomentsReactionCandidate {
   characterId: string;
-  /** 用户动态：熟悉度等级（1–5），按熟悉度从高到低排好传进来。 */
+  /** 用户动态：熟悉度阶段（1–6），按熟悉度从高到低排好传进来。 */
   familiarityLevel?: number;
   /** 点赞抽签（0–1），越小越可能点赞。 */
   likeDraw: number;
@@ -34,9 +34,16 @@ export const MOMENTS_LIKE_ALMOST_ALWAYS = 0.95;
 export const MOMENTS_REACT_DELAY_MIN_MS = 60_000;
 export const MOMENTS_REACT_DELAY_MAX_MS = 15 * 60_000;
 
-/** 用户动态的点赞概率：熟悉度越高越可能点（与现行 fam 曲线一致：L1 0.15 … L5 0.9）。 */
+/**
+ * 点赞基础概率，下标 = 熟悉度阶段（与现行 fam 曲线一致：L1 0.15 … L5 0.9）。
+ * 3.25 起六阶段：第 6 阶段「伴侣」与「恋人」相同（原来按五级写死、6 被截到 5，取值不变）。
+ */
+const LIKE_BY_STAGE = [0, 0.15, 0.45, 0.65, 0.8, 0.9, 0.9] as const;
+
+/** 用户动态的点赞概率：熟悉度越高越可能点。 */
 export function userPostLikeProbability(familiarityLevel: number): number {
-  const p = [0, 0.15, 0.45, 0.65, 0.8, 0.9][Math.max(0, Math.min(5, familiarityLevel))] ?? 0.15;
+  const stage = Math.max(0, Math.min(LIKE_BY_STAGE.length - 1, familiarityLevel));
+  const p = LIKE_BY_STAGE[stage] ?? 0.15;
   return Math.min(1, p + 0.2);
 }
 

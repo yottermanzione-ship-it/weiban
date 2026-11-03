@@ -15,7 +15,6 @@ import {
   OFFICIAL_REF_ID,
   type ChatAdminPort,
   type ChatParticipantPort,
-  type ChatReadPort,
   type Conversation,
   type ModelGatewayPlatformPort,
   type OfficialContact,
@@ -23,7 +22,12 @@ import {
   type Tx,
 } from '@weiban/contracts';
 import { DATABASE, AppError, type Database } from '../../../platform/index.js';
-import { CHAT_ADMIN_PORT, CHAT_PARTICIPANT_PORT, CHAT_READ_PORT } from '../../chat/index.js';
+import {
+  CHAT_ADMIN_PORT,
+  CHAT_PARTICIPANT_PORT,
+  CHAT_READ_PORT,
+  type ChatReadInTxPort,
+} from '../../chat/index.js';
 import { MODEL_PLATFORM_GATEWAY_PORT } from '../../model-access/index.js';
 import {
   OFFICIAL_FAILURE_TEXT,
@@ -60,7 +64,7 @@ export class OfficialAssistantEngine {
   private readonly logger = new Logger(OfficialAssistantEngine.name);
   constructor(
     @Inject(DATABASE) private readonly database: Database,
-    @Inject(CHAT_READ_PORT) private readonly chatRead: ChatReadPort,
+    @Inject(CHAT_READ_PORT) private readonly chatRead: ChatReadInTxPort,
     @Inject(CHAT_ADMIN_PORT) private readonly chatAdmin: ChatAdminPort,
     @Inject(CHAT_PARTICIPANT_PORT) private readonly participants: ChatParticipantPort,
     @Inject(MODEL_PLATFORM_GATEWAY_PORT)
@@ -106,11 +110,12 @@ export class OfficialAssistantEngine {
       const conversation = await this.chatAdmin.ensureOfficialConversation(tx as Tx, { userId });
       const official = officialParticipantOf(conversation);
       if (!official) throw new AppError('internal_error', '官方会话缺少官方参与者');
-      const existing = await this.chatRead.readMessages({
-        conversationId: conversation.conversationId,
-        scopes: ['normal'],
-        limit: 1,
-      });
+      // 必须在本事务里读（T-20261104c）：ensure 已锁住 / 刚插入会话行，另开连接读会一直等这把锁
+      // （已有会话 = 整站卡死），新会话则另一条连接根本看不到这行（报会话不存在、欢迎语发不出去）。
+      const existing = await this.chatRead.readMessages(
+        { conversationId: conversation.conversationId, scopes: ['normal'], limit: 1 },
+        tx as Tx,
+      );
       if (existing.length === 0) {
         const posted = await this.participants.postMessage(
           {

@@ -193,6 +193,19 @@ export const P32_LOW_BALANCE_ALERT_MICROS = 5 * YUAN_MICROS;
 export const P33_BACKGROUND_RESERVE_MICROS = 1 * YUAN_MICROS;
 
 /**
+ * 同一用户反复被私密模型服务商拦截时只限制他自己（保护共用的私密上游账号，T-20261104a）。
+ * 来源：总负责人 2026-11-04 定（落实总经理 11-04「用户之间的拦截互不影响」），总经理可调。
+ * 规则：同一用户 windowMs 内被服务商拦截（私密模型调用 content_rejected）达到 threshold 次，从第 threshold 次起
+ * limitMs 内，这个用户的私密回复不再请求服务商，直接按 content_rejected 处理（回推托语、不扣费）。
+ * 其他用户不受影响。实现见 model-access/application/private-block-limit.ts。
+ */
+export const PRIVATE_BLOCK_LIMIT = {
+  threshold: 5,
+  windowMs: 1 * HOUR_MS,
+  limitMs: 1 * HOUR_MS,
+} as const;
+
+/**
  * 来源：PRD 第 5 节 P-36（v1.3）。经期主动关心：每个经期周期最多 2 次（经期前提醒 1 次 + 经期中关心 1 次），
  * 所有授权角色合计，每次只由一个角色发出。PLAY-01（契约 3.1 收口时从 ai-runtime/health-care.ts 挪入）
  */

@@ -11,8 +11,13 @@ export {
 } from './tokens.js';
 export { ChargeQueryUnavailableError } from './application/defaults.js';
 export { OpenAiCompatibleProbe } from './infra/upstream-probe.js';
-export { UpstreamService } from './application/upstreams.js';
+export { UpstreamService, KEY_SELF_CHECK_TTL_MS } from './application/upstreams.js';
 export { UpstreamScheduler } from './application/scheduler.js';
+export {
+  PrivateBlockLimiter,
+  blockLimitUntil,
+  blockLimitApplies,
+} from './application/private-block-limit.js';
 export { ModelResolver, ModelStatusService } from './application/resolver.js';
 export { UsageRecorder, AdminUsageService } from './application/usage.js';
 export { UsageReconciliationService } from './application/reconciliation.js';

@@ -95,6 +95,12 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 5.4（2026-11-04，熟悉度升级事件放开第 6 阶段）
+
+- 领域事件 `growth.familiarity_leveled_up`（`Events.FamiliarityLeveledUp`）载荷 `level` 的上限由写死的 5 改为跟 `FamiliarityLevel` 走（3.25 起六阶段，上限 6），下限仍为 2。原来升到第 6 阶段「伴侣」时发布事件校验失败，整个加分事务回滚，用户永远停在第 5 阶段、每条消息都重复报错（生产 2026-11-03 日志，任务卡 `docs/tasks/T-20261104d-familiarity-level6-event.md`）。
+- 其余熟悉度阶段相关 schema 已核对：`FamiliarityLevel`（1–6）、`FamiliarityInfo`、`FamiliarityStageThresholds` / `FamiliarityStageSettings`（长度 6）、系统提示 `familiarity_level_up` 与 `card_obtained` 的参数（通用 `params`，无上限）都已是六阶段，不用改。
+- 事件只在服务器模块之间流转，不发给客户端；放宽取值范围、不删不改字段，按规则升次版本；Android 生成产物同步版本号。WebSocket 鉴权已放行 5.x，不用改。
+
 ### 5.3（2026-11-03，服务器磁盘与备份提醒种类）
 
 - `AdminAlertKind` 新增 `host_disk_high`（磁盘空间不足）、`backup_failed`（备份失败）。这两种提醒从 5.2 起就由香港服务器运维脚本（`deploy/hk/disk-check.sh`、`deploy/hk/backup.sh`）直接写进表 `push.admin_alerts`，管理后台按接收端容错显示成 `unsupported`；现在正式进契约，后台显示中文名。

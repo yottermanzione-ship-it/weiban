@@ -19,7 +19,6 @@ import {
   ListMessagesQuery,
   MessagePage,
   OFFICIAL_IDENTITY_KEY,
-  type ChatReadPort,
   type Conversation,
   type Message,
   type Participant,
@@ -47,9 +46,10 @@ import {
   type ConversationRow,
   type MessageView,
 } from './store.js';
+import type { ChatReadInTxPort } from '../tokens.js';
 
 @Injectable()
-export class ChatReadService implements ChatReadPort {
+export class ChatReadService implements ChatReadInTxPort {
   constructor(
     @Inject(DATABASE) private readonly db: Database,
     @Inject(ChatStore) private readonly store: ChatStore,
@@ -143,10 +143,20 @@ export class ChatReadService implements ChatReadPort {
   async getParticipants(conversationId: string): Promise<Participant[]> {
     return (await this.getConversation(conversationId))?.participants ?? [];
   }
-  async findDirectConversation(userId: string, characterId: string): Promise<Conversation | null> {
+  /**
+   * 调用方拿着事务时必须传 input（见 ChatReadInTxPort）：不传就另开连接锁会话行，
+   * 调用方事务若已改过这行即应用层死锁（T-20261104c）。
+   * 传事务时用 FOR UPDATE：调用方随后要写这个会话（发消息 / 系统提示），先拿共享锁再升级成排他锁，
+   * 两个并发写入方会互相等待（数据库死锁）；直接拿排他锁只是排队。
+   */
+  async findDirectConversation(
+    userId: string,
+    characterId: string,
+    input?: Tx,
+  ): Promise<Conversation | null> {
     parseContract(Id, userId);
     parseContract(Id, characterId);
-    return this.db.transaction(async (tx) => {
+    const read = async (tx: DbTx) => {
       await this.store.requireActive(tx, userId);
       const [row] = await tx.db
         .select()
@@ -158,9 +168,10 @@ export class ChatReadService implements ChatReadPort {
             eq(conversations.type, 'direct'),
           ),
         )
-        .for('share');
+        .for(input ? 'update' : 'share');
       return row ? this.internalConversation(tx, row) : null;
-    });
+    };
+    return input ? read(asDbTx(input)) : this.db.transaction(read);
   }
   async findOfficialConversation(userId: string): Promise<Conversation | null> {
     parseContract(Id, userId);
@@ -180,10 +191,11 @@ export class ChatReadService implements ChatReadPort {
       return row ? this.internalConversation(tx, row) : null;
     });
   }
-  async readMessages(input: ReadMessagesInput): Promise<Message[]> {
+  /** transaction：调用方拿着事务时必须传（见 ChatReadInTxPort），否则另开连接锁会话行。 */
+  async readMessages(input: ReadMessagesInput, transaction?: Tx): Promise<Message[]> {
     const query = parseContract(ListMessagesQuery, input);
     const scopes = parseContract(ContentScope.array(), input.scopes);
-    return this.db.transaction(async (tx) => {
+    const read = async (tx: DbTx) => {
       const row = await this.store.load(tx, input.conversationId);
       if (!scopes.length) return [];
       const view = await this.store.view(tx, row, null, scopes);
@@ -229,7 +241,8 @@ export class ChatReadService implements ChatReadPort {
         result.push(value);
       }
       return result;
-    });
+    };
+    return transaction ? read(asDbTx(transaction)) : this.db.transaction(read);
   }
   async getMessage(
     messageId: string,
