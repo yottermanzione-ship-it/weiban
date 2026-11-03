@@ -383,3 +383,37 @@ export const legacyCharacterRevisions = charactersSchema.table(
     index('legacy_character_revisions_created_idx').on(t.characterId, t.createdAt),
   ],
 );
+
+/**
+ * 迁移 0157（T-20261104b）：站内搜索投影。官方角色（已上架预设，scope = official，owner_id 为空）与
+ * 本人角色（非试聊自定义，scope = own，只按 owner_id 查）的名字、经审核别名、关键词及其拼音。
+ * 由 CharacterSearchIndex 按 search_dirty 刷新；查询时仍按 characters 表再核一次资格。
+ */
+export const searchTerms = charactersSchema.table(
+  'search_terms',
+  {
+    characterId: uuid('character_id')
+      .notNull()
+      .references(() => characters.id, { onDelete: 'cascade' }),
+    termKey: text('term_key').notNull(),
+    term: text('term').notNull(),
+    kind: text('kind').$type<'name' | 'alias' | 'keyword'>().notNull(),
+    pinyin: text('pinyin').notNull().default(''),
+    initials: text('initials').notNull().default(''),
+    scope: text('scope').$type<'official' | 'own'>().notNull(),
+    ownerId: uuid('owner_id'),
+    displayName: text('display_name').notNull(),
+    identity: text('identity'),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.characterId, t.termKey] })],
+);
+
+/** 迁移 0157：待刷新登记（数据库触发器在相关列变化时写入，version 自增）。 */
+export const searchDirty = charactersSchema.table('search_dirty', {
+  characterId: uuid('character_id')
+    .primaryKey()
+    .references(() => characters.id, { onDelete: 'cascade' }),
+  version: integer('version').notNull().default(1),
+  markedAt: timestamp('marked_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+});

@@ -95,6 +95,16 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 5.5（2026-11-04，站内角色搜索：联想与聚合结果）
+
+- 新增 `SearchEndpoints.suggest`（`GET /api/v1/search/suggest?q=`）：站内联想，边输入边查。按名字、经审核别名、关键词做精确、前缀、完整拼音、拼音首字母与包含匹配，只查已上架官方角色、上架中的广场作品和本人角色（私人角色只按本人查）。返回最多 8 条 `SiteSearchSuggestion`（名字、命中方式、命中的别名 / 关键词、出现在哪些来源）和最多 5 条 `didYouMean` 错字建议（同音字、单处编辑；只在没有精确命中时给，点击才采用，服务器不改写搜索词）。
+- 新增 `SearchEndpoints.results`（`GET /api/v1/search/characters?q=&prefer=&cursor=&limit=`）：站内聚合结果。每项 `SiteSearchResult` 是一个角色或作品（不按名字、头像或模型合并人物），带来源 `source`（official / plaza / own）、主动作 `action`（add 添加 / view_work 看作品 / chat 去聊天 / open_own 打开自己的角色）、一句身份说明 `identity`（只取本站已审核资料）、`unverified` 与 `ambiguous`（同名多项且查不到身份时客户端显示「暂未核实身份」），以及角色 / 作品 / 会话 ID 和卡片。排序先看文本相关性，再看 `prefer` 指定的来源、已添加，热度最后；每页 20 条、稳定游标。预留 `entityKey`、`sourceUrl`（本版恒为 null，第 3 步才用）。
+- 两个接口都不调用模型、不收费、不联网；1 个字、空白或超过 64 字时客户端只用站内结果，不提示联网查找。站内没有结果时沿用原有的 `characterCandidates`（3.30 联网查找，字段与含义不变）。
+- 新增端口 `CharacterSearchPort`（characters 提供官方 / 本人角色投影，plaza 的聚合层调用）。
+- 接收端容错：`source`、`action`、`match`、`matchedTerm.kind` 都用 `tolerantEnum`，以后新增取值读成 `unsupported`，客户端退回打开资料 / 作品页。
+- 只新增接口与 schema、不删不改旧字段，按规则升次版本；Android 生成产物同步版本号与新 schema。WebSocket 鉴权已放行 5.x，不用改。
+- 依据：`docs/refactor/24-character-search.md` 第 1、2 步，任务卡 `docs/tasks/T-20261104b-character-search-p1.md`。
+
 ### 5.4（2026-11-04，熟悉度升级事件放开第 6 阶段）
 
 - 领域事件 `growth.familiarity_leveled_up`（`Events.FamiliarityLeveledUp`）载荷 `level` 的上限由写死的 5 改为跟 `FamiliarityLevel` 走（3.25 起六阶段，上限 6），下限仍为 2。原来升到第 6 阶段「伴侣」时发布事件校验失败，整个加分事务回滚，用户永远停在第 5 阶段、每条消息都重复报错（生产 2026-11-03 日志，任务卡 `docs/tasks/T-20261104d-familiarity-level6-event.md`）。

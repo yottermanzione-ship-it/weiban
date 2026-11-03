@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 5.4. Regenerate: pnpm android:generate
+// Contract 5.5. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "5.4"
+const val CONTRACT_VERSION: String = "5.5"
 
 @Serializable
 data class AccountAlias(
@@ -9969,6 +9969,34 @@ data class SearchEndpointsCharacterCandidatesResponse(
     @SerialName("items") val `items`: List<CharacterSearchCandidate>,
 )
 
+@Serializable
+data class SearchEndpointsResultsQuery(
+    @SerialName("q") val `q`: String? = null,
+    @SerialName("prefer") val `prefer`: String? = null,
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
+@Serializable
+data class SearchEndpointsResultsResponse(
+    @SerialName("query") val `query`: String,
+    @SerialName("items") val `items`: List<SiteSearchResult>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+    @SerialName("didYouMean") val `didYouMean`: List<SiteSearchDidYouMean>,
+)
+
+@Serializable
+data class SearchEndpointsSuggestQuery(
+    @SerialName("q") val `q`: String? = null,
+)
+
+@Serializable
+data class SearchEndpointsSuggestResponse(
+    @SerialName("query") val `query`: String,
+    @SerialName("items") val `items`: List<SiteSearchSuggestion>,
+    @SerialName("didYouMean") val `didYouMean`: List<SiteSearchDidYouMean>,
+)
+
 typealias SearchKeyword = String
 
 @Serializable
@@ -10381,6 +10409,54 @@ typealias ShareSource = JsonElement
 typealias ShareSourceInput = JsonElement
 
 typealias ShareTemplate = String
+
+typealias SiteSearchAction = String
+
+@Serializable
+data class SiteSearchDidYouMean(
+    @SerialName("text") val `text`: String,
+)
+
+typealias SiteSearchMatch = String
+
+@Serializable
+data class SiteSearchMatchedTerm(
+    @SerialName("text") val `text`: String,
+    @SerialName("kind") val `kind`: String,
+)
+
+@Serializable
+data class SiteSearchResult(
+    @SerialName("candidateId") val `candidateId`: String,
+    @SerialName("source") val `source`: String,
+    @SerialName("action") val `action`: String,
+    @SerialName("name") val `name`: String,
+    @SerialName("match") val `match`: String,
+    @SerialName("matchedTerm") val `matchedTerm`: SiteSearchMatchedTerm?,
+    @SerialName("identity") val `identity`: String?,
+    @SerialName("unverified") val `unverified`: Boolean,
+    @SerialName("ambiguous") val `ambiguous`: Boolean,
+    @SerialName("entityKey") val `entityKey`: String?,
+    @SerialName("sourceUrl") val `sourceUrl`: String?,
+    @SerialName("characterId") val `characterId`: Id?,
+    @SerialName("workId") val `workId`: Id?,
+    @SerialName("conversationId") val `conversationId`: Id?,
+    @SerialName("added") val `added`: Boolean,
+    @SerialName("character") val `character`: CharacterSummary?,
+    @SerialName("work") val `work`: PlazaWorkCard?,
+)
+
+typealias SiteSearchSource = String
+
+@Serializable
+data class SiteSearchSuggestion(
+    @SerialName("text") val `text`: String,
+    @SerialName("match") val `match`: String,
+    @SerialName("matchedTerm") val `matchedTerm`: SiteSearchMatchedTerm?,
+    @SerialName("sources") val `sources`: List<String>,
+)
+
+typealias SiteSearchTermKind = String
 
 typealias SpendCategory = String
 

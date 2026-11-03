@@ -14,6 +14,7 @@
  */
 import type {
   CharacterNameReadPort,
+  CharacterSearchPort,
   CharacterPlazaPort,
   CharacterSupplementPort,
   PlazaPublishCheckPort,
@@ -34,3 +35,10 @@ export type PlazaClassificationPolicy = Pick<PolicyExtensionPort, 'compareClassi
 
 /** T-088：plaza 提供给 characters 来源标注的状态查询（CharacterPlazaOriginStatus），由装配入口绑定。 */
 export const PLAZA_ORIGIN_STATUS = Symbol('weiban.plaza.origin-status');
+
+/**
+ * 5.5（T-20261104b）：站内角色搜索的角色一侧（characters 的 CharacterSearchPort：官方 / 本人角色投影），
+ * 由装配入口绑定。未绑定时聚合结果只含广场作品，不报错。
+ */
+export const PLAZA_CHARACTER_SEARCH = Symbol('weiban.plaza.character-search');
+export type PlazaCharacterSearch = CharacterSearchPort;

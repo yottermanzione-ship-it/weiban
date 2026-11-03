@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { SearchField } from './search-field.js';
 import { WebCharacterSearch } from './web-character-search.js';
+import { SiteSearchResults, SiteSuggestions } from './site-search.js';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { CaretLeft, ChatCircle, DotsThree, Heart, Storefront, UserList } from './old-icons.js';
 import { z } from 'zod';
@@ -227,6 +228,10 @@ export function PlazaTab({ embedded = false }: { embedded?: boolean } = {}) {
   const badge = usePlazaBadge();
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
+  const pick = (text: string) => {
+    setQuery(text);
+    setSearch(text.trim());
+  };
   return (
     <section aria-label="自定义角色" className="plaza-tab-page">
       {!embedded && (
@@ -269,7 +274,8 @@ export function PlazaTab({ embedded = false }: { embedded?: boolean } = {}) {
           搜索
         </button>
       </form>
-      <WorkList search={search} sort="added" />
+      <SiteSuggestions input={query} active={query.trim() !== search} onPick={pick} />
+      <WorkList search={search} sort="added" onPick={pick} />
     </section>
   );
 }
@@ -366,10 +372,13 @@ function WorkList({
   search,
   sort,
   authorId,
+  onPick,
 }: {
   search?: string;
   sort?: 'hot' | 'latest' | 'most_liked' | 'added';
   authorId?: string;
+  /** 5.5：站内联想 /「你是否想找」点击后换成这个搜索词。 */
+  onPick?: (text: string) => void;
 }) {
   const [items, setItems] = useState<PlazaWorkCard[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -435,6 +444,25 @@ function WorkList({
           <p>加载失败</p>
           <button onClick={() => void load()}>重试</button>
         </div>
+      </div>
+    );
+  if (items.length === 0 && !authorId && search && onPick)
+    return (
+      <div className="plaza-tab-body">
+        {/* 5.5：广场作品里没有时，先看站内其他来源（官方角色、我的角色、拼音和错字建议），都没有才联网查找。 */}
+        <SiteSearchResults
+          key={search}
+          query={search}
+          prefer="plaza"
+          onPick={onPick}
+          title="站内其他结果"
+          empty={
+            <>
+              <p className="empty">没有找到「{search}」</p>
+              <WebCharacterSearch key={search} query={search} />
+            </>
+          }
+        />
       </div>
     );
   if (items.length === 0)
