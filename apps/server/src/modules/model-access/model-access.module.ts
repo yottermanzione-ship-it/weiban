@@ -41,6 +41,7 @@ import { ModelAdminService, RatePriceSource } from './application/models.js';
 import { ModelDeletionService } from './application/model-deletion.js';
 import { GatewayLimitsService } from './application/limits.js';
 import { UpstreamScheduler } from './application/scheduler.js';
+import { PrivateBlockLimiter } from './application/private-block-limit.js';
 import { ModelAccessLifecycle } from './application/lifecycle.js';
 import { UsageReconciliationService } from './application/reconciliation.js';
 import { ModelQuoteService, ModelResolver, ModelStatusService } from './application/resolver.js';
@@ -91,6 +92,7 @@ import {
     UpstreamService,
     GatewayLimitsService,
     UpstreamScheduler,
+    PrivateBlockLimiter,
     GenerationCache,
     ModelGateway,
     GatewayMaintenance,

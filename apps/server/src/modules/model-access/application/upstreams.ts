@@ -56,6 +56,12 @@ type Kind = z.infer<typeof UpstreamKind>;
 /** 上游状态变化的来源（记在 upstream_status.source）。 */
 export type StatusSource = 'created' | 'admin_test' | 'key_rotated' | 'gateway' | 'probe';
 
+/**
+ * T-20261104a：真实调用回「密钥失效」（invalid_key）后，同一上游的密钥自检结果在进程内保留多久。
+ * 这段时间内同一上游再遇到 401 / 403 直接用这次的结论，不再发测试（避免同一时间很多请求一起自检）。
+ */
+export const KEY_SELF_CHECK_TTL_MS = 60_000;
+
 export function toUpstream(
   row: UpstreamRow,
   extra?: { inFlight?: number; todayCalls?: number; todayCostMicros?: number },
@@ -104,6 +110,8 @@ export interface UpstreamPoolFields {
 @Injectable()
 export class UpstreamService {
   private readonly log: Logger;
+  /** T-20261104a：密钥自检结果（按上游；存进行中的 Promise，同一时间的请求共用一次测试）。 */
+  private readonly keyChecks = new Map<string, { at: number; ok: Promise<boolean> }>();
 
   constructor(
     @Inject(DATABASE) private readonly database: Database,
@@ -253,6 +261,7 @@ export class UpstreamService {
         set.cooldownUntil = null;
         set.consecutiveFailures = 0;
       }
+      if (set.baseUrl !== undefined || set.kind !== undefined) this.forgetKeyCheck(upstreamId);
       if (patch.provider !== undefined) set.provider = patch.provider;
       if (patch.priority !== undefined) set.priority = patch.priority;
       if (patch.weight !== undefined) set.weight = patch.weight;
@@ -370,6 +379,7 @@ export class UpstreamService {
       throw testFailed(failure);
     }
     const mask = maskParts(apiKey);
+    this.forgetKeyCheck(upstreamId);
     return this.database.transaction(async (tx) => {
       const row = await this.lock(tx, upstreamId);
       const now = this.clock.now();
@@ -419,6 +429,8 @@ export class UpstreamService {
     const failure = await this.withApiKey(upstreamId, (apiKey) =>
       this.runProbe(row.kind as Kind, row.baseUrl, apiKey),
     );
+    // 管理员刚测过：网关之前缓存的自检结论作废，下次遇到 401 / 403 重新自检。
+    this.forgetKeyCheck(upstreamId);
     return this.database.transaction(async (tx) => {
       const locked = await this.lock(tx, upstreamId);
       await tx.db
@@ -529,6 +541,8 @@ export class UpstreamService {
   /**
    * 网关 / 恢复探测报告上游状态（billing.md 3.1 第 5、6 条）。状态不变时什么都不做。
    * 返回是否发生了变化。
+   * T-20261104a：网关报「密钥失效」时先确认密钥真的坏了（keyStillWorks，通常网关已先问过，这里读缓存）；
+   * 密钥自检通过就不改状态。这是所有网关路径（文本、媒体、语音）把上游标 invalid 的唯一入口。
    */
   async reportStatus(
     upstreamId: string,
@@ -536,6 +550,8 @@ export class UpstreamService {
     source: 'gateway' | 'probe',
     failure: string | null = null,
   ): Promise<boolean> {
+    if (status === 'invalid' && source === 'gateway' && (await this.keyStillWorks(upstreamId)))
+      return false;
     return this.database.transaction(async (tx) => {
       const [row] = await tx.db
         .select()
@@ -545,6 +561,49 @@ export class UpstreamService {
       if (!row || row.deletedAt) return false;
       return this.applyStatus(tx, row, status, source, failure);
     });
+  }
+
+  /**
+   * T-20261104a（总经理 11-04：用户再触发服务商拦截，绝不能影响后台的上游账号判断）。
+   * 真实调用回 invalid_key（401 / 403，正文又不是已知的安全策略格式）时，先用同一把密钥立刻做一次连通测试，
+   * 与后台「测试」同一个探测（UPSTREAM_PROBE：OpenAI 兼容 `GET /models`，Anthropic `GET /v1/models`）。
+   * - 返回 true：测试通过，密钥没坏。这次调用只按内容被拒（content_rejected）处理，不改上游状态、不暂停、不累计失败；
+   * - 返回 false：测试也失败（或读不到密钥），按原逻辑标 invalid。
+   * 同一上游的结论在进程内保留 KEY_SELF_CHECK_TTL_MS；同一时间的多个请求共用同一次测试。
+   * 额度类（quota_exhausted / 402）不走这里。日志只有上游 ID 和结果类别，不含密钥和上游原文。
+   */
+  keyStillWorks(upstreamId: string): Promise<boolean> {
+    const now = this.clock.nowMs();
+    const cached = this.keyChecks.get(upstreamId);
+    if (cached && now - cached.at < KEY_SELF_CHECK_TTL_MS) return cached.ok;
+    const ok = this.selfCheck(upstreamId);
+    this.keyChecks.set(upstreamId, { at: now, ok });
+    return ok;
+  }
+
+  /** 换密钥、手动测试、改地址或协议后，之前的自检结论作废。 */
+  forgetKeyCheck(upstreamId: string): void {
+    this.keyChecks.delete(upstreamId);
+  }
+
+  private async selfCheck(upstreamId: string): Promise<boolean> {
+    let result: UpstreamTestFailure | 'no_key' | 'ok';
+    try {
+      const row = await this.get(upstreamId);
+      result =
+        (await this.withApiKey(upstreamId, (apiKey) =>
+          this.runProbe(row.kind as Kind, row.baseUrl, apiKey),
+        )) ?? 'ok';
+    } catch {
+      result = 'no_key';
+    }
+    this.log.warn(
+      { code: 'upstream_key_self_check', upstreamId, result },
+      result === 'ok'
+        ? '上游回了 401/403，但密钥自检通过：这次按内容被拒处理，不改上游状态'
+        : '上游回了 401/403，密钥自检也失败：按密钥失效处理',
+    );
+    return result === 'ok';
   }
 
   async get(upstreamId: string): Promise<UpstreamRow> {
