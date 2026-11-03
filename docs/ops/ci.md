@@ -1,6 +1,6 @@
 # 自动检查流水线（CI）与 main 保护规则
 
-> 负责人：运维负责人 · 最后更新：2026-10-05 · 来源任务：T-015（D-L0-03），T-019 修订（CI 测试数据库）
+> 负责人：运维负责人 · 最后更新：2026-11-03 · 来源任务：T-015（D-L0-03），T-019 修订（CI 测试数据库），T-20261103f（香港运维脚本检查）
 > 读者：总经理（零基础）、项目总负责人。
 > 流水线配置文件：`.github/workflows/ci.yml`。检查命令本身的说明见 `docs/ops/local-dev.md` 第四节，这里不重复。
 
@@ -41,6 +41,7 @@
 | 2 | `pnpm format:check` | 代码排版 |
 | 3 | `pnpm lint` | 代码规则：模块边界 R1～R10、服务器禁止路径别名、服务器模块之间禁止循环依赖 |
 | 4 | `pnpm typecheck` | 类型检查 |
+| 4a | `bash .github/scripts/check-hk-ops.sh` | 香港服务器运维脚本：shellcheck 静态检查，再用假的 docker 验证备份空间不够时不停应用、中途失败会删半成品并拉起应用、发版清理不删当前/上一版/hk/在用镜像、磁盘超 80% 告警（2026-11-03 加，T-20261103f） |
 | 5 | `docker compose up -d --wait` | 启动测试数据库（PostgreSQL 18 + pgvector），并打印数据库和 pgvector 的版本号 |
 | 6 | `pnpm test`（带 `TEST_DATABASE_URL`） | 自动测试，**包括需要真实数据库的服务器集成测试** |
 | 7 | `node .github/scripts/check-test-report.mjs …` | 确认集成测试真的跑了：**跳过数必须为 0**，否则红叉 |

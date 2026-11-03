@@ -5,4 +5,11 @@ After=docker.service
 
 [Service]
 Type=oneshot
-ExecStart=/bin/bash /srv/weiban/src/deploy/hk/backup.sh /srv/weiban/backups
+# Backups go to the system disk, separate from the data disk (docker, database, media),
+# so filling one disk cannot take the other down. See docs/ops/hk-server.md section 6.
+Environment=KEEP=2
+ExecStart=/bin/bash /srv/weiban/src/deploy/hk/backup.sh /var/backups/weiban
+# A stuck backup is stopped after 45 minutes. On SIGTERM the script deletes the partial
+# bundle and restarts the app (health wait up to 120 s), so leave it time to finish.
+TimeoutStartSec=45min
+TimeoutStopSec=5min
