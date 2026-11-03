@@ -440,6 +440,90 @@ describeDb('ai-runtime 真实PG：设置/加密计划/合并/幂等/关怀/删�
     expect(calls.length - before).toBe(1);
     expect((await store.get(second.id))?.status).toBe('done');
   });
+  it('T-20261103j 上游安全策略拦下的一轮回推托语并登记；之后的上下文不再带被拦消息，其余照常；手工登记 SQL 可用', async () => {
+    // 交接文档里给总负责人的手工登记 SQL（会话 ID、序号换成参数），这里原样执行验证。
+    const MANUAL_SQL = `INSERT INTO ai_runtime.model_blocked_messages
+  (conversation_id, seq, user_id, character_id, message_id, source, reason, created_at)
+SELECT m.conversation_id, m.seq, c.owner_user_id, c.character_id, m.id, 'manual', 'content_rejected', now()
+  FROM chat.messages m
+  JOIN chat.conversations c ON c.id = m.conversation_id
+ WHERE m.conversation_id = $1::uuid
+   AND m.seq = ANY($2::bigint[])
+   AND m.sender_kind = 'user'
+   AND c.type = 'direct'
+   AND c.character_id IS NOT NULL
+ON CONFLICT (conversation_id, seq) DO NOTHING
+RETURNING seq::text AS seq, message_id`;
+    const choice = vi
+      .spyOn(engine.quirks, 'choose')
+      .mockResolvedValue({ kind: 'none', respondAt: null, typingCycles: 0 });
+    const sentSince = (n: number) =>
+      calls
+        .slice(n)
+        .flatMap((c) => c.messages.map((m) => m.content))
+        .join('\n');
+    const read = async (): Promise<
+      { seq: number; senderKind: string; content: { type: string; text?: string } | null }[]
+    > =>
+      app.get(CHAT_READ_PORT).readMessages({ conversationId: cid, scopes: ['normal'], limit: 30 });
+    try {
+      const ok = await user('拦截前正常的一句 BLOCK_CASE_BEFORE');
+      await finish(ok.id);
+      expect((await store.get(ok.id))?.status).toBe('done');
+      failure = 'content_rejected';
+      const blocked = await user('会被上游拦下的一句 BLOCK_CASE_REJECTED');
+      await finish(blocked.id);
+      failure = null;
+      // 被拦那一轮：照常回推托语（角色发了消息、计划完成），不报错、不进入等待。
+      expect((await store.get(blocked.id))?.status).toBe('done');
+      expect(
+        (await read()).some((m) => m.senderKind === 'character' && m.seq > blocked.triggerSeq),
+      ).toBe(true);
+      const registered = await db.query<{ seq: string; source: string; plan_id: string }>(
+        'SELECT seq::text AS seq, source, plan_id FROM ai_runtime.model_blocked_messages WHERE conversation_id=$1',
+        [cid],
+      );
+      expect(registered.rows).toEqual([
+        { seq: String(blocked.triggerSeq), source: 'auto', plan_id: blocked.id },
+      ]);
+      // 下一条正常消息正常回复；发给模型的上下文没有被拦的那条，同一会话的其他消息照常在。
+      let before = calls.length;
+      const next = await user('拦截后的下一句 BLOCK_CASE_AFTER');
+      await finish(next.id);
+      expect((await store.get(next.id))?.status).toBe('done');
+      expect(sentSince(before)).toContain('BLOCK_CASE_BEFORE');
+      expect(sentSince(before)).toContain('BLOCK_CASE_AFTER');
+      expect(sentSince(before)).not.toContain('BLOCK_CASE_REJECTED');
+      // 用户界面照样能看到自己发的那条。
+      expect(
+        (await read()).some(
+          (m) => m.content?.type === 'text' && !!m.content.text?.includes('BLOCK_CASE_REJECTED'),
+        ),
+      ).toBe(true);
+      // 手工登记（总负责人补登记已被拦的历史消息用）：按会话 ID + 序号，只认用户消息，重复执行不报错。
+      const manual = await user('之后补登记的一句 BLOCK_CASE_MANUAL');
+      await finish(manual.id);
+      const characterSeq = (await read()).find((m) => m.senderKind === 'character')!.seq;
+      const inserted = await db.query<{ seq: string; message_id: string }>(MANUAL_SQL, [
+        cid,
+        [manual.triggerSeq, characterSeq],
+      ]);
+      expect(inserted.rows.map((r) => r.seq)).toEqual([String(manual.triggerSeq)]);
+      expect(inserted.rows[0]?.message_id).toBe(manual.triggerId);
+      expect((await db.query(MANUAL_SQL, [cid, [manual.triggerSeq]])).rows).toEqual([]);
+      before = calls.length;
+      const last = await user('补登记之后的一句 BLOCK_CASE_LAST');
+      await finish(last.id);
+      expect((await store.get(last.id))?.status).toBe('done');
+      expect(sentSince(before)).toContain('BLOCK_CASE_LAST');
+      expect(sentSince(before)).toContain('BLOCK_CASE_AFTER');
+      expect(sentSince(before)).not.toContain('BLOCK_CASE_MANUAL');
+      expect(sentSince(before)).not.toContain('BLOCK_CASE_REJECTED');
+    } finally {
+      failure = null;
+      choice.mockRestore();
+    }
+  });
   it('同一真实会话超过200个待回复批次恢复仍只有最新批次，一次合并、不残留旧waiting', async () => {
     const sender = app.get<ChatUserPort>(CHAT_USER_PORT);
     for (let i = 0; i < 201; i++)

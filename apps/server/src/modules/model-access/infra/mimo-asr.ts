@@ -1,4 +1,5 @@
 import type { MediaAdapterResult, MediaFailure, MediaTarget } from './media-adapter.js';
+import { isSafetyPolicyBlock } from './text-adapter.js';
 
 /**
  * MiMo 语音识别（旧版协议）：`POST {base}/chat/completions`，音频以
@@ -39,14 +40,11 @@ function failure(status: number, payload: Record<string, unknown> | null): Media
     ['arrearage', 'insufficient_quota', 'insufficient_balance', 'quota_exhausted'].includes(code)
   )
     return 'quota_exhausted';
+  // 安全策略拦截名单在 text-adapter.ts 唯一定义；百炼的审核码只在这里多认。
   if (
-    [
-      'data_inspection_failed',
-      'datainspectionfailed',
-      'content_filter',
-      'content_policy_violation',
-      'moderation_blocked',
-    ].includes(code)
+    isSafetyPolicyBlock(nested) ||
+    isSafetyPolicyBlock({ code }) ||
+    ['data_inspection_failed', 'datainspectionfailed'].includes(code)
   )
     return 'content_rejected';
   if (

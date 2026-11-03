@@ -49,6 +49,7 @@ import { highRisk, outputAllowed } from '../domain/reply-rules.js';
 import { callModelForCare } from './safety-care.js';
 import { MediaAiService } from './media-ai.js';
 import { MemoryService } from './memory.js';
+import { withoutBlocked } from './model-blocked-messages.js';
 import { CompanionSettingsService } from './settings.js';
 import { characterView, roleDeflect, roleVoiceIds } from './character-view.js';
 import { RealtimeAgentSession, realtimeCallInstructions } from './realtime-call-agent.js';
@@ -510,7 +511,7 @@ export class CallAgentService implements CallAgentPort {
     return row?.reason ?? null;
   }
 
-  /** 最近 12 条文字聊天（每条截 300 字），作为通话上下文。 */
+  /** 最近 12 条文字聊天（每条截 300 字），作为通话上下文；被上游安全策略拦过的消息不带（T-20261103j）。 */
   private async callHistory(
     conversationId: string,
     scope: 'normal' | 'adult',
@@ -521,6 +522,7 @@ export class CallAgentService implements CallAgentPort {
         scopes: scope === 'adult' ? ['normal', 'adult'] : ['normal'],
         limit: 30,
       })
+      .then((rows) => withoutBlocked(this.db, conversationId, rows))
       .catch(() => []);
     return recent
       .filter((m) => m.status === 'normal' && m.content?.type === 'text')

@@ -65,7 +65,7 @@
 - **每个上游一个适配器**，负责：
   1. 地址与鉴权（平台密钥只在发请求的那一刻解密，用完即丢，不缓存、不写日志）；
   2. 连通测试与恢复探测（契约 `admin_upstream_test` 用途，记平台账户；`billing.md` 3.1 第 2、6 条）；
-  3. **错误归类**：上游级错误映射到契约 `UpstreamTestFailure` / `UpstreamStatus`（`invalid` / `quota_exhausted` / `unavailable`）；调用级错误映射到 `GenerateError`；另有内部错误码 `rate_limited`（限流，重试）。`content_rejected`（被上游内容审核拦截）不改变上游状态，**不扣费**，按输出守卫的兜底话术处理；
+  3. **错误归类**：上游级错误映射到契约 `UpstreamTestFailure` / `UpstreamStatus`（`invalid` / `quota_exhausted` / `unavailable`）；调用级错误映射到 `GenerateError`；另有内部错误码 `rate_limited`（限流，重试）。`content_rejected`（被上游内容审核拦截）不改变上游状态，**不扣费**，按输出守卫的兜底话术处理。**怎样算内容审核拦截**（T-20261103j，2026-11-03）：上游错误体的 `error.code` 为 `content_filter` / `content_policy_violation` / `moderation_blocked` / `policy_violation`，或 `error.type` 为 `policy_error`（不区分大小写），**不管 HTTP 是 400、401 还是 403**；另外 OpenAI 兼容的 `finish_reason = content_filter` / `refusal`、Anthropic 的 `stop_reason = refusal` 也算。名单只在 `apps/server/src/modules/model-access/infra/text-adapter.ts` 的 `SAFETY_POLICY_CODES` / `SAFETY_POLICY_TYPES` 定义，OpenAI 兼容（非流式）、Anthropic 原生（流式 SSE 的 error 事件与 HTTP 错误体）、媒体适配器、MiMo 识别共用。401 / 403 且正文不是安全策略类的，才是 `invalid_key`（密钥失效，标上游 `invalid` 并暂停）。背景：Abliteration 对某条消息回 403 `policy_violation`，原先被当成密钥失效，整个私密上游被标不可用；
   4. **用量提取**：输入 token、缓存命中 token、输出 token（各家字段名不同），交给网关结算；
   5. **能力声明**：识图、联网搜索、JSON 输出、语音；
   6. 语音、图片等非对话接口（百炼专用接口）的单独封装；
@@ -179,7 +179,7 @@
 | `insufficient_balance`、`billing.balance_depleted` | 不回复；暂停该用户全部后台任务（P-33 以下就已先停后台，见 2.5）。**例外**：高危消息走安全透支，透支也用完时发不花钱的关怀兜底（9.1） |
 | `budget_exceeded` | 只影响后台任务（2.5）；聊天回复不会收到它，除非平台每日总上限触发（紧急刹车），此时按「不可用」处理（高危消息同样走 9.1 兜底） |
 | `model_not_allowed` | 按「不可用」处理并记审计（说明数据或配置异常，见 2.4 末尾） |
-| `content_rejected` | 用人设化兜底话术转开话题，不重试（v1.3 编号为 MODE-03 第 4 条），不扣费 |
+| `content_rejected` | 用人设化兜底话术转开话题，不重试（v1.3 编号为 MODE-03 第 4 条），不扣费；关怀中发关怀兜底（9.1）。T-20261103j 起私聊回复还会把这次回复针对的用户消息（本轮：上一条角色消息之后的用户消息，最多 50 条）登记到 `ai_runtime.model_blocked_messages`（迁移 0156，只存会话 ID + 序号），之后回复上下文、翻聊天记录、记忆抽取、私密整理、聊天摘要、通话、主动消息、名场面、互动玩法都不再把它们发给模型，界面照常显示；否则被拦的消息每轮都带上、每轮都被拦，会话卡死。群聊、通话里的 `content_rejected` 处理不变（不登记） |
 | 恢复：`model_status_changed(可用)`、`billing.balance_restored` | 对「最后一条是用户消息」的会话补一次合并回复；错过的主动消息不补 |
 | 恢复兜底：定时巡检 `ai.sweep_waiting_replies`（每 5 分钟，T-20261103e） | 只管 `provider_unavailable`、`model_unavailable` 两类等待（单次调用失败时不一定有「模型恢复」事件）：按 5、10、20、40、60 分钟退避重试，每会话只恢复最新批次；从用户发消息算起超过 6 小时作废（`failure = wait_expired`），不再回复；恢复时沿用「有意稍等了一会儿」的提示。积分不足、没选模型等要用户自己处理的等待不碰，仍只由上一行的事件恢复 |
 

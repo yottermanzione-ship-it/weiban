@@ -29,6 +29,7 @@ import { MODEL_GATEWAY_PORT, MODEL_PLATFORM_GATEWAY_PORT } from '../../model-acc
 import { replyPlans } from '../infra/db/schema.js';
 import { ReplyPlanStore, type ReplyPlan } from './plan-store.js';
 import { ReplyContext, ReplySnapshot } from './reply-context.js';
+import { recordBlocked, withoutBlocked } from './model-blocked-messages.js';
 import { callModelForCare, careFallback } from './safety-care.js';
 import { HEALTH_LABEL } from './health-care.js';
 import { MediaAiService } from './media-ai.js';
@@ -305,6 +306,28 @@ export class ReplyEngine {
       await this.wait(row, 'output_guard');
       return;
     }
+    // T-20261103j：上游安全策略拦下了这次回复（content_rejected）——用户照样收到上面的推托语（关怀中是关怀兜底），
+    // 同时把这次回复针对的用户消息登记为「不再发给模型」：否则它们留在聊天历史里，之后每次回复都会再被拦，会话卡死。
+    // 用户界面照常显示这些消息。登记失败不影响这次回复（最坏是下一轮再被拦一次）。
+    if (!answer.ok && answer.error === 'content_rejected' && row.kind === 'message')
+      await recordBlocked(this.store.db, {
+        userId: row.userId,
+        characterId: row.characterId,
+        conversationId: row.conversationId,
+        seqs: snapshot.turnUserSeqs.length ? snapshot.turnUserSeqs : [row.triggerSeq],
+        planId: row.id,
+        source: 'auto',
+        at: this.clock.now(),
+      }).catch((error: unknown) =>
+        this.logger?.error(
+          {
+            code: 'ai_reply_block_record_failed',
+            planId: row.id,
+            error: error instanceof Error ? error.message : 'error',
+          },
+          'ai.generate_reply blocked-message record failed',
+        ),
+      );
     if (inCare && !bubbles.every((b) => outputAllowed(b, snapshot.policy, false)))
       bubbles = careFallback(undefined, snapshot.careVariant, null);
     // T-071 MED-04 第 2 条：识过图的回合，回复里出现名单外真人姓名 → 重写一次，仍不行用安全说法。
@@ -366,6 +389,7 @@ export class ReplyEngine {
     ) {
       const history = await this.context.chat
         .readMessages({ conversationId: row.conversationId, scopes: ['normal'], limit: 100 })
+        .then((rows) => withoutBlocked(this.store.db, row.conversationId, rows))
         .catch(() => []);
       contents = await this.mediaAi
         .planExtras({

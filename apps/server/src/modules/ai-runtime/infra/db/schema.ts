@@ -501,6 +501,33 @@ export const replyPlans = aiRuntimeSchema.table(
 );
 
 /**
+ * 0156（T-20261103j）：被上游安全策略拦下（content_rejected）的用户消息——不再发给模型，界面照常显示。
+ * 回复因 content_rejected 失败时自动登记（source = auto）；也可按会话 ID + 序号手工登记（source = manual）。
+ * 只存 ID 与序号，不存正文。读写集中在 application/model-blocked-messages.ts。
+ */
+export const modelBlockedMessages = aiRuntimeSchema.table(
+  'model_blocked_messages',
+  {
+    conversationId: uuid('conversation_id').notNull(),
+    seq: bigint('seq', { mode: 'number' }).notNull(),
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    messageId: uuid('message_id'),
+    source: text('source').notNull(),
+    reason: text('reason').notNull().default('content_rejected'),
+    planId: uuid('plan_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ name: 'model_blocked_messages_pkey', columns: [t.conversationId, t.seq] }),
+    check('model_blocked_seq', sql`${t.seq} > 0 AND ${t.seq} <= 9007199254740991`),
+    check('model_blocked_source', sql`${t.source} IN ('auto','manual')`),
+    index('model_blocked_user_idx').on(t.userId),
+    index('model_blocked_character_idx').on(t.characterId),
+  ],
+);
+
+/**
  * T-053 主动消息调度计划：每条候选主动消息一行，记录理由（SIM-05 第 10 条）、
  * 来源（事件 ID / 约定 ID / 节日 ID / 久未联系起点）、话题键（P-07 去重）与最终结局。
  * 同一来源（sourceRef）对同一用户只会出现一次：一个日常事件最多推一次（第 6 章总规则 1）。
