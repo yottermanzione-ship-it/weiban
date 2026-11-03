@@ -577,6 +577,29 @@ describe('v1.3（T-026）', () => {
     expect(list.query?.parse({})).toMatchObject({ status: 'open', limit: 50 });
   });
 
+  it('5.3：服务器运维脚本写的磁盘、备份提醒是正式种类，不再读成 unsupported', () => {
+    const row = {
+      alertId: ID,
+      severity: 'critical',
+      summary: '说明',
+      occurrences: 1,
+      firstRaisedAt: NOW,
+      lastRaisedAt: NOW,
+      acknowledgedAt: null,
+      acknowledgedByUserId: null,
+    };
+    for (const [kind, dedupeKey] of [
+      ['host_disk_high', 'host_disk_high:/srv/weiban'],
+      ['backup_failed', 'backup_failed:hk'],
+    ] as const) {
+      expect(AdminAlert.parse({ ...row, kind, dedupeKey }).kind).toBe(kind);
+      expect(
+        AdminAlertFacts.safeParse({ kind, severity: 'warning', dedupeKey, summary: '说明' })
+          .success,
+      ).toBe(true);
+    }
+  });
+
   it('对账第 ② 层结果事件与对账记录的新字段（可选）', () => {
     expect(
       Events.UsageReconciled.safeParse({

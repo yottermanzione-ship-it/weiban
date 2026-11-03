@@ -161,6 +161,18 @@ export const AdminAlertKind = z.enum([
    */
   'upstream_usage_missing',
   'client_error_spike',
+  /**
+   * 5.3：服务器某块磁盘（数据盘 /srv/weiban、系统盘 /）使用率达到 80%（warning）或 90%（critical）。
+   * 发出方是香港服务器的运维脚本 deploy/hk/disk-check.sh，直接写表 push.admin_alerts，**不推送**。
+   * 合并键 `host_disk_high:{挂载点}`。
+   */
+  'host_disk_high',
+  /**
+   * 5.3：每日或发版前备份没做成（含空间不足没开始）、备份后应用没恢复健康（critical），
+   * 或备份完成但单份超过合计上限（critical）。发出方是 deploy/hk/backup.sh，直接写表、**不推送**。
+   * 合并键 `backup_failed:hk`、`backup_app_down:hk`、`backup_over_cap:hk`。
+   */
+  'backup_failed',
 ]);
 export type AdminAlertKind = z.infer<typeof AdminAlertKind>;
 

@@ -346,6 +346,8 @@ sequenceDiagram
 | `upstream_invalid` | model-access | 上游状态变为 `invalid`（密钥无效） | critical | `upstream_invalid:{upstreamId}` |
 | `upstream_unavailable` | model-access | 上游状态变为 `unavailable`（重试后仍失败，`message-reliability.md` 第 6 节） | warning | `upstream_unavailable:{upstreamId}` |
 | `upstream_recovered` | model-access | 上述上游问题恢复为 `active` | info | `upstream_recovered:{upstreamId}` |
+| `host_disk_high`（契约 5.3） | 香港服务器运维脚本 `deploy/hk/disk-check.sh`（直接写表，不经事件、**不推送**） | 数据盘或系统盘使用率 ≥80% | warning；≥90% critical | `host_disk_high:{挂载点}` |
+| `backup_failed`（契约 5.3） | 香港服务器运维脚本 `deploy/hk/backup.sh`（同上，不推送） | 备份没做成；备份后应用没恢复健康；单份备份超过合计上限 | warning / critical | `backup_failed:hk`、`backup_app_down:hk`、`backup_over_cap:hk` |
 
 1. **发出方**：在发现问题的同一个事务里写发件箱（与写审计、改状态一起）；**照常写审计日志和错误级日志**——运维的日志告警（`docs/ops/`）不依赖 push，push 没上线（L1）之前也能发现问题。载荷只放种类、级别、合并键、一句固定模板说明和相关 ID（上游、模型、日期），**不放用户名、用户 ID、消息内容、密钥**。
 2. **push（数据归 push，表 `push.admin_alerts`）**：
