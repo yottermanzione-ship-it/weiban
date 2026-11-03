@@ -62,6 +62,14 @@ export interface StoredWeiboMedia {
   position: number;
 }
 
+/** 一条微博素材里已经入库、可以在私聊里分享的图（T-20261103g）。 */
+export interface ShareableWeiboPhotos {
+  updateId: string;
+  content: string;
+  publishedOn: string | null;
+  mediaIds: string[];
+}
+
 /** 采集用的最小抓取接口（由媒体模块 LinkPreviewService.safeFetch 提供：SSRF/DNS/重定向/超时/字节上限）。 */
 export interface WeiboPageFetcher {
   safeFetch(
@@ -199,6 +207,34 @@ export class WeiboMaterialService implements WeiboMomentMaterialPort {
       publishedOn: found.publishedOn ?? found.item.publishedOn,
       images,
     };
+  }
+
+  /**
+   * T-20261103g：私聊里分享照片用——最近几条仍生效（已审核）的微博素材里**已经入库**的图，新的在前。
+   * 只读库，不抓页面、不下载（聊天不等网络）；还没采集过图的条目不算有图。
+   */
+  async shareable(characterId: string): Promise<ShareableWeiboPhotos[]> {
+    if (!this.updates) return [];
+    const today = this.clock.now().toISOString().slice(0, 10);
+    const updates = await this.updates
+      .listEffective(characterId, today, { limit: 5, pastDays: 30 })
+      .catch(() => []);
+    const out: ShareableWeiboPhotos[] = [];
+    for (const update of updates) {
+      if (!/weibo\.(com|cn)/iu.test(update.sourceUrl)) continue;
+      if ((update.content ?? '').trim().length < 4) continue;
+      const item = await this.store.item(characterId, update.updateId);
+      if (!item) continue;
+      const media = await this.store.media(item.id);
+      if (!media.length) continue;
+      out.push({
+        updateId: update.updateId,
+        content: update.content || item.content,
+        publishedOn: update.effectiveDate ?? item.publishedOn,
+        mediaIds: media.map((row) => row.mediaId),
+      });
+    }
+    return out;
   }
 
   /** 「按用户稳定选一张」的便捷方法（与消费方同一公式）；没有素材/没有图时返回 null。 */

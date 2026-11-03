@@ -696,6 +696,31 @@ describeDb('ai-runtime 真实PG：设置/加密计划/合并/幂等/关怀/删�
       response = '我听着呢\n今天过得怎么样？';
     }
   });
+  it('T-20261103g：模型写的照片标记在发出前剥掉；没有素材时不发图', async () => {
+    response = '【正文】\n给你看看我上周去的地方\n[照片]';
+    try {
+      const row = await user('最近去哪玩了');
+      await finish(row.id);
+      expect((await store.get(row.id))?.status).toBe('done');
+      const messages = await app
+        .get(CHAT_READ_PORT)
+        .readMessages({ conversationId: cid, scopes: ['normal'], limit: 10 });
+      const replies = messages.filter(
+        (m: { senderKind: string; seq: number }) =>
+          m.senderKind === 'character' && m.seq > row.triggerSeq,
+      );
+      expect(replies.map((m: { content: unknown }) => m.content)).toContainEqual({
+        type: 'text',
+        text: '给你看看我上周去的地方',
+      });
+      expect(JSON.stringify(replies)).not.toContain('[照片]');
+      expect(replies.some((m: { content: { type: string } }) => m.content.type === 'image')).toBe(
+        false,
+      );
+    } finally {
+      response = '我听着呢\n今天过得怎么样？';
+    }
+  });
   const repliesAfter = async (seq: number) =>
     (
       await app
