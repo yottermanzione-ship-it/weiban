@@ -6,7 +6,7 @@
 | 分支 | `ops/backup-retention-release-script-20261103`（worktree `C:\wb-dev\wb-t1103i`） |
 | 状态 | 待派发 |
 | 来源 | 总经理 2026-11-03 对备份的三点要求；T-20261103f（PR #50）交接遗留 1、2 |
-| 必读 | `docs/handoffs/2026-11-03-hk-disk-safety.md`、`deploy/hk/backup.sh`、`deploy/hk/release-prune.sh`、`deploy/hk/ops-lib.sh`、`docs/ops/hk-server.md` 第六节、`docs/ops/reference/manual-release-20261103.sh`（总负责人目前在服务器上用的手工发版脚本，原样存档，供参考） |
+| 必读 | `docs/handoffs/2026-11-03-hk-disk-safety.md`、`deploy/hk/backup.sh`、`deploy/hk/release-prune.sh`、`deploy/hk/ops-lib.sh`、`docs/ops/hk-server.md` 第六节、`docs/ops/reference/manual-release-20261103.sh`（总负责人第 7 波在服务器上用的手工发版脚本，原样存档，供参考：已实现「不含迁移就不备份、24 小时内须有完整备份」，镜像保留当前 + 2 个回退版本；第 8 波含迁移，改成发版前先构建、再备份到 `/var/backups/weiban`、再切换） |
 
 ## 总经理的三点要求（2026-11-03）
 
@@ -19,6 +19,9 @@
 ## 要求
 
 1. 改 `release-prune.sh`：保留当前版本加 2 个回退版本，回退版本按部署时间排序，可以从 `deployment-version.txt` 的历史或 `before-*` 标签推断，方法由你定。
+   - `:hk` 标签目前指向 11-02 的一份旧镜像，相当于额外多留了一个版本，不符合「当前 + 2」。改成：每次发版后把 `:hk` 重新指向当前版本（它只作为 `runtime.env.example` 的兜底名），不再单独保留旧镜像。
+   - `/srv/weiban/releases` 里还有约 30 个旧源码目录和 `.tar` 文件（合计约 2.4G），以及一批 `src.before-*` 软链接。按同一口径清理：只留当前和 2 个回退版本对应的目录与软链接；指向已不存在目录的软链接（如 `src.before-final-20261022`）也一并清掉。
+   - 旧备份：`/srv/weiban/backups` 里还有 11-03 两份完整备份（各约 3.2G）和 10 月的几份小型临时备份；`/var/backups/weiban-archive` 里是事故时挪过去的 6 份旧备份。交接里写清楚哪些可以删、怎么删，由总负责人确认后执行。
 2. 改 `backup.sh`：保留规则在 `KEEP=2` 之外加 10G 合计上限，阈值做成可配置的常量。
 3. **手工发版脚本入库**：参照 `docs/ops/reference/manual-release-20261103.sh`，写成 `deploy/hk/release.sh <commit>`。步骤保持现有布局：
    - 解压到 `releases/<sha>`；
