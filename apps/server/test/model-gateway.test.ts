@@ -111,6 +111,23 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
         res.writeHead(429).end('{"error":{"code":"insufficient_quota"}}');
         return;
       }
+      // T-20261103j：上游安全策略拦截（Abliteration 生产实际返回的形状，正文自造）与不带安全策略正文的 403。
+      if (mode === 'policy403') {
+        res.writeHead(403, { 'Content-Type': 'application/json' }).end(
+          JSON.stringify({
+            error: {
+              code: 'policy_violation',
+              type: 'policy_error',
+              message: 'The request was blocked by a safety policy.',
+            },
+          }),
+        );
+        return;
+      }
+      if (mode === 'forbidden403') {
+        res.writeHead(403).end(JSON.stringify({ error: { message: key } }));
+        return;
+      }
       if (mode === 'slow') {
         res.writeHead(200, { 'Content-Type': 'application/json' }).write('{');
         return;
@@ -511,6 +528,34 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
     expect(absorbed.rows).toHaveLength(1);
     expect(Number(absorbed.rows[0]?.cost_micros)).toBe(165);
     expect(absorbed.rows[0]?.upstream_id).toBe(upstreamId);
+    expect(logs.capture.text).not.toContain(key);
+  });
+  it('T-20261103j 上游安全策略 403 归为内容拒绝：不标上游不可用、不冷却线路，下一条照常调用；普通 403 仍是密钥失效', async () => {
+    const upstreamsService = app.get(UpstreamService);
+    const scheduler = app.get(UpstreamScheduler);
+    mode = 'policy403';
+    // 连续超过失败阈值（默认 3 次）也不动上游状态、不冷却：内容被拒不算账号故障。
+    for (let i = 0; i < 4; i++)
+      expect(await gateway.generateText(input())).toMatchObject({
+        ok: false,
+        error: 'content_rejected',
+      });
+    expect(calls).toBe(4); // 每次只调一次：不重试、不换账号
+    expect((await upstreamsService.get(upstreamId)).status).toBe('active');
+    expect(scheduler.isRouteCooling(modelKey, upstreamId)).toBe(false);
+    expect((await scheduler.plan(modelKey, null)).map((r) => r.upstreamId)).toContain(upstreamId);
+    mode = 'ok';
+    expect(await gateway.generateText(input())).toMatchObject({
+      ok: true,
+      value: { text: output },
+    });
+    expect(calls).toBe(5);
+    mode = 'forbidden403';
+    expect(await gateway.generateText(input())).toMatchObject({
+      ok: false,
+      error: 'provider_unavailable',
+    });
+    expect((await upstreamsService.get(upstreamId)).status).toBe('invalid');
     expect(logs.capture.text).not.toContain(key);
   });
   it('余额不足先拒绝；安全透支、平台账户、成人生成非法组合无法绕过', async () => {
