@@ -41,6 +41,11 @@ export function moodFromLabel(label: string): StickerMood | null {
 const MARKER = /[[【［]\s*(?:表情包?|sticker)\s*(?:[:：]\s*([^\]】］\n]{0,16}?))?\s*[\]】］]/giu;
 /** 模型照着聊天记录里自己发过的表情（「[你发了一个表情包：…]」）学着写的。 */
 const ECHO = /[[【［]\s*你发了(?:一个|个)?表情包?(?:[:：][^\]】］\n]{0,40})?\s*[\]】］]/gu;
+/**
+ * T-20261103g：群聊记录里库内表情显示为「[表情] 表情 12」（库图说明多是「表情 N」），模型可能照着写。
+ * 要在剥标记之前整段去掉，否则剥完「[表情]」会剩下「表情 12」漏给用户。
+ */
+const LIBRARY_ECHO = /[[【［]\s*表情包?\s*[\]】］]\s*表情\s*\d+/gu;
 
 /** 正文只剩标记时补一句很短的话（绝不发空回复）；正常情况下提示词要求正文必须有文字。 */
 const BARE: Readonly<Record<StickerMood, string>> = {
@@ -76,7 +81,7 @@ export function takeStickerMarker(text: string): StickerMarkerResult {
       const found = match[1] ? moodFromLabel(match[1]) : null;
       if (found) mood = found;
     }
-    const stripped = line.replace(MARKER, '').replace(ECHO, '');
+    const stripped = line.replace(LIBRARY_ECHO, '').replace(MARKER, '').replace(ECHO, '');
     if (stripped === line) {
       lines.push(line);
       continue;
@@ -97,15 +102,24 @@ export function stickerPromptText(opts: {
   moods: readonly StickerMood[];
   nudge: boolean;
   serious: boolean;
+  /** T-20261103g：群聊发言（「这条群消息」「群里的人看不到」）；群聊不加保底提醒。 */
+  group?: boolean;
 }): string {
   const labels = STICKER_MOODS.filter((m) => opts.moods.includes(m.mood)).map((m) => m.label);
   if (!labels.length) return '';
+  const group = opts.group === true;
   return [
-    '这轮可以配一个表情包，像真人聊天那样偶尔穿插，不用每轮都配。',
+    group
+      ? '这条群消息可以配一个表情包，像真人在群里聊天那样偶尔用一下，不用每次都配。'
+      : '这轮可以配一个表情包，像真人聊天那样偶尔穿插，不用每轮都配。',
     `想配时，在正文最后另起一行写 [表情:情绪]，情绪只能从这几个里选一个：${labels.join('、')}。`,
-    '系统会按情绪配一张合适的表情图，跟在你的文字后面发出；这行标记对方看不到，不算括号动作。正文照常要有文字；语气不合适或没有贴切的情绪就不写。',
-    opts.serious ? '对方这轮心情不好，只能配安慰类的表情，别的情绪都不要配。' : '',
-    opts.nudge ? '你已经连着好几条没配表情了，这轮语气合适的话可以配一个。' : '',
+    `系统会按情绪配一张合适的表情图，跟在你的文字后面发出；这行标记${group ? '群里的人' : '对方'}看不到，不算括号动作。正文照常要有文字；语气不合适或没有贴切的情绪就不写。`,
+    opts.serious
+      ? group
+        ? '群里有人心情不好，只能配安慰类的表情，别的情绪都不要配。'
+        : '对方这轮心情不好，只能配安慰类的表情，别的情绪都不要配。'
+      : '',
+    opts.nudge && !group ? '你已经连着好几条没配表情了，这轮语气合适的话可以配一个。' : '',
   ]
     .filter(Boolean)
     .join('\n');

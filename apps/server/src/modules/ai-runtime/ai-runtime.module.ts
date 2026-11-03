@@ -59,6 +59,7 @@ import { MomentsModule } from '../moments/index.js';
 import { TimelineController } from './http/timeline.controller.js';
 import { MediaModule } from '../media/index.js';
 import { MediaAiService, AI_USER_QUIET_STATE } from './application/media-ai.js';
+import { ChatPhotoService } from './application/chat-photo.js';
 import { CallsModule } from '../calls/index.js';
 import { QuietStateService } from './application/quiet-state.js';
 import { PlayModule } from '../play/index.js';
@@ -172,6 +173,8 @@ import {
     MomentsAiService,
     MomentsMemoryService,
     MediaAiService,
+    // T-20261103g：私聊按素材分享照片（只读已入库、已审核的微博素材图）。
+    ChatPhotoService,
     // T-072：P-45「不方便」静默的真实提供方。
     QuietStateService,
     { provide: AI_USER_QUIET_STATE, useExisting: QuietStateService },

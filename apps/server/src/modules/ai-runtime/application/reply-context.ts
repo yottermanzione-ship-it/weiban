@@ -103,6 +103,7 @@ import {
   type RecallCandidate,
 } from '../domain/recall.js';
 import { keepChattingCase, keepChattingHint } from '../domain/keep-chatting.js';
+import { PhotoOffer } from '../domain/photo-marker.js';
 import { sinceDay } from '../domain/memory-tier.js';
 /** 世界书扫描最近几条消息（酒馆默认扫描深度 2，这里含角色回复所以取 4）。 */
 const LORE_SCAN_MESSAGES = 4;
@@ -200,6 +201,8 @@ export const ReplySnapshot = z.object({
   habits: z.array(z.string()).default([]),
   /** 0091：请求开头预计可命中前缀缓存的字符数（写入用量记录，docs/refactor/09 第 6 节）。 */
   stablePrefixChars: z.number().int().nonnegative().default(0),
+  /** T-20261103g：这轮提示里给模型分享的那张素材照片（模型写「[照片]」才发）；没有为 null。 */
+  photoOffer: PhotoOffer.nullable().default(null),
 });
 export type ReplySnapshot = z.infer<typeof ReplySnapshot>;
 @Injectable()
@@ -675,14 +678,28 @@ export class ReplyContext {
       });
     // T-20261103d：表情包由写回复的模型自己决定——这轮能配时告诉它可选的情绪和标记写法
     // （与发送阶段同一套硬规则；日常范围的普通回复才有，私密、关怀、树洞、涉及健康时不给）。
-    const stickerHint =
+    const mediaHints =
       row.kind === 'message' &&
       !inCare &&
       conversation.contentScope === 'normal' &&
       style !== 'treehole' &&
-      !healthHint.healthUsed
-        ? await this.mediaAi.stickerPrompt({ ctx: mediaCtx, history, userText }).catch(() => '')
-        : '';
+      !healthHint.healthUsed;
+    const stickerHint = mediaHints
+      ? await this.mediaAi.stickerPrompt({ ctx: mediaCtx, history, userText }).catch(() => '')
+      : '';
+    // T-20261103g：分享照片同理——角色有这个用户还没收到过的微博素材图时，告诉模型可以分享、图出自哪条微博；
+    // 模型写「[照片]」才发这张（发送阶段同一套硬规则再核一次；严肃场景、用户说过不要图片时不给）。
+    const photo = mediaHints
+      ? await this.mediaAi
+          .photoPrompt({
+            ctx: mediaCtx,
+            history,
+            userText,
+            policy: replyPolicy,
+            withSticker: !!stickerHint,
+          })
+          .catch(() => null)
+      : null;
     const tail: PromptSection[] = [
       { title: '刚刚一起经历的', text: episodes.recent },
       { title: '相关经历', text: episodes.relevant },
@@ -691,6 +708,7 @@ export class ReplyContext {
         text: '现在以角色口吻与用户私聊。只输出聊天纯文本，短句换行，不输出JSON或括号动作。回答前可以先想，想完先单独写一行【正文】，然后只写正文聊天内容；【正文】这行本身不发给用户，正文不能为空。',
       },
       { title: '表情包', text: stickerHint },
+      { title: '分享照片', text: photo?.text ?? '' },
       {
         title: '这轮可能用得上的记忆',
         text: retrieved.length
@@ -961,6 +979,7 @@ export class ReplyContext {
       timeZone: profile.timeZone,
       stablePrefixChars: assembled.stats.stablePrefixChars,
       habits,
+      photoOffer: photo?.offer ?? null,
     });
   }
   /**

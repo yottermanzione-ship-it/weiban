@@ -43,6 +43,28 @@ describe('fitReplyContents：一次回复最多发 4 条（P-02）', () => {
       fitReplyContents([text('一'), text('二'), text('三'), text('四'), link, sticker]),
     ).toEqual([text('一'), text('二\n三\n四'), link, sticker]);
   });
+  it('T-20261103g：4 条文字 + 照片：照片也算一条，最后两条文字合并', () => {
+    const photo: MessageContent = {
+      type: 'image',
+      mediaId: '00000000-0000-4000-8000-000000000003',
+      width: null,
+      height: null,
+    };
+    expect(fitReplyContents([text('一'), text('二'), text('三'), text('四'), photo])).toEqual([
+      text('一'),
+      text('二'),
+      text('三\n四'),
+      photo,
+    ]);
+    // 文字长到合并不下时，照片和表情包一样可以去掉。
+    const long = (c: string) => text(c.repeat(3000));
+    expect(fitReplyContents([long('一'), long('二'), long('三'), long('四'), photo])).toEqual([
+      long('一'),
+      long('二'),
+      long('三'),
+      long('四'),
+    ]);
+  });
   it('撤回草稿 + 4 条：草稿原样留在第 1 条，不和正文合并', () => {
     const fitted = fitReplyContents(
       [text('唔，草'), text('一'), text('二'), text('三'), text('四')],
