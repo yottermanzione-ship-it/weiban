@@ -36,6 +36,9 @@ describe('用户发动态：点赞与评论分开排、各自去重（旧版：�
   it('熟悉度低的点赞概率低', () => {
     expect(userPostLikeProbability(1)).toBeCloseTo(0.35);
     expect(userPostLikeProbability(5)).toBe(1);
+    // 六阶段：第 6 阶段「伴侣」不低于「恋人」，超出范围按最高阶段处理。
+    expect(userPostLikeProbability(6)).toBe(1);
+    expect(userPostLikeProbability(7)).toBe(1);
     const planned = planUserPostReactions([
       { characterId: 'low', familiarityLevel: 1, likeDraw: 0.5, commentDraw: 0.99 },
     ]);

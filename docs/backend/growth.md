@@ -24,7 +24,7 @@
 | 卡 | 触发 | 幂等键（每角色） |
 |---|---|---|
 | 纪念卡 | 每小时扫描（`growth.anniversary_sweep`，每小时第 5 分），按用户时区，认识第 7、30、100、200、365 天，之后每 100 天和每个周年；停机错过的 7 天内补发 | `anniversary:{N}` |
-| 熟悉度卡 | 升级时每跨一级一张（L2～L5） | `familiarity:{L}` |
+| 熟悉度卡 | 升级时每跨一级一张（3.25 起六阶段：第 2～6 阶段） | `familiarity:{L}` |
 | 节日卡 | 节日当天用户在私聊发消息；节日 `sendCard=true` 且角色分类在适用范围内 | `holiday:{holidayId}:{当地日期}` |
 | 瞬间卡（系统） | 第一次接通通话、被角色拉进群、角色在朋友圈回复你（ai_runtime.milestone `moments_replied_user`） | `moment:first_call` / `moment:pulled_into_group` / `moment:moments_reply` |
 | 名场面 / 宠物 / 玩法卡 | ai-runtime 等经 `GROWTH_CARD_PORT` 发；`kind=moment` 且带 `sourceMessageIds` 视为名场面，受每周 1 张限制（返回 `weekly_moment_limit`） | 调用方给 |
@@ -56,7 +56,7 @@
 
 ## 4. 熟悉度加分
 
-`GrowthService.awardPoints`（HTTP `addPoints` 也走这里）：幂等、每角色每天上限（按用户当地日期；数值见 `P25_FAMILIARITY`，2026-10-20 起免费 350 / PRO+ 700，所有加分项共用）。T-076 修正了 P-25 分值取不到的问题。升级时发 `growth.familiarity_leveled_up`、熟悉度卡、系统提示 `familiarity_level_up`。
+`GrowthService.awardPoints`（HTTP `addPoints` 也走这里）：幂等、每角色每天上限（按用户当地日期；数值见 `P25_FAMILIARITY`，2026-10-20 起免费 350 / PRO+ 700，所有加分项共用）。T-076 修正了 P-25 分值取不到的问题。升级时发 `growth.familiarity_leveled_up`（`level` 2～6，契约 5.4 起与 `FamiliarityLevel` 同上限；之前写死 5，升到第 6 阶段会校验失败、整笔加分回滚，见 T-20261104d）、熟悉度卡、系统提示 `familiarity_level_up`。
 「首次完成某互动」+5：第一次通话、第一次群聊（建群时群内角色）、领养、每日一问、完成心愿、寄信、专注、设提醒——各自订阅事件，每用户每角色每种只计一次（键 `first:{种类}:{userId}:{characterId}`）。纪念日当天私聊 +10（`anniversary_chat`）。
 
 **按消息加分（16 号 §11，2026-10-20）**：订阅者 `growth.familiarity_on_user_message` 监听 `chat.message_created`，用户发的文字（或语音转写）消息，私聊算给对方角色、群聊算给被 @ 的角色；经 `ChatReadPort.getMessage` 按该消息自己的内容范围取正文，只数字数、算指纹，不存正文。`GrowthService.awardUserMessage` 判定有效（去空白后 ≥2 字、与该用户对该角色上一条消息指纹不同、距上一条计分消息 ≥3 秒，规则纯函数 `evaluateUserMessage`），再走 `awardPoints`（服务器内部事件类型 `user_message`，不进契约，客户端不能上报），幂等键 `user_message:{messageId}:{characterId}`。状态存在 `growth.familiarity.last_message_hash / last_message_scored_at`（迁移 0106）。PRO+ 每次加分与每日上限 ×2（`scaledPoints`）。

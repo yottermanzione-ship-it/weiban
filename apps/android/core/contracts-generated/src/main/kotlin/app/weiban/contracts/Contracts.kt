@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 5.3. Regenerate: pnpm android:generate
+// Contract 5.4. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "5.3"
+const val CONTRACT_VERSION: String = "5.4"
 
 @Serializable
 data class AccountAlias(
@@ -13462,7 +13462,7 @@ data class EventsDomainEventAiRuntimeMilestonePayload(
 data class EventsDomainEventGrowthFamiliarityLeveledUpPayload(
     @SerialName("userId") val `userId`: Id,
     @SerialName("characterId") val `characterId`: Id,
-    @SerialName("level") val `level`: Long,
+    @SerialName("level") val `level`: FamiliarityLevel,
 )
 
 @Serializable
@@ -13671,7 +13671,7 @@ data class EventsDomainEventPlayReminderSavedPayload(
 data class EventsFamiliarityLeveledUpPayload(
     @SerialName("userId") val `userId`: Id,
     @SerialName("characterId") val `characterId`: Id,
-    @SerialName("level") val `level`: Long,
+    @SerialName("level") val `level`: FamiliarityLevel,
 )
 
 @Serializable
