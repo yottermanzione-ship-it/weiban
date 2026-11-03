@@ -4,7 +4,7 @@
 |---|---|
 | 负责人 | backend-lead（站内索引与聚合接口）+ web-lead（搜索界面），本任务一人完成 |
 | 分支 | `feat/character-search-p1-20261104`（worktree `C:\wb-dev\wb-search-p1`） |
-| 状态 | 待派发 |
+| 状态 | 待验收（交接 `docs/handoffs/2026-11-04-character-search-p1.md`） |
 | 来源 | 总经理 10-26 确认开工 P1（`docs/refactor/24-character-search.md`，排在 UI 优化之后，UI 批已全部上线）；11-03 总经理：安卓往后放，先把网页完善 |
 | 必读 | `docs/refactor/24-character-search.md`（方案，**以它为准**）、`packages/contracts/src/http/search.ts`、`apps/server/src/modules/model-access/http/search.controller.ts`、`apps/web/src/features/web-character-search.tsx`、`contacts.tsx`（约 550 行）、`plaza.tsx`（约 450 行）、`docs/tasks/2026-10-18-ui-search-consistency.md` |
 
