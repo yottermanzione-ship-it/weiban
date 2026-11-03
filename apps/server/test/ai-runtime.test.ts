@@ -761,7 +761,6 @@ describeDb('ai-runtime 真实PG：设置/加密计划/合并/幂等/关怀/删�
     }
   });
   it('T-20261103h 七行正文并成 6 条文字，再附一个作品链接共 7 条：照常发完', async () => {
-    clock.advance(24 * 3600_000);
     response = sevenLines;
     const choice = vi
       .spyOn(engine.quirks, 'choose')
@@ -843,7 +842,9 @@ describeDb('ai-runtime 真实PG：设置/加密计划/合并/幂等/关怀/删�
     });
     // 只续发第 7、8 条（前 6 条在这个构造里没真的发过）。
     expect(
-      (await repliesAfter(row.triggerSeq)).map((m: { content: { text: string } }) => m.content.text),
+      (await repliesAfter(row.triggerSeq)).map(
+        (m: { content: { text: string } }) => m.content.text,
+      ),
     ).toEqual(['七', '八']);
     // 9 条超出约束：数据库直接拒绝（next_bubble 永远不超过 P-02 总上限 8）。
     await expect(

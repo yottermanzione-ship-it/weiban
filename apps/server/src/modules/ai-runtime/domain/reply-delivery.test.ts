@@ -65,9 +65,12 @@ describe('fitReplyContents：一次回复文字最多 6 条、总共最多 8 条
       sticker,
     ]);
     // 10 条：多出的文字都并进靠后的文字里。
-    expect(
-      fitReplyContents([...six(), text('七'), text('八'), text('九'), sticker]),
-    ).toEqual([...six().slice(0, 5), text('六'), text('七\n八\n九'), sticker]);
+    expect(fitReplyContents([...six(), text('七'), text('八'), text('九'), sticker])).toEqual([
+      ...six().slice(0, 5),
+      text('六'),
+      text('七\n八\n九'),
+      sticker,
+    ]);
   });
   it('撤回草稿、错字和更正原样留在前面，不和正文合并', () => {
     const eight = [...six(), text('七'), text('八')];
@@ -89,11 +92,7 @@ describe('fitReplyContents：一次回复文字最多 6 条、总共最多 8 条
     );
     // 照片和表情包一样可以去掉；只多一条时只去最后那一个。
     const sixLong = Array<MessageContent>(6).fill(long);
-    expect(fitReplyContents([...sixLong, long, photo, sticker])).toEqual([
-      ...sixLong,
-      long,
-      photo,
-    ]);
+    expect(fitReplyContents([...sixLong, long, photo, sticker])).toEqual([...sixLong, long, photo]);
   });
   it('怎么都压不到 8 条时返回 null（调用方退回只发文字气泡，文字本身不超过 6 条）', () => {
     const long = text('a'.repeat(2500));
@@ -108,7 +107,9 @@ describe('fitReplyContents：一次回复文字最多 6 条、总共最多 8 条
       ...['c', 'd', 'e', 'f', 'g', 'h', 'i'].map((c) => text(c.repeat(3000))),
     ])!;
     expect(fitted).toHaveLength(8);
-    expect(fitted[0]).toEqual(text(`${'a'.repeat(3000)}\n${'b'.repeat(900)}`));
+    // 从后往前找：第一对合得下的是 b（900 字）和 c（3000 字），a 不动。
+    expect(fitted[0]).toEqual(text('a'.repeat(3000)));
+    expect(fitted[1]).toEqual(text(`${'b'.repeat(900)}\n${'c'.repeat(3000)}`));
     for (const c of fitted) expect(c.type === 'text' && c.text.length <= 4000).toBe(true);
   });
   it('显式传入更小的上限时按传入的封顶', () => {
