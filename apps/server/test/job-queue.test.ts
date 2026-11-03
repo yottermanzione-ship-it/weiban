@@ -113,4 +113,11 @@ describeDb('pg-boss 任务队列（真实 PostgreSQL）', () => {
   it('队列名必须是「模块.动作」', async () => {
     await expect(jobs.send('BadName', {})).rejects.toThrow(/队列名/);
   });
+  it('pg-boss 自己的连接带 idle_in_transaction_session_timeout = 30s，不设会话级 lock_timeout（T-20261104c）', async () => {
+    const { rows } = await jobs.boss.getDb().executeSql(
+      `SELECT current_setting('idle_in_transaction_session_timeout') AS idle,
+                current_setting('lock_timeout') AS lock`,
+    );
+    expect(rows[0]).toEqual({ idle: '30s', lock: '0' });
+  });
 });
