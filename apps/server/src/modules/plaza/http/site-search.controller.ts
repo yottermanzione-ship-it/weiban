@@ -9,23 +9,23 @@ import {
 } from '../../../platform/index.js';
 import { SiteSearchService } from '../application/site-search.service.js';
 
-const suggestQuery = new ContractPipe(E.suggest.query!);
-const resultsQuery = new ContractPipe(E.results.query!);
-
 @Controller('api/v1/search')
 @RequireAuth('user')
 export class SiteSearchController {
   constructor(@Inject(SiteSearchService) private readonly search: SiteSearchService) {}
 
   @Get('suggest')
-  suggest(@CurrentPrincipal() p: AuthPrincipal, @Query(suggestQuery) query: { q: string }) {
+  suggest(
+    @CurrentPrincipal() p: AuthPrincipal,
+    @Query(new ContractPipe(E.suggest.query!)) query: { q: string },
+  ) {
     return this.search.suggest(p.userId, query.q);
   }
 
   @Get('characters')
   results(
     @CurrentPrincipal() p: AuthPrincipal,
-    @Query(resultsQuery)
+    @Query(new ContractPipe(E.results.query!))
     query: { q: string; prefer?: 'official' | 'plaza'; cursor?: string; limit: number },
   ) {
     return this.search.results(p.userId, query);

@@ -370,7 +370,7 @@ export class CharacterSearchIndex implements CharacterSearchPort, OnModuleInit {
         )
         .map((r) => [r.id, r]),
     );
-    const profiles = await this.characterService.getProfiles(userId, [...eligible.keys()]);
+    const profiles = await this.characterService.searchProfiles(userId, [...eligible.keys()]);
     const byId = new Map(profiles.map((p) => [p.characterId, p]));
     return ids.flatMap((id) => {
       const row = eligible.get(id);

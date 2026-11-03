@@ -950,6 +950,24 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       if (await this.visible(userId, row)) profiles.push(await this.profile(userId, row));
     return profiles;
   }
+  /**
+   * 5.5 站内搜索结果卡片（T-20261104b）：与 getProfiles 相同的可见性与资料，但各角色并行组装
+   * （一页最多 20 个，搜索要控制延迟）；调用方已按搜索资格筛过。最多 100 个。
+   */
+  async searchProfiles(userId: string, ids: string[]): Promise<CharacterProfile[]> {
+    if (ids.length > 100) throw new AppError('bad_request', '最多查询100个角色');
+    if (!ids.length) return [];
+    const rows = await this.database.db
+      .select()
+      .from(characters)
+      .where(inArray(characters.id, ids));
+    const profiles = await Promise.all(
+      rows.map(async (row) =>
+        (await this.visible(userId, row)) ? this.profile(userId, row) : null,
+      ),
+    );
+    return profiles.filter((profile): profile is CharacterProfile => profile !== null);
+  }
   async getDisplayName(userId: string, id: string, input?: Tx): Promise<string | null> {
     Id.parse(userId);
     Id.parse(id);

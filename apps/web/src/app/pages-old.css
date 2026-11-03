@@ -2308,6 +2308,40 @@ button.primary.wx-auth-submit {
   margin-left: auto;
 }
 
+/* 5.5 站内角色搜索（T-20261104b）：联想与聚合结果放在添加朋友 / 广场页签里，沿用上面的微信式分组行。 */
+.site-search .wx-search-group {
+  margin: var(--wb-space-3) 0 0;
+}
+.site-search button.wx-search-row {
+  width: 100%;
+  min-height: 48px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+}
+.site-search-suggest-row::after {
+  left: 48px;
+}
+.site-search-suggest-row > svg,
+.site-search-suggest-row > img {
+  flex: none;
+  color: var(--wb-color-text-secondary);
+}
+.site-search-did-you-mean b {
+  margin-left: var(--wb-space-1);
+  font-weight: var(--wb-font-weight-medium);
+}
+.site-search-action {
+  flex: none;
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-footnote);
+}
+.site-search-action.is-chat {
+  color: var(--ui-text-action);
+}
+
 /* ---------- 欢迎页（10-14 确认 Q12：照微信「登录 / 注册」两按钮） ---------- */
 .wx-welcome {
   display: flex;

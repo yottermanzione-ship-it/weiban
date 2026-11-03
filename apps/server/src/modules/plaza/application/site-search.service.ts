@@ -134,11 +134,17 @@ export class SiteSearchService {
       if (contact.status === 'active' && contact.conversationId)
         chats.set(contact.characterId, contact.conversationId);
 
-    const copies = await this.plaza.myCopies(
-      userId,
-      works.map((w) => w.workId),
-    );
-    const candidates = await this.candidates(names, works, chats, copies);
+    const officialIds = names.filter((n) => n.scope === 'official').map((n) => n.characterId);
+    const [copies, heat] = await Promise.all([
+      this.plaza.myCopies(
+        userId,
+        works.map((w) => w.workId),
+      ),
+      officialIds.length && this.contactStats
+        ? this.contactStats.countContactUsers(officialIds)
+        : Promise.resolve(new Map<string, number>()),
+    ]);
+    const candidates = this.candidates(names, works, chats, copies, heat);
     const ranked = rankCandidates(candidates, prefer);
     const ambiguous = ambiguousIds(ranked);
     const after = decodeSearchCursor(input.cursor, query.key, prefer);
@@ -166,18 +172,14 @@ export class SiteSearchService {
    * 把两边的命中变成候选。本人从广场复制、且已是好友的角色并进对应作品那一项（按 adoptions 的 ID 关联，
    * 不按名字），作品项显示「去聊天」；已不是好友的复制角色仍作为本人角色单独列出。
    */
-  private async candidates(
+  private candidates(
     names: CharacterSearchNameHit[],
     works: PlazaSearchHit[],
     chats: ReadonlyMap<string, string>,
     copies: ReadonlyMap<string, string>,
-  ): Promise<Candidate[]> {
+    heat: ReadonlyMap<string, number>,
+  ): Candidate[] {
     const merged = new Set([...copies.values()].filter((id) => chats.has(id)));
-    const officialIds = names.filter((n) => n.scope === 'official').map((n) => n.characterId);
-    const heat =
-      officialIds.length && this.contactStats
-        ? await this.contactStats.countContactUsers(officialIds)
-        : new Map<string, number>();
     const out: Candidate[] = [];
     for (const hit of names) {
       if (hit.scope === 'own' && merged.has(hit.characterId)) continue;

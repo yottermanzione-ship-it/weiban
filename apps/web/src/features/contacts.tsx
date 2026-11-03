@@ -2,6 +2,7 @@ import { isImeEnter } from './ime.js';
 import { EcologySignatureLine, MurmursRow } from './murmurs.js';
 import { SearchField } from './search-field.js';
 import { WebCharacterSearch } from './web-character-search.js';
+import { SiteSearchResults, SiteSuggestions } from './site-search.js';
 /*
  * 通讯录（规格 4.6）、发现（4.8）、角色广场（5.2）、角色资料页（4.12）。
  */
@@ -429,9 +430,17 @@ export function RolePlazaPage({ onboarding = false }: { onboarding?: boolean }) 
   const [search, setSearch] = useState('');
   const [cursor, setCursor] = useState<string>();
   const [previous, setPrevious] = useState<Array<string | undefined>>([]);
+  // 5.5（T-20261104b）：添加朋友的搜索改用站内聚合结果（官方、广场、本人角色）；推荐列表与首次引导照旧。
+  const siteSearch = !onboarding && !!search;
   const roles = useRemote(CharacterEndpoints.searchPlaza, {
-    query: { q: search || undefined, cursor, limit: 50 },
+    query: { q: (onboarding && search) || undefined, cursor, limit: 50 },
   });
+  const pick = (text: string) => {
+    setQuery(text);
+    setSearch(text.trim());
+    setCursor(undefined);
+    setPrevious([]);
+  };
   if (onboarding && !draft.ready)
     return (
       <main>
@@ -507,76 +516,97 @@ export function RolePlazaPage({ onboarding = false }: { onboarding?: boolean }) 
           搜索
         </button>
       </form>
-      {!onboarding && !search && <AddFriendEntries />}
-      {!onboarding && <GroupHeader>{search ? '搜索结果' : '推荐角色'}</GroupHeader>}
-      {roles.error && <p role="alert">{roles.error}</p>}
-      {roles.loading && !roles.data && (
-        <div className="role-loading" role="status" aria-label="正在读取角色">
-          {[0, 1, 2, 3].map((n) => (
-            <div className="role-skeleton" key={n}>
-              <i />
-              <span />
-            </div>
-          ))}
-        </div>
+      {!onboarding && (
+        <SiteSuggestions input={query} active={query.trim() !== search} onPick={pick} />
       )}
-      {!!roles.data?.items.length && (
-        <MenuGroup>
-          {roles.data?.items.map((role) =>
-            onboarding ? (
-              <MenuRow
-                key={role.characterId}
-                disabled={draft.saving}
-                onClick={() => void draft.choose(role.characterId)}
-                leading={<CharacterAvatar id={role.characterId} profile={role} size={40} />}
-                label={role.name}
-                subtitle={`${role.tagline}${role.added ? ' · 已添加' : ''}`}
-              />
-            ) : (
-              <MenuRow
-                key={role.characterId}
-                to={`/characters/${role.characterId}`}
-                leading={<CharacterAvatar id={role.characterId} profile={role} size={40} />}
-                label={role.name}
-                subtitle={`${role.tagline}${role.added ? ' · 已添加' : ''}`}
-              />
-            ),
-          )}
-        </MenuGroup>
+      {siteSearch && (
+        <SiteSearchResults
+          key={search}
+          query={search}
+          onPick={pick}
+          title="搜索结果"
+          empty={
+            <>
+              <EmptyState icon="wechat/search" title="没有找到角色" />
+              <WebCharacterSearch key={search} query={search} />
+            </>
+          }
+        />
       )}
-      {!roles.loading && roles.data?.items.length === 0 && (
+      {!siteSearch && (
         <>
-          <EmptyState icon="wechat/search" title="没有找到角色" />
-          {search && <WebCharacterSearch key={search} query={search} />}
+          {!onboarding && !search && <AddFriendEntries />}
+          {!onboarding && <GroupHeader>{search ? '搜索结果' : '推荐角色'}</GroupHeader>}
+          {roles.error && <p role="alert">{roles.error}</p>}
+          {roles.loading && !roles.data && (
+            <div className="role-loading" role="status" aria-label="正在读取角色">
+              {[0, 1, 2, 3].map((n) => (
+                <div className="role-skeleton" key={n}>
+                  <i />
+                  <span />
+                </div>
+              ))}
+            </div>
+          )}
+          {!!roles.data?.items.length && (
+            <MenuGroup>
+              {roles.data?.items.map((role) =>
+                onboarding ? (
+                  <MenuRow
+                    key={role.characterId}
+                    disabled={draft.saving}
+                    onClick={() => void draft.choose(role.characterId)}
+                    leading={<CharacterAvatar id={role.characterId} profile={role} size={40} />}
+                    label={role.name}
+                    subtitle={`${role.tagline}${role.added ? ' · 已添加' : ''}`}
+                  />
+                ) : (
+                  <MenuRow
+                    key={role.characterId}
+                    to={`/characters/${role.characterId}`}
+                    leading={<CharacterAvatar id={role.characterId} profile={role} size={40} />}
+                    label={role.name}
+                    subtitle={`${role.tagline}${role.added ? ' · 已添加' : ''}`}
+                  />
+                ),
+              )}
+            </MenuGroup>
+          )}
+          {!roles.loading && roles.data?.items.length === 0 && (
+            <>
+              <EmptyState icon="wechat/search" title="没有找到角色" />
+              {search && <WebCharacterSearch key={search} query={search} />}
+            </>
+          )}
+          {(previous.length > 0 || roles.data?.nextCursor) && (
+            <div className="pager-row">
+              {previous.length > 0 && (
+                <button
+                  type="button"
+                  disabled={roles.loading}
+                  onClick={() => {
+                    setCursor(previous.at(-1));
+                    setPrevious(previous.slice(0, -1));
+                  }}
+                >
+                  上一页
+                </button>
+              )}
+              {roles.data?.nextCursor && (
+                <button
+                  type="button"
+                  disabled={roles.loading}
+                  onClick={() => {
+                    setPrevious([...previous, cursor]);
+                    setCursor(roles.data?.nextCursor ?? undefined);
+                  }}
+                >
+                  下一页
+                </button>
+              )}
+            </div>
+          )}
         </>
-      )}
-      {(previous.length > 0 || roles.data?.nextCursor) && (
-        <div className="pager-row">
-          {previous.length > 0 && (
-            <button
-              type="button"
-              disabled={roles.loading}
-              onClick={() => {
-                setCursor(previous.at(-1));
-                setPrevious(previous.slice(0, -1));
-              }}
-            >
-              上一页
-            </button>
-          )}
-          {roles.data?.nextCursor && (
-            <button
-              type="button"
-              disabled={roles.loading}
-              onClick={() => {
-                setPrevious([...previous, cursor]);
-                setCursor(roles.data?.nextCursor ?? undefined);
-              }}
-            >
-              下一页
-            </button>
-          )}
-        </div>
       )}
     </main>
   );

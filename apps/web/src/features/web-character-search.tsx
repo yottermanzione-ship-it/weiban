@@ -9,8 +9,12 @@ import { api } from '../data/client.js';
 import { friendlyError } from '../data/use-remote.js';
 import { useAuth } from '../app/auth.js';
 import { MenuGroup, MenuRow } from './shell-kit.js';
+import { allowWebSearch } from './site-search-logic.js';
 
-/** 只在站内搜索为空时显示；手动点击才向联网供应商发查询。切换搜索词时由父组件 key 重建。 */
+/**
+ * 只在站内搜索为空时显示；手动点击才向联网供应商发查询。切换搜索词时由父组件 key 重建。
+ * 只给 2～64 字的搜索词（allowWebSearch）。
+ */
 export function WebCharacterSearch({ query }: { query: string }) {
   const { session } = useAuth();
   return session ? (
@@ -47,7 +51,8 @@ function CandidateSearch({ query, session }: { query: string; session: AuthRespo
       if (owner.current === current && ordinal === request.current) setBusy(false);
     }
   }
-  if (query.trim().length < 2) return null;
+  // 5.5：一个字、空白、超过 64 字只在站内搜，不显示联网查找（收费）入口。
+  if (!allowWebSearch(query)) return null;
   return (
     <section aria-label="联网角色候选">
       <p className="hint page-note">

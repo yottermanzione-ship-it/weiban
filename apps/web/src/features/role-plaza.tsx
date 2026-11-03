@@ -1,5 +1,6 @@
 import { SearchField } from './search-field.js';
 import { WebCharacterSearch } from './web-character-search.js';
+import { SiteSearchResults, SiteSuggestions } from './site-search.js';
 /*
  * 总经理 2026-10-14 裁定 2.3：通讯录右上「添加朋友」下的两个入口。
  * - 角色广场（/plaza）：一个页面两个 tab ——「自定义角色」（用户分享，原人设广场）与「微伴角色」（官方制作）；
@@ -216,6 +217,10 @@ function OfficialList() {
   useEffect(() => {
     void load();
   }, [load]);
+  const pick = (text: string) => {
+    setQuery(text);
+    setSearch(text.trim());
+  };
   return (
     <section aria-label="微伴角色" className="plaza-tab-page">
       <form
@@ -246,6 +251,7 @@ function OfficialList() {
           搜索
         </button>
       </form>
+      <SiteSuggestions input={query} active={query.trim() !== search} onPick={pick} />
       {items.length === 0 && (
         <div className="plaza-tab-body">
           {state === 'loading' && (
@@ -261,14 +267,22 @@ function OfficialList() {
               </button>
             </div>
           )}
-          {state === 'ready' && (
-            <>
-              <EmptyState
-                icon="wechat/search"
-                title={search ? `没有找到「${search}」` : '还没有角色'}
-              />
-              {search && <WebCharacterSearch key={search} query={search} />}
-            </>
+          {state === 'ready' && !search && <EmptyState icon="wechat/search" title="还没有角色" />}
+          {state === 'ready' && search && (
+            // 5.5：微伴角色里没有时，先看站内其他来源（拼音、错字建议、广场作品、我的角色），都没有才联网查找。
+            <SiteSearchResults
+              key={search}
+              query={search}
+              prefer="official"
+              onPick={pick}
+              title="站内其他结果"
+              empty={
+                <>
+                  <EmptyState icon="wechat/search" title={`没有找到「${search}」`} />
+                  <WebCharacterSearch key={search} query={search} />
+                </>
+              }
+            />
           )}
         </div>
       )}

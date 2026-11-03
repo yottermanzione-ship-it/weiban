@@ -69,6 +69,9 @@ describe('站内搜索文字处理', () => {
   it('错字只给建议：同音优先，2 字名字不认任意替换', () => {
     expect(typoKind(q('易洋千玺'), term('易烊千玺'))).toBe('homophone');
     expect(typoKind(q('厉晨'), term('李晨'))).toBe('homophone');
+    // 至少 3 字时同音前缀也算；2 字不算（「李成」不提示「李晨阳」）。
+    expect(typoKind(q('易洋千'), term('易烊千玺'))).toBe('homophone');
+    expect(typoKind(q('厉晨'), term('李晨阳'))).toBeNull();
     expect(typoKind(q('李明'), term('李晨'))).toBeNull();
     expect(typoKind(q('易烊干玺'), term('易烊千玺'))).toBe('edit');
     expect(typoKind(q('易千烊玺'), term('易烊千玺'))).toBe('edit');
