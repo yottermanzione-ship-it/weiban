@@ -30,6 +30,8 @@ import {
   ClientFrame,
   ErrorCode,
   Events,
+  FAMILIARITY_STAGE_NAMES,
+  FamiliarityLevel,
   Message,
   MessageContent,
   NotificationPayload,
@@ -319,6 +321,24 @@ describe('领域事件', () => {
     expect(Events.BalanceRestored.safeParse({ ...base, payload: { userId: ID } }).success).toBe(
       false,
     );
+  });
+
+  it('5.4：熟悉度升级事件接受第 6 阶段（伴侣），上限与 FamiliarityLevel 一致', () => {
+    const levelUp = (level: number) =>
+      Events.FamiliarityLeveledUp.safeParse({
+        eventId: ID,
+        type: 'growth.familiarity_leveled_up',
+        version: 1,
+        producer: 'growth',
+        occurredAt: NOW,
+        payload: { userId: ID, characterId: ID2, level },
+      }).success;
+    for (let level = 2; level <= FAMILIARITY_STAGE_NAMES.length; level += 1)
+      expect(levelUp(level)).toBe(true);
+    expect(FamiliarityLevel.safeParse(FAMILIARITY_STAGE_NAMES.length).success).toBe(true);
+    expect(levelUp(1)).toBe(false);
+    expect(levelUp(FAMILIARITY_STAGE_NAMES.length + 1)).toBe(false);
+    expect(levelUp(5.5)).toBe(false);
   });
 
   it('事件汇总不再包含年龄确认', () => {
