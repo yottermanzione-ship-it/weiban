@@ -1203,12 +1203,26 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
         this.fakeAdapter,
       );
     const upstream = await this.upstreams.get(model.upstreamId);
-    return this.upstreams.withApiKey(model.upstreamId, (apiKey) =>
+    const result = await this.upstreams.withApiKey(model.upstreamId, (apiKey) =>
       fn(
         { kind: upstream.kind, baseUrl: upstream.baseUrl, apiKey, model: model.upstreamModelId },
         this.adapter,
       ),
     );
+    return this.confirmInvalidKey(model.upstreamId, result);
+  }
+
+  /**
+   * T-20261104a：媒体调用（合成、识别、图片、搜索、实时通话、复刻）都经 withTarget 拿上游结果。回 invalid_key 时先用同一把
+   * 密钥自检（UpstreamService.keyStillWorks，与文本网关共用结论与缓存）；通过就改成 content_rejected：
+   * fail() 不改上游状态、用量记录记内容被拒，调用方拿到 content_rejected。自检失败照旧。
+   */
+  private async confirmInvalidKey<T>(upstreamId: string, result: T): Promise<T> {
+    const failed = result as { ok?: unknown; category?: unknown } | null;
+    if (!failed || typeof failed !== 'object' || failed.ok !== false) return result;
+    if (failed.category !== 'invalid_key') return result;
+    if (!(await this.upstreams.keyStillWorks(upstreamId))) return result;
+    return { ...failed, category: 'content_rejected' } as T;
   }
 
   async reserve(

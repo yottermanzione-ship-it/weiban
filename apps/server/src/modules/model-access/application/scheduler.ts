@@ -9,7 +9,8 @@
  *    没有会话时 u 取随机数，等价于按权重比例分流。
  * 2. acquire()：按顺序试每个账号的并发 / 每分钟上限，拿到槽位就用它；网关失败可切到下一个。
  * 3. recordSuccess / recordFailure：成功清零连续失败；可切换的失败累加，达到阈值 → 暂停（cooldown）并标「不可用」；
- *    密钥失效 / 额度耗尽直接标对应状态。恢复靠 GatewayMaintenance 的探测（连通即恢复）。
+ *    密钥失效 / 额度耗尽直接标对应状态（T-20261104a 起密钥失效要先通过同一把密钥的连通自检确认）。
+ *    恢复靠 GatewayMaintenance 的探测（连通即恢复）。
  *
  * 2026-10-30 按模型区分（两层健康）：
  * - 账号级硬失败（密钥失效 / 额度耗尽）仍按原法：整个上游账号标对应状态并暂停，因为它确实影响该账号下所有模型。
@@ -208,8 +209,11 @@ export class UpstreamScheduler {
    * 其他可切换的失败只记到（模型，线路），达到阈值只冷却这一条线路，不动上游账号。
    * 内容被拒、请求错误、空输出等不算账号故障，调用方不要传进来。
    * 未传模型时退回旧法（按账号记），调用方应一律传模型。
+   * T-20261104a：密钥失效先确认（UpstreamService.keyStillWorks，同一把密钥的连通测试，结果缓存 60 秒）；
+   * 测试通过说明密钥没坏，不累计失败、不暂停、不标状态。网关一般已先问过并把这次改按内容被拒处理，这里是兜底。
    */
   async recordFailure(upstreamId: string, category: string, modelKey?: string): Promise<void> {
+    if (category === 'invalid_key' && (await this.upstreams.keyStillWorks(upstreamId))) return;
     const limits = await this.limits.get();
     const now = this.clock.nowMs();
     const until = new Date(now + limits.cooldownSeconds * 1000);

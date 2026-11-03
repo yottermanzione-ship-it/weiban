@@ -87,7 +87,9 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
     await resetTestDatabase();
     fake = createServer(async (req, res) => {
       if (req.url === '/v1/models') {
-        res.writeHead(200).end('{"data":[]}');
+        // T-20261104a：401/403 后网关先用同一把密钥调这里自检；「密钥真的坏了」的两种用例让自检也失败。
+        if (mode === 'invalid' || mode === 'forbidden403') res.writeHead(401).end('{}');
+        else res.writeHead(200).end('{"data":[]}');
         return;
       }
       calls++;
@@ -283,6 +285,8 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
     );
     await app.get(UpstreamService).reportStatus(upstreamId, 'active', 'probe');
     await app.get(UpstreamScheduler).recordSuccess(upstreamId, modelKey);
+    // T-20261104a：密钥自检结论缓存 60 秒，用例之间清掉，免得上一个用例的结论带到下一个。
+    app.get(UpstreamService).forgetKeyCheck(upstreamId);
   }
   afterAll(async () => {
     await app?.close();
@@ -530,7 +534,7 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
     expect(absorbed.rows[0]?.upstream_id).toBe(upstreamId);
     expect(logs.capture.text).not.toContain(key);
   });
-  it('T-20261103j 上游安全策略 403 归为内容拒绝：不标上游不可用、不冷却线路，下一条照常调用；普通 403 仍是密钥失效', async () => {
+  it('T-20261103j 上游安全策略 403 归为内容拒绝：不标上游不可用、不冷却线路，下一条照常调用；普通 403 且密钥自检也失败时仍是密钥失效', async () => {
     const upstreamsService = app.get(UpstreamService);
     const scheduler = app.get(UpstreamScheduler);
     mode = 'policy403';
