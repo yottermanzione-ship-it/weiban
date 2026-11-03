@@ -12,7 +12,7 @@ import { detectFormSuppressions } from './chat-form-suppression.js';
 
 /**
  * 表情包软上限（安全阀，不是目标）：每 10 条角色气泡最多 3 个。
- * T-20261103d 按任务卡从 MED-01 原文的 2 个放宽到 3 个（PRD 待同步，见交接）。群聊每个角色同样。
+ * T-20261103d 按任务卡从 MED-01 原文的 2 个放宽到 3 个（PRD MED-01 第 4 条已同步）。群聊每个角色同样。
  */
 export const STICKER_WINDOW = 10;
 export const STICKER_MAX_IN_WINDOW = 3;
