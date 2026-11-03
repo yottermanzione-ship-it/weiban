@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 香港服务器初始化（Ubuntu 24.04，root 运行，可重复执行）。
-# 做的事：挂载数据盘到 /srv/weiban、安装 Docker 官方版（data-root 在数据盘）、安全更新、ufw、fail2ban。
+# 做的事：挂载数据盘到 /srv/weiban、安装 Docker 官方版（data-root 在数据盘）、建系统盘备份目录、安全更新、ufw、fail2ban。
 # 不做的事：不改 SSH 端口、不禁用密码登录、不改 root 密码（须总经理另行同意）。
 #
 # 数据盘规则：
@@ -31,8 +31,10 @@ if ! mountpoint -q "$MOUNT_POINT"; then
   mount "$MOUNT_POINT"
 fi
 install -d -m 0755 "$MOUNT_POINT"
-install -d -m 0700 "$MOUNT_POINT/secrets" "$MOUNT_POINT/backups" "$MOUNT_POINT/keys"
+install -d -m 0700 "$MOUNT_POINT/secrets" "$MOUNT_POINT/keys"
 install -d -m 0711 "$MOUNT_POINT/docker"
+# 备份放系统盘，与数据盘分开（2026-11-03 起，见 docs/ops/hk-server.md 第六节）。
+install -d -m 0700 /var/backups/weiban
 
 export DEBIAN_FRONTEND=noninteractive
 APT="apt-get -o DPkg::Lock::Timeout=900"
@@ -45,6 +47,7 @@ if ! command -v docker >/dev/null; then
   install -m 0755 -d /etc/apt/keyrings
   curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
   chmod a+r /etc/apt/keyrings/docker.asc
+  # shellcheck source=/dev/null
   . /etc/os-release
   echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" > /etc/apt/sources.list.d/docker.list
   $APT update -q

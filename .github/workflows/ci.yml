@@ -69,6 +69,10 @@ jobs:
       - name: 类型检查
         run: pnpm typecheck
 
+      # 不连服务器、不起容器：shellcheck 加上用假 docker 跑的行为用例（T-20261103f）。
+      - name: 香港运维脚本检查（备份空间预检、失败恢复、发版清理、磁盘告警）
+        run: bash .github/scripts/check-hk-ops.sh
+
       # 测试数据库：直接用本机开发同一份 docker-compose.yml 启动（T-019）。
       # 这样镜像版本（PostgreSQL 18 + pgvector）、初始化脚本（deploy/dev/postgres-init/：开 pgvector、
       # 建 weiban_test 库）、健康检查都只在 docker-compose.yml 一处定义，CI 与本机不会走样。

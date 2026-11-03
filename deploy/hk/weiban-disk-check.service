@@ -1,0 +1,8 @@
+[Unit]
+Description=Weiban disk usage check (alert above 80%)
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /srv/weiban/src/deploy/hk/disk-check.sh
+TimeoutStartSec=2min
