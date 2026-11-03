@@ -1,4 +1,22 @@
+import type { ChatReadPort, Conversation, Message, ReadMessagesInput, Tx } from '@weiban/contracts';
+
 export const CHAT_READ_PORT = Symbol('weiban.chat.read-port');
+/**
+ * CHAT_READ_PORT 的服务器内部用法（T-20261104c）：调用方拿着事务 tx 时，查找私聊、读消息也要在这个 tx 里做。
+ * 契约 ChatReadPort 的这两个方法没有 tx 参数，不传 tx 时 chat 会另开一条连接、对同一会话行加锁——
+ * 如果调用方的 tx 已经锁过 / 改过这行，外层等内层、内层等外层，整站卡死（2026-11-04 事故）。
+ * 实现见 ChatReadService；契约不变，同一个令牌注入，只是类型多了可选的 tx。
+ */
+export interface ChatReadInTxPort extends ChatReadPort {
+  /** 传 tx 时在调用方事务里执行，并以 FOR UPDATE 锁会话行（调用方随后通常要写这个会话）。 */
+  findDirectConversation(
+    userId: string,
+    characterId: string,
+    tx?: Tx,
+  ): Promise<Conversation | null>;
+  /** 传 tx 时在调用方事务里执行。 */
+  readMessages(input: ReadMessagesInput, tx?: Tx): Promise<Message[]>;
+}
 export const CHAT_PARTICIPANT_PORT = Symbol('weiban.chat.participant-port');
 export const CHAT_ADMIN_PORT = Symbol('weiban.chat.admin-port');
 export const CHAT_USER_PORT = Symbol('weiban.chat.user-port');

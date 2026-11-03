@@ -339,6 +339,9 @@ describe('补齐会话与欢迎语', () => {
     };
     expect(posted.content.text).toBe(OFFICIAL_WELCOME_TEXT);
     expect(posted.idempotencyKey).toBe(`official:welcome:${USER_ID}`);
+    // T-20261104c：查已有消息必须在 ensure 的同一事务里（另开连接会等会话行锁 = 卡死）。
+    const tx = h.chatAdmin.ensureOfficialConversation.mock.calls[0]![0];
+    expect(h.chatRead.readMessages.mock.calls[0]![1]).toBe(tx);
   });
 
   it('已有消息的会话不再重发欢迎语', async () => {

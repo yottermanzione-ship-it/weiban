@@ -10,7 +10,6 @@ import type {
   ChatAdminPort,
   ChatParticipantPort,
   PlaySystemNoticeCode,
-  ChatReadPort,
   Contact,
   ContactsReadPort,
   DataSection,
@@ -22,7 +21,12 @@ import type {
 } from '@weiban/contracts';
 import { AppError, CLOCK, type Clock, type DbTx } from '../../../platform/index.js';
 import { CHARACTER_NAME_READ_PORT, CHARACTER_READ_PORT } from '../../characters/index.js';
-import { CHAT_ADMIN_PORT, CHAT_PARTICIPANT_PORT, CHAT_READ_PORT } from '../../chat/index.js';
+import {
+  CHAT_ADMIN_PORT,
+  CHAT_PARTICIPANT_PORT,
+  CHAT_READ_PORT,
+  type ChatReadInTxPort,
+} from '../../chat/index.js';
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { IDENTITY_READ_PORT } from '../../identity/index.js';
 import { SYNC_PORT } from '../../realtime/index.js';
@@ -66,7 +70,7 @@ export class PlayContext {
     @Inject(CONTACTS_READ_PORT) readonly contacts: ContactsReadPort,
     @Inject(CHARACTER_READ_PORT) private readonly characters: CharacterReadPort,
     @Inject(CHARACTER_NAME_READ_PORT) private readonly names: CharacterNameReadPort,
-    @Inject(CHAT_READ_PORT) private readonly chatRead: ChatReadPort,
+    @Inject(CHAT_READ_PORT) private readonly chatRead: ChatReadInTxPort,
     @Inject(CHAT_PARTICIPANT_PORT) private readonly chat: ChatParticipantPort,
     @Inject(SYNC_PORT) private readonly sync: SyncPort,
     @Inject(CHAT_ADMIN_PORT) private readonly chatAdmin: ChatAdminPort,
@@ -139,9 +143,11 @@ export class PlayContext {
       labels?: string[];
     },
   ): Promise<Message> {
+    // 必须在调用方事务里查（T-20261104c）：另开连接锁会话行会和本事务互相等待，整站卡死。
     const conversation = await this.chatRead.findDirectConversation(
       input.userId,
       input.characterId,
+      tx as unknown as Tx,
     );
     if (!conversation) throw new AppError('character_not_available', '和这个角色的私聊不存在');
     const participant = conversation.participants.find((p) =>
@@ -182,9 +188,14 @@ export class PlayContext {
       idempotencyKey: string;
     },
   ): Promise<void> {
+    // 同上：在调用方事务里查。账号已失效等业务错误时跳过提示；数据库错误（如等锁超时）会让本事务作废，
+    // 原样抛出，不吞掉后让后面的语句报「事务已中止」。
     const conversation = await this.chatRead
-      .findDirectConversation(input.userId, input.characterId)
-      .catch(() => null);
+      .findDirectConversation(input.userId, input.characterId, tx as unknown as Tx)
+      .catch((error: unknown) => {
+        if (error instanceof AppError) return null;
+        throw error;
+      });
     if (!conversation) return;
     await this.chatAdmin.postSystemMessage(tx as unknown as Tx, {
       conversationId: conversation.conversationId,

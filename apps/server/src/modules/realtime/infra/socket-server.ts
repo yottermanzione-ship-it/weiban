@@ -344,6 +344,19 @@ export class SocketServer implements OnApplicationBootstrap, OnModuleDestroy {
       client.release();
       return;
     }
+    // 借出的连接没有连接池的 error 监听：先挂上再执行 LISTEN，否则 LISTEN 期间数据库断开这条连接
+    // 会变成未捕获异常、整个进程退出（T-20261104c）。断开后下一轮 sweep 重新建立。
+    let listening = false;
+    let failed = false;
+    client.on('error', () => {
+      if (failed) return;
+      failed = true;
+      if (!listening) return; // LISTEN 还没完成：由下面的 catch 归还
+      if (this.listener !== client) return;
+      this.listener = null;
+      client.release(true);
+      for (const c of this.connections) c.ws.close(1012, 'Reconnect');
+    });
     try {
       for (const channel of [
         REALTIME_UPDATE_CHANNEL,
@@ -351,13 +364,9 @@ export class SocketServer implements OnApplicationBootstrap, OnModuleDestroy {
         REALTIME_TYPING_CHANNEL,
       ])
         await client.query(`LISTEN ${channel}`);
+      if (failed) throw new Error('通知连接在 LISTEN 期间断开');
+      listening = true;
       this.listener = client;
-      client.on('error', () => {
-        if (this.listener !== client) return;
-        this.listener = null;
-        client.release(true);
-        for (const c of this.connections) c.ws.close(1012, 'Reconnect');
-      });
       client.on('notification', (notification) =>
         this.notification(notification.channel, notification.payload),
       );

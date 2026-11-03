@@ -16,7 +16,7 @@
  */
 import { PgBoss, type Db as IDatabase, type SendOptions } from 'pg-boss';
 import type { Clock } from '../clock/clock.js';
-import type { DbTx } from '../db/database.js';
+import { DB_IDLE_IN_TRANSACTION_TIMEOUT_MS, type DbTx } from '../db/database.js';
 import { runWithLogContext } from '../logging/log-context.js';
 import type { Logger } from '../logging/logger.js';
 
@@ -92,6 +92,10 @@ export class JobQueue {
       schema: this.options.schema ?? 'pgboss',
       application_name: 'weiban-jobs',
       max: 4,
+      // T-20261104c：pg-boss 自己的连接也带 idle_in_transaction_session_timeout（与应用连接池同值；
+      // pg-boss 加锁的维护事务本身就 SET LOCAL 30 秒）。不设会话级 lock_timeout：pg-boss 的加锁事务
+      // 自己 SET LOCAL lock_timeout = 30s，其余语句用 SKIP LOCKED，全局 10 秒可能让建队列 / 分区 DDL 误失败。
+      options: `-c idle_in_transaction_session_timeout=${DB_IDLE_IN_TRANSACTION_TIMEOUT_MS}`,
       // 只投递不消费的进程（APP_ROLE = web）不做维护和定时调度
       supervise: this.options.consume,
       schedule: this.options.consume,

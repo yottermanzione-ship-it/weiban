@@ -16,7 +16,15 @@ export * from './config/product-params.js';
 
 export { CLOCK, SystemClock, TestClock, type Clock } from './clock/clock.js';
 
-export { DATABASE, Database, asDbTx, type Db, type DbTx } from './db/database.js';
+export {
+  DATABASE,
+  DB_IDLE_IN_TRANSACTION_TIMEOUT_MS,
+  DB_LOCK_TIMEOUT_MS,
+  Database,
+  asDbTx,
+  type Db,
+  type DbTx,
+} from './db/database.js';
 export { newId } from './db/ids.js';
 
 export { EVENT_BUS, EventBus, type EventSubscription, type EventOf } from './events/event-bus.js';

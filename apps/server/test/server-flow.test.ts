@@ -7,6 +7,7 @@ import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import {
   AdminCharacter,
   AuthResponse,
+  ChatEndpoints,
   Contact,
   ContactsEndpoints,
   Conversation,
@@ -187,9 +188,17 @@ describeDb('T041真实启动：注册→延迟接受→HTTP上游→计费/消�
     );
     expect(pending.status).toBe('pending');
     expect(pending.conversationId).toBeNull();
+    // 好友申请通过前没有与角色的会话。注册时会自动补齐官方「小V同学」会话（docs/backend/official-assistant.md），
+    // 所以列表里只允许出现官方会话（T-20261104c 修好同一事务内补齐之前，这一步一直失败，列表才是空的）。
+    const beforeAccept = ChatEndpoints.listConversations.response.parse(
+      (await http().get('/api/v1/conversations').set('Authorization', auth).expect(200)).body,
+    ).items;
     expect(
-      (await http().get('/api/v1/conversations').set('Authorization', auth).expect(200)).body.items,
+      beforeAccept.filter((c) =>
+        c.participants.some((p) => p.kind !== 'official' && p.kind !== 'user'),
+      ),
     ).toEqual([]);
+    expect(beforeAccept.every((c) => c.participants.some((p) => p.kind === 'official'))).toBe(true);
     await vi.waitFor(() =>
       expect(
         frames.some(

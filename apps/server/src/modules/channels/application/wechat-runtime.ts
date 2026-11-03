@@ -63,6 +63,7 @@ export class WechatRuntime implements OnApplicationShutdown {
   private readonly loops = new Map<string, LoopState>();
   private lock: { query(sql: string): Promise<{ rows: unknown[] }>; release(): void } | null = null;
   private lockClient: unknown = null;
+  private lockErrorHandler: ((error: Error) => void) | null = null;
   private stopping = false;
 
   constructor(
@@ -81,20 +82,41 @@ export class WechatRuntime implements OnApplicationShutdown {
     if (this.lock) return true;
     if (channelRuntimeConfig(this.config, 'wechat').integration !== 'live') return false;
     const client = await this.db.pool.connect();
+    // 这条连接长期借出、不在连接池的 error 监听下：数据库断开它（管理员终止、重启、网络）时不接住
+    // 就是未捕获异常、整个进程退出（T-20261104c）。断开 = 咨询锁已随会话释放：停掉本进程的长轮询，
+    // 下一次 reconcile 重新抢锁后再起循环，保证同一时间只有持锁进程在轮询。
+    let lost: Error | null = null;
+    const onError = (error: Error) => {
+      lost ??= error;
+      if (this.lockClient !== client) return; // 还在抢锁：由下面的 catch 归还
+      this.lock = null;
+      this.lockClient = null;
+      this.lockErrorHandler = null;
+      for (const state of this.loops.values()) state.stop = true;
+      this.loops.clear();
+      client.removeListener('error', onError);
+      client.release(error);
+      this.logger.warn({ err: error }, '微信渠道咨询锁连接断开，下一轮重新获取');
+    };
+    client.on('error', onError);
     try {
       const result = await client.query<{ locked: boolean }>(
         'SELECT pg_try_advisory_lock(hashtext($1)) AS locked',
         [LOCK_KEY],
       );
+      if (lost) throw lost;
       if (result.rows[0]?.locked !== true) {
+        client.removeListener('error', onError);
         client.release();
         return false;
       }
       this.lockClient = client;
       this.lock = client;
+      this.lockErrorHandler = onError;
       return true;
     } catch (error) {
-      client.release();
+      client.removeListener('error', onError);
+      client.release(error instanceof Error ? error : true);
       this.logger.warn({ err: error }, '微信渠道咨询锁获取失败');
       return false;
     }
@@ -285,10 +307,16 @@ export class WechatRuntime implements OnApplicationShutdown {
     this.stopping = true;
     for (const state of this.loops.values()) state.stop = true;
     this.loops.clear();
-    const client = this.lockClient as { release(): void } | null;
+    const client = this.lockClient as {
+      release(): void;
+      removeListener(event: 'error', fn: (error: Error) => void): void;
+    } | null;
+    const onError = this.lockErrorHandler;
     this.lock = null;
     this.lockClient = null;
+    this.lockErrorHandler = null;
     try {
+      if (onError) client?.removeListener('error', onError);
       client?.release();
     } catch {
       /* 已释放 */
