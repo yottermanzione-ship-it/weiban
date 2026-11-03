@@ -13,6 +13,9 @@ import { Inject, Injectable, Optional } from '@nestjs/common';
 import { nudgeText, readableMessageText } from './content-text.js';
 import { ImageCaptionStore, NO_CAPTIONS } from './image-captions.js';
 import { ImagePublicSearch } from './image-public-search.js';
+import { MediaAiService } from './media-ai.js';
+import { takeStickerMarker } from '../domain/sticker-marker.js';
+import { takePhotoMarker } from '../domain/photo-marker.js';
 import { publicImageSource } from '../domain/image-public-search.js';
 import {
   CAPTION_MAX_IMAGES,
@@ -47,6 +50,7 @@ import {
   type IdentityAccountStatusPort,
   type IdentityReadPort,
   type Message,
+  type MessageContent,
   type ModelGatewayPort,
   type PolicyPort,
   type ScenarioMode,
@@ -230,6 +234,8 @@ export class GroupChatService {
     /** H3：图片描述存档（群聊也看图，按用户扣积分）。 */
     @Optional() @Inject(ImageCaptionStore) private readonly captions?: ImageCaptionStore,
     @Optional() @Inject(ImagePublicSearch) private readonly imageSearch?: ImagePublicSearch,
+    /** T-20261103g：群聊发言也能带表情包（同一套标记与挑图，群聊另有防刷屏规则）。 */
+    @Optional() @Inject(MediaAiService) private readonly mediaAi?: MediaAiService,
   ) {}
 
   // =========================================================================
@@ -893,6 +899,21 @@ export class GroupChatService {
           : input.reason === 'chain'
             ? '接一下群里上一条消息，可以附和、调侃或抬杠，也可以 @ 别人。'
             : '你看到群里的新消息，自然地插一句。';
+    // T-20261103g：群聊发言也能配表情包（复用私聊 #47 的做法：模型写「[表情:…]」，服务端按情绪挑图）。
+    // 群聊防刷屏：同一轮（触发消息之后）最多 1 个角色带表情；这个角色自己每 10 条最多 3 个、不连发。
+    const trigger = history.find((m) => m.seq === input.triggerSeq && m.senderKind === 'user');
+    const groupUserText =
+      input.purpose === 'chat_reply' && trigger ? readableMessageText(trigger, captions) : '';
+    const stickerRules = {
+      characterId: speaker.characterId,
+      participantId: speaker.participantId,
+      history,
+      userText: groupUserText,
+      roundAfterSeq: input.triggerSeq,
+      quiet: input.scenarioMode === 'treehole',
+    };
+    const stickerHint =
+      (await this.mediaAi?.groupStickerPrompt(stickerRules).catch(() => '')) ?? '';
     let request: GenerateTextInput = {
       userId: input.userId,
       characterId: speaker.characterId,
@@ -917,7 +938,7 @@ export class GroupChatService {
         ...brainTail(brain),
         {
           role: 'user',
-          content: `群聊记录：\n${transcript || '（还没有消息）'}\n\n【系统提示】${task}${imageNote ? `\n${imageNote.replace('回复正文写完后', '群消息正文写完后')}` : ''}`,
+          content: `群聊记录：\n${transcript || '（还没有消息）'}\n\n【系统提示】${task}${imageNote ? `\n${imageNote.replace('回复正文写完后', '群消息正文写完后')}` : ''}${stickerHint ? `\n${stickerHint}` : ''}`,
           ...(slots.length
             ? { images: slots.map((x) => ({ mediaId: x.mediaId, ownerUserId: x.ownerUserId })) }
             : {}),
@@ -946,7 +967,10 @@ export class GroupChatService {
         return null;
     }
     const cached = input.durable
-      ? await this.replies.open<{ text: string; stopChain: boolean }>(input.durable, 'result')
+      ? await this.replies.open<{ text: string; stopChain: boolean; sticker?: MessageContent }>(
+          input.durable,
+          'result',
+        )
       : null;
     if (
       !(await this.stillActive(
@@ -1052,6 +1076,11 @@ export class GroupChatService {
           .catch(() => undefined);
       }
     } else if (result.ok) replyText = splitCaptionTail(replyText, 0).reply;
+    // T-20261103g：剥掉表情 / 照片标记（群里的人绝不能看到；群聊不发照片，照片标记只剥）。
+    // 重放缓存时文字已经剥过、表情已经挑好，不再取情绪。
+    const marked = takeStickerMarker(takePhotoMarker(replyText).text);
+    replyText = marked.text;
+    const stickerMood = cached ? null : marked.mood;
     const deflect = roleDeflect(characterView(role)).trim();
     const sourceText = result.ok
       ? replyText
@@ -1063,15 +1092,31 @@ export class GroupChatService {
     const parts = splitReply(unescapeModelText(sourceText).slice(0, 300), true)
       .map((b) => b.replace(strip, '').trim())
       .filter(Boolean);
+    // T-20261103g：模型选了表情时按同一套规则复核、按情绪挑图（同一轮已有角色带过、这个角色 10 条已有 3 个、
+    // 上一条就是表情、用户说过不要、树洞时不发）。群聊一次发言含表情最多 3 条：带表情时文字最多 2 条。
+    let sticker: MessageContent | null = cached?.sticker ?? null;
+    if (!cached && stickerMood && result.ok && parts.length && this.mediaAi)
+      sticker = await this.mediaAi
+        .pickGroupSticker({
+          ...stickerRules,
+          mood: stickerMood,
+          text: parts.join('\n'),
+          textCount: Math.min(parts.length, GROUP_MAX_BUBBLES - 1),
+          seed: input.idempotencyKey,
+        })
+        .catch(() => null);
+    const maxText = sticker ? GROUP_MAX_BUBBLES - 1 : GROUP_MAX_BUBBLES;
     const bubbles =
-      parts.length > GROUP_MAX_BUBBLES
-        ? [...parts.slice(0, GROUP_MAX_BUBBLES - 1), parts.slice(GROUP_MAX_BUBBLES - 1).join('\n')]
+      parts.length > maxText
+        ? [...parts.slice(0, maxText - 1), parts.slice(maxText - 1).join('\n')]
         : parts;
     const text = bubbles.join('\n');
     if (!text || !outputAllowed(text, policy, adult)) return null;
     if (
       input.durable &&
-      !(await this.replies.checkpoint(input.durable, { result: { text, stopChain } }))
+      !(await this.replies.checkpoint(input.durable, {
+        result: { text, stopChain, ...(sticker ? { sticker } : {}) },
+      }))
     )
       return null;
     // 节奏：正在输入 + 间隔（秒回约 0.5 秒，否则 2–8 秒），不会几个人同一秒发出。
@@ -1104,7 +1149,12 @@ export class GroupChatService {
       if (await this.newerUserMessage(conversation, input.triggerSeq)) return null;
       if (input.durable && !(await this.replies.checkpoint(input.durable, {}))) return null;
       // 第一条沿用原幂等键（重放时不重复发）；积分记在第一条上，后面几条间隔约 1–2 秒依次发出。
-      for (const [index, line] of bubbles.entries()) {
+      // T-20261103g：表情包跟在文字后面（文字没发完就不发表情）。
+      const contents: MessageContent[] = [
+        ...bubbles.map((line) => ({ type: 'text' as const, text: line })),
+        ...(sticker ? [sticker] : []),
+      ];
+      for (const [index, content] of contents.entries()) {
         if (index > 0) {
           await sleep(input.instant ? 400 : 1000 + Math.random() * 1000);
           if (
@@ -1121,8 +1171,13 @@ export class GroupChatService {
         const posted = await this.writer.postMessage({
           conversationId: conversation.conversationId,
           senderParticipantId: speaker.participantId,
-          content: { type: 'text', text: line },
-          idempotencyKey: index === 0 ? input.idempotencyKey : `${input.idempotencyKey}:b${index}`,
+          content,
+          idempotencyKey:
+            content.type === 'sticker'
+              ? `${input.idempotencyKey}:sticker`
+              : index === 0
+                ? input.idempotencyKey
+                : `${input.idempotencyKey}:b${index}`,
           expectedScope: conversation.contentScope,
           ...(input.labels.length ? { labels: input.labels } : {}),
           ...(index === 0 && charge && charge.chargedMicros > 0 ? { charge } : {}),

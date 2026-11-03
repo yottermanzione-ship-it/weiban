@@ -25,8 +25,9 @@ export function isStickerMood(value: string): value is StickerMood {
 }
 
 /**
- * 关键词 → 情绪。T-20261103d 起不再用来决定「要不要发」（关键词闸门已去掉），只剩三处用途：
- * 没有离线标签的旧图按 description 判断情绪、严肃场景排除含其他情绪的旧图、生态「发表情包」动作从文字里取情绪。
+ * 关键词 → 情绪。T-20261103d 起不再用来决定「要不要发」（关键词闸门已去掉），只剩两处用途：
+ * 没有离线标签的旧图按 description 判断情绪、严肃场景排除含其他情绪的旧图。
+ * （生态「发表情包」动作按关键词取情绪的那条路径走不到，T-20261103g 已删。）
  */
 const MEANINGS: ReadonlyArray<readonly [StickerMood, RegExp]> = [
   ['comfort', /抱抱|安慰|陪着你|陪你|别难过|不开心|伤心|难过|委屈|哭哭/u],

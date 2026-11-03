@@ -75,3 +75,19 @@ describe('T-20261103d 提示词里的表情包说明', () => {
     expect(stickerPromptText({ moods: [], nudge: true, serious: false })).toBe('');
   });
 });
+
+describe('T-20261103g 群聊表情包', () => {
+  it('群聊说法：「这条群消息」「群里的人看不到」，不加保底提醒；严肃场景说「群里有人心情不好」', () => {
+    const text = stickerPromptText({ moods: ['happy'], nudge: true, serious: false, group: true });
+    expect(text).toContain('这条群消息可以配一个表情包');
+    expect(text).toContain('这行标记群里的人看不到');
+    expect(text).not.toContain('好几条没配');
+    expect(
+      stickerPromptText({ moods: ['comfort'], nudge: false, serious: true, group: true }),
+    ).toContain('群里有人心情不好');
+  });
+  it('照着群聊记录学写的「[表情] 表情 12」整段剥掉，不剩「表情 12」', () => {
+    expect(takeStickerMarker('哈哈哈\n[表情] 表情 12')).toEqual({ text: '哈哈哈', mood: null });
+    expect(takeStickerMarker('笑死 [表情]表情3')).toEqual({ text: '笑死', mood: null });
+  });
+});
