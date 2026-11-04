@@ -23,8 +23,8 @@
 | 9    | 通话与语音                                 | 未完成验收；[报告 PR #75](https://github.com/yottermanzione-ship-it/weiban/pull/75) |
 | 10   | 官方助手与公告                             | 未完成验收；[报告 PR #76](https://github.com/yottermanzione-ship-it/weiban/pull/76)；总经理已确认小V免费 |
 | 11   | 微信、QQ、微博渠道                         | 未完成验收；[报告 PR #77](https://github.com/yottermanzione-ship-it/weiban/pull/77) |
-| 12   | 管理后台                                   | 不通过；旧 Q-014 再次复现，新 Q-032 为测试维护；报告准备提交 |
-| 13   | 部署、备份、回滚与告警                     | 未完成验收；生产只读核对/150 项隔离运维检查通过；真实恢复与网页更新接管待验 |
+| 12   | 管理后台                                   | 不通过；[报告 PR #78](https://github.com/yottermanzione-ship-it/weiban/pull/78) |
+| 13   | 部署、备份、回滚与告警                     | 未完成验收；[报告及整体交接 PR #79](https://github.com/yottermanzione-ship-it/weiban/pull/79) |
 
 每个板块单独登记报告和文档 PR；未验证项与缺陷分列。修复由 Claude 执行，收到修复 PR 后再复核。**十三板块首轮报告齐备；全产品结论为“不通过，修复复核与必要人工验收未完成”**，见[总报告](product-acceptance.md)和[交接清单](2026-11-04-closeout.md)。
 
