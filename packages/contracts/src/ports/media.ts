@@ -42,6 +42,8 @@ export interface MediaTranscriptPort {
   }): Promise<void>;
   getTranscript(
     mediaId: string,
+    /** 调用方持有事务时必须传入，读取转写及解密密钥使用同一连接。 */
+    tx?: Tx,
   ): Promise<{ status: 'pending' | 'ready' | 'failed' | 'unavailable'; text: string | null }>;
 }
 

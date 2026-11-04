@@ -58,6 +58,7 @@ import {
   MEDIA_TRANSCRIPT_PORT,
 } from '../../media/index.js';
 import { MODEL_GATEWAY_MEDIA_PORT } from '../../model-access/index.js';
+import { GROWTH_SERVICE, type GrowthService } from '../../growth/index.js';
 import { CharacterImageService } from './character-image.js';
 import { ChatPhotoService } from './chat-photo.js';
 import { PlannerService, type PlanBatchRequest, type PlanResult } from './planner.js';
@@ -187,6 +188,7 @@ export class MediaAiService {
     @Inject(PlannerService) private readonly planner: PlannerService,
     /** T-20261103g：私聊分享照片的素材来源；没有时不分享照片。 */
     @Optional() @Inject(ChatPhotoService) private readonly photos?: ChatPhotoService,
+    @Optional() @Inject(GROWTH_SERVICE) private readonly growth?: GrowthService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -195,12 +197,25 @@ export class MediaAiService {
 
   /** 取用户语音的文字；未识别时调用网关识别并写回 media（发 media.transcript_ready）。 */
   async transcribe(
-    ctx: { userId: string; characterId?: string; conversationId?: string },
+    ctx: {
+      userId: string;
+      characterId?: string;
+      conversationId?: string;
+      sourceMessage?: Pick<Message, 'messageId' | 'conversationId' | 'scope'>;
+    },
     mediaId: string,
   ): Promise<string | null> {
     const current = await this.transcripts.getTranscript(mediaId).catch(() => null);
     if (!current) return null;
-    if (current.status === 'ready') return current.text;
+    const award = async () => {
+      if (!ctx.sourceMessage) return;
+      if (!this.growth) throw new Error('语音熟悉度服务未装配');
+      await this.growth.awardUserVoice(ctx.userId, ctx.sourceMessage);
+    };
+    if (current.status === 'ready') {
+      await award();
+      return current.text;
+    }
     if (current.status !== 'pending') return null;
     if (!(await this.media.isServiceEnabled('speech_recognition'))) {
       // MED-03 第 5 条：未开通时提示「当前无法识别语音」，消息保留。
@@ -220,6 +235,8 @@ export class MediaAiService {
     if (result.ok) {
       const text = result.value.text.trim();
       await this.transcripts.setTranscript({ mediaId, status: 'ready', text });
+      // 原语音任务失败会重试；转写已落库时重试直接补计，不重复调用识别供应商。
+      await award();
       return text;
     }
     // 余额不足等暂时性失败不标记失败，下次回复时再试；其余标记失败。
@@ -324,7 +341,7 @@ export class MediaAiService {
         if (ctx.modelRole === 'adult' && opts.fresh)
           return { text: '[对方发了一条语音；私密模式里不识别语音，可以请对方打字]' };
         const text = opts.fresh
-          ? await this.transcribe(ctx, c.mediaId).catch(() => null)
+          ? await this.transcribe({ ...ctx, sourceMessage: m }, c.mediaId).catch(() => null)
           : ((await this.transcripts.getTranscript(c.mediaId).catch(() => null))?.text ?? null);
         return {
           text: text

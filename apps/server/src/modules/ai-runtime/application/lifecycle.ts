@@ -382,6 +382,7 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
           {
             userId: j.data.userId,
             conversationId: j.data.conversationId,
+            sourceMessage: message,
             ...(role ? { characterId: role.refId } : {}),
           },
           message.content.mediaId,

@@ -477,8 +477,8 @@ export class MediaService
   }
 
   /** 内部：读一行 ready 的元数据（不检查归属）。 */
-  async findReady(id: string): Promise<Row | null> {
-    const [row] = await this.database.db
+  async findReady(id: string, tx?: DbTx): Promise<Row | null> {
+    const [row] = await (tx ?? this.database).db
       .select()
       .from(objects)
       .where(and(eq(objects.id, id), eq(objects.state, 'ready')));
@@ -853,10 +853,12 @@ export class MediaService
 
   async getTranscript(
     mediaId: string,
+    tx?: Tx,
   ): Promise<{ status: 'pending' | 'ready' | 'failed' | 'unavailable'; text: string | null }> {
-    const row = await this.findReady(mediaId);
+    const dbTx = tx ? asDbTx(tx) : undefined;
+    const row = await this.findReady(mediaId, dbTx);
     if (!row || !row.mimeType.startsWith('audio/')) return { status: 'unavailable', text: null };
-    return this.readTranscript(row);
+    return this.readTranscript(row, dbTx);
   }
 
   async getTranscriptForUser(userId: string, mediaId: string): Promise<MediaTranscript> {
@@ -869,6 +871,7 @@ export class MediaService
 
   private async readTranscript(
     row: Row,
+    tx?: DbTx,
   ): Promise<{ status: 'pending' | 'ready' | 'failed' | 'unavailable'; text: string | null }> {
     const status = (row.transcriptStatus ?? 'pending') as
       'pending' | 'ready' | 'failed' | 'unavailable';
@@ -877,6 +880,7 @@ export class MediaService
       row.ownerId ?? PLATFORM_KEY_OWNER,
       `media-transcript:${row.id}`,
       row.transcriptCiphertext,
+      tx,
     );
     return { status, text: plain.toString('utf8') };
   }
