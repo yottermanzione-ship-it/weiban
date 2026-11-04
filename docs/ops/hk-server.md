@@ -1,6 +1,6 @@
 # 香港服务器操作说明
 
-> **2026-11-04 当前入口更正**：用户端为 <https://app.weiban.online>，后台为 <https://admin.weiban.online>，均已使用加密连接和独立后台登录。下面“一、日常使用”“二、HTTP 期间的限制”是 10-13 的 IP 试运行历史，不作为当前入口，也不需要经理再开启旧后台隧道。当前来源、恢复演练与限制见[本批报告](../quality/2026-11-04-web-remaining.md)及[发布记录](../handoffs/2026-11-04-codex-closeout.md)。
+> **2026-11-05 当前入口与记录**：用户端为 <https://app.weiban.online>，后台为 <https://admin.weiban.online>，均已使用加密连接和独立后台登录。下面“一、日常使用”“二、HTTP 期间的限制”是 10-13 的 IP 试运行历史，不作为当前入口，也不需要经理再开启旧后台隧道。当前来源、真实备份恢复演练与限制见[本批报告](../quality/2026-11-04-web-remaining.md)及[最新发布记录](../handoffs/2026-11-04-web-remaining.md)。
 
 适用：服务器 `103.231.58.124`（Ubuntu 24.04，4 核 8G，系统盘 50G + 数据盘 40G）。2026-10-13 起运行微伴；当时的 IP 试运行记录见[历史交接](../handoffs/2026-10-13-devops-hk-server.md)，当前域名入口以上方更正为准。
 
