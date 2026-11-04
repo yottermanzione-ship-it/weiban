@@ -263,6 +263,18 @@ class MeScreenTest {
     }
 
     @Test fun firstProfileSaveUsesNativeFormAndRefreshesAccount() {
+        server.dispatcher =
+            object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    requests.add(request)
+                    return respond(request).apply {
+                        // The new home renders account metadata before its profile reload completes.
+                        if (request.method == "GET" && request.path == "/api/v1/me/profile" && profile.get().nickname != null) {
+                            setBodyDelay(1, TimeUnit.SECONDS)
+                        }
+                    }
+                }
+            }
         var theme = "green"
         compose.setContent {
             val auth by repository.auth.collectAsState()
