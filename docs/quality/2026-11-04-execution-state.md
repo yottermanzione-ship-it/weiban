@@ -15,8 +15,8 @@
 | 1    | 积分、扣费、会员、价格、对账               | 首轮不通过；Q-024/025/026；[报告 PR #66](https://github.com/yottermanzione-ship-it/weiban/pull/66)，待修复复核 |
 | 2    | 注册登录、账号设置、注销与隐私             | 首轮不通过；Q-027/028；[报告 PR #67](https://github.com/yottermanzione-ship-it/weiban/pull/67)，待修复复核     |
 | 3    | 私聊、记忆、熟悉度、表情包、图片与私密模型 | 首轮不通过；旧 Q-017～020 仍在；[报告 PR #69](https://github.com/yottermanzione-ship-it/weiban/pull/69)        |
-| 4    | 通讯录、角色创建、搜索与广场               | 首轮不通过；Q-029 重复更新版本；文档 PR 准备中                                                                 |
-| 5    | 群聊                                       | 进行中，独立真实接口探针与社交批次检查                                                                         |
+| 4    | 通讯录、角色创建、搜索与广场               | 首轮不通过；Q-029；[报告 PR #70](https://github.com/yottermanzione-ship-it/weiban/pull/70)                     |
+| 5    | 群聊                                       | 未完成验收；已测群管理通过，真实调度/真机待补；报告 PR 准备中                                                  |
 | 6    | 朋友圈与动态                               | 待开始                                                                                                         |
 | 7    | 生态与主动行为                             | 待开始                                                                                                         |
 | 8    | 玩法、小程序、健康与宠物                   | 待开始                                                                                                         |
