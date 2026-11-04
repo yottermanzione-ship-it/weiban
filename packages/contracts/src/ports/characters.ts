@@ -256,6 +256,10 @@ export interface CharacterSearchNameHit {
   matchedTerm: { text: string; kind: 'alias' | 'keyword' } | null;
   /** 本站已审核资料生成的一句身份说明；没有为 null。 */
   identity: string | null;
+  /** 5.6：后台人工关联的实体键（只有官方角色可能有）；没有为 null。 */
+  entityKey: string | null;
+  /** 5.6：实体登记的第一条公开出处；没有为 null。 */
+  sourceUrl: string | null;
 }
 
 /** 5.5：错字近似（只用于「你是否想找」，不进结果）。 */
@@ -285,4 +289,22 @@ export interface CharacterSearchPort {
   typoNames(userId: string, query: SiteSearchTextQuery): Promise<CharacterSearchTypoHit[]>;
   /** 按给定顺序返回结果卡片；不再可搜（下架、不是本人、试聊）的跳过。 */
   searchCards(userId: string, characterIds: string[]): Promise<CharacterSearchCard[]>;
+  /**
+   * 5.6：按公开资料标识查后台登记的实体（站外候选合并用）。没登记的标识不返回；
+   * 返回的 characterIds 只含仍上架的官方角色。只读、不调用模型。
+   */
+  resolveEntities(identifiers: string[]): Promise<CharacterSearchEntity[]>;
+}
+
+/** 5.6（T-20261104e）：后台登记的搜索实体（经核实的公开资料标识或平台人工关联）。 */
+export interface CharacterSearchEntity {
+  entityKey: string;
+  displayName: string;
+  /** 后台核实的身份说明；没填为 null。 */
+  identity: string | null;
+  sources: Array<{ url: string; title: string; site: string | null }>;
+  /** 本次查询里命中这个实体的标识。 */
+  identifiers: string[];
+  /** 关联且仍上架的官方角色（按关联先后）。 */
+  characterIds: string[];
 }

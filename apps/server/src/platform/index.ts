@@ -59,7 +59,7 @@ export {
   DecryptionError,
 } from './crypto/envelope.js';
 
-export { AUDIT_LOG, AuditLog, type AuditEntry } from './audit/audit-log.js';
+export { AUDIT_LOG, AuditLog, type AuditEntry, type AuditRecord } from './audit/audit-log.js';
 
 export {
   RequireAuth,
@@ -75,3 +75,4 @@ export { ContractPipe, parseContract } from './http/contract-pipe.js';
 export * from './time/local-time.js';
 
 export * from './search/search-text.js';
+export * from './search/public-identity.js';

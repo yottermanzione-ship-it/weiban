@@ -6,7 +6,8 @@ import { BillingBoundsService } from './application/billing-bounds.js';
  */
 import { Module } from '@nestjs/common';
 import { SharedWebSearch } from './application/shared-search.js';
-import { SHARED_WEB_SEARCH_PORT } from './tokens.js';
+import { MODEL_WEB_CANDIDATES, SHARED_WEB_SEARCH_PORT } from './tokens.js';
+import { WebCandidateSearch } from './application/web-candidates.js';
 import {
   BILLING_CHARGE_QUERY_PORT,
   BILLING_MODEL_RATE_PORT,
@@ -22,7 +23,6 @@ import { GatewayMaintenance } from './application/gateway-maintenance.js';
 import { ModelGateway } from './application/gateway.js';
 import { GatewayWebSearchProvider } from './application/web-search.js';
 import { WebToolsStore } from './application/web-tools-store.js';
-import { SearchController } from './http/search.controller.js';
 import { OpenAiTextAdapter, RoutingTextAdapter } from './infra/text-adapter.js';
 import { AnthropicTextAdapter } from './infra/anthropic-adapter.js';
 import {
@@ -75,6 +75,7 @@ import {
   imports: [BillingModule, IdentityModule, MediaModule],
   exports: [
     SHARED_WEB_SEARCH_PORT,
+    MODEL_WEB_CANDIDATES,
     MODEL_GATEWAY_PORT,
     MODEL_PLATFORM_GATEWAY_PORT,
     MODEL_NOTIFICATION_READ_PORT,
@@ -83,10 +84,12 @@ import {
     MODEL_GATEWAY_MEDIA_PORT,
     MODEL_QUOTE_PORT,
   ],
-  controllers: [ModelController, ModelAdminController, SearchController],
+  controllers: [ModelController, ModelAdminController],
   providers: [
     SharedWebSearch,
     { provide: SHARED_WEB_SEARCH_PORT, useExisting: SharedWebSearch },
+    WebCandidateSearch,
+    { provide: MODEL_WEB_CANDIDATES, useExisting: WebCandidateSearch },
     BillingBoundsService,
     WebToolsStore,
     UpstreamService,

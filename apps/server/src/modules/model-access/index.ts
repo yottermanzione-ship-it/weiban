@@ -41,6 +41,8 @@ export { simulatePrefixCache } from './domain/prefix-cache.js';
 /** Bounded synthetic operations probe; never changes runtime configuration. */
 export { evaluateConfiguredDecisions } from './application/decision-evaluation.js';
 export { SHARED_WEB_SEARCH_PORT } from './tokens.js';
+/** 5.6：联网查找的站外候选（plaza 聚合层经此查找、按候选 ID 重读）。 */
+export { MODEL_WEB_CANDIDATES } from './tokens.js';
 /** 旧卡音色导入 CLI：只读当前可用的语音消息模型键。 */
 export { listVoiceMessageModelKeys } from './application/voice-model-registry.js';
 /** 批 V：语音目录登记 / 实时通话音色运维脚本。 */
