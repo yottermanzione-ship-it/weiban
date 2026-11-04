@@ -235,7 +235,10 @@ export class WebToolsStore {
       .select()
       .from(webCandidates)
       .where(
-        and(eq(webCandidates.candidateId, candidateId), gt(webCandidates.expiresAt, this.clock.now())),
+        and(
+          eq(webCandidates.candidateId, candidateId),
+          gt(webCandidates.expiresAt, this.clock.now()),
+        ),
       );
     const parsed = row ? StoredCandidate.safeParse(row.payload) : null;
     return parsed?.success ? { candidateId, ...parsed.data } : null;

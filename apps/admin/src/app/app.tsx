@@ -40,6 +40,7 @@ import { PlannerPage } from '../features/planner.js';
 import { EcologyAdminPage } from '../features/ecology.js';
 import { MemoryTiersPage } from '../features/memory-tiers.js';
 import { RoleRequestsPage } from '../features/role-requests.js';
+import { SearchEntitiesPage } from '../features/search-entities.js';
 import { SupportAdminPage } from '../features/support.js';
 import { MENU, badgeOf, groupBadge } from './menu.js';
 import { TodoProvider, useTodos } from './todos.js';
@@ -231,6 +232,7 @@ function AdminShell({
         <Route path="/reports" element={<PlazaAdminPage initialTab="reports" />} />
         <Route path="/support" element={<SupportAdminPage />} />
         <Route path="/role-requests" element={<RoleRequestsPage />} />
+        <Route path="/search-entities" element={<SearchEntitiesPage />} />
         <Route path="/planner" element={<PlannerPage />} />
         <Route path="/ecology" element={<EcologyAdminPage />} />
         <Route path="/memory-tiers" element={<MemoryTiersPage />} />

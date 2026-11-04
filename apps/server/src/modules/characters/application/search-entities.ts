@@ -84,7 +84,9 @@ function sourceList(input: Array<{ url: string; title: string }>): SearchEntityS
   return out.slice(0, SOURCE_LIMIT);
 }
 
-function parseIdentifiers(inputs: string[]): Array<{ identifier: string; sourceUrl: string | null }> {
+function parseIdentifiers(
+  inputs: string[],
+): Array<{ identifier: string; sourceUrl: string | null }> {
   const out: Array<{ identifier: string; sourceUrl: string | null }> = [];
   for (const raw of inputs) {
     const identifier = identifierFrom(raw);
@@ -95,7 +97,10 @@ function parseIdentifiers(inputs: string[]): Array<{ identifier: string; sourceU
         { status: 422 },
       );
     if (out.some((o) => o.identifier === identifier)) continue;
-    out.push({ identifier, sourceUrl: /^https?:/iu.test(raw.trim()) ? publicSourceUrl(raw) : null });
+    out.push({
+      identifier,
+      sourceUrl: /^https?:/iu.test(raw.trim()) ? publicSourceUrl(raw) : null,
+    });
   }
   return out;
 }
@@ -260,17 +265,27 @@ export class SearchEntityService {
         summary: clip(
           `新建实体「${input.displayName}」` +
             (input.identity ? `，身份说明「${input.identity}」` : '') +
-            (identifiers.length ? `，标识 ${identifiers.map((i) => i.identifier).join('、')}` : '') +
+            (identifiers.length
+              ? `，标识 ${identifiers.map((i) => i.identifier).join('、')}`
+              : '') +
             (characterIds.length ? `，关联 ${characterIds.length} 个官方角色` : ''),
         ),
         identifiers: identifiers.map((i) => i.identifier),
         characterIds,
       });
       for (const characterId of characterIds)
-        await this.record(tx, adminId, 'search.character_linked', CHARACTER_TARGET, characterId, input.reason, {
-          summary: `关联到实体「${input.displayName}」（${key}）`,
-          entityKey: key,
-        });
+        await this.record(
+          tx,
+          adminId,
+          'search.character_linked',
+          CHARACTER_TARGET,
+          characterId,
+          input.reason,
+          {
+            summary: `关联到实体「${input.displayName}」（${key}）`,
+            entityKey: key,
+          },
+        );
       return key;
     });
     return this.getEntity(entityKey);
@@ -292,7 +307,9 @@ export class SearchEntityService {
       if (after.displayName !== before.displayName)
         changes.push(`显示名「${before.displayName}」→「${after.displayName}」`);
       if (after.identity !== before.identity)
-        changes.push(`身份说明「${before.identity ?? '（无）'}」→「${after.identity ?? '（无）'}」`);
+        changes.push(
+          `身份说明「${before.identity ?? '（无）'}」→「${after.identity ?? '（无）'}」`,
+        );
       if (JSON.stringify(after.sources) !== JSON.stringify(before.sources))
         changes.push(`出处 ${before.sources.length} 条 → ${after.sources.length} 条`);
       if (!changes.length) return;
@@ -300,17 +317,28 @@ export class SearchEntityService {
         .update(searchEntities)
         .set({ ...after, updatedAt: this.clock.now() })
         .where(eq(searchEntities.entityKey, before.entityKey));
-      await this.record(tx, adminId, 'search.entity_updated', ENTITY_TARGET, before.entityKey, input.reason, {
-        summary: clip(changes.join('；')),
-        before: { displayName: before.displayName, identity: before.identity },
-        after: { displayName: after.displayName, identity: after.identity },
-        sourceUrls: after.sources.map((s) => s.url),
-      });
+      await this.record(
+        tx,
+        adminId,
+        'search.entity_updated',
+        ENTITY_TARGET,
+        before.entityKey,
+        input.reason,
+        {
+          summary: clip(changes.join('；')),
+          before: { displayName: before.displayName, identity: before.identity },
+          after: { displayName: after.displayName, identity: after.identity },
+          sourceUrls: after.sources.map((s) => s.url),
+        },
+      );
     });
     return this.getEntity(input.entityKey);
   }
 
-  async linkEntity(adminId: string, input: AdminSearchEntityLinks): Promise<AdminSearchEntityDetail> {
+  async linkEntity(
+    adminId: string,
+    input: AdminSearchEntityLinks,
+  ): Promise<AdminSearchEntityDetail> {
     const addIdentifiers = parseIdentifiers(input.addIdentifiers);
     const addCharacters = [...new Set(input.addCharacterIds)];
     const removeCharacters = [...new Set(input.removeCharacterIds)];
@@ -339,7 +367,10 @@ export class SearchEntityService {
             )
           ).rows.map((r) => r.character_id)
         : [];
-      if (droppedIds.length !== removeIdentifiers.length || droppedChars.length !== removeCharacters.length)
+      if (
+        droppedIds.length !== removeIdentifiers.length ||
+        droppedChars.length !== removeCharacters.length
+      )
         throw new AppError('bad_request', '要取消的标识或角色不属于这个实体', { status: 422 });
       const parts = [
         addIdentifiers.length ? `加标识 ${addIdentifiers.map((i) => i.identifier).join('、')}` : '',
@@ -360,20 +391,39 @@ export class SearchEntityService {
         removeCharacterIds: droppedChars,
       });
       for (const characterId of addCharacters)
-        await this.record(tx, adminId, 'search.character_linked', CHARACTER_TARGET, characterId, input.reason, {
-          summary: `关联到实体「${entity.displayName}」（${key}）`,
-          entityKey: key,
-        });
+        await this.record(
+          tx,
+          adminId,
+          'search.character_linked',
+          CHARACTER_TARGET,
+          characterId,
+          input.reason,
+          {
+            summary: `关联到实体「${entity.displayName}」（${key}）`,
+            entityKey: key,
+          },
+        );
       for (const characterId of droppedChars)
-        await this.record(tx, adminId, 'search.character_unlinked', CHARACTER_TARGET, characterId, input.reason, {
-          summary: `取消关联实体「${entity.displayName}」（${key}）`,
-          entityKey: key,
-        });
+        await this.record(
+          tx,
+          adminId,
+          'search.character_unlinked',
+          CHARACTER_TARGET,
+          characterId,
+          input.reason,
+          {
+            summary: `取消关联实体「${entity.displayName}」（${key}）`,
+            entityKey: key,
+          },
+        );
     });
     return this.getEntity(input.entityKey);
   }
 
-  async mergeEntity(adminId: string, input: AdminSearchEntityMerge): Promise<AdminSearchEntityDetail> {
+  async mergeEntity(
+    adminId: string,
+    input: AdminSearchEntityMerge,
+  ): Promise<AdminSearchEntityDetail> {
     if (input.entityKey === input.fromEntityKey)
       throw new AppError('bad_request', '不能把实体合并到自己', { status: 422 });
     await this.database.transaction(async (tx) => {
@@ -412,18 +462,45 @@ export class SearchEntityService {
         identifiers: moved.rows.map((r) => r.identifier),
         characterIds: movedChars.rows.map((r) => r.character_id),
       };
-      await this.record(tx, adminId, 'search.entity_merged', ENTITY_TARGET, into.entityKey, input.reason, details);
-      await this.record(tx, adminId, 'search.entity_merged_away', ENTITY_TARGET, from.entityKey, input.reason, details);
+      await this.record(
+        tx,
+        adminId,
+        'search.entity_merged',
+        ENTITY_TARGET,
+        into.entityKey,
+        input.reason,
+        details,
+      );
+      await this.record(
+        tx,
+        adminId,
+        'search.entity_merged_away',
+        ENTITY_TARGET,
+        from.entityKey,
+        input.reason,
+        details,
+      );
       for (const row of movedChars.rows)
-        await this.record(tx, adminId, 'search.character_linked', CHARACTER_TARGET, row.character_id, input.reason, {
-          summary: `随实体合并改归「${into.displayName}」（${into.entityKey}）`,
-          entityKey: into.entityKey,
-        });
+        await this.record(
+          tx,
+          adminId,
+          'search.character_linked',
+          CHARACTER_TARGET,
+          row.character_id,
+          input.reason,
+          {
+            summary: `随实体合并改归「${into.displayName}」（${into.entityKey}）`,
+            entityKey: into.entityKey,
+          },
+        );
     });
     return this.getEntity(input.entityKey);
   }
 
-  async splitEntity(adminId: string, input: AdminSearchEntitySplit): Promise<AdminSearchEntityDetail> {
+  async splitEntity(
+    adminId: string,
+    input: AdminSearchEntitySplit,
+  ): Promise<AdminSearchEntityDetail> {
     const identifiers = [...new Set(input.identifiers)];
     const characterIds = [...new Set(input.characterIds)];
     if (!identifiers.length && !characterIds.length)
@@ -440,7 +517,10 @@ export class SearchEntityService {
           WHERE entity_key = $1 AND character_id = ANY($2::uuid[]) FOR UPDATE`,
         [source.entityKey, characterIds],
       );
-      if (owned.rows.length !== identifiers.length || ownedChars.rows.length !== characterIds.length)
+      if (
+        owned.rows.length !== identifiers.length ||
+        ownedChars.rows.length !== characterIds.length
+      )
         throw new AppError('bad_request', '要拆出去的标识或角色不属于这个实体', { status: 422 });
       const first = identifiers.find((id) => isEntityKey(id) && id !== source.entityKey);
       const taken = first
@@ -485,13 +565,37 @@ export class SearchEntityService {
         identifiers,
         characterIds,
       };
-      await this.record(tx, adminId, 'search.entity_split', ENTITY_TARGET, source.entityKey, input.reason, details);
-      await this.record(tx, adminId, 'search.entity_split_created', ENTITY_TARGET, key, input.reason, details);
+      await this.record(
+        tx,
+        adminId,
+        'search.entity_split',
+        ENTITY_TARGET,
+        source.entityKey,
+        input.reason,
+        details,
+      );
+      await this.record(
+        tx,
+        adminId,
+        'search.entity_split_created',
+        ENTITY_TARGET,
+        key,
+        input.reason,
+        details,
+      );
       for (const characterId of characterIds)
-        await this.record(tx, adminId, 'search.character_linked', CHARACTER_TARGET, characterId, input.reason, {
-          summary: `随实体拆分改归「${input.displayName}」（${key}）`,
-          entityKey: key,
-        });
+        await this.record(
+          tx,
+          adminId,
+          'search.character_linked',
+          CHARACTER_TARGET,
+          characterId,
+          input.reason,
+          {
+            summary: `随实体拆分改归「${input.displayName}」（${key}）`,
+            entityKey: key,
+          },
+        );
       return key;
     });
     return this.getEntity(newKey);
@@ -590,7 +694,8 @@ export class SearchEntityService {
           break;
         }
         case 'approve': {
-          if (current?.status !== 'pending') throw new AppError('conflict', '只有待审核的别名可以通过');
+          if (current?.status !== 'pending')
+            throw new AppError('conflict', '只有待审核的别名可以通过');
           await tx.query(
             `UPDATE characters.search_aliases SET status = 'approved', reviewed_at = $3
               WHERE character_id = $1 AND alias_key = $2`,
@@ -601,7 +706,8 @@ export class SearchEntityService {
           break;
         }
         case 'reject': {
-          if (current?.status !== 'pending') throw new AppError('conflict', '只有待审核的别名可以驳回');
+          if (current?.status !== 'pending')
+            throw new AppError('conflict', '只有待审核的别名可以驳回');
           await this.deleteAlias(tx, characterId, aliasKey);
           action = 'search.alias_rejected';
           summary = `驳回别名「${current.alias}」`;
@@ -626,7 +732,8 @@ export class SearchEntityService {
           break;
         }
         case 'restore': {
-          if (current?.status !== 'blocked') throw new AppError('conflict', '只有被去掉的人设别名可以恢复');
+          if (current?.status !== 'blocked')
+            throw new AppError('conflict', '只有被去掉的人设别名可以恢复');
           await this.deleteAlias(tx, characterId, aliasKey);
           action = 'search.alias_restored';
           summary = `恢复人设别名「${current.alias}」`;
@@ -645,14 +752,17 @@ export class SearchEntityService {
   // ---------- 内部 ----------
 
   private async deleteAlias(tx: DbTx, characterId: string, aliasKey: string) {
-    await tx.query('DELETE FROM characters.search_aliases WHERE character_id = $1 AND alias_key = $2', [
-      characterId,
-      aliasKey,
-    ]);
+    await tx.query(
+      'DELETE FROM characters.search_aliases WHERE character_id = $1 AND alias_key = $2',
+      [characterId, aliasKey],
+    );
   }
 
   private async preset(characterId: string) {
-    const [row] = await this.database.db.select().from(characters).where(eq(characters.id, characterId));
+    const [row] = await this.database.db
+      .select()
+      .from(characters)
+      .where(eq(characters.id, characterId));
     if (!row || row.kind !== 'preset') throw new AppError('not_found', '官方角色不存在');
     return row;
   }
@@ -662,7 +772,9 @@ export class SearchEntityService {
     if (row.status !== 'published') return [];
     if (row.legacyCard) {
       const legacy = parseLegacyCard(row.legacyCard);
-      return legacy ? [...legacy.aliases, legacy.nickname, legacy.canonicalName].filter(Boolean) : [];
+      return legacy
+        ? [...legacy.aliases, legacy.nickname, legacy.canonicalName].filter(Boolean)
+        : [];
     }
     try {
       const source = await this.characterService.publishedPresetSource(row.id);
@@ -776,7 +888,10 @@ export class SearchEntityService {
       auditId: r.id,
       at: r.occurredAt.toISOString(),
       action: r.action.slice(0, 80),
-      actorName: ((r.actorId && names[r.actorId]) || (r.actorId ? '已注销的管理员' : '系统')).slice(0, 64),
+      actorName: ((r.actorId && names[r.actorId]) || (r.actorId ? '已注销的管理员' : '系统')).slice(
+        0,
+        64,
+      ),
       reason: clip(typeof r.details.reason === 'string' ? r.details.reason : '', 200),
       summary: clip(typeof r.details.summary === 'string' ? r.details.summary : r.action, 500),
     }));

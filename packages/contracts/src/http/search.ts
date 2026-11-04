@@ -432,7 +432,8 @@ export const SearchAdminEndpoints = {
     auth: 'admin',
     body: AdminSearchEntityMerge,
     response: AdminSearchEntityDetail,
-    summary: '5.6：合并实体（fromEntityKey 的标识与角色并入 entityKey，原实体删除）；写审计并刷新投影',
+    summary:
+      '5.6：合并实体（fromEntityKey 的标识与角色并入 entityKey，原实体删除）；写审计并刷新投影',
   }),
   splitEntity: defineEndpoint({
     method: 'POST',

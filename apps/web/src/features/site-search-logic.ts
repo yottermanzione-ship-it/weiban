@@ -9,8 +9,10 @@
  */
 import {
   SITE_SEARCH_QUERY_MAX_CHARS,
+  type CharacterSearchCandidate,
   type SiteSearchResult,
   type SiteSearchSuggestion,
+  type WebCandidateResolution,
 } from '@weiban/contracts';
 
 /** 边输入边联想的防抖（毫秒）。 */
@@ -204,4 +206,111 @@ export class SuggestRunner<T> {
     this.cancelTimer();
     this.gate.reset();
   }
+}
+
+// ---------- 5.6：联网查找（站外候选，T-20261104e） ----------
+
+type WebCandidate = CharacterSearchCandidate;
+
+/** 候选的主动作：旧服务器没有 action、或接收端读成 unsupported 的，一律退回「创建」（不伪造添加按钮）。 */
+export function webCandidateAction(item: Pick<WebCandidate, 'action'>): 'add' | 'chat' | 'create' {
+  return item.action === 'add' || item.action === 'chat' ? item.action : 'create';
+}
+
+/** 身份说明一行：没有可靠来源的身份时写「暂未核实身份」，不编履历。 */
+export function webCandidateIdentity(item: Pick<WebCandidate, 'identity'>): string {
+  return item.identity || '暂未核实身份';
+}
+
+/** 未核实标记：5.6 服务器明确给出；旧服务器没有这个字段的，网页资料一律当未核实。 */
+export function webCandidateUnverified(item: Pick<WebCandidate, 'unverified'>): boolean {
+  return item.unverified !== false;
+}
+
+/** 出处只显示 http(s) 公开地址；其余（javascript: 等）丢弃。 */
+export function safeExternalUrl(raw: string): string | null {
+  try {
+    const url = new URL(raw);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 出处的显示名：网站名（供应商给的），没有就用域名。 */
+export function sourceLabel(source: { url: string; site: string | null }): string {
+  if (source.site) return source.site;
+  try {
+    return new URL(source.url).hostname;
+  } catch {
+    return '公开网页';
+  }
+}
+
+/** 候选的出处列表：5.6 的 sources，旧服务器只有 sourceUrl。 */
+export function webCandidateSources(
+  item: Pick<WebCandidate, 'sources' | 'sourceUrl' | 'title'>,
+): Array<{ url: string; title: string; site: string | null }> {
+  const list = item.sources?.length
+    ? item.sources
+    : [{ url: item.sourceUrl, title: item.title, site: null }];
+  return list.flatMap((source) => {
+    const url = safeExternalUrl(source.url);
+    return url ? [{ ...source, url }] : [];
+  });
+}
+
+/** 这批候选里有同名的：提示补作品 / 职业再查。 */
+export function webCandidatesAmbiguous(
+  items: ReadonlyArray<Pick<WebCandidate, 'ambiguous' | 'name'>>,
+): boolean {
+  if (items.some((item) => item.ambiguous)) return true;
+  const seen = new Set<string>();
+  for (const item of items) {
+    const key = item.name.normalize('NFKC').trim().toLowerCase();
+    if (seen.has(key)) return true;
+    seen.add(key);
+  }
+  return false;
+}
+
+/**
+ * 补充作品或职业再查：把补充词接在原搜索词后面。合起来仍要是 2～64 字（allowWebSearch），
+ * 补充词为空、或和原词一样时返回 null（不发请求）。
+ */
+export function refineWebQuery(base: string, extra: string): string | null {
+  const add = extra.replace(/\s+/gu, ' ').trim();
+  if (!add) return null;
+  const head = base.replace(/\s+/gu, ' ').trim();
+  if (head.includes(add)) return null;
+  const next = `${head} ${add}`;
+  return allowWebSearch(next) ? next : null;
+}
+
+/** 点击「添加 / 去聊天」后服务器重读的结果去哪；只用服务器返回的 ID。create 返回 null（由页面选创建或申请）。 */
+export function webResolutionHref(resolution: WebCandidateResolution): string | null {
+  if (resolution.action === 'chat' && resolution.conversationId)
+    return `/chat/${resolution.conversationId}`;
+  if ((resolution.action === 'add' || resolution.action === 'chat') && resolution.characterId)
+    return `/characters/${resolution.characterId}`;
+  return null;
+}
+
+/** 用候选预填创建页 / 申请页的地址：只带候选 ID，页面再向服务器重读资料。 */
+export function webCandidatePrefillHref(kind: 'create' | 'request', candidateId: string): string {
+  const base = kind === 'create' ? '/characters/custom/new' : '/role-requests/new';
+  return `${base}?${new URLSearchParams({ candidate: candidateId })}`;
+}
+
+/** 预填到描述里的文字：身份（来自公开资料，未核实）+ 摘要 + 出处。 */
+export function webPrefillDescription(
+  prefill: NonNullable<WebCandidateResolution['prefill']>,
+): string {
+  return [
+    prefill.identity ? `身份（来自公开资料，尚未核实）：${prefill.identity}` : null,
+    prefill.description || null,
+    `参考公开资料（尚未核实）：${prefill.sourceUrl}`,
+  ]
+    .filter(Boolean)
+    .join('\n');
 }

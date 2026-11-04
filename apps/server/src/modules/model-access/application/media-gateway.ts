@@ -399,7 +399,11 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       // 5.6（T-20261104e）：联网查找同一个词并发时，后到的等先到的那次供应商调用落进公共缓存再读（命中不计费），
       // 不再打一次供应商。每轮只开一个短事务领租约，等待期间不占数据库连接；先到的失败时租约释放，后到的再自己查。
       if (input.purpose === 'search_candidates')
-        for (let round = 0; claim?.kind === 'busy' && round < CANDIDATE_LEASE_WAIT_ROUNDS; round++) {
+        for (
+          let round = 0;
+          claim?.kind === 'busy' && round < CANDIDATE_LEASE_WAIT_ROUNDS;
+          round++
+        ) {
           await new Promise<void>((resolve) => setTimeout(resolve, CANDIDATE_LEASE_WAIT_MS));
           claim = await this.webTools.claim(key, input.purpose);
         }

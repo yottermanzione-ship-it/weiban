@@ -531,6 +531,13 @@ export function RolePlazaPage({ onboarding = false }: { onboarding?: boolean }) 
               <WebCharacterSearch key={search} query={search} />
             </>
           }
+          footer={
+            <WebCharacterSearch
+              key={search}
+              query={search}
+              title="没有你要找的？可以查找公开人物或作品（同名的另一位也能找）"
+            />
+          }
         />
       )}
       {!siteSearch && (

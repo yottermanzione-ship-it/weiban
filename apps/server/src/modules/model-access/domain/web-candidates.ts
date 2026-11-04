@@ -79,7 +79,10 @@ export function splitTitle(title: string): { name: string; note: string | null }
   const note = m[2]!.trim();
   return {
     name: m[1]!.trim(),
-    note: NOT_IDENTITY.test(note) || INSTRUCTION_WORDS.test(note) ? null : cut(note, IDENTITY_MAX_CHARS),
+    note:
+      NOT_IDENTITY.test(note) || INSTRUCTION_WORDS.test(note)
+        ? null
+        : cut(note, IDENTITY_MAX_CHARS),
   };
 }
 

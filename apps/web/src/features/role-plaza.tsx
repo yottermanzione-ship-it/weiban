@@ -1,5 +1,10 @@
 import { SearchField } from './search-field.js';
-import { WebCharacterSearch } from './web-character-search.js';
+import {
+  CandidatePrefillNote,
+  WebCharacterSearch,
+  useCandidatePrefill,
+} from './web-character-search.js';
+import { webPrefillDescription } from './site-search-logic.js';
 import { SiteSearchResults, SiteSuggestions } from './site-search.js';
 /*
  * 总经理 2026-10-14 裁定 2.3：通讯录右上「添加朋友」下的两个入口。
@@ -281,6 +286,13 @@ function OfficialList() {
                   <EmptyState icon="wechat/search" title={`没有找到「${search}」`} />
                   <WebCharacterSearch key={search} query={search} />
                 </>
+              }
+              footer={
+                <WebCharacterSearch
+                  key={search}
+                  query={search}
+                  title="没有你要找的？可以查找公开人物或作品（同名的另一位也能找）"
+                />
               }
             />
           )}
@@ -886,6 +898,15 @@ export function RoleRequestFormPage() {
   const [blockedKey, setBlockedKey] = useState(false);
   const requestId = useRef(crypto.randomUUID());
   const file = useRef<HTMLInputElement>(null);
+  // 5.6（T-20261104e）：从联网候选进来时只带候选 ID，预填资料由服务器重读；用户已经填过的不覆盖。
+  const [params] = useSearchParams();
+  const prefill = useCandidatePrefill(params.get('candidate'));
+  const filled = prefill.resolution?.prefill ?? null;
+  useEffect(() => {
+    if (!filled) return;
+    setRoleName((value) => value || filled.name);
+    setReferenceText((value) => value || webPrefillDescription(filled).slice(0, 3000));
+  }, [filled]);
   const previews = useRef<string[]>([]);
   useEffect(() => {
     const list = previews.current;
@@ -964,6 +985,7 @@ export function RoleRequestFormPage() {
   return (
     <main className="role-request-form">
       <NavBar title="提交申请" fallback="/role-requests" />
+      {params.get('candidate') && <CandidatePrefillNote prefill={prefill} />}
       <form
         className="panel stack"
         onSubmit={(event) => {

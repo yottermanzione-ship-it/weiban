@@ -296,13 +296,13 @@ export function mergeWebCandidates(
     if (entity) pushSources(sources, entity.sources);
     groups.set(key, {
       candidateId: candidate.candidateId,
-      name: fitUnits(entity ? entity.displayName : candidate.name, WEB_NAME_MAX_UNITS) || candidate.name,
+      name:
+        fitUnits(entity ? entity.displayName : candidate.name, WEB_NAME_MAX_UNITS) ||
+        candidate.name,
       title: candidate.title,
       description: candidate.description,
       identity: verified ? entity!.identity : candidate.identity,
-      identitySourceUrl: verified
-        ? (entity!.sources[0]?.url ?? null)
-        : candidate.identitySourceUrl,
+      identitySourceUrl: verified ? (entity!.sources[0]?.url ?? null) : candidate.identitySourceUrl,
       sources,
       entityKey: entity?.entityKey ?? candidate.identifiers[0] ?? null,
       unverified: !verified,

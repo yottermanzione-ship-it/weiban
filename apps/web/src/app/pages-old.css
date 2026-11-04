@@ -2342,6 +2342,47 @@ button.primary.wx-auth-submit {
   color: var(--ui-text-action);
 }
 
+/* 5.6 联网查找候选（T-20261104e）：身份说明、逐项出处、未核实标记，同名可补作品 / 职业再查。 */
+.web-candidate {
+  align-items: flex-start;
+}
+.web-candidate-badge {
+  display: inline-block;
+  margin-left: var(--wb-space-2);
+  padding: 0 var(--wb-space-1);
+  border-radius: 4px;
+  background: var(--wb-color-status-warning-soft);
+  color: var(--wb-color-status-warning-text);
+  font-size: var(--wb-font-size-caption1);
+  font-style: normal;
+  vertical-align: middle;
+}
+.web-candidate-sources a {
+  color: var(--wb-color-text-link);
+}
+.web-candidate-actions {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--wb-space-2);
+}
+.web-candidate-actions .text-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+}
+.web-candidates-refine-row {
+  display: flex;
+  gap: var(--wb-space-2);
+  padding: 0 var(--wb-space-5);
+}
+.web-candidates-refine-row input {
+  flex: 1;
+  min-width: 0;
+}
+
 /* ---------- 欢迎页（10-14 确认 Q12：照微信「登录 / 注册」两按钮） ---------- */
 .wx-welcome {
   display: flex;

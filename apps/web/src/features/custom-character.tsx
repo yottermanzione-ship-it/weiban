@@ -7,7 +7,7 @@
  * 行的分组、顺序、编辑器类型都由配置决定；加字段见 docs/handoffs/2026-10-27-ui-u3.md。
  */
 import { LayerHistoryContext } from './layer-history.js';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ImporterEndpoints,
@@ -42,20 +42,32 @@ import { AgePage, BasisPage, DialoguePage, ListPage, LongTextPage } from './pers
 import { MenuGroup, MenuRow, NavBar } from './shell-kit.js';
 import { showToast } from './toast.js';
 import { DatePickerSheet } from './wheel-picker.js';
+import { webPrefillDescription } from './site-search-logic.js';
+import { CandidatePrefillNote, useCandidatePrefill } from './web-character-search.js';
 
 export function CreateCustomCharacterPage() {
   const [params] = useSearchParams();
   const importJobId = params.get('import');
+  // 5.6（T-20261104e）：联网候选只带候选 ID，预填资料由服务器重读（不用地址栏里的名字或网址）。
+  const candidateId = importJobId ? null : params.get('candidate');
+  const prefill = useCandidatePrefill(candidateId);
+  if (candidateId && prefill.status === 'loading')
+    return (
+      <main>
+        <NavBar title="创建角色" fallback="/contacts" />
+        <span className="spinner" role="status" aria-label="正在读取公开资料" />
+      </main>
+    );
+  const filled = prefill.resolution?.prefill ?? null;
   return (
     <CustomCharacterEditor
-      key={importJobId ?? params.get('candidateName') ?? 'new'}
+      key={importJobId ?? (filled ? `candidate:${candidateId}` : 'new')}
       mode="create"
       importJobId={importJobId}
-      candidate={{
-        name: (params.get('candidateName') ?? '').slice(0, 32),
-        description: (params.get('candidateDescription') ?? '').slice(0, 500),
-        source: (params.get('candidateSource') ?? '').slice(0, 2000),
-      }}
+      candidate={
+        filled ? { name: filled.name, description: webPrefillDescription(filled) } : undefined
+      }
+      candidateNote={candidateId ? <CandidatePrefillNote prefill={prefill} /> : null}
     />
   );
 }
@@ -130,11 +142,14 @@ function CustomCharacterEditor({
   characterId,
   importJobId = null,
   candidate,
+  candidateNote = null,
 }: {
   mode: 'create' | 'edit';
   characterId?: string;
   importJobId?: string | null;
-  candidate?: { name: string; description: string; source: string };
+  /** 5.6：联网候选的预填（服务器按候选 ID 重读的公开资料，描述里已写明「尚未核实」和出处）。 */
+  candidate?: { name: string; description: string };
+  candidateNote?: ReactNode;
 }) {
   const navigate = useNavigate();
   const { session } = useAuth();
@@ -158,7 +173,7 @@ function CustomCharacterEditor({
       ? {
           ...EMPTY_DRAFT,
           name: candidate.name,
-          description: `${candidate.description}${candidate.source ? `\n参考公开资料（尚未核实）：${candidate.source}` : ''}`,
+          description: candidate.description.slice(0, 2000),
         }
       : EMPTY_DRAFT,
   );
@@ -604,6 +619,7 @@ function CustomCharacterEditor({
         title={mode === 'create' ? '创建角色' : '编辑角色'}
         fallback={mode === 'create' ? '/contacts' : `/characters/${characterId}`}
       />
+      {candidateNote}
       {imported && (
         <p className="inline-tip">
           {imported.rawKept
