@@ -448,7 +448,8 @@ export class GrowthEvents implements OnModuleInit {
       if (contact) characterIds = [contact.characterId];
     } else if (p.mentionedParticipantIds.length) {
       const mentioned = new Set(p.mentionedParticipantIds);
-      const participants = await this.chat.getParticipants(p.conversationId);
+      // T-20261104f：在本事务里读参与者（不锁会话行）。
+      const participants = await this.chat.getParticipants(p.conversationId, tx);
       characterIds = [
         ...new Set(
           participants
@@ -459,7 +460,11 @@ export class GrowthEvents implements OnModuleInit {
     }
     if (!characterIds.length) return;
 
-    const message = await this.chat.getMessage(p.messageId, [p.scope]);
+    // T-20261104f：先拿好感度咨询锁、再在本事务里读消息（会锁会话行）。加分随后可能在私聊写升级提示，
+    // 其它加分路径都是「好感度锁 → 会话行」，这里同序，避免两边互相等待（kernel.md「事务与端口」）。
+    for (const characterId of [...characterIds].sort())
+      await this.growth.lockFamiliarity(tx, userId, characterId);
+    const message = await this.chat.getMessage(p.messageId, [p.scope], tx);
     const content = message?.content;
     const text =
       content?.type === 'text'

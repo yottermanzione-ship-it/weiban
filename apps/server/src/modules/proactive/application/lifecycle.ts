@@ -62,11 +62,10 @@ export class ProactiveLifecycle implements OnModuleInit {
           .where(eq(proactivePendingReply.userId, p.senderRefId))
           .limit(1);
         if (!pending) return;
-        const conversation = await this.chat.getConversation(p.conversationId);
-        const character = conversation?.participants.find((v) => v.kind === 'character');
-        const user = conversation?.participants.find(
-          (v) => v.kind === 'user' && v.refId === p.senderRefId,
-        );
+        // T-20261104f：在本事务里读参与者（不锁会话行），之后才拿主动消息的用户锁和联系人版本（kernel.md「事务与端口」）。
+        const participants = await this.chat.getParticipants(p.conversationId, tx);
+        const character = participants.find((v) => v.kind === 'character');
+        const user = participants.find((v) => v.kind === 'user' && v.refId === p.senderRefId);
         if (!character || !user) return;
         await this.guards.lock(tx, user.refId);
         const epoch = await this.contacts.getActiveContactEpoch(user.refId, character.refId, tx);

@@ -779,10 +779,11 @@ export class ModelGateway implements ModelGatewayPort {
           // T-20261104a：401 / 403 而正文不是已知安全策略格式时，先用同一把密钥自检（与后台「测试」同一个探测，
           // 结果按上游缓存 60 秒）。自检通过 = 密钥没坏，这次只算内容被拒：下面不换账号、不记失败、不标上游、
           // 用量记录记 content_rejected，调用方拿到 content_rejected（回推托语、登记被拦消息），不会进等待被巡检反复重试。
+          // T-20261104f：confirmAuthRejection 同时计数，同一上游短时间内太多次时给管理员发 upstream_auth_rejected 提醒。
           if (
             !answer.ok &&
             answer.category === 'invalid_key' &&
-            (await this.upstreams.keyStillWorks(route.upstreamId))
+            (await this.upstreams.confirmAuthRejection(route.upstreamId))
           )
             answer = { ...answer, category: 'content_rejected', retryable: false };
         } else answer = { ok: false, category: 'provider_error', retryable: false };

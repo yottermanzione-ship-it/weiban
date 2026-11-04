@@ -173,6 +173,13 @@ export const AdminAlertKind = z.enum([
    * 合并键 `backup_failed:hk`、`backup_app_down:hk`、`backup_over_cap:hk`。
    */
   'backup_failed',
+  /**
+   * 5.7：同一上游短时间内多次回 401 / 403，但同一把密钥的连通测试是好的（T-20261104a 起这类回答按内容被拒处理，
+   * 上游不标失效，用户收到推托语）。多半是密钥没有某个模型的权限、或账号被服务商限制生成，需要到供应商控制台查。
+   * 发出方 model_access，级别 warning；阈值、时间窗与冷却期见服务器 product-params.ts（UPSTREAM_AUTH_REJECTED_ALERT），
+   * 冷却期内同一上游不重复发。合并键 `upstream_auth_rejected:{upstreamId}`；说明只有上游名称、次数和时间窗，不含用户内容。
+   */
+  'upstream_auth_rejected',
 ]);
 export type AdminAlertKind = z.infer<typeof AdminAlertKind>;
 

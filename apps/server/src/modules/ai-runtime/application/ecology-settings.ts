@@ -34,6 +34,7 @@ import {
   parseContract,
   type Clock,
   type Database,
+  type DbTx,
 } from '../../../platform/index.js';
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import {
@@ -518,9 +519,9 @@ export class EcologySettingsService {
       .where(eq(ecologySettings.userId, userId));
   }
 
-  /** 充值后恢复（billing.balance_restored）。 */
-  async resume(userId: string): Promise<void> {
-    await this.db.db
+  /** 充值后恢复（billing.balance_restored）。订阅者拿着事务时传 tx，写入同一事务（kernel.md「事务与端口」）。 */
+  async resume(userId: string, tx?: DbTx): Promise<void> {
+    await (tx?.db ?? this.db.db)
       .update(ecologySettings)
       .set({ pausedReason: null, pausedAt: null })
       .where(eq(ecologySettings.userId, userId));

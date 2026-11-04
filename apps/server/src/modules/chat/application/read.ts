@@ -19,9 +19,10 @@ import {
   ListMessagesQuery,
   MessagePage,
   OFFICIAL_IDENTITY_KEY,
+  Participant,
+  type ChatReadPort,
   type Conversation,
   type Message,
-  type Participant,
   type ReadMessagesInput,
   type Tx,
 } from '@weiban/contracts';
@@ -46,10 +47,13 @@ import {
   type ConversationRow,
   type MessageView,
 } from './store.js';
-import type { ChatReadInTxPort } from '../tokens.js';
 
+/**
+ * 契约 ChatReadPort 的实现。每个读方法都有可选 tx：调用方拿着事务时必须传（docs/backend/kernel.md「事务与端口」）；
+ * 不传就另开连接锁会话行，调用方事务若已改过这行即应用层死锁（T-20261104c）。
+ */
 @Injectable()
-export class ChatReadService implements ChatReadInTxPort {
+export class ChatReadService implements ChatReadPort {
   constructor(
     @Inject(DATABASE) private readonly db: Database,
     @Inject(ChatStore) private readonly store: ChatStore,
@@ -140,12 +144,38 @@ export class ChatReadService implements ChatReadInTxPort {
     };
     return input ? read(asDbTx(input)) : this.db.transaction(read);
   }
-  async getParticipants(conversationId: string): Promise<Participant[]> {
-    return (await this.getConversation(conversationId))?.participants ?? [];
+  /**
+   * 不传 tx：同 getConversation（独立事务）。
+   * 传 tx（5.7）：在调用方事务里读，**不锁会话行**——订阅者多半只想知道「对面是谁」，随后才拿本模块的咨询锁；
+   * 先锁会话行再拿咨询锁，和回复引擎「先咨询锁、后写会话」的顺序相反，两边会互相等待（kernel.md「事务与端口」）。
+   * 其余口径与 getConversation 一致：会话不存在为 []，会话主人账号失效抛 unauthenticated，只返回未退出的参与者。
+   */
+  async getParticipants(conversationId: string, input?: Tx): Promise<Participant[]> {
+    if (!input) return (await this.getConversation(conversationId))?.participants ?? [];
+    parseContract(Id, conversationId);
+    const tx = asDbTx(input);
+    const [row] = await tx.db
+      .select({ ownerUserId: conversations.ownerUserId })
+      .from(conversations)
+      .where(eq(conversations.id, conversationId));
+    if (!row) return [];
+    await this.store.requireActive(tx, row.ownerUserId);
+    const members = await tx.db
+      .select()
+      .from(participants)
+      .where(and(eq(participants.conversationId, conversationId), isNull(participants.leftAt)))
+      .orderBy(participants.joinedAt, participants.id);
+    return Participant.array().parse(
+      members.map((p) => ({
+        participantId: p.id,
+        kind: p.kind,
+        refId: p.refId,
+        joinedAt: p.joinedAt.toISOString(),
+      })),
+    );
   }
   /**
-   * 调用方拿着事务时必须传 input（见 ChatReadInTxPort）：不传就另开连接锁会话行，
-   * 调用方事务若已改过这行即应用层死锁（T-20261104c）。
+   * 调用方拿着事务时必须传 input：不传就另开连接锁会话行，调用方事务若已改过这行即应用层死锁（T-20261104c）。
    * 传事务时用 FOR UPDATE：调用方随后要写这个会话（发消息 / 系统提示），先拿共享锁再升级成排他锁，
    * 两个并发写入方会互相等待（数据库死锁）；直接拿排他锁只是排队。
    */
@@ -173,9 +203,10 @@ export class ChatReadService implements ChatReadInTxPort {
     };
     return input ? read(asDbTx(input)) : this.db.transaction(read);
   }
-  async findOfficialConversation(userId: string): Promise<Conversation | null> {
+  /** 传 tx（5.7）时的锁法同 findDirectConversation（FOR UPDATE），不传时独立事务、FOR SHARE。 */
+  async findOfficialConversation(userId: string, input?: Tx): Promise<Conversation | null> {
     parseContract(Id, userId);
-    return this.db.transaction(async (tx) => {
+    const read = async (tx: DbTx) => {
       await this.store.requireActive(tx, userId);
       const [row] = await tx.db
         .select()
@@ -187,11 +218,12 @@ export class ChatReadService implements ChatReadInTxPort {
             eq(conversations.type, 'direct'),
           ),
         )
-        .for('share');
+        .for(input ? 'update' : 'share');
       return row ? this.internalConversation(tx, row) : null;
-    });
+    };
+    return input ? read(asDbTx(input)) : this.db.transaction(read);
   }
-  /** transaction：调用方拿着事务时必须传（见 ChatReadInTxPort），否则另开连接锁会话行。 */
+  /** transaction：调用方拿着事务时必须传，否则另开连接锁会话行。 */
   async readMessages(input: ReadMessagesInput, transaction?: Tx): Promise<Message[]> {
     const query = parseContract(ListMessagesQuery, input);
     const scopes = parseContract(ContentScope.array(), input.scopes);

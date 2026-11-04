@@ -22,6 +22,7 @@ const KIND_LABELS: Record<string, string> = {
   client_error_spike: '客户端报错激增',
   host_disk_high: '磁盘空间不足',
   backup_failed: '备份失败',
+  upstream_auth_rejected: '上游权限类拒绝',
 };
 
 const SEVERITY: Record<string, { tone: 'error' | 'warning' | 'default'; label: string }> = {

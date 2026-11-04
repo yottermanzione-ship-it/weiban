@@ -8,11 +8,9 @@
  *   （例如：消息 + 每用户更新 + 发件箱事件）。
  * - `tx.afterCommit(fn)`：登记「提交成功后再做」的事（例如推送 WebSocket、唤醒事件分发器）；回滚则不执行。
  *
- * 事务规则（T-20261104c 生产事故）：拿着 tx 时，被调用的端口一律传 tx，不能另开 `database.transaction`
- * 或用 `database.db` 去锁 / 改这个 tx 已经锁过、改过的行——外层等内层返回、内层等外层提交，
- * 数据库看不出这种「应用层死锁」（外层连接只是 idle in transaction）。
- * 兜底：连接池每条连接都带会话参数 idle_in_transaction_session_timeout（30 秒）和 lock_timeout（10 秒），
- * 卡住的事务最多 30 秒被数据库断开、等锁最多 10 秒报错，只影响这一个请求，不会拖垮整个连接池。
+ * 事务规则（拿着 tx 调端口必须传 tx、加锁顺序、事务里不调外部服务、下面两个超时只是兜底）只写在
+ * docs/backend/kernel.md 第 6 节「事务与端口」，这里不重复。本文件只实现兜底：连接池每条连接带会话参数
+ * idle_in_transaction_session_timeout / lock_timeout（数值见 DB_IDLE_IN_TRANSACTION_TIMEOUT_MS、DB_LOCK_TIMEOUT_MS）；
  * 事务连接被数据库断开时只让这次事务失败（记日志、丢弃这条连接），进程照常服务。
  */
 import type { Tx } from '@weiban/contracts';

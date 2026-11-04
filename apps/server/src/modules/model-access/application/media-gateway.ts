@@ -1240,7 +1240,8 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     const failed = result as { ok?: unknown; category?: unknown } | null;
     if (!failed || typeof failed !== 'object' || failed.ok !== false) return result;
     if (failed.category !== 'invalid_key') return result;
-    if (!(await this.upstreams.keyStillWorks(upstreamId))) return result;
+    // T-20261104f：confirmAuthRejection 同时计数（满阈值给管理员发 upstream_auth_rejected 提醒）。
+    if (!(await this.upstreams.confirmAuthRejection(upstreamId))) return result;
     return { ...failed, category: 'content_rejected' } as T;
   }
 

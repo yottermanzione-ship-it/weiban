@@ -353,10 +353,11 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
         const p = event.payload;
         if (p.conversationType !== 'direct' || p.senderKind !== 'user' || !p.senderRefId) return;
         if (p.contentType !== 'text' || p.scope !== 'normal') return;
-        const conversation = await this.chat.getConversation(p.conversationId);
-        const role = conversation?.participants.find((member) => member.kind === 'character');
+        // T-20261104f：读会话、消息都在本事务里（kernel.md「事务与端口」）；只要参与者时用不锁会话行的 getParticipants。
+        const participants = await this.chat.getParticipants(p.conversationId, tx);
+        const role = participants.find((member) => member.kind === 'character');
         if (!role) return;
-        const message = await this.chat.getMessage(p.messageId, ['normal']);
+        const message = await this.chat.getMessage(p.messageId, ['normal'], tx);
         if (message?.content?.type !== 'text') return;
         await this.ecology.onUserMessage(tx, {
           userId: p.senderRefId,
@@ -410,7 +411,7 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
         if (p.senderKind !== 'user' || !p.senderRefId) return;
         const message =
           p.contentType === 'text'
-            ? await this.chat.getMessage(p.messageId, ['normal', 'adult'])
+            ? await this.chat.getMessage(p.messageId, ['normal', 'adult'], tx)
             : null;
         await this.quiet.onUserMessage(
           tx,
@@ -488,10 +489,11 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
         const p = event.payload;
         if (p.conversationType !== 'direct' || p.senderKind !== 'user' || !p.senderRefId) return;
         if (p.contentType !== 'text' || p.scope !== 'normal') return;
-        const conversation = await this.chat.getConversation(p.conversationId);
-        const role = conversation?.participants.find((member) => member.kind === 'character');
+        // T-20261104f：读会话、消息都在本事务里（kernel.md「事务与端口」）；只要参与者时用不锁会话行的 getParticipants。
+        const participants = await this.chat.getParticipants(p.conversationId, tx);
+        const role = participants.find((member) => member.kind === 'character');
         if (!role) return;
-        const message = await this.chat.getMessage(p.messageId, ['normal']);
+        const message = await this.chat.getMessage(p.messageId, ['normal'], tx);
         if (message?.content?.type !== 'text') return;
         await this.groupChat.detectWantToMeet(tx, {
           userId: p.senderRefId,
@@ -568,10 +570,11 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
         const p = event.payload;
         if (p.conversationType !== 'direct' || p.senderKind !== 'user' || !p.senderRefId) return;
         if (p.contentType !== 'text' || p.scope !== 'normal') return;
-        const conversation = await this.chat.getConversation(p.conversationId);
-        const role = conversation?.participants.find((member) => member.kind === 'character');
+        // T-20261104f：读会话、消息都在本事务里（kernel.md「事务与端口」）；只要参与者时用不锁会话行的 getParticipants。
+        const participants = await this.chat.getParticipants(p.conversationId, tx);
+        const role = participants.find((member) => member.kind === 'character');
         if (!role) return;
-        const message = await this.chat.getMessage(p.messageId, ['normal']);
+        const message = await this.chat.getMessage(p.messageId, ['normal'], tx);
         if (message?.content?.type !== 'text') return;
         await this.social.onUserDirectMessage(tx, {
           userId: p.senderRefId,
@@ -588,8 +591,9 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       handle: async (event, tx) => {
         const p = event.payload;
         if (p.conversationType !== 'direct' || p.senderKind !== 'user' || !p.senderRefId) return;
-        const conversation = await this.chat.getConversation(p.conversationId);
-        const role = conversation?.participants.find((member) => member.kind === 'character');
+        // T-20261104f：在本事务里读参与者（不锁会话行），再拿用户 / 会话咨询锁，与回复引擎「先咨询锁、后写会话」同序。
+        const participants = await this.chat.getParticipants(p.conversationId, tx);
+        const role = participants.find((member) => member.kind === 'character');
         if (!role) return;
         if (!(await this.store.lock(tx, p.senderRefId, p.conversationId))) return;
         const contact = await this.contacts.getActiveContact(p.senderRefId, role.refId, tx);
@@ -618,13 +622,16 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       handle: async (event, tx) => {
         const p = event.payload;
         if (p.conversationType !== 'direct' || p.senderKind === 'system') return;
-        const conversation = await this.chat.getConversation(p.conversationId);
-        const role = conversation?.participants.find((member) => member.kind === 'character');
-        const user = conversation?.participants.find((member) => member.kind === 'user');
+        // T-20261104f：全部在本事务里读。加锁顺序与记忆整理、回复引擎一致（kernel.md「事务与端口」）：
+        // 参与者（不锁会话行）→ 用户 / 会话咨询锁 → 联系人版本（联系人行共享锁）→ 消息（锁会话行）。
+        const participants = await this.chat.getParticipants(p.conversationId, tx);
+        const role = participants.find((member) => member.kind === 'character');
+        const user = participants.find((member) => member.kind === 'user');
         if (!role || !user) return;
-        const epoch = await this.contacts.getActiveContactEpoch(user.refId, role.refId);
+        if (!(await this.store.lock(tx, user.refId, p.conversationId))) return;
+        const epoch = await this.contacts.getActiveContactEpoch(user.refId, role.refId, tx);
         if (!epoch || new Date(event.occurredAt) < new Date(epoch.acceptAfter)) return;
-        const message = await this.chat.getMessage(p.messageId, ['normal', 'adult']);
+        const message = await this.chat.getMessage(p.messageId, ['normal', 'adult'], tx);
         if (message?.labels?.includes('quirk_draft')) return;
         const promise =
           message?.content?.type === 'text' &&
@@ -673,7 +680,7 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       eventType: 'contacts.contact_removed',
       handle: async (event, tx) => {
         const { userId, characterId } = event.payload;
-        if (await this.contacts.getActiveContact(userId, characterId)) return;
+        if (await this.contacts.getActiveContact(userId, characterId, tx)) return;
         await this.store.lock(tx, userId);
         await tx.db
           .update(replyPlans)
@@ -754,7 +761,7 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
             .where(
               and(eq(replyPlans.userId, userId), eq(replyPlans.conversationId, conversationId)),
             );
-        if (!(await this.contacts.getActiveContact(userId, characterId))) {
+        if (!(await this.contacts.getActiveContact(userId, characterId, tx))) {
           await tx.db
             .delete(simulationStates)
             .where(
@@ -867,7 +874,7 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       eventType: 'billing.balance_restored',
       handle: async (event, tx) => {
         // v5 角色生态：积分恢复后解除「积分不足静默暂停」。
-        await this.ecologySettings.resume(event.payload.userId);
+        await this.ecologySettings.resume(event.payload.userId, tx);
         await this.jobs.send(
           'ai.recover_replies',
           { userId: event.payload.userId },

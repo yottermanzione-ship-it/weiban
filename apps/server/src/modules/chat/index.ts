@@ -10,5 +10,4 @@ export {
   CHAT_RECAP_READ_PORT,
   CHAT_GROUP_DIRECTORY,
   type ChatGroupDirectory,
-  type ChatReadInTxPort,
 } from './tokens.js';

@@ -383,7 +383,11 @@ export class GrowthService {
     return res.pointsAdded;
   }
 
-  private async lockFamiliarity(tx: DbTx, userId: string, characterId: string): Promise<void> {
+  /**
+   * 好感度咨询锁（同一用户与角色的加分串行）。加分可能随后在私聊写系统提示（锁会话行），所以这把锁要在
+   * 读 / 写会话之前拿；订阅者在读消息前先调它（T-20261104f，kernel.md「事务与端口」）。
+   */
+  async lockFamiliarity(tx: DbTx, userId: string, characterId: string): Promise<void> {
     await tx.query(
       "SELECT pg_advisory_xact_lock(hashtextextended('growth:familiarity:' || $1 || ':' || $2, 0))",
       [userId, characterId],

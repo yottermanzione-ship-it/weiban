@@ -15,6 +15,7 @@ import {
   OFFICIAL_REF_ID,
   type ChatAdminPort,
   type ChatParticipantPort,
+  type ChatReadPort,
   type Conversation,
   type ModelGatewayPlatformPort,
   type OfficialContact,
@@ -22,12 +23,7 @@ import {
   type Tx,
 } from '@weiban/contracts';
 import { DATABASE, AppError, type Database } from '../../../platform/index.js';
-import {
-  CHAT_ADMIN_PORT,
-  CHAT_PARTICIPANT_PORT,
-  CHAT_READ_PORT,
-  type ChatReadInTxPort,
-} from '../../chat/index.js';
+import { CHAT_ADMIN_PORT, CHAT_PARTICIPANT_PORT, CHAT_READ_PORT } from '../../chat/index.js';
 import { MODEL_PLATFORM_GATEWAY_PORT } from '../../model-access/index.js';
 import {
   OFFICIAL_FAILURE_TEXT,
@@ -64,7 +60,7 @@ export class OfficialAssistantEngine {
   private readonly logger = new Logger(OfficialAssistantEngine.name);
   constructor(
     @Inject(DATABASE) private readonly database: Database,
-    @Inject(CHAT_READ_PORT) private readonly chatRead: ChatReadInTxPort,
+    @Inject(CHAT_READ_PORT) private readonly chatRead: ChatReadPort,
     @Inject(CHAT_ADMIN_PORT) private readonly chatAdmin: ChatAdminPort,
     @Inject(CHAT_PARTICIPANT_PORT) private readonly participants: ChatParticipantPort,
     @Inject(MODEL_PLATFORM_GATEWAY_PORT)

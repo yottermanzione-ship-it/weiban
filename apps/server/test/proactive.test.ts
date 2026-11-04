@@ -77,13 +77,14 @@ describeDb('T-052 proactive 真实PG：事务配额、日报、节日和删除',
     getLastActiveAt: async () => null,
     getNotificationSettings: async () => null,
   };
+  const participants = () => [
+    { kind: 'user', refId: userId },
+    { kind: 'character', refId: characterId },
+  ];
   const chat = {
-    getConversation: async () => ({
-      participants: [
-        { kind: 'user', refId: userId },
-        { kind: 'character', refId: characterId },
-      ],
-    }),
+    getConversation: async () => ({ participants: participants() }),
+    // T-20261104f：订阅者在本事务里用 getParticipants(会话, tx) 读参与者
+    getParticipants: async () => participants(),
   } as unknown as ChatReadPort;
   let bus: EventBus;
   let registry: UserDataRegistry;

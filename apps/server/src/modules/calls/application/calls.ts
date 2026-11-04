@@ -519,7 +519,8 @@ export class CallService implements CallSessionPort, UserDataOwner, OnModuleInit
 
   /** 私聊里的通话记录（CallRecordContent）。会话已停用（删好友）时不写，不影响结束。 */
   private async writeRecord(tx: DbTx, row: CallRow): Promise<void> {
-    const participants = await this.chatRead.getParticipants(row.conversationId);
+    // T-20261104f：在调用方事务里读参与者（不锁会话行；随后 postMessage 才锁），kernel.md「事务与端口」。
+    const participants = await this.chatRead.getParticipants(row.conversationId, tx);
     const sender =
       row.direction === 'outgoing'
         ? participants.find((p) => p.kind === 'user' && p.refId === row.userId)

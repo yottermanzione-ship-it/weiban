@@ -48,7 +48,8 @@ export class OfficialAssistantLifecycle implements OnModuleInit {
         if (p.conversationType !== 'direct' || p.senderKind !== 'user' || !p.senderRefId) return;
         if (p.scope !== 'normal') return;
         if (!OFFICIAL_TRIGGER_CONTENT_TYPES.has(p.contentType)) return;
-        const conversation = await this.chatRead.getConversation(p.conversationId);
+        // T-20261104f：在本事务里读（kernel.md「事务与端口」）；之后只投递任务，不再拿别的锁。
+        const conversation = await this.chatRead.getConversation(p.conversationId, tx);
         if (!conversation || !isOfficialConversation(conversation)) return;
         await this.jobs.send<OfficialReplyJob>(
           OFFICIAL_REPLY_JOB,
@@ -66,15 +67,19 @@ export class OfficialAssistantLifecycle implements OnModuleInit {
     this.bus.subscribe({
       consumer: 'official.on_user_registered',
       eventType: 'identity.user_registered',
-      handle: async (event) => {
+      handle: async (event, tx) => {
         const userId = event.payload.userId;
-        try {
-          if ((await this.accounts.getAccountStatus(userId)) !== 'active') return;
-          await this.engine.ensureConversation(userId);
-        } catch (error) {
-          // 注册补齐失败不阻塞注册流程：老用户自动补走 HTTP ensure 端口兜底。
-          this.logger.warn(`注册补齐官方会话失败：userId=${userId} ${(error as Error).message}`);
-        }
+        // T-20261104f：补齐是自己一个事务（失败只记 warn，不能让收件箱记录跟着回滚重投），
+        // 所以放到本订阅者事务提交之后做，不在拿着事务时另开连接（kernel.md「事务与端口」）。
+        tx.afterCommit(async () => {
+          try {
+            if ((await this.accounts.getAccountStatus(userId)) !== 'active') return;
+            await this.engine.ensureConversation(userId);
+          } catch (error) {
+            // 注册补齐失败不阻塞注册流程：老用户自动补走 HTTP ensure 端口兜底。
+            this.logger.warn(`注册补齐官方会话失败：userId=${userId} ${(error as Error).message}`);
+          }
+        });
       },
     });
     await this.jobs.work<OfficialReplyJob>(
