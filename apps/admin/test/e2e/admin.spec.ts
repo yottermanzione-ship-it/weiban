@@ -37,6 +37,34 @@ async function authorization(page: Page) {
       }),
   );
 }
+
+test('新增情景模式生成有效标识，保存和编辑后刷新仍保留', async ({ page }) => {
+  await login(page);
+  await page.goto('/scenario-modes');
+  await page.getByRole('button', { name: /新增情景模式$/ }).click();
+  await page.getByLabel('名称', { exact: true }).fill('合成收尾情景');
+  await page.getByLabel('说明', { exact: true }).fill('仅本地合成数据');
+  const created = page.waitForResponse(
+    (r) => r.request().method() === 'POST' && r.url().endsWith('/admin/scenario-modes'),
+  );
+  await page.getByRole('button', { name: '保存', exact: true }).click();
+  const response = await created;
+  expect(response.status()).toBe(201);
+  const sent = response.request().postDataJSON() as { id: string };
+  expect(sent.id).toMatch(/^[a-z][a-z0-9_]{0,31}$/);
+  await expect(page.getByRole('row').filter({ hasText: '合成收尾情景' })).toHaveCount(1);
+  await page.getByRole('row').filter({ hasText: '合成收尾情景' }).click();
+  await page.getByLabel('说明', { exact: true }).fill('保存后修改的说明');
+  const edited = page.waitForResponse(
+    (r) => r.request().method() === 'PATCH' && r.url().endsWith(`/admin/scenario-modes/${sent.id}`),
+  );
+  await page.getByRole('button', { name: '保存', exact: true }).click();
+  expect((await edited).status()).toBe(200);
+  await page.reload();
+  const row = page.getByRole('row').filter({ hasText: '合成收尾情景' });
+  await expect(row).toHaveCount(1);
+  await expect(row).toContainText('保存后修改的说明');
+});
 async function picture(page: Page) {
   return {
     name: 'photo.png',
