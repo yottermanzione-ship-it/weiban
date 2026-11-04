@@ -82,7 +82,7 @@ describe('ModelRateService service pricing', () => {
         modelKey: input.modelKey,
         unit: 'search_call',
         band: null,
-        priceMicros: 5000,
+        priceMicros: 5200,
         costMicros: 4000,
       },
     ]);

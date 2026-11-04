@@ -7,7 +7,7 @@
  * 生成新版本并立即发布——冻结仍引用价目表版本，扣费、对账规则都不变（billing.md 第 4 节）。
  */
 import { Inject, Injectable } from '@nestjs/common';
-import { PRICE_PUBLISH_LOCK_SQL } from './price-publishing.js';
+import { costPlusPrice, PRICE_PUBLISH_LOCK_SQL } from './price-publishing.js';
 import type {
   ActiveModelServiceRate,
   ActiveModelTokenRates,
@@ -131,6 +131,30 @@ export class ModelRateService implements BillingModelRatePort {
   }): Promise<{ priceVersionId: string; published: boolean }> {
     checkPrices(input.price);
     checkPrices(input.cost);
+    const cost = {
+      ...input.cost,
+      cachedInputPerMillionMicros:
+        input.cost.cachedInputPerMillionMicros ?? input.cost.inputPerMillionMicros,
+    };
+    input = {
+      ...input,
+      cost,
+      price: {
+        inputPerMillionMicros: costPlusPrice(cost.inputPerMillionMicros),
+        outputPerMillionMicros: costPlusPrice(cost.outputPerMillionMicros),
+        cachedInputPerMillionMicros: costPlusPrice(cost.cachedInputPerMillionMicros),
+        cacheWrite5mPerMillionMicros:
+          cost.cacheWrite5mPerMillionMicros == null
+            ? null
+            : costPlusPrice(cost.cacheWrite5mPerMillionMicros),
+        cacheWrite1hPerMillionMicros:
+          cost.cacheWrite1hPerMillionMicros == null
+            ? null
+            : costPlusPrice(cost.cacheWrite1hPerMillionMicros),
+      },
+    };
+    if (Object.values(input.price).some((value) => value != null && value > 100_000_000_000))
+      throw new AppError('bad_request', '模型成本加三成后不能超过十万元');
     return this.database.transaction(async (tx) => {
       // 所有发布（含 PriceService.activate）都先锁当前生效版本，串行切换
       await tx.query(PRICE_PUBLISH_LOCK_SQL);
@@ -342,6 +366,12 @@ export class ModelRateService implements BillingModelRatePort {
       )
     )
       throw new AppError('bad_request', '服务单价必须为不重复的非 token 单位和非负整数微元');
+    input = {
+      ...input,
+      rates: input.rates.map((rate) => ({ ...rate, priceMicros: costPlusPrice(rate.costMicros) })),
+    };
+    if (input.rates.some((r) => r.priceMicros > 100_000_000_000))
+      throw new AppError('bad_request', '服务成本加三成后不能超过十万元');
     return this.database.transaction(async (tx) => {
       // 不能仅锁 active 行：初次发布不存在该行，并发发布仍须串行。
       await tx.query(PRICE_PUBLISH_LOCK_SQL);

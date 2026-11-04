@@ -72,6 +72,7 @@ import {
   type BoundsFormValues,
 } from './billing-bounds.js';
 import { autoModelKey } from './model-key.js';
+import { CostPlusHint, costPlusYuan } from './cost-plus.js';
 import {
   ModelsDevBar,
   ModelsDevPanel,
@@ -114,7 +115,7 @@ function ratesOf(
   return {
     input: input ?? 0,
     output: output ?? 0,
-    cache: cache ?? 0,
+    cache: cache ?? input ?? 0,
     // 3.24：缓存写入价可不填（null = 按输入价计）
     cacheWrite5m: cacheWrite5m ?? null,
     cacheWrite1h: cacheWrite1h ?? null,
@@ -770,15 +771,10 @@ interface ModelFormValues {
   discountRange?: [dayjs.Dayjs, dayjs.Dayjs] | null;
   billingMode?: 'token' | 'service';
   serviceRates?: ServicePriceDraft[];
-  priceInput?: number | null;
-  priceOutput?: number | null;
-  priceCache?: number | null;
   costInput?: number | null;
   costOutput?: number | null;
   costCache?: number | null;
   displayMultiplierManual?: number | null;
-  priceCacheWrite5m?: number | null;
-  priceCacheWrite1h?: number | null;
   costCacheWrite5m?: number | null;
   costCacheWrite1h?: number | null;
 }
@@ -954,7 +950,7 @@ export function ModelWizard({
     setConfirmVision(false);
     if (
       !force &&
-      ((values.billingMode !== 'service' && model?.hasTimeBands && values.priceInput != null) ||
+      ((values.billingMode !== 'service' && model?.hasTimeBands && values.costInput != null) ||
         (values.billingMode === 'service' &&
           values.serviceRates?.some((r) =>
             model?.serviceRates?.some((old) => old.unit === r.unit && old.hasTimeBands),
@@ -1048,8 +1044,8 @@ export function ModelWizard({
             ? {
                 serviceRates: values.serviceRates?.map((r) => ({
                   unit: r.unit,
-                  price: r.price!,
-                  cost: r.cost ?? null,
+                  price: costPlusYuan(r.cost!),
+                  cost: r.cost!,
                 })),
               }
             : {}),
@@ -1057,11 +1053,11 @@ export function ModelWizard({
             values.billingMode === 'service'
               ? null
               : ratesOf(
-                  values.priceInput,
-                  values.priceOutput,
-                  values.priceCache,
-                  values.priceCacheWrite5m,
-                  values.priceCacheWrite1h,
+                  values.costInput == null ? null : costPlusYuan(values.costInput),
+                  values.costOutput == null ? null : costPlusYuan(values.costOutput),
+                  values.costCache == null ? null : costPlusYuan(values.costCache),
+                  values.costCacheWrite5m == null ? null : costPlusYuan(values.costCacheWrite5m),
+                  values.costCacheWrite1h == null ? null : costPlusYuan(values.costCacheWrite1h),
                 ),
           costRates:
             values.billingMode === 'service'
@@ -1165,10 +1161,12 @@ export function ModelWizard({
         lastAuto.current.set(key, value);
       }
     };
-    set(['priceInput'], match.priceCny.input);
-    set(['priceOutput'], match.priceCny.output);
-    set(['priceCache'], match.priceCny.cacheRead);
-    set(['priceCacheWrite5m'], match.priceCny.cacheWrite);
+    if (mode === 'manual') {
+      set(['costInput'], match.priceCny.input);
+      set(['costOutput'], match.priceCny.output);
+      set(['costCache'], match.priceCny.cacheRead);
+      set(['costCacheWrite5m'], match.priceCny.cacheWrite);
+    }
     if (!(form.getFieldValue('displayName') as string | undefined)?.trim())
       updates.push({ name: ['displayName'], value: match.name.slice(0, 60) });
     if (!(form.getFieldValue('vendorName') as string | undefined)?.trim()) {
@@ -1281,14 +1279,9 @@ export function ModelWizard({
           serviceRates: editableServiceRates(model?.serviceRates).length
             ? editableServiceRates(model?.serviceRates).map((r) => ({ ...r }))
             : [{ unit: 'search_call', price: null, cost: null }],
-          priceInput: model?.rates?.input ?? null,
-          priceOutput: model?.rates?.output ?? null,
-          priceCache: model?.rates?.cache ?? null,
           costInput: model?.costRates?.input ?? null,
           costOutput: model?.costRates?.output ?? null,
           costCache: model?.costRates?.cache ?? null,
-          priceCacheWrite5m: model?.rates?.cacheWrite5m ?? null,
-          priceCacheWrite1h: model?.rates?.cacheWrite1h ?? null,
           costCacheWrite5m: model?.costRates?.cacheWrite5m ?? null,
           costCacheWrite1h: model?.costRates?.cacheWrite1h ?? null,
           displayMultiplierManual: model?.displayMultiplierManual ?? null,
@@ -1535,7 +1528,7 @@ export function ModelWizard({
 
         <FormSection
           title="③ 价格"
-          desc="1 元 = 100 积分；按实际计费单位填写，不把搜索次数当作 token"
+          desc="填写实际成本或已核定参考成本，日常售价自动加三成；1 元 = 100 积分，限时折扣另算"
         />
         <Form.Item
           name="billingMode"
@@ -1553,39 +1546,48 @@ export function ModelWizard({
         <div hidden={billingMode === 'service'}>
           <div className="form-three">
             <Form.Item
-              name="priceInput"
-              label="输入（元）"
-              extra={<FieldHelp>没命中缓存时，每百万 token 收多少。</FieldHelp>}
+              name="costInput"
+              label="输入成本（元）"
+              rules={[
+                { required: billingMode !== 'service', message: '填写输入成本；零成本请明确填 0' },
+              ]}
+              extra={<CostPlusHint name="costInput" />}
             >
               <InputNumber
                 min={0}
-                max={100_000}
+                max={76923.076923}
+                precision={6}
                 step={0.01}
                 style={{ width: '100%' }}
                 placeholder="0"
               />
             </Form.Item>
             <Form.Item
-              name="priceOutput"
-              label="输出（元）"
-              extra={<FieldHelp>模型写出来的内容，每百万 token 收多少。</FieldHelp>}
+              name="costOutput"
+              label="输出成本（元）"
+              rules={[
+                { required: billingMode !== 'service', message: '填写输出成本；零成本请明确填 0' },
+              ]}
+              extra={<CostPlusHint name="costOutput" />}
             >
               <InputNumber
                 min={0}
-                max={100_000}
+                max={76923.076923}
+                precision={6}
                 step={0.01}
                 style={{ width: '100%' }}
                 placeholder="0"
               />
             </Form.Item>
             <Form.Item
-              name="priceCache"
-              label="缓存命中（元）"
-              extra={<FieldHelp>命中缓存时便宜很多，一般填输入价的 1/10。</FieldHelp>}
+              name="costCache"
+              label="缓存命中成本（元，可不填）"
+              extra={<CostPlusHint name="costCache" />}
             >
               <InputNumber
                 min={0}
-                max={100_000}
+                max={76923.076923}
+                precision={6}
                 step={0.01}
                 style={{ width: '100%' }}
                 placeholder="0"
@@ -1594,35 +1596,36 @@ export function ModelWizard({
           </div>
           <div className="form-two">
             <Form.Item
-              name="priceCacheWrite5m"
-              label="缓存写入 · 5 分钟（元，可不填）"
+              name="costCacheWrite5m"
+              label="缓存写入成本 · 5 分钟（元，可不填）"
               extra={
                 <FieldHelp>
-                  上游报告「缓存写入」时按它收（Claude 一般是输入价的 1.25 倍）；不填 =
-                  按输入价。只有 Anthropic 协议的线路会报告缓存写入。
+                  填写供应商每百万 token 的缓存写入成本；售价自动加三成。不填沿用输入成本和售价。
                 </FieldHelp>
               }
             >
               <InputNumber
                 min={0}
-                max={100_000}
+                max={76923.076923}
+                precision={6}
                 step={0.01}
                 style={{ width: '100%' }}
                 placeholder="同输入价"
               />
             </Form.Item>
             <Form.Item
-              name="priceCacheWrite1h"
-              label="缓存写入 · 1 小时（元，可不填）"
+              name="costCacheWrite1h"
+              label="缓存写入成本 · 1 小时（元，可不填）"
               extra={
                 <FieldHelp>
-                  1 小时缓存的写入价（Claude 一般是输入价的 2 倍）；不填 = 按输入价。
+                  填写供应商每百万 token 的缓存写入成本；售价自动加三成。不填沿用输入成本和售价。
                 </FieldHelp>
               }
             >
               <InputNumber
                 min={0}
-                max={100_000}
+                max={76923.076923}
+                precision={6}
                 step={0.01}
                 style={{ width: '100%' }}
                 placeholder="同输入价"
@@ -1692,50 +1695,6 @@ export function ModelWizard({
           {model?.pointsPerReply != null
             ? `用户端显示约每条 ${formatPoints(model.pointsPerReply * 10_000)} 积分（有最近 7 天数据时按平均实扣，否则按约 1 万 token 输入、八成命中缓存、200 token 输出估算）；扣费按实际用量。`
             : '保存后系统会算一个「每条回复约多少积分」的参考值。'}
-        </div>
-        <div hidden={billingMode === 'service'}>
-          <Collapse
-            ghost
-            size="small"
-            items={[
-              {
-                key: 'cost',
-                label: '成本价（对账用，不填 = 和售价相同）',
-                forceRender: true,
-                children: (
-                  <div className="form-three">
-                    <Form.Item name="costInput" label="成本 · 输入">
-                      <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="costOutput" label="成本 · 输出">
-                      <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="costCache" label="成本 · 缓存">
-                      <InputNumber min={0} max={100_000} step={0.01} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="costCacheWrite5m" label="成本 · 缓存写入 5 分钟">
-                      <InputNumber
-                        min={0}
-                        max={100_000}
-                        step={0.01}
-                        style={{ width: '100%' }}
-                        placeholder="同售价"
-                      />
-                    </Form.Item>
-                    <Form.Item name="costCacheWrite1h" label="成本 · 缓存写入 1 小时">
-                      <InputNumber
-                        min={0}
-                        max={100_000}
-                        step={0.01}
-                        style={{ width: '100%' }}
-                        placeholder="同售价"
-                      />
-                    </Form.Item>
-                  </div>
-                ),
-              },
-            ]}
-          />
         </div>
         <Collapse
           ghost

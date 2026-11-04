@@ -255,8 +255,8 @@ test('价目草稿精确微元、模型启用与缺价发布确认', async ({ pa
   await page.getByLabel('显示名', { exact: true }).fill('浏览器测试模型');
   await page.getByLabel('出品方（厂商）', { exact: true }).fill('Browser');
   await page.getByRole('checkbox', { name: '识图', exact: true }).check();
-  await page.getByLabel('输入（元）', { exact: true }).fill('1.234567');
-  await page.getByLabel('输出（元）', { exact: true }).fill('1.234567');
+  await page.getByLabel('输入成本（元）', { exact: true }).fill('1.234567');
+  await page.getByLabel('输出成本（元）', { exact: true }).fill('1.234567');
   const modelSaved = page.waitForResponse(
     (r) => r.request().method() === 'PUT' && /\/admin\/model\/models\//.test(r.url()),
   );
@@ -264,19 +264,20 @@ test('价目草稿精确微元、模型启用与缺价发布确认', async ({ pa
   const response = await modelSaved;
   expect(response.ok()).toBe(true);
   const model = await response.json();
+  expect(model.rates.input).toBe(1.604938);
+  expect(model.costRates.input).toBe(1.234567);
   await expect(page.getByRole('row').filter({ hasText: '浏览器测试模型' })).toBeVisible();
   await page.goto('/prices');
   await page.getByRole('button', { name: /新建价格版本$/ }).click();
   await page.getByLabel('版本名称', { exact: true }).fill('浏览器价格');
   await page.locator('.price-edit-row').getByRole('combobox').first().fill(model.modelKey);
-  await page.locator('.price-edit-row').getByRole('spinbutton').nth(0).fill('1.234567');
-  await page.locator('.price-edit-row').getByRole('spinbutton').nth(1).fill('0.123456');
+  await page.locator('.price-edit-row').getByRole('spinbutton').fill('0.123456');
   const saved = page.waitForResponse(
     (r) => r.url().endsWith('/price-versions') && r.request().method() === 'POST',
   );
   await page.getByRole('button', { name: '保存', exact: true }).click();
   const price = await (await saved).json();
-  expect(price.items[0].priceMicros).toBe(1234567);
+  expect(price.items[0].priceMicros).toBe(160493);
   expect(price.items[0].costMicros).toBe(123456);
   const row = page.getByRole('row').filter({ hasText: '浏览器价格' });
   await row.getByRole('button', { name: '立即启用', exact: true }).click();
@@ -285,6 +286,7 @@ test('价目草稿精确微元、模型启用与缺价发布确认', async ({ pa
   await page.getByRole('button', { name: /新建价格版本$/ }).click();
   await page.getByLabel('版本名称', { exact: true }).fill('缺模型测试');
   await page.locator('.price-edit-row').getByRole('combobox').first().fill('browser/other');
+  await page.locator('.price-edit-row').getByRole('spinbutton').fill('0');
   await page.getByRole('button', { name: '保存', exact: true }).click();
   const missing = page.getByRole('row').filter({ hasText: '缺模型测试' });
   await missing.getByRole('button', { name: '立即启用', exact: true }).click();
