@@ -1,6 +1,9 @@
 /** Q028：改名审计不复制账号名；历史/已匿名化/迟到记录都能清理并核验。 */
 import 'reflect-metadata';
 import { randomBytes } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, dirname, join, resolve } from 'node:path';
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { afterAll, beforeAll, expect, it } from 'vitest';
@@ -29,14 +32,18 @@ describeDb('账号改名审计隐私清理', () => {
   let db: Database;
   let audit: AuditLog;
   let commands: IdentityCommands;
+  let mediaDir: string | undefined;
+  const tempRoot = resolve(tmpdir());
   const clock = new TestClock('2026-11-04T09:00:00Z');
 
   beforeAll(async () => {
     await resetTestDatabase();
+    // Purge verification scans the whole media store; other suites' files must stay separate.
+    mediaDir = await mkdtemp(join(tempRoot, 'weiban-identity-privacy-'));
     const fixture = await Test.createTestingModule({
       imports: [
         AppModule.forRoot({
-          config: testConfig(),
+          config: testConfig({ MEDIA_DISK_ROOT: mediaDir }),
           clock,
           logger: captureLogger().logger,
           kekRing: testKekRing().ring,
@@ -52,6 +59,16 @@ describeDb('账号改名审计隐私清理', () => {
   }, 120_000);
   afterAll(async () => {
     await app?.close();
+    if (mediaDir) {
+      const target = resolve(mediaDir);
+      if (
+        dirname(target) !== tempRoot ||
+        !basename(target).startsWith('weiban-identity-privacy-')
+      ) {
+        throw new Error('Refusing to clean a media directory outside this test fixture');
+      }
+      await rm(target, { recursive: true, force: true });
+    }
   });
 
   async function insertLegacy(
@@ -145,7 +162,9 @@ describeDb('账号改名审计隐私清理', () => {
     expect(before.ok).toBe(false);
     expect(before.checks.find((c) => c.name.startsWith('platform:audit_log'))?.count).toBe(1);
     await audit.anonymizeUser(id, hashUserId(id));
-    expect((await commands.verifyPurgedReport(id)).ok).toBe(true);
+    const after = await commands.verifyPurgedReport(id);
+    expect(after.checks.filter((check) => check.blocking && check.count > 0)).toEqual([]);
+    expect(after.ok).toBe(true);
   });
 
   it('迁移覆盖全部旧改名审计，不误删其他动作/模块；回退不恢复隐私明文', async () => {
