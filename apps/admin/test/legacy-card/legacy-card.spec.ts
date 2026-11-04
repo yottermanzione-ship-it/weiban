@@ -28,8 +28,6 @@ test('旧卡按旧字段渲染：不出现 WB-Card 缺项提示，头像真实�
   await mockMedia(page);
   await page.goto(FIXTURE);
   await expect(page.getByLabel(/角色名字/)).toHaveValue('吴云飞');
-  await expect(page.getByLabel(/核心人设/)).toHaveValue('核心人设原文');
-  await expect(page.getByLabel(/说话风格/)).toHaveValue('说话风格原文');
   // 旧卡不再落到 WB-Card 编辑器，也就没有「待完善 12 项」。
   await expect(page.getByText('待完善')).toHaveCount(0);
   await expect(page.getByText('人设卡（WB-Card 1.0）')).toHaveCount(0);
@@ -42,25 +40,31 @@ test('旧卡按旧字段渲染：不出现 WB-Card 缺项提示，头像真实�
   await expect
     .poll(() => image.evaluate((node) => (node as HTMLImageElement).naturalWidth))
     .toBeGreaterThan(0);
-  await page.getByText('raw_json').click();
+  await page.getByRole('button', { name: '人设正文', exact: true }).click();
+  await expect(page.getByLabel('核心人设', { exact: true })).toHaveValue('核心人设原文');
+  await expect(page.getByLabel('说话风格', { exact: true })).toHaveValue('说话风格原文');
+  await page.getByRole('button', { name: '更多角色操作', exact: true }).click();
+  await page.getByRole('menuitem', { name: '版本记录与来源存档', exact: true }).click();
+  await page.getByText('raw_json', { exact: true }).click();
   await expect(page.getByText('{"legacy":true}')).toBeVisible();
 });
 
 test('局部保存：只提交改动、清空走 clear、世界书与示例按 id，保存后读回', async ({ page }) => {
   await mockMedia(page);
   await page.goto(FIXTURE);
+  await page.getByRole('textbox', { name: '昵称 留空 = 清空', exact: true }).fill('');
+  await page.getByRole('button', { name: '人设正文', exact: true }).click();
   await expect(page.getByLabel(/核心人设/)).toHaveValue('核心人设原文');
   await page.getByLabel(/核心人设/).fill('新的核心人设');
-  await page.getByLabel(/昵称/).fill('');
   await page.getByLabel(/角色说/).fill('嗨呀');
   await page
     .getByRole('button', { name: /删\s*除/ })
     .first()
     .click();
   await page.locator('.ant-popconfirm .ant-btn-primary').click();
-  await expect(page.getByText('世界书（0 条）')).toBeVisible();
-  await page.getByRole('button', { name: /^保\s*存$/ }).click();
-  await expect(page.getByLabel('保存结果')).toHaveText('已保存旧卡人设');
+  await expect(page.getByText('背景与触发词条（0 条）')).toBeVisible();
+  await page.getByRole('button', { name: '保存角色资料', exact: true }).click();
+  await expect(page.getByLabel('保存结果')).toHaveText('已保存角色资料');
 
   const saved = await savedBodies(page);
   expect(saved).toHaveLength(1);
@@ -73,17 +77,28 @@ test('局部保存：只提交改动、清空走 clear、世界书与示例按 i
 
   // 保存后读回：表单显示服务端返回的新版本。
   await expect(page.getByLabel(/核心人设/)).toHaveValue('新的核心人设');
-  await expect(page.getByLabel(/昵称/)).toHaveValue('');
-  await expect(page.getByText('当前版本 v8')).toBeVisible();
-  await expect(page.getByText('世界书（0 条）')).toBeVisible();
+  await expect(page.getByLabel(/角色说/)).toHaveValue('嗨呀');
+  await expect(page.getByText('背景与触发词条（0 条）')).toBeVisible();
+  await page.getByRole('button', { name: '角色管理首页', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: '昵称 留空 = 清空', exact: true })).toHaveValue(
+    '',
+  );
+  await page.getByRole('textbox', { name: '昵称 留空 = 清空', exact: true }).fill('版本检查');
+  await page.getByRole('button', { name: '保存角色资料', exact: true }).click();
+  await expect.poll(() => savedBodies(page)).toHaveLength(2);
+  expect((await savedBodies(page))[1]).toMatchObject({
+    expectedRevision: 8,
+    fields: { nickname: '版本检查' },
+  });
 });
 
 test('revision 冲突：返回 409 时明确提示并可读取最新内容，不假装保存成功', async ({ page }) => {
   await mockMedia(page);
   await page.goto(`${FIXTURE}?conflict=1`);
+  await page.getByRole('button', { name: '人设正文', exact: true }).click();
   await expect(page.getByLabel(/核心人设/)).toHaveValue('核心人设原文');
   await page.getByLabel(/核心人设/).fill('冲突保存');
-  await page.getByRole('button', { name: /^保\s*存$/ }).click();
+  await page.getByRole('button', { name: '保存角色资料', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('角色已被其他人修改');
   await expect(page.getByRole('button', { name: '读取最新内容' })).toBeVisible();
   expect(await savedBodies(page)).toHaveLength(0);
@@ -104,8 +119,8 @@ test('替换头像：上传后预览更新，保存带上 avatarMediaId 并读�
     'src',
     new RegExp(NEW_AVATAR),
   );
-  await page.getByRole('button', { name: /^保\s*存$/ }).click();
-  await expect(page.getByLabel('保存结果')).toHaveText('已保存旧卡人设');
+  await page.getByRole('button', { name: '保存角色资料', exact: true }).click();
+  await expect(page.getByLabel('保存结果')).toHaveText('已保存角色资料');
   const saved = await savedBodies(page);
   expect((saved[0] as Record<string, unknown>).avatarMediaId).toBe(NEW_AVATAR);
   await expect(page.getByRole('img', { name: '吴云飞头像' })).toHaveAttribute(
