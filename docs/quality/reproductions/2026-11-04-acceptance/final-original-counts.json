@@ -1,0 +1,134 @@
+{
+  "sha": "0bf2434cdc080b9920c27a6db40e0d7b371c7fc1",
+  "passed": 153,
+  "failed": 0,
+  "pending": 0,
+  "files": [
+    {
+      "file": "apps/server/test/arena-dataset.test.ts",
+      "passed": 31,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/server/test/arena-sync.test.ts",
+      "passed": 9,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/server/test/character-image-fallback.test.ts",
+      "passed": 5,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/server/test/closeout-assembly.test.ts",
+      "passed": 1,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/server/test/legacy-character-media-import.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/server/test/web-feedback-catalog.test.ts",
+      "passed": 5,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/server/src/cli/seed-sticker-labels-options.test.ts",
+      "passed": 7,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/server/src/cli/voice-call-pipeline-options.test.ts",
+      "passed": 17,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/server/src/cli/voice-catalog-options.test.ts",
+      "passed": 17,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/server/src/platform/clock/clock.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/server/src/platform/config/config.test.ts",
+      "passed": 10,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/server/src/platform/crypto/aes-gcm.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/server/src/platform/crypto/envelope-batch.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/server/src/platform/crypto/kek-ring.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/server/src/platform/http/app-error.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/server/src/platform/logging/sanitize.test.ts",
+      "passed": 5,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/server/src/modules/client-logs/application/client-logs.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/server/src/modules/importer/application/merge-results.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/server/src/modules/policy/application/character-mode-eligibility.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/server/src/modules/recap/application/recap.service.test.ts",
+      "passed": 10,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/server/src/modules/recap/domain/recap-rules.test.ts",
+      "passed": 11,
+      "failed": 0,
+      "pending": 0
+    }
+  ]
+}
