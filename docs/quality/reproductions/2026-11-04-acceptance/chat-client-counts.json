@@ -1,0 +1,38 @@
+[
+  {
+    "file": "apps/web/test/guide-triggers.test.ts",
+    "passed": 9,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/web/test/guided-tour-policy.test.ts",
+    "passed": 4,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/web/test/permission-steps.test.ts",
+    "passed": 6,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/web/test/site-search.test.ts",
+    "passed": 16,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "packages/client-core/test/sync-runner.test.ts",
+    "passed": 6,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "packages/client-core/test/sync-vectors.test.ts",
+    "passed": 19,
+    "failed": 0,
+    "pending": 0
+  }
+]
