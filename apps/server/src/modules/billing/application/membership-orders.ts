@@ -1,8 +1,8 @@
 /**
  * 3.17（会员 v5，docs/refactor/16-membership-v5.md §3、§7）：PRO+ 开通订单、会员配置、注册赠送。
  *
- * - 现阶段没有真实支付：管理员在后台替用户开通某档，本服务在**同一事务**里：锁用户钱包 → 查幂等 → 判断首次价 →
- *   经 identity 写端口叠加到期时间 → 记订单 → 发一次性赠送积分（admin_grant，bonusCredit，计入赠送余额）。
+ * - 现阶段没有真实支付：管理员在后台替用户开通某档，本服务在**同一事务**里：串行同用户订单 → 查幂等 → 判断首次价 →
+ *   经 identity 写端口锁用户并叠加到期时间 → 锁钱包 → 记订单 → 发一次性赠送积分（admin_grant，bonusCredit，计入赠送余额）。
  * - 首次价每人限一次（任一档）：部分唯一索引 membership_orders_first_purchase_key 兜底并发。
  * - 配置存 billing.settings：membership_settings（三档价格 / 赠送、联系说明、注册赠送积分）。
  * - 注册赠送：identity.user_registered 时按当时配置发一次（幂等键 signup_bonus:{userId}），默认 0 不发。
@@ -207,8 +207,12 @@ export class MembershipOrderService {
 
   async createOrder(operatorUserId: string, input: z.output<typeof CreateMembershipOrder>) {
     const order = await this.database.transaction(async (tx) => {
-      // 锁顺序：用户钱包 → identity 用户行（extendProPlus 内）。同一用户的开通因此排队。
-      const account = await this.ledger.lockUserAccount(tx, input.userId);
+      // 先串行同用户订单，保护重试/首次价；随后统一为 identity 用户行 → 钱包。
+      // 制作申请在读会员后才冻结钱包，不能反过来持钱包等待用户行。
+      await tx.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended('billing:membership-order:' || $1, 0))",
+        [input.userId],
+      );
       const [existing] = await tx.db
         .select()
         .from(membershipOrders)
@@ -232,6 +236,7 @@ export class MembershipOrderService {
         { userId: input.userId, months: plan.months, operatorUserId },
         tx,
       );
+      const account = await this.ledger.lockUserAccount(tx, input.userId);
       const id = newId();
       const now = this.clock.now();
       let ledgerEntryId: string | null = null;
