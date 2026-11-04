@@ -285,7 +285,8 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
   ): Promise<MomentsPost> {
     const active = await this.activeIds(userId);
     await this.db.transaction(async (tx) => {
-      const row = await this.visiblePostForUser(tx.db, userId, postId, active);
+      // 与角色评论共用动态行锁，幂等检查、插入与通知在同一串行边界内。
+      const row = await this.visiblePostForUser(tx.db, userId, postId, active, true);
       const reply = input.replyToCommentId
         ? await this.replyTarget(tx.db, row.id, input.replyToCommentId)
         : null;
@@ -916,12 +917,14 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
     userId: string,
     postId: string,
     active: Set<string>,
+    lockForUpdate = false,
   ): Promise<PostRow> {
     parseContract(Id, postId);
-    const [row] = await runner
+    const query = runner
       .select()
       .from(posts)
       .where(and(eq(posts.id, postId), eq(posts.ownerUserId, userId)));
+    const [row] = await (lockForUpdate ? query.for('update') : query);
     if (
       !row ||
       (row.authorKind === 'character' &&

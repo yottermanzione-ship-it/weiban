@@ -78,3 +78,4 @@ export { LoginThrottle } from './infra/login-throttle.js';
 export { throttleKey } from './domain/rules.js';
 
 export { SettingsService } from './application/settings.js';
+export { MembershipService } from './application/membership.js';

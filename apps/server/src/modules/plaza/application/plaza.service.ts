@@ -504,7 +504,18 @@ export class PlazaService {
     };
 
     const workId = await this.db.transaction(async (tx) => {
+      // 与作品删除保持作品 → 草稿的锁序；草稿消费状态必须在锁内重读。
       const existing = draft.workId ? await this.store.lockWork(tx, draft.workId) : null;
+      const [currentDraft] = await tx.db
+        .select()
+        .from(publishDrafts)
+        .where(and(eq(publishDrafts.id, draftId), eq(publishDrafts.userId, userId)))
+        .for('update');
+      if (!currentDraft) throw new AppError('not_found', '发布草稿不存在');
+      if (currentDraft.consumedWorkId) return currentDraft.consumedWorkId;
+      if (currentDraft.expiresAt.getTime() <= this.clock.nowMs())
+        throw new AppError('conflict', '发布草稿已过期，请重新点「发布」');
+      if (draft.workId && !existing) throw new AppError('not_found', '作品不存在');
       if (existing) {
         if (existing.authorUserId !== userId) throw new AppError('not_found', '作品不存在');
         if (existing.status !== 'listed')

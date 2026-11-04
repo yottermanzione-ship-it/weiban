@@ -69,3 +69,5 @@ export class BillingTestQueries {
 export { ModelRateService } from './application/model-rates.js';
 export { PriceService } from './application/prices.js';
 export { BillingAdminService } from './application/admin.js';
+export { MembershipOrderService } from './application/membership-orders.js';
+export { ServiceFeeService } from './application/service-fees.js';
