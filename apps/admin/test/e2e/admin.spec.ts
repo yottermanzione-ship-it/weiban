@@ -174,9 +174,14 @@ test('积分提交丢失响应后手动重试，不重复赠送', async ({ page 
       await route.abort('failed');
     } else await route.continue();
   });
-  await page.getByRole('button', { name: '确认加积分', exact: true }).click();
-  await expect(page.getByRole('alert')).toBeVisible();
-  await page.getByRole('button', { name: '确认加积分', exact: true }).click();
+  // The loading icon can remain in the accessible name during its exit animation.
+  const submit = page.getByRole('button', { name: /^(loading )?确认加积分$/ });
+  await submit.click();
+  await expect(page.getByRole('alert')).toHaveText('网络暂不可用，请稍后重试');
+  expect(keys).toHaveLength(1);
+  await expect(submit).not.toHaveClass(/\bant-btn-loading\b/);
+  await expect(submit).toBeEnabled();
+  await submit.click();
   await expect(page.getByText('已加 12.3456 积分', { exact: true })).toBeVisible();
   expect(keys).toHaveLength(2);
   expect(keys[0]).toBe(keys[1]);

@@ -263,6 +263,18 @@ class MeScreenTest {
     }
 
     @Test fun firstProfileSaveUsesNativeFormAndRefreshesAccount() {
+        server.dispatcher =
+            object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    requests.add(request)
+                    return respond(request).apply {
+                        // The new home renders account metadata before its profile reload completes.
+                        if (request.method == "GET" && request.path == "/api/v1/me/profile" && profile.get().nickname != null) {
+                            setBodyDelay(1, TimeUnit.SECONDS)
+                        }
+                    }
+                }
+            }
         var theme = "green"
         compose.setContent {
             val auth by repository.auth.collectAsState()
@@ -284,7 +296,15 @@ class MeScreenTest {
         compose.onNodeWithText("选择并裁剪头像").assertDoesNotExist()
         compose.onNodeWithText("昵称").performTextInput("原生昵称")
         compose.onNodeWithText("下一步").performScrollTo().performClick()
-        compose.waitUntil(10_000) { compose.onAllNodesWithText("微伴号：native_user").fetchSemanticsNodes().isNotEmpty() }
+        // The account label alone does not prove the remounted page has loaded its profile.
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("微伴号：native_user").fetchSemanticsNodes().isNotEmpty() &&
+                compose.onAllNodesWithText("原生昵称").fetchSemanticsNodes().isNotEmpty() &&
+                compose
+                    .onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo))
+                    .fetchSemanticsNodes()
+                    .isEmpty()
+        }
         compose.onNodeWithText("原生昵称").assertIsDisplayed()
         assertTrue(
             repository.auth.value!!
