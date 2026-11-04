@@ -213,7 +213,8 @@ export class SettingsService
           actorId: userId,
           targetType: 'user',
           targetId: userId,
-          details: { previous: row.currentAlias ?? row.username, username: parsed.data },
+          // 记录改过哪个字段即可；账号名留在身份表，不复制到长期审计。
+          details: { changedFields: ['username'] },
         },
         tx,
       );

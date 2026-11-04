@@ -23,6 +23,7 @@ import {
   type UserDataRegistry,
 } from '../../../platform/index.js';
 import { MEDIA_STORAGE_AUDIT, type MediaStorageAudit } from '../../media/index.js';
+import { hashUserId } from './user-hash.js';
 
 export interface PurgeCheck {
   /** 检查项名称，如 module:chat、table:chat.messages.owner_user_id、platform:audit_log、storage:orphans */
@@ -133,8 +134,8 @@ export class PurgeVerifier {
       blocking: true,
     });
     checks.push({
-      name: 'platform:audit_log（明文用户 ID）',
-      count: await this.audit.countPlainUser(userId),
+      name: 'platform:audit_log（明文用户 ID / 账号名）',
+      count: await this.audit.countPlainUser(userId, hashUserId(userId)),
       blocking: true,
     });
     const events = await this.outbox.countMentioning(this.database, userId);
