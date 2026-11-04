@@ -6,7 +6,7 @@
 | 派发人 | 项目总负责人 |
 | 日期 | 2026-11-04 |
 | 分支 | `feat/character-search-p1-step3-20261104`（worktree `C:\wb-dev\wb-search-p1s3`） |
-| 状态 | 进行中 |
+| 状态 | 待验收（交接：`docs/handoffs/2026-11-04-character-search-p1-step3.md`） |
 | 来源 | 总经理 10-26 确认按 `docs/refactor/24-character-search.md` 全范围实施 P1；第 1、2 步已于 11-04 上线（#62，契约 5.5，迁移 0157） |
 
 ## 目标
