@@ -21,9 +21,9 @@
 | 7    | 生态与主动行为                             | 未完成验收；[报告 PR #73](https://github.com/yottermanzione-ship-it/weiban/pull/73)                            |
 | 8    | 玩法、小程序、健康与宠物                   | 首轮不通过；Q-031 到点提醒漏发；[报告 PR #74](https://github.com/yottermanzione-ship-it/weiban/pull/74) |
 | 9    | 通话与语音                                 | 未完成验收；[报告 PR #75](https://github.com/yottermanzione-ship-it/weiban/pull/75) |
-| 10   | 官方助手与公告                             | 未完成验收；[报告 PR #76](https://github.com/yottermanzione-ship-it/weiban/pull/76)；客服收费范围待确认 |
-| 11   | 微信、QQ、微博渠道                         | 未完成验收；81 项服务/协议与 9 项组件浏览器通过；真实授权/收发未测 |
-| 12   | 管理后台                                   | 待开始；资金相关入口提前随板块 1 检查                                                                          |
+| 10   | 官方助手与公告                             | 未完成验收；[报告 PR #76](https://github.com/yottermanzione-ship-it/weiban/pull/76)；总经理已确认小V免费 |
+| 11   | 微信、QQ、微博渠道                         | 未完成验收；[报告 PR #77](https://github.com/yottermanzione-ship-it/weiban/pull/77) |
+| 12   | 管理后台                                   | 不通过；旧 Q-014 再次复现，新 Q-032 为测试维护；报告准备提交 |
 | 13   | 部署、备份、回滚与告警                     | 待开始；交接期仅核对版本和健康状态                                                                             |
 
 每个板块单独登记报告和文档 PR；未验证项与缺陷分列。修复由 Claude 执行，收到修复 PR 后再复核。全产品结论目前为「未完成验收」。

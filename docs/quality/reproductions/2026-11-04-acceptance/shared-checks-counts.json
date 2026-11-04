@@ -1,0 +1,140 @@
+{
+  "sha": "0bf2434cdc080b9920c27a6db40e0d7b371c7fc1",
+  "passed": 209,
+  "failed": 0,
+  "pending": 0,
+  "files": [
+    {
+      "file": "packages/contracts/test/admin-model-key.test.ts",
+      "passed": 11,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "packages/contracts/test/character-card.test.ts",
+      "passed": 10,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "packages/contracts/test/character-purge.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "packages/contracts/test/ecology-actions.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "packages/contracts/test/generate.test.ts",
+      "passed": 9,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "packages/contracts/test/schemas.test.ts",
+      "passed": 45,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "packages/contracts/test/service-unit-pricing.test.ts",
+      "passed": 7,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "packages/contracts/test/site-search.test.ts",
+      "passed": 9,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "packages/contracts/test/voice-read-compat.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "packages/client-core/test/avatar.test.ts",
+      "passed": 19,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "packages/client-core/test/channel-credentials.test.ts",
+      "passed": 6,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "packages/client-core/test/client.test.ts",
+      "passed": 16,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "packages/client-core/test/history.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "packages/client-core/test/sync-runner.test.ts",
+      "passed": 6,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "packages/client-core/test/sync-vectors.test.ts",
+      "passed": 19,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "packages/client-core/test/wechat-bind-link.test.ts",
+      "passed": 13,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/admin/src/components/character-voice-state.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/admin/src/components/persona-text-sections.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/admin/src/features/batch-helpers.test.ts",
+      "passed": 9,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/admin/src/features/search-entities-helpers.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/admin/src/features/model/list-parse.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/admin/src/features/model/realtime-models.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "pending": 0
+    }
+  ]
+}
