@@ -99,7 +99,14 @@ function ReasonInput({ value, onChange }: { value: string; onChange: (v: string)
 function EntitiesTab() {
   const [q, setQ] = useState('');
   const [query, setQuery] = useState('');
-  const list = useRemote(SearchAdminEndpoints.listEntities, { query: { q: query } });
+  const [cursors, setCursors] = useState<Array<string | undefined>>([undefined]);
+  const list = useRemote(SearchAdminEndpoints.listEntities, {
+    query: { q: query, cursor: cursors.at(-1) },
+  });
+  function refreshFirstPage() {
+    setCursors([undefined]);
+    list.refresh();
+  }
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   return (
@@ -117,10 +124,14 @@ function EntitiesTab() {
         placeholder="按名字、实体键或标识查找"
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        onSearch={(value) => setQuery(value.trim())}
+        onSearch={(value) => {
+          setQuery(value.trim());
+          refreshFirstPage();
+        }}
         allowClear
       />
       {list.error && <Alert type="error" showIcon message={list.error} />}
+      {list.loading && <p role="status">正在读取实体列表…</p>}
       <div className="simple-list">
         {(list.data?.items ?? []).map((entity) => (
           <div className="simple-row" key={entity.entityKey}>
@@ -137,16 +148,39 @@ function EntitiesTab() {
             </Button>
           </div>
         ))}
-        {!list.loading && !list.data?.items.length && (
-          <div className="detail-muted">还没有实体。点「新建实体」登记第一个。</div>
+        {!list.loading && !list.error && !list.data?.items.length && (
+          <div className="detail-muted">
+            {query || cursors.length > 1
+              ? '当前没有匹配的实体。可重新搜索。'
+              : '还没有实体。点「新建实体」登记第一个。'}
+          </div>
         )}
       </div>
+      <Space style={{ marginTop: 14 }}>
+        <Button
+          disabled={list.loading || cursors.length === 1}
+          onClick={() => setCursors((pages) => pages.slice(0, -1))}
+        >
+          上一页
+        </Button>
+        <span>第 {cursors.length} 页</span>
+        <Button
+          disabled={list.loading || !!list.error || !list.data?.nextCursor}
+          onClick={() => {
+            const next = list.data?.nextCursor;
+            if (next) setCursors((pages) => [...pages, next]);
+          }}
+        >
+          下一页
+        </Button>
+        {list.error && <Button onClick={list.refresh}>重试</Button>}
+      </Space>
       {creating && (
         <CreateEntityModal
           onClose={() => setCreating(false)}
           onCreated={(detail) => {
             setCreating(false);
-            list.refresh();
+            refreshFirstPage();
             setOpenKey(detail.entity.entityKey);
           }}
         />
@@ -156,7 +190,7 @@ function EntitiesTab() {
           entityKey={openKey}
           onClose={() => setOpenKey(null)}
           onChanged={(key) => {
-            list.refresh();
+            refreshFirstPage();
             setOpenKey(key);
           }}
         />

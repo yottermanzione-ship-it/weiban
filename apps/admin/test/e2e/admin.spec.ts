@@ -22,6 +22,57 @@ async function records(page: Page) {
       }),
   );
 }
+
+test('搜索身份列表翻完六十五项、返回上一页、搜索后回到第一页，加载失败可重试', async ({ page }) => {
+  await login(page);
+  const auth = await authorization(page);
+  for (let i = 0; i < 65; i++) {
+    const response = await page.request.post('/api/v1/admin/search/entities', {
+      headers: { Authorization: auth },
+      data: {
+        displayName: `翻页合成 ${i}`,
+        identity: null,
+        identifiers: [],
+        sources: [],
+        characterIds: [],
+        reason: '仅本地分页合成检查',
+      },
+    });
+    expect(response.status()).toBe(200);
+  }
+  await page.goto('/search-entities');
+  const search = page.getByPlaceholder('按名字、实体键或标识查找');
+  await search.fill('翻页合成');
+  await search.press('Enter');
+  const rows = page.locator('.simple-row').filter({ hasText: '翻页合成' });
+  await expect(rows).toHaveCount(50);
+  const first = await rows.locator('b').allTextContents();
+  await page.route(
+    '**/admin/search/entities?*',
+    async (route) => {
+      if (!new URL(route.request().url()).searchParams.has('cursor')) return route.continue();
+      await route.abort('failed');
+    },
+    { times: 1 },
+  );
+  await page.getByRole('button', { name: '下一页', exact: true }).click();
+  await expect(page.getByRole('button', { name: '重试', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '重试', exact: true }).click();
+  await expect(rows).toHaveCount(15);
+  const second = await rows.locator('b').allTextContents();
+  expect(new Set([...first, ...second]).size).toBe(65);
+  await expect(page.getByRole('button', { name: '下一页', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: '上一页', exact: true }).click();
+  await expect(rows).toHaveCount(50);
+  expect(await rows.locator('b').allTextContents()).toEqual(first);
+  await page.getByRole('button', { name: '下一页', exact: true }).click();
+  await expect(rows).toHaveCount(15);
+  await search.fill('翻页合成 0');
+  await search.press('Enter');
+  await expect(rows).toHaveCount(1);
+  await expect(page.getByText('第 1 页', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '上一页', exact: true })).toBeDisabled();
+});
 async function authorization(page: Page) {
   return page.evaluate(
     () =>

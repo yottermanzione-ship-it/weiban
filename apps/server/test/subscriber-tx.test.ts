@@ -13,29 +13,36 @@ import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import {
   AdminCharacterWrite,
   CharacterCard,
+  Events,
   type ChatAdminPort,
   type ChatReadPort,
   type ChatUserPort,
   type Conversation,
   type Message,
   type ModelGatewayPort,
+  type MomentsReadPort,
   type Participant,
 } from '@weiban/contracts';
 import { AppModule } from '../src/app.module.js';
 import {
   DATABASE,
+  ENVELOPE_CRYPTO,
   EVENT_BUS,
   EVENT_DISPATCHER,
+  EVENT_INBOX,
   JOB_QUEUE,
   TestClock,
   newId,
   type Database,
   type EventBus,
   type EventDispatcher,
+  type EventInbox,
+  type EnvelopeCrypto,
+  type JobContext,
   type JobQueue,
 } from '../src/platform/index.js';
 import { IdentityCommands } from '../src/modules/identity/index.js';
@@ -47,6 +54,8 @@ import {
 import { ContactsCommands, ContactsTestQueries } from '../src/modules/contacts/testing.js';
 import { CHAT_ADMIN_PORT, CHAT_READ_PORT, CHAT_USER_PORT } from '../src/modules/chat/index.js';
 import { MODEL_GATEWAY_PORT } from '../src/modules/model-access/index.js';
+import { MOMENTS_READ_PORT } from '../src/modules/moments/index.js';
+import { AiRuntimeLifecycle } from '../src/modules/ai-runtime/testing.js';
 import { describeDb, resetTestDatabase } from './support/db.js';
 import { captureLogger, testConfig, testKekRing } from './support/fixtures.js';
 
@@ -89,6 +98,7 @@ describeDb('事件订阅者事务内写会话后经端口读同一会话不卡�
   let characterId: string;
   let userId: string;
   let conversationId: string;
+  let callWorker: (job: JobContext<unknown>) => Promise<void>;
   const probes: ProbeResult[] = [];
   const clock = new TestClock('2026-11-04T03:00:00Z');
   const gateway: ModelGatewayPort = {
@@ -124,7 +134,10 @@ describeDb('事件订阅者事务内写会话后经端口读同一会话不卡�
       .useValue(gateway)
       .compile();
     app = module.createNestApplication({ logger: false });
+    const work = vi.spyOn(app.get<JobQueue>(JOB_QUEUE), 'work');
     await app.init();
+    callWorker = work.mock.calls.find(([name]) => name === 'ai.follow_up_call')![1];
+    work.mockRestore();
     // 订阅者在同一事务里投递 pg-boss 任务
     await app.get<JobQueue>(JOB_QUEUE).start();
     db = app.get(DATABASE);
@@ -220,6 +233,191 @@ describeDb('事件订阅者事务内写会话后经端口读同一会话不卡�
     }
     throw Error('event backlog');
   }
+
+  it('6.1 朋友圈读到事务内新动态和评论，真实订阅者不自锁、不重复记片段；回滚一起撤销', async () => {
+    const moments = app.get<MomentsReadPort>(MOMENTS_READ_PORT);
+    const crypto = app.get<EnvelopeCrypto>(ENVELOPE_CRYPTO);
+    const bus = app.get<EventBus>(EVENT_BUS);
+    const postId = newId();
+    const commentId = newId();
+    const started = Date.now();
+    await expect(
+      db.transaction(async (tx) => {
+        await app.get(AiRuntimeLifecycle).store.lock(tx, userId);
+        const post = await crypto.seal(userId, `moments:post:${postId}`, '合成事务动态', tx);
+        const comment = await crypto.seal(
+          userId,
+          `moments:comment:${commentId}`,
+          '合成事务评论',
+          tx,
+        );
+        await tx.query(
+          `INSERT INTO moments.posts
+        (id,owner_user_id,author_kind,author_character_id,text_ciphertext,source_kind,create_key,created_at)
+          VALUES ($1::uuid,$2,'character',$3,$4,'daily_event',$1::text,$5)`,
+          [postId, userId, characterId, post, clock.now()],
+        );
+        await tx.query(
+          `INSERT INTO moments.comments
+        (id,post_id,author_kind,author_ref_id,text_ciphertext,mentions_user,create_key,created_at)
+          VALUES ($1::uuid,$2,'character',$3,$4,false,$1::text,$5)`,
+          [commentId, postId, characterId, comment, clock.now()],
+        );
+        const visible = await moments.getPostVisibleToCharacter(userId, postId, characterId, tx);
+        expect(visible?.text).toBe('合成事务动态');
+        expect(visible?.comments.map((c) => c.text)).toEqual(['合成事务评论']);
+        expect(
+          await moments.getPostVisibleToCharacter(newId(), postId, characterId, tx),
+        ).toBeNull();
+        expect(await moments.getPostVisibleToCharacter(userId, postId, newId(), tx)).toBeNull();
+        const postEvent = Events.MomentsPostCreated.parse({
+          eventId: newId(),
+          type: 'moments.post_created',
+          producer: 'moments',
+          version: 1,
+          occurredAt: clock.now().toISOString(),
+          payload: {
+            postId,
+            ownerUserId: userId,
+            authorKind: 'character',
+            authorCharacterId: characterId,
+            hasImages: false,
+            visibleCharacterIds: [],
+          },
+        });
+        const commentEvent = Events.MomentsCommentCreated.parse({
+          eventId: newId(),
+          type: 'moments.comment_created',
+          producer: 'moments',
+          version: 1,
+          occurredAt: clock.now().toISOString(),
+          payload: {
+            postId,
+            commentId,
+            ownerUserId: userId,
+            postAuthorKind: 'character',
+            postAuthorCharacterId: characterId,
+            authorKind: 'character',
+            authorCharacterId: characterId,
+            replyToKind: null,
+            replyToCharacterId: null,
+            mentionsUser: false,
+          },
+        });
+        for (let i = 0; i < 2; i++) {
+          await bus
+            .subscribersOf(postEvent.type)
+            .find((s) => s.consumer === 'ai.shared_episode_post')!
+            .handle(postEvent, tx);
+          await bus
+            .subscribersOf(commentEvent.type)
+            .find((s) => s.consumer === 'ai.shared_episode_comment')!
+            .handle(commentEvent, tx);
+        }
+        expect(
+          (
+            await tx.query<{ n: number }>(
+              `SELECT count(*)::int AS n FROM ai_runtime.shared_episodes
+        WHERE user_id=$1 AND kind IN ('moment_posted','moment_commented')`,
+              [userId],
+            )
+          ).rows[0]?.n,
+        ).toBe(2);
+        // 用户指定部分可见时，即使角色仍是好友，也不能读取未选中的动态。
+        await tx.query(
+          `UPDATE moments.posts SET author_kind='user',author_character_id=NULL,visibility_kind='selected' WHERE id=$1`,
+          [postId],
+        );
+        expect(await moments.getPostVisibleToCharacter(userId, postId, characterId, tx)).toBeNull();
+        throw new Error('rollback probe');
+      }),
+    ).rejects.toThrow('rollback probe');
+    expect(Date.now() - started).toBeLessThan(FAST_MS);
+    expect(await moments.getPostVisibleToCharacter(userId, postId, characterId)).toBeNull();
+    expect(
+      (
+        await db.query<{ n: number }>(
+          `SELECT count(*)::int AS n FROM ai_runtime.shared_episodes
+      WHERE user_id=$1 AND kind IN ('moment_posted','moment_commented')`,
+          [userId],
+        )
+      ).rows[0]?.n,
+    ).toBe(0);
+  }, 30_000);
+
+  it('6.1 来电结束只在事务中投递 ID；回滚无任务，提交后重试模型、重复任务只发一条消息', async () => {
+    const callId = newId();
+    await db.query(
+      `INSERT INTO calls.call_sessions
+      (id,user_id,character_id,conversation_id,direction,state,outcome,request_key,created_at,ended_at)
+      VALUES ($1::uuid,$2,$3,$4,'incoming','ended','missed',$1::text,$5,$5)`,
+      [callId, userId, characterId, conversationId, clock.now()],
+    );
+    const event = Events.CallEnded.parse({
+      eventId: newId(),
+      type: 'calls.call_ended',
+      producer: 'calls',
+      version: 1,
+      occurredAt: clock.now().toISOString(),
+      payload: {
+        callId,
+        userId,
+        characterId,
+        conversationId,
+        direction: 'incoming',
+        outcome: 'missed',
+        durationSec: 0,
+      },
+    });
+    const subscription = app
+      .get<EventBus>(EVENT_BUS)
+      .subscribersOf(event.type)
+      .find((s) => s.consumer === 'ai.call_ended')!;
+    const generation = vi.spyOn(gateway, 'generateText');
+    const jobs = () =>
+      db.query<{ id: string; data: { userId: string; callId: string } }>(
+        `SELECT id,data FROM pgboss.job WHERE name='ai.follow_up_call' AND data->>'callId'=$1`,
+        [callId],
+      );
+    await expect(
+      db.transaction(async (tx) => {
+        await subscription.handle(event, tx);
+        expect(generation).not.toHaveBeenCalled();
+        throw new Error('rollback probe');
+      }),
+    ).rejects.toThrow('rollback probe');
+    expect((await jobs()).rows).toHaveLength(0);
+    const inbox = app.get<EventInbox>(EVENT_INBOX);
+    expect(
+      await inbox.processOnce(subscription.consumer, event.eventId, (tx) =>
+        subscription.handle(event, tx),
+      ),
+    ).toBe('processed');
+    expect(
+      await inbox.processOnce(subscription.consumer, event.eventId, (tx) =>
+        subscription.handle(event, tx),
+      ),
+    ).toBe('duplicate');
+    const queued = (await jobs()).rows;
+    expect(queued).toHaveLength(1);
+    expect(queued[0]?.data).toEqual({ userId, callId });
+    expect(generation).not.toHaveBeenCalled();
+    const job = { ...queued[0]!, name: 'ai.follow_up_call' };
+    generation.mockRejectedValueOnce(new Error('synthetic provider disconnect'));
+    await expect(callWorker(job)).rejects.toThrow('synthetic provider disconnect');
+    await callWorker(job);
+    await callWorker(job);
+    const messages = await chatRead.readMessages({ conversationId, scopes: ['normal'], limit: 50 });
+    expect(
+      messages.filter((m) => m.content?.type === 'text' && m.content.text.includes('刚想打电话')),
+    ).toHaveLength(1);
+    // 已删除 / 不属于该用户的通话跳过，不凭持久任务中的旧信息发消息。
+    const callsBefore = generation.mock.calls.length;
+    await callWorker({ ...job, data: { userId: newId(), callId } });
+    await callWorker({ ...job, data: { userId, callId: newId() } });
+    expect(generation.mock.calls).toHaveLength(callsBefore);
+    generation.mockRestore();
+  }, 30_000);
 
   it('订阅者写会话后传 tx 读同一会话：毫秒级完成，读到本事务刚写的内容；所有消息订阅者都处理成功', async () => {
     // 先把加好友等事件处理完，只计量用户这条消息的分发

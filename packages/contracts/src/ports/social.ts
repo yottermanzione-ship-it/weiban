@@ -19,6 +19,7 @@ export interface MomentsReadPort {
     ownerUserId: string,
     postId: string,
     characterId: string,
+    tx?: Tx,
   ): Promise<MomentsPost | null>;
   getPost(ownerUserId: string, postId: string): Promise<MomentsPost | null>;
   /** 角色最近的动态（避免重复、P-16 计数）。 */
@@ -154,6 +155,8 @@ export interface PetNamingPort {
 
 /** 提供方 calls；调用方 ai-runtime（主动来电，MED-07）。 */
 export interface CallSessionPort {
+  /** 6.1：按所属用户读取通话（含已结束），不存在或不属于该用户时报 not_found。只读，不返回音频流凭证。 */
+  getCall(userId: string, callId: string): Promise<CallSession>;
   /** 发起来电：响铃、推送 kind = call、写 call.updated 更新。频率、熟悉度、静默、专注由 ai-runtime 先判断。 */
   startIncomingCall(input: {
     userId: string;

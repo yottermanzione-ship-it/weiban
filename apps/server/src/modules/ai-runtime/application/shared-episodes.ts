@@ -133,11 +133,15 @@ export class SharedEpisodesService implements OnModuleInit {
       eventType: 'moments.post_created',
       handle: async (event, tx) => {
         const p = event.payload;
+        if (p.authorKind !== 'character' || !p.authorCharacterId) return;
+        // kernel.md「事务与端口」：先拿本模块锁，再读动态与联系人；record 重入同一把锁。
+        if (!(await this.store.lock(tx, p.ownerUserId))) return;
         const post = p.authorCharacterId
           ? await this.moments.getPostVisibleToCharacter(
               p.ownerUserId,
               p.postId,
               p.authorCharacterId,
+              tx,
             )
           : null;
         if (p.authorKind === 'character' && p.authorCharacterId && post)
@@ -158,11 +162,14 @@ export class SharedEpisodesService implements OnModuleInit {
       eventType: 'moments.comment_created',
       handle: async (event, tx) => {
         const p = event.payload;
+        if (p.authorKind !== 'character' || !p.authorCharacterId) return;
+        if (!(await this.store.lock(tx, p.ownerUserId))) return;
         const post = p.authorCharacterId
           ? await this.moments.getPostVisibleToCharacter(
               p.ownerUserId,
               p.postId,
               p.authorCharacterId,
+              tx,
             )
           : null;
         const comment = post?.comments.find((comment) => comment.commentId === p.commentId);

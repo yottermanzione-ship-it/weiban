@@ -142,7 +142,7 @@
 | `personaTags` | enum[] | 是 | 人设标签，**受控词表**（驱动人设小巧思与语气差异，CHAT-07/08、SIM-08）：`tsundere` 傲娇、`aloof` 高冷、`shy` 害羞、`gentle` 温柔、`sharpTongue` 毒舌、`cheerful` 元气、`calm` 沉稳、`playful` 爱玩闹、`airhead` 迷糊、`mature` 成熟；1–3 个 | `["cheerful","playful"]` | P、S | ● |
 | `personaTagsCustom` | string[] | 否 | 词表外的自由标签（只进提示词，不驱动小巧思） | `["吃货"]` | P | ● |
 | `defaultAttitudeToUser` | string | 否 | 对刚加好友的用户的默认态度（L1 表现） | 「当作热情的新朋友」 | P | ● |
-| `growthByFamiliarity` | object | 否 | 熟悉度 L1–L5 的态度补充（GRW-03 的人设化） | `{L1:"有点客气", L4:"会吐槽小烦恼"}` | P | ● |
+| `growthByFamiliarity` | object | 否 | 熟悉度 L1–L6 的态度补充（GRW-03 的人设化，6.1 补可选 L6；不自动填充旧卡） | `{L1:"有点客气", L4:"会吐槽小烦恼"}` | P | ● |
 | `worldNote` | string | 否 | 世界观补充（虚构角色的世界设定；明星一般留空）。微伴的场景固定是微信式聊天，不支持酒馆式剧本场景 | 「妖精与人类共存的世界…」 | P | |
 
 ### 5.2 `speech` 说话方式
