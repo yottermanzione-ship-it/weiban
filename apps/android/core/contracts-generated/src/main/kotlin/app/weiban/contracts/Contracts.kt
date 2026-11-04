@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 6.0. Regenerate: pnpm android:generate
+// Contract 6.1. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "6.0"
+const val CONTRACT_VERSION: String = "6.1"
 
 @Serializable
 data class AccountAlias(
@@ -10125,11 +10125,14 @@ data class SearchAdminEndpointsGetEntityQuery(
 @Serializable
 data class SearchAdminEndpointsListEntitiesQuery(
     @SerialName("q") val `q`: String? = null,
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
 )
 
 @Serializable
 data class SearchAdminEndpointsListEntitiesResponse(
     @SerialName("items") val `items`: List<AdminSearchEntity>,
+    @SerialName("nextCursor") val `nextCursor`: String? = null,
 )
 
 typealias SearchAliasStatus = String
@@ -12984,6 +12987,7 @@ data class CardPersonaGrowthByFamiliarity(
     @SerialName("L3") val `L3`: String? = null,
     @SerialName("L4") val `L4`: String? = null,
     @SerialName("L5") val `L5`: String? = null,
+    @SerialName("L6") val `L6`: String? = null,
 )
 
 @Serializable
@@ -15487,6 +15491,7 @@ data class DraftCharacterCardDataPersonaGrowthByFamiliarity(
     @SerialName("L3") val `L3`: String? = null,
     @SerialName("L4") val `L4`: String? = null,
     @SerialName("L5") val `L5`: String? = null,
+    @SerialName("L6") val `L6`: String? = null,
 )
 
 @Serializable

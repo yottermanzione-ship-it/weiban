@@ -388,9 +388,16 @@ export const SearchAdminEndpoints = {
     method: 'GET',
     path: `${API_PREFIX}/admin/search/entities`,
     auth: 'admin',
-    query: z.object({ q: z.string().max(200).default('') }),
-    response: z.object({ items: z.array(AdminSearchEntity).max(50) }),
-    summary: '5.6：搜索实体列表（按显示名、实体键、标识查；最多 50 条，最近修改在前）',
+    query: z.object({
+      q: z.string().max(200).default(''),
+      cursor: z.string().min(1).max(2000).optional(),
+      limit: z.coerce.number().int().min(1).max(50).default(50),
+    }),
+    response: z.object({
+      items: z.array(AdminSearchEntity).max(50),
+      nextCursor: z.string().nullable().optional(),
+    }),
+    summary: '6.1：搜索实体分页（按显示名、实体键、标识查；每页最多 50 条，最近修改在前）',
   }),
   getEntity: defineEndpoint({
     method: 'GET',

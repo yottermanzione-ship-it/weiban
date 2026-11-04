@@ -24,6 +24,7 @@ import {
 import { AppModule } from '../src/app.module.js';
 import {
   DATABASE,
+  newId,
   JOB_QUEUE,
   TestClock,
   type Database,
@@ -366,6 +367,51 @@ describeDb('联网查找候选结构化与后台修正 T-20261104e 真实PG', ()
 
   afterAll(async () => {
     await app?.close();
+  });
+
+  it('6.1 实体列表超过五十条可翻完，同微秒时间不重复不漏；通配符按字面查，错误游标拒绝', async () => {
+    const keys = Array.from({ length: 65 }, () => `manual:${newId()}`);
+    await db.query(
+      `INSERT INTO characters.search_entities(entity_key,display_name,created_at,updated_at)
+      SELECT key,'分页合成_%_' || n, '2026-11-04T12:00:00.123456Z'::timestamptz,
+        '2026-11-04T12:00:00.123456Z'::timestamptz
+      FROM unnest($1::text[]) WITH ORDINALITY AS t(key,n)`,
+      [keys],
+    );
+    await db.query(
+      `INSERT INTO characters.search_entities(entity_key,display_name,created_at,updated_at)
+      VALUES ($1,'分页合成其他','2026-11-04T12:00:00.123457Z','2026-11-04T12:00:00.123457Z')`,
+      [`manual:${newId()}`],
+    );
+    const parse = (b: unknown) => SearchAdminEndpoints.listEntities.response.parse(b);
+    const first = await adminOk('get', '/api/v1/admin/search/entities', parse, undefined, {
+      q: '分页合成',
+    });
+    expect(first.items).toHaveLength(50);
+    expect(first.items[0]?.displayName).toBe('分页合成其他');
+    expect(first.nextCursor).toEqual(expect.any(String));
+    const next = await adminOk('get', '/api/v1/admin/search/entities', parse, undefined, {
+      q: '分页合成',
+      cursor: first.nextCursor!,
+    });
+    expect(next.items).toHaveLength(16);
+    expect(next.nextCursor).toBeNull();
+    const all = [...first.items, ...next.items].map((e) => e.entityKey);
+    expect(new Set(all).size).toBe(66);
+    expect(all).toEqual(expect.arrayContaining(keys));
+    const literal = await adminOk('get', '/api/v1/admin/search/entities', parse, undefined, {
+      q: '分页合成_%',
+      limit: '2',
+    });
+    expect(literal.items).toHaveLength(2);
+    expect(literal.items.every((e) => e.displayName.startsWith('分页合成_%'))).toBe(true);
+    for (const query of [
+      { q: '分页合成', cursor: 'not-a-cursor' },
+      { q: '其他查询', cursor: first.nextCursor! },
+      { q: '分页合成', limit: '51' },
+      { q: '分页合成', limit: '0' },
+    ])
+      await admin('get', '/api/v1/admin/search/entities').query(query).expect(400);
   });
 
   beforeEach(() => {

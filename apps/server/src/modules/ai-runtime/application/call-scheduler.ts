@@ -26,7 +26,14 @@ import type {
   PolicyPort,
   IdentitySettingsWritePort,
 } from '@weiban/contracts';
-import { CLOCK, DATABASE, newId, type Clock, type Database } from '../../../platform/index.js';
+import {
+  AppError,
+  CLOCK,
+  DATABASE,
+  newId,
+  type Clock,
+  type Database,
+} from '../../../platform/index.js';
 import { BILLING_READ_PORT } from '../../billing/index.js';
 import { CALL_SESSION_PORT } from '../../calls/index.js';
 import { CHARACTER_READ_PORT } from '../../characters/index.js';
@@ -45,6 +52,7 @@ import { characterView, rolePersonaSpeechText } from './character-view.js';
 
 /** P-10 原文：每角色每 7 天最多 1 次；全部角色每 7 天最多 3 次；要求熟悉度 L3 及以上。 */
 export const P10_CALLS = { perCharacter: 1, total: 3, windowMs: 7 * 86_400_000, minLevel: 3 };
+export const CALL_FOLLOW_UP_JOB = 'ai.follow_up_call';
 /** P-09：用户 5 分钟内发过消息。 */
 const P09_BUSY_MS = 5 * 60_000;
 /** P-33：余额保留线 1 元。 */
@@ -210,7 +218,19 @@ export class CallSchedulerService {
     }
   }
 
-  /** calls.call_ended：记结局；来电未接 / 拒接 → 发一条消息（不情感操纵），当天不再打。 */
+  /** 队列只保存 ID；重新读取所属用户的通话，模型调用不占用事件收件箱事务。 */
+  async runAfterCall(input: { userId: string; callId: string }): Promise<void> {
+    const session = await this.sessions
+      .getCall(input.userId, input.callId)
+      .catch((error: unknown) => {
+        if (error instanceof AppError && error.code === 'not_found') return null;
+        throw error;
+      });
+    if (!session || session.state !== 'ended' || !session.outcome) return;
+    await this.onCallEnded({ ...session, userId: input.userId, outcome: session.outcome });
+  }
+
+  /** calls.call_ended 后台任务：记结局；来电未接 / 拒接 → 发一条消息（不情感操纵），当天不再打。 */
   async onCallEnded(p: {
     callId: string;
     userId: string;

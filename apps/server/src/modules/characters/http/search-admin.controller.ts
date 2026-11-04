@@ -28,7 +28,7 @@ export class SearchAdminController {
 
   @Get('entities')
   list(@Query(new ContractPipe(schema(E.listEntities.query))) q: Out<typeof E.listEntities.query>) {
-    return this.service.listEntities(q.q);
+    return this.service.listEntities(q.q, q.cursor, q.limit);
   }
 
   @Get('entity')

@@ -22,6 +22,19 @@ function card() {
   return CharacterCard.parse(sample.card).data;
 }
 
+it('6.1 第六级成长文本可保存并进入角色提示；旧卡不会自动补写第六级', () => {
+  const old = CharacterCard.parse(sample.card);
+  expect(old.data.persona.growthByFamiliarity?.L6).toBeUndefined();
+  const data = card();
+  data.persona.growthByFamiliarity = {
+    ...data.persona.growthByFamiliarity,
+    L6: '共同安排平淡的日常',
+  };
+  const saved = CharacterCard.parse({ ...old, data });
+  expect(saved.data.persona.growthByFamiliarity?.L6).toBe('共同安排平淡的日常');
+  expect(characterCoreText('程澈', undefined, saved.data)).toContain('L6 共同安排平淡的日常');
+});
+
 function brainInput(data: ReturnType<typeof card>): BrainInput {
   return {
     name: '程澈',

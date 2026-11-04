@@ -202,6 +202,7 @@
   --wb-color-familiarity-l3: var(--wb-pink-500);
   --wb-color-familiarity-l4: var(--wb-lilac-500);
   --wb-color-familiarity-l5: var(--wb-gold-500);
+  --wb-color-familiarity-l6: var(--wb-pink-600);
   --wb-color-familiarity-track: var(--wb-gray-150);
   --wb-color-card-memorial: var(--wb-pink-500);
   --wb-color-card-familiarity: var(--wb-lilac-500);
@@ -479,6 +480,7 @@
     --wb-color-familiarity-l3: var(--wb-pink-400);
     --wb-color-familiarity-l4: var(--wb-lilac-300);
     --wb-color-familiarity-l5: var(--wb-gold-500);
+    --wb-color-familiarity-l6: var(--wb-pink-200);
     --wb-color-familiarity-track: var(--wb-gray-800);
     --wb-color-card-memorial: var(--wb-pink-400);
     --wb-color-card-familiarity: var(--wb-lilac-300);
@@ -616,6 +618,7 @@
   --wb-color-familiarity-l3: var(--wb-pink-400);
   --wb-color-familiarity-l4: var(--wb-lilac-300);
   --wb-color-familiarity-l5: var(--wb-gold-500);
+  --wb-color-familiarity-l6: var(--wb-pink-200);
   --wb-color-familiarity-track: var(--wb-gray-800);
   --wb-color-card-memorial: var(--wb-pink-400);
   --wb-color-card-familiarity: var(--wb-lilac-300);

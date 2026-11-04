@@ -44,6 +44,7 @@ export const CardPersona = z.strictObject({
       L3: optionalText,
       L4: optionalText,
       L5: optionalText,
+      L6: optionalText,
     })
     .optional(),
   worldNote: optionalText,

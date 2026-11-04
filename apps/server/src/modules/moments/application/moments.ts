@@ -478,15 +478,17 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
     ownerUserId: string,
     postId: string,
     characterId: string,
+    transaction?: Tx,
   ): Promise<MomentsPost | null> {
     parseContract(Id, ownerUserId);
     parseContract(Id, characterId);
-    return this.db.transaction(async (tx) => {
+    const read = async (tx: DbTx) => {
       const check = await this.characterAccess(tx, ownerUserId, postId, characterId);
       if (!check.ok) return null;
       const active = await this.activeIds(ownerUserId);
-      return (await this.build(tx.db, ownerUserId, [check.row], active))[0] ?? null;
-    });
+      return (await this.build(tx.db, ownerUserId, [check.row], active, tx))[0] ?? null;
+    };
+    return transaction ? read(asDbTx(transaction)) : this.db.transaction(read);
   }
 
   async getPost(ownerUserId: string, postId: string): Promise<MomentsPost | null> {
@@ -1146,6 +1148,7 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
     userId: string,
     rows: PostRow[],
     active: Set<string>,
+    tx?: DbTx,
   ): Promise<MomentsPost[]> {
     if (!rows.length) return [];
     const ids = rows.map((r) => r.id);
@@ -1181,7 +1184,7 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
               ? { kind: c.replyToKind as MomentsActor['kind'], refId: c.replyToRefId }
               : null,
           replyToCommentId: c.replyToCommentId,
-          text: await this.open(row.ownerUserId, `moments:comment:${c.id}`, c.textCiphertext),
+          text: await this.open(row.ownerUserId, `moments:comment:${c.id}`, c.textCiphertext, tx),
           mentionsUser: c.mentionsUser,
           createdAt: c.createdAt.toISOString(),
         });
@@ -1201,7 +1204,7 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
             row.authorKind === 'user'
               ? { kind: 'user', refId: row.ownerUserId }
               : { kind: 'character', refId: row.authorCharacterId },
-          text: await this.open(row.ownerUserId, `moments:post:${row.id}`, row.textCiphertext),
+          text: await this.open(row.ownerUserId, `moments:post:${row.id}`, row.textCiphertext, tx),
           images: mediaRows
             .filter((m) => m.postId === row.id)
             .map((m) => ({ mediaId: m.mediaId, width: m.width, height: m.height })),
@@ -1235,8 +1238,8 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
   private async seal(owner: string, aad: string, text: string, tx: DbTx): Promise<Buffer> {
     return this.crypto.seal(owner, aad, text, tx);
   }
-  private async open(owner: string, aad: string, cipher: Buffer): Promise<string> {
-    const plain = await this.crypto.open(owner, aad, cipher);
+  private async open(owner: string, aad: string, cipher: Buffer, tx?: DbTx): Promise<string> {
+    const plain = await this.crypto.open(owner, aad, cipher, tx);
     try {
       return plain.toString('utf8');
     } finally {

@@ -66,7 +66,7 @@ import {
 } from './moments-ai.js';
 import { MediaAiService } from './media-ai.js';
 import { QuietStateService } from './quiet-state.js';
-import { CallSchedulerService } from './call-scheduler.js';
+import { CallSchedulerService, CALL_FOLLOW_UP_JOB } from './call-scheduler.js';
 import { PlannerService, PLANNER_CLEANUP_JOB } from './planner.js';
 import { CompanionSettingsService } from './settings.js';
 import { CARE_PLAN_PREFIX } from './health-care.js';
@@ -422,11 +422,19 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       },
     });
     // T-072 来电：未接 / 拒接后续消息（MED-07 第 5 条）；熟悉度到 L3 征求同意；用户点「可以」开启。
+    await this.jobs.work<{ userId: string; callId: string }>(CALL_FOLLOW_UP_JOB, (job) =>
+      this.calls.runAfterCall(job.data),
+    );
     this.bus.subscribe({
       consumer: 'ai.call_ended',
       eventType: 'calls.call_ended',
-      handle: async (event) => {
-        await this.calls.onCallEnded(event.payload);
+      handle: async (event, tx) => {
+        if (event.payload.direction !== 'incoming') return;
+        await this.jobs.send(
+          CALL_FOLLOW_UP_JOB,
+          { userId: event.payload.userId, callId: event.payload.callId },
+          { tx, singletonKey: event.payload.callId, retryLimit: 5, retryBackoff: true },
+        );
       },
     });
     this.bus.subscribe({

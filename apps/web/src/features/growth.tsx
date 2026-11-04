@@ -121,7 +121,12 @@ export function FamiliarityLine({ characterId }: { characterId: string }) {
             aria-valuenow={Math.round(progress * 100)}
             aria-label="好感度进度"
           >
-            <span style={{ transform: `scaleX(${progress})` }} />
+            <span
+              style={{
+                transform: `scaleX(${progress})`,
+                background: `var(--wb-color-familiarity-l${level})`,
+              }}
+            />
           </div>
           <small className="hint">
             {familiarityProgressText(familiarity.data)}
@@ -135,7 +140,10 @@ export function FamiliarityLine({ characterId }: { characterId: string }) {
           <ol className="level-list">
             {familiarityNames.map((name, index) => (
               <li key={name} aria-current={index + 1 === level ? 'true' : undefined}>
-                {moons[index]} {name}
+                <span aria-hidden style={{ color: `var(--wb-color-familiarity-l${index + 1})` }}>
+                  {moons[index]}
+                </span>{' '}
+                {name}
               </li>
             ))}
           </ol>

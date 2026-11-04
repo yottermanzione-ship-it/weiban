@@ -10,7 +10,8 @@
  *   （与本事务一起提交），定时任务 / 下一次搜索前分批刷新。本事务里不调用其他模块端口（审计是平台内核，传同一个 tx）。
  */
 import { Inject, Injectable } from '@nestjs/common';
-import { asc, desc, eq, inArray } from 'drizzle-orm';
+import { asc, eq, inArray } from 'drizzle-orm';
+import { z } from 'zod';
 import type {
   AdminSearchAlias,
   AdminSearchAliasChange,
@@ -198,33 +199,56 @@ export class SearchEntityService {
 
   // ---------- 后台：实体 ----------
 
-  async listEntities(q: string): Promise<{ items: AdminSearchEntity[] }> {
+  async listEntities(
+    q: string,
+    cursor?: string,
+    limit = 50,
+  ): Promise<{ items: AdminSearchEntity[]; nextCursor: string | null }> {
     const text = q.trim();
-    let keys: string[];
-    if (!text) {
-      const rows = await this.database.db
-        .select({ entityKey: searchEntities.entityKey })
-        .from(searchEntities)
-        .orderBy(desc(searchEntities.updatedAt), asc(searchEntities.entityKey))
-        .limit(50);
-      keys = rows.map((r) => r.entityKey);
-    } else {
-      const pattern = `%${text.replace(/[\\%_]/gu, '\\$&')}%`;
-      const { rows } = await this.database.query<{ entity_key: string }>(
-        `SELECT e.entity_key FROM characters.search_entities e
-          WHERE e.display_name ILIKE $1 ESCAPE '\\' OR e.entity_key ILIKE $1 ESCAPE '\\'
+    let after: { at: string; key: string; q: string } | undefined;
+    if (cursor) {
+      try {
+        after = z
+          .object({
+            at: z.iso.datetime(),
+            key: z.string().refine(isEntityKey),
+            q: z.string().max(200),
+          })
+          .parse(JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')));
+        if (after.q !== text) throw new Error('cursor query mismatch');
+      } catch {
+        throw new AppError('bad_request', '分页位置无效，请重新搜索');
+      }
+    }
+    const pattern = text ? `%${text.replace(/[\\%_]/gu, '\\$&')}%` : '';
+    // 保留数据库的微秒精度；只用 Date.toISOString 会丢失最后三位，翻页时可能漏记录。
+    const { rows } = await this.database.query<{ entity_key: string; cursor_at: string }>(
+      `SELECT e.entity_key,
+              to_char(e.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
+         FROM characters.search_entities e
+          WHERE ($1 = '' OR e.display_name ILIKE $1 ESCAPE '\\' OR e.entity_key ILIKE $1 ESCAPE '\\'
              OR EXISTS (SELECT 1 FROM characters.search_entity_identifiers i
                          WHERE i.entity_key = e.entity_key AND i.identifier ILIKE $1 ESCAPE '\\')
              OR EXISTS (SELECT 1 FROM characters.search_entity_characters l
                           JOIN characters.characters c ON c.id = l.character_id
-                         WHERE l.entity_key = e.entity_key AND c.name ILIKE $1 ESCAPE '\\')
+                         WHERE l.entity_key = e.entity_key AND c.name ILIKE $1 ESCAPE '\\'))
+            AND ($2::timestamptz IS NULL OR e.updated_at < $2::timestamptz
+                 OR (e.updated_at = $2::timestamptz AND e.entity_key > $3))
           ORDER BY e.updated_at DESC, e.entity_key
-          LIMIT 50`,
-        [pattern],
-      );
-      keys = rows.map((r) => r.entity_key);
-    }
-    return { items: await this.views(keys) };
+          LIMIT $4`,
+      [pattern, after?.at ?? null, after?.key ?? null, limit + 1],
+    );
+    const page = rows.slice(0, limit);
+    const last = page.at(-1);
+    return {
+      items: await this.views(page.map((r) => r.entity_key)),
+      nextCursor:
+        rows.length > limit && last
+          ? Buffer.from(
+              JSON.stringify({ at: last.cursor_at, key: last.entity_key, q: text }),
+            ).toString('base64url')
+          : null,
+    };
   }
 
   async getEntity(entityKey: string): Promise<AdminSearchEntityDetail> {
