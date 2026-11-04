@@ -1,0 +1,68 @@
+{
+  "sha": "0bf2434cdc080b9920c27a6db40e0d7b371c7fc1",
+  "passed": 73,
+  "failed": 0,
+  "pending": 0,
+  "files": [
+    {
+      "file": "apps/server/test/care-missing-signals.test.ts",
+      "passed": 8,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/test/library-snapshot.test.ts",
+      "passed": 7,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/test/moments-contact-reset.test.ts",
+      "passed": 7,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/test/play-continuity.test.ts",
+      "passed": 5,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/test/play-tx-deadlock.test.ts",
+      "passed": 3,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/test/proactive.test.ts",
+      "passed": 12,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/test/simulation.test.ts",
+      "passed": 8,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/test/subscriber-tx.test.ts",
+      "passed": 1,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/platform/search/public-identity.test.ts",
+      "passed": 4,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/platform/search/search-text.test.ts",
+      "passed": 9,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/chat/application/group-access.test.ts",
+      "passed": 3,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/domain/web-candidates.test.ts",
+      "passed": 6,
+      "failed": 0
+    }
+  ]
+}
