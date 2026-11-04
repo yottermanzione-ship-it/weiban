@@ -5,13 +5,23 @@ async function openChat(page: Page) {
   await page.getByLabel('账号', { exact: true }).fill('browser_user');
   await page.getByLabel('密码', { exact: true }).fill('correct horse battery');
   await page.getByRole('button', { name: '同意并登录', exact: true }).click();
-  await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
+  const onboarding = page.getByRole('heading', { name: 'TA 该怎么称呼你？', exact: true });
+  await expect(page.getByRole('navigation', { name: '主导航' }).or(onboarding)).toBeVisible();
+  if (await onboarding.isVisible()) {
+    await page.getByLabel('昵称', { exact: true }).fill('浏览器用户');
+    await page.getByRole('button', { name: '下一步', exact: true }).click();
+    await expect(page.getByText('先加一个你喜欢的 TA 吧')).toBeVisible();
+    await page.getByRole('button', { name: /测试陪伴角色/ }).click();
+    await expect(page).toHaveURL(/\/chat\//);
+  }
   await page.goto('/chat');
+  await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
   await page.getByRole('link', { name: /测试陪伴角色/ }).click();
   await expect(page.getByRole('heading', { name: '测试陪伴角色' })).toBeVisible();
   await expect(page.getByLabel('消息', { exact: true })).toBeVisible();
 }
 test('六阶段相处弹层：第六级成长进度和六个徽记在亮暗色中可见', async ({ page }, testInfo) => {
+  await page.clock.setSystemTime(new Date('2026-10-05T12:00:00.000Z'));
   // 仅将本地合成账号的响应设为第六级；不修改真实用户的等级或绕过业务加分规则。
   await page.route('**/growth/*/familiarity', async (route) => {
     const response = await route.fetch();
