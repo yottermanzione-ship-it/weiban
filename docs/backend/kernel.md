@@ -1,6 +1,6 @@
 # 服务器平台内核使用说明（apps/server/src/platform）
 
-> 负责人：后端负责人 · v1.0 · 2026-10-05 · 来源任务：T-016（D-L0-05）；T-023 补充计费配置项与定时任务 `JobQueue.schedule`
+> 负责人：后端负责人 · v1.0 · 2026-10-05 · 来源任务：T-016（D-L0-05）；T-023 补充计费配置项与定时任务 `JobQueue.schedule`；T-20261104f 补第 6 节「事务与端口」
 > 读者：之后写业务模块（identity、billing、model-access、chat……）的负责人。
 > 规则来源（本文不重复）：`docs/architecture/engineering-standards.md`、`security-and-privacy.md`、`message-reliability.md`、ADR-0004、ADR-0006、ADR-0014。实现取舍见 `docs/decisions/ADR-0015-server-kernel-implementation.md`。
 
@@ -101,6 +101,59 @@ await this.database.transaction(async (tx) => {
 - `tx.query(sql, params)` 执行原生 SQL（只能访问本模块 schema，R8）。
 - 表定义放 `modules/<模块>/infra/db/schema.ts`，用 `pgSchema('<模块 schema>')`；主键用 `newId()`（UUIDv7）。
 - 数据库健康：`database.ping()`。
+- 拿着事务调端口、加锁顺序、事务里能不能调外部服务：见下面「事务与端口」。
+
+### 事务与端口
+
+> 来源：2026-11-04 寄信卡死整站事故（T-20261104c）与善后（T-20261104f）。这几条规则只写在这里，代码注释只引用本节。
+
+**1. 拿着事务调用其它模块端口，必须把事务传下去。**
+
+「拿着事务」包括：`database.transaction(async (tx) => …)` 的回调里、事件订阅 `handle: (event, tx) => …` 里、带 `tx` 参数的方法里。端口方法有可选 `tx` 的，一律传 `tx`；本模块自己的方法也一样。
+
+- 不传会怎样：被调方另借一条连接、自己开事务去锁同一行。如果这一行当前事务已经锁过或改过，外层等内层返回、内层等外层提交，两边永远互相等待。数据库只看到外层连接 `idle in transaction`，检测不出来；同一用户后面的请求都排在这把锁后面，连接池耗尽，整站 500（2026-11-04 事故）。
+- 确实要和当前事务分开提交的（例如失败不该让当前事务回滚），不要在事务进行中另开连接：用 `tx.afterCommit(…)` 放到提交之后做，或在事务里投递 pg-boss 任务（`jobs.send(…, { tx })`）。
+- 端口契约还没有 `tx` 参数的：被调方只做**不加锁的普通读**（不带 `FOR UPDATE / FOR SHARE`、不开事务、不拿咨询锁），可以先照旧，普通读不会等锁；会加锁、会写、会自己开事务的，要走契约变更申请补 `tx`。
+
+**2. 传了事务，就要按固定顺序加锁。**
+
+传 `tx` 后，被调端口加的锁会一直持有到当前事务结束。两个事务按相反顺序拿同两把锁，就会互相等待：数据库能检测出来，约 1 秒后报 `deadlock detected` 并回滚其中一个（多半是某个用户的请求失败）。服务器统一按下面的顺序拿锁，先拿上面的：
+
+1. 本模块自己的咨询锁 / 行锁：例如 ai-runtime 的用户 / 会话锁（`ReplyPlanStore.lock`）、growth 的好感度锁（`GrowthService.lockFamiliarity`）、proactive 的用户锁、contacts 的用户锁；
+2. 联系人行：contacts 端口带 `tx` 的读加共享锁，contacts 自己改联系人时加排他锁；
+3. 会话行：`ChatReadPort` 带 `tx` 的 `getConversation`、`getMessage`、`readMessages`、`findDirectConversation`、`findOfficialConversation` 都 `FOR UPDATE` 锁会话行；发消息、写系统提示也锁这一行；
+4. 实时同步的用户锁 `realtime:用户`（写每用户更新日志时拿，chat、contacts 写入时自动带上）。
+
+事件订阅者常见写法：先用 `ChatReadPort.getParticipants(会话ID, tx)` 看会话里有谁（**不锁会话行**），再拿本模块的锁和联系人，最后才读消息：
+
+```ts
+handle: async (event, tx) => {
+  const participants = await this.chat.getParticipants(p.conversationId, tx); // 不锁会话行
+  const role = participants.find((m) => m.kind === 'character');
+  if (!role) return;
+  if (!(await this.store.lock(tx, userId, p.conversationId))) return;          // 1. 本模块的锁
+  const epoch = await this.contacts.getActiveContactEpoch(userId, role.refId, tx); // 2. 联系人行
+  const message = await this.chat.getMessage(p.messageId, ['normal'], tx);     // 3. 会话行
+  …
+}
+```
+
+**3. 事务里不要调外部服务。**
+
+外部服务指 HTTP、模型、推送、对象存储、搜索、转写等。等外部服务时，事务连接处于 `idle in transaction`：既占着连接，又占着锁。
+
+- 慢的工作在事务里投递 pg-boss 任务，由任务在事务外做；
+- 确需在事务里调的（现有：推送发送 1.5 秒、瞬间卡文案 3 秒、媒体删除存储文件），必须有**远小于 30 秒**的超时。
+
+**4. 30 秒 / 10 秒是兜底，不是正常流程。**
+
+- 应用连接池每条连接带两个会话参数：
+  - `idle_in_transaction_session_timeout`：事务两条语句之间空闲超过 30 秒，数据库断开这条连接；
+  - `lock_timeout`：等锁超过 10 秒，报错 55P03。
+- pg-boss 的连接只带第一个。
+- 数值在 `platform/db/database.ts` 的 `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS`、`DB_LOCK_TIMEOUT_MS`。
+- 它们只保证出问题时只坏一个请求，不拖垮整个连接池；事务连接被断开时只让这次事务失败，进程照常服务。
+- 日志里出现 55P03、`deadlock detected`、「数据库连接池出错」，说明有代码违反了上面几条，要改代码，不要把这两个数调大。
 
 ### 数据库迁移
 
@@ -137,6 +190,7 @@ this.bus.subscribe({
 });
 ```
 - `handle` 和收件箱记录在同一事务：成功 → 一起提交，之后重复投递直接跳过；抛错 → 一起回滚，稍后重投。
+- `handle` 拿着事务：调其它模块端口要传 `tx`、按顺序加锁、不在里面调外部服务，见第 6 节「事务与端口」。
 - 失败重试按 1、2、4……秒退避（最长 10 分钟），累计 10 次仍失败标记 `dead_at` 并写错误日志，需人工处理（修好后把 `platform.outbox.dead_at` 清空即重投）。
 - 每个订阅者必须有「重复投递不产生重复效果」的测试（engineering-standards.md 第 7 节）。
 - pg-boss 任务等其他「至少一次」场景也可以直接用 `inbox.processOnce(名字, id, async (tx) => …)` 去重。

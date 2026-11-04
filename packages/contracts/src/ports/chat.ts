@@ -28,18 +28,41 @@ export interface ReadMessagesInput {
   contentTypes?: string[];
 }
 
+/**
+ * 每个方法的可选 tx（5.7 起全部方法都有）：
+ * - **调用方拿着事务时必须传**（docs/backend/kernel.md「事务与端口」）。不传时 chat 另开一条连接、自己开事务读，
+ *   如果调用方事务已经锁过 / 改过同一会话行，外层等内层返回、内层等外层提交，数据库看不出来，整站卡死
+ *   （2026-11-04 事故）。
+ * - 传 tx 时在调用方事务里执行，除 getParticipants 外都会锁会话行（FOR UPDATE）到调用方事务结束，
+ *   所以要在本模块自己的锁（咨询锁、联系人行等）之后再调，顺序见 kernel.md。
+ * - 不传 tx 时行为与 5.6 相同。
+ */
 export interface ChatReadPort {
+  /** 传 tx：锁会话行（FOR UPDATE）。 */
   getConversation(conversationId: string, tx?: Tx): Promise<Conversation | null>;
-  getParticipants(conversationId: string): Promise<Participant[]>;
-  /** 找到用户与某角色的私聊会话。 */
-  findDirectConversation(userId: string, characterId: string): Promise<Conversation | null>;
+  /**
+   * 会话当前参与者（不含已退出的）；会话不存在为 []。
+   * 5.7：传 tx 时在调用方事务里读，**不锁会话行**（只读参与者，给只需要知道「对面是谁」的订阅者用）。
+   */
+  getParticipants(conversationId: string, tx?: Tx): Promise<Participant[]>;
+  /**
+   * 找到用户与某角色的私聊会话。
+   * 5.7：传 tx 时锁会话行用 FOR UPDATE（调用方随后通常要写这个会话；先拿共享锁再升级会和并发写入方互相等待）；
+   * 不传时独立事务、FOR SHARE。
+   */
+  findDirectConversation(
+    userId: string,
+    characterId: string,
+    tx?: Tx,
+  ): Promise<Conversation | null>;
   /**
    * 找到用户的小V同学官方会话（按 official_identity_key）。没有则返回 null，
    * 不创建（创建走 ChatAdminPort.ensureOfficialConversation）。
+   * 5.7：tx 的锁法同 findDirectConversation。
    */
-  findOfficialConversation(userId: string): Promise<Conversation | null>;
-  /** 结果按 seq 升序；不含正文被撤回的内容。 */
-  readMessages(input: ReadMessagesInput): Promise<Message[]>;
+  findOfficialConversation(userId: string, tx?: Tx): Promise<Conversation | null>;
+  /** 结果按 seq 升序；不含正文被撤回的内容。5.7：可传 tx（锁会话行）。 */
+  readMessages(input: ReadMessagesInput, tx?: Tx): Promise<Message[]>;
   /** 可选事务用于派生资料写入前锁定并核对来源，防止撤回与迟到写入交错。 */
   getMessage(messageId: string, scopes: ContentScope[], tx?: Tx): Promise<Message | null>;
 }

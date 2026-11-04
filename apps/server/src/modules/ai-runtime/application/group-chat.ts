@@ -490,7 +490,9 @@ export class GroupChatService {
     tx: DbTx,
     input: { conversationId: string; userId: string; messageId: string; seq: number },
   ): Promise<void> {
-    const conversation = await this.chat.getConversation(input.conversationId);
+    // T-20261104f：先拿用户 / 会话咨询锁，再在本事务里读会话（会锁会话行）：与群聊发言「先咨询锁、后写会话」同序。
+    if (!(await this.replies.lockOwner(tx, input.userId, input.conversationId))) return;
+    const conversation = await this.chat.getConversation(input.conversationId, tx);
     if (!conversation) return;
     await this.replies.enqueue(tx, {
       userId: input.userId,

@@ -620,6 +620,28 @@ describe('v1.3（T-026）', () => {
     }
   });
 
+  it('5.7：上游权限类拒绝是正式提醒种类；旧版后台读不认识的种类仍是 unsupported', () => {
+    const facts = {
+      kind: 'upstream_auth_rejected',
+      severity: 'warning',
+      dedupeKey: `upstream_auth_rejected:${ID}`,
+      summary: '说明',
+      refs: { upstreamId: ID },
+    };
+    expect(AdminAlertFacts.parse(facts).kind).toBe('upstream_auth_rejected');
+    const row = {
+      ...facts,
+      alertId: ID,
+      occurrences: 1,
+      firstRaisedAt: NOW,
+      lastRaisedAt: NOW,
+      acknowledgedAt: null,
+      acknowledgedByUserId: null,
+    };
+    expect(AdminAlert.parse(row).kind).toBe('upstream_auth_rejected');
+    expect(AdminAlert.parse({ ...row, kind: 'something_newer' }).kind).toBe('unsupported');
+  });
+
   it('对账第 ② 层结果事件与对账记录的新字段（可选）', () => {
     expect(
       Events.UsageReconciled.safeParse({

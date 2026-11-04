@@ -9,6 +9,7 @@ import type {
   CharacterReadPort,
   ChatAdminPort,
   ChatParticipantPort,
+  ChatReadPort,
   PlaySystemNoticeCode,
   Contact,
   ContactsReadPort,
@@ -21,12 +22,7 @@ import type {
 } from '@weiban/contracts';
 import { AppError, CLOCK, type Clock, type DbTx } from '../../../platform/index.js';
 import { CHARACTER_NAME_READ_PORT, CHARACTER_READ_PORT } from '../../characters/index.js';
-import {
-  CHAT_ADMIN_PORT,
-  CHAT_PARTICIPANT_PORT,
-  CHAT_READ_PORT,
-  type ChatReadInTxPort,
-} from '../../chat/index.js';
+import { CHAT_ADMIN_PORT, CHAT_PARTICIPANT_PORT, CHAT_READ_PORT } from '../../chat/index.js';
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { IDENTITY_READ_PORT } from '../../identity/index.js';
 import { SYNC_PORT } from '../../realtime/index.js';
@@ -70,7 +66,7 @@ export class PlayContext {
     @Inject(CONTACTS_READ_PORT) readonly contacts: ContactsReadPort,
     @Inject(CHARACTER_READ_PORT) private readonly characters: CharacterReadPort,
     @Inject(CHARACTER_NAME_READ_PORT) private readonly names: CharacterNameReadPort,
-    @Inject(CHAT_READ_PORT) private readonly chatRead: ChatReadInTxPort,
+    @Inject(CHAT_READ_PORT) private readonly chatRead: ChatReadPort,
     @Inject(CHAT_PARTICIPANT_PORT) private readonly chat: ChatParticipantPort,
     @Inject(SYNC_PORT) private readonly sync: SyncPort,
     @Inject(CHAT_ADMIN_PORT) private readonly chatAdmin: ChatAdminPort,

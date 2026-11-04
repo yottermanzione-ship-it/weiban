@@ -30,6 +30,11 @@ export class GroupReplyStore {
     @Inject(ReplyPlanStore) private readonly owner: ReplyPlanStore,
   ) {}
 
+  /** 用户 / 会话咨询锁（与 ReplyPlanStore.lock 同一把）；账号不再有效时返回 false。 */
+  lockOwner(tx: DbTx, userId: string, conversationId: string): Promise<boolean> {
+    return this.owner.lock(tx, userId, conversationId);
+  }
+
   async enqueue(
     tx: DbTx,
     input: Pick<

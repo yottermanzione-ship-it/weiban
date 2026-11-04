@@ -3,16 +3,25 @@
  * - 密钥自检：401 / 403 普通正文先用同一把密钥连通测试，结论按上游缓存 60 秒；
  * - 上游状态入口（reportStatus / recordFailure）在自检通过时不改状态；
  * - 媒体网关经 withTarget 把自检通过的 invalid_key 改成 content_rejected；
- * - 同一用户反复被拦的限制规则（推算到期时间、只管私密回复）。
+ * - 同一用户反复被拦的限制规则（推算到期时间、只管私密回复）；
+ * - T-20261104f 权限类拒绝提醒的参数、文案与计数入口。
  * 真库与真实网关的用例见 apps/server/test/upstream-isolation.test.ts。
  */
 import { describe, expect, it, vi } from 'vitest';
-import { PRIVATE_BLOCK_LIMIT, TestClock } from '../../../platform/index.js';
+import {
+  PRIVATE_BLOCK_LIMIT,
+  TestClock,
+  UPSTREAM_AUTH_REJECTED_ALERT,
+} from '../../../platform/index.js';
 import type { UpstreamProbe, UpstreamProbeResult } from '../tokens.js';
 import { ModelGatewayMedia } from './media-gateway.js';
 import { blockLimitApplies, blockLimitUntil, PrivateBlockLimiter } from './private-block-limit.js';
 import { UpstreamScheduler } from './scheduler.js';
-import { KEY_SELF_CHECK_TTL_MS, UpstreamService } from './upstreams.js';
+import {
+  KEY_SELF_CHECK_TTL_MS,
+  UpstreamService,
+  upstreamAuthRejectedSummary,
+} from './upstreams.js';
 import { DEFAULT_GATEWAY_LIMITS } from './limits.js';
 
 const MINUTE = 60_000;
@@ -214,7 +223,8 @@ describe('媒体网关：自检通过的 invalid_key 改成 content_rejected', (
       upstreams: {
         get: async () => ({ kind: 'dashscope', baseUrl: 'https://media.example' }),
         withApiKey: async (_id: string, fn: (key: string) => Promise<unknown>) => fn('sk-media'),
-        keyStillWorks,
+        // T-20261104f：媒体网关改问 confirmAuthRejection（自检 + 权限类拒绝计数），返回值同 keyStillWorks。
+        confirmAuthRejection: keyStillWorks,
       },
       adapter: {
         synthesizeStream: vi.fn().mockResolvedValue({ ok: false, category: 'invalid_key' }),
@@ -307,5 +317,40 @@ describe('同一用户反复被拦：只限制他自己的私密回复', () => {
     expect(await during.service.skips({ ...reply, purpose: 'safety_followup' })).toBe(false);
     const after = limiter(blocks, at(40) + HOUR);
     expect(await after.service.skips(reply)).toBe(false);
+  });
+});
+
+describe('T-20261104f 权限类拒绝提醒：参数与文案', () => {
+  it('数字只在 product-params 定义：10 分钟内 20 次 → 提醒，冷却 1 小时', () => {
+    expect(UPSTREAM_AUTH_REJECTED_ALERT).toEqual({
+      threshold: 20,
+      windowMs: 10 * MINUTE,
+      cooldownMs: HOUR,
+    });
+  });
+
+  it('提醒文案只有上游名称、次数和时间窗，不超过契约上限 200 字；超长名称截断', () => {
+    const text = upstreamAuthRejectedSummary('共享私密上游', 20, 10);
+    expect(text).toContain('「共享私密上游」');
+    expect(text).toContain('10 分钟内有 20 次');
+    expect(text.length).toBeLessThanOrEqual(200);
+    const long = upstreamAuthRejectedSummary('名'.repeat(300), 20, 10);
+    expect(long.length).toBeLessThanOrEqual(200);
+    expect(long).toContain('名'.repeat(40) + '」');
+    expect(long).not.toContain('名'.repeat(41));
+  });
+
+  it('自检失败（密钥真坏了）不计数：只有自检通过才进提醒计数', async () => {
+    const { service } = upstreamService([{ ok: false, reason: 'invalid_key' }]);
+    type Noting = { noteAuthRejection(upstreamId: string): Promise<void> };
+    const note = vi.spyOn(service as unknown as Noting, 'noteAuthRejection');
+    expect(await service.confirmAuthRejection('up-1')).toBe(false);
+    expect(note).not.toHaveBeenCalled();
+    const passed = upstreamService([{ ok: true }]);
+    const notePassed = vi
+      .spyOn(passed.service as unknown as Noting, 'noteAuthRejection')
+      .mockResolvedValue(undefined);
+    expect(await passed.service.confirmAuthRejection('up-1')).toBe(true);
+    expect(notePassed).toHaveBeenCalledWith('up-1');
   });
 });

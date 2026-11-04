@@ -2,6 +2,7 @@
  * T-20261104a（总经理 11-04 两条要求）真库用例：真实网关 + 假 HTTP 上游 + 真实目录与计费。测试数据全部自造。
  * 1. 用户再触发服务商拦截，绝不能影响后台的上游账号判断：401 / 403 普通正文先用同一把密钥自检；
  * 2. 用户之间的拦截互不影响：同一用户 1 小时内被拦 5 次后只限制他自己的私密回复；被拦消息按会话登记。
+ * T-20261104f：同一上游短时间内多次「401/403 但自检通过」→ 管理员提醒 upstream_auth_rejected（只含上游信息）。
  */
 import 'reflect-metadata';
 import type { INestApplication } from '@nestjs/common';
@@ -9,12 +10,13 @@ import { Test } from '@nestjs/testing';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest';
-import type { GenerateTextInput, ModelGatewayPort } from '@weiban/contracts';
+import type { AdminAlertFacts, GenerateTextInput, ModelGatewayPort } from '@weiban/contracts';
 import { AppModule } from '../src/app.module.js';
 import {
   DATABASE,
   PRIVATE_BLOCK_LIMIT,
   TestClock,
+  UPSTREAM_AUTH_REJECTED_ALERT,
   newId,
   type Database,
 } from '../src/platform/index.js';
@@ -31,6 +33,7 @@ import {
   UpstreamService,
 } from '../src/modules/model-access/testing.js';
 import { blockedSeqs, recordBlocked, withoutBlocked } from '../src/modules/ai-runtime/testing.js';
+import { AdminAlertService } from '../src/modules/push/testing.js';
 import { captureLogger, testConfig, testKekRing } from './support/fixtures.js';
 import { describeDb, resetTestDatabase } from './support/db.js';
 
@@ -405,6 +408,95 @@ describeDb('T-20261104a 上游判定自检与用户之间拦截隔离（真实�
       value: { text: output },
     });
     expect(calls).toBe(PRIVATE_BLOCK_LIMIT.threshold + 4);
+  });
+
+  it('T-20261104f 权限类拒绝提醒：同一上游 10 分钟内满 20 次「401/403 但自检通过」才提醒管理员；冷却 1 小时内不重复（重启也不重复）；提醒不含用户内容', async () => {
+    const { threshold, windowMs, cooldownMs } = UPSTREAM_AUTH_REJECTED_ALERT;
+    const user = await newUser('isolation_auth_alert');
+    const service = app.get(UpstreamService);
+    const authAlerts = async () =>
+      (
+        await db.query<{ event: { payload: AdminAlertFacts } }>(
+          `SELECT event FROM platform.outbox
+            WHERE event_type = 'platform.admin_alert_raised'
+              AND event->'payload'->>'kind' = 'upstream_auth_rejected'
+            ORDER BY created_at, id`,
+        )
+      ).rows.map((r) => r.event.payload);
+    const reject = async (times: number) => {
+      for (let i = 0; i < times; i++) {
+        expect(await gateway.generateText(dailyReply(user))).toEqual({
+          ok: false,
+          error: 'content_rejected',
+        });
+      }
+    };
+    mode = 'auth403';
+
+    // 差一次不发；滑动窗口：10 分钟前的次数不算
+    await reject(threshold - 1);
+    expect(await authAlerts()).toHaveLength(0);
+    clock.advance(windowMs);
+    await reject(1);
+    expect(await authAlerts()).toHaveLength(0);
+    // 窗口内凑满 20 次：发一条
+    await reject(threshold - 1);
+    const first = await authAlerts();
+    expect(first).toHaveLength(1);
+    expect(first[0]).toMatchObject({
+      kind: 'upstream_auth_rejected',
+      severity: 'warning',
+      dedupeKey: `upstream_auth_rejected:${upstreamId}`,
+      refs: { upstreamId },
+    });
+    expect(first[0]!.summary).toContain('fake shared private upstream');
+    expect(first[0]!.summary).toContain(`${threshold} 次`);
+    expect(first[0]!.summary).toContain(`${Math.round(windowMs / MINUTE)} 分钟`);
+    // 只有上游 ID、名称、次数、时间窗：不含用户消息、用户 ID、密钥
+    const raw = JSON.stringify(
+      (
+        await db.query<{ event: unknown }>(
+          `SELECT event FROM platform.outbox
+            WHERE event_type = 'platform.admin_alert_raised'
+              AND event->'payload'->>'kind' = 'upstream_auth_rejected'`,
+        )
+      ).rows,
+    );
+    expect(raw).not.toContain('ISOLATION_CANARY_TEXT');
+    expect(raw).not.toContain(user);
+    expect(raw).not.toContain(key);
+    // 上游本身不受影响：仍是正常、不冷却
+    expect((await service.get(upstreamId)).status).toBe('active');
+
+    // 冷却期内再拒很多次：不再发
+    await reject(threshold + 5);
+    expect(await authAlerts()).toHaveLength(1);
+    // 模拟进程重启（内存计数、内存冷却都清空）：冷却以数据库里的发送时间为准，仍不发
+    (Reflect.get(service, 'authRejections') as Map<string, number[]>).clear();
+    (Reflect.get(service, 'authAlertQuietUntil') as Map<string, number>).clear();
+    await reject(threshold);
+    expect(await authAlerts()).toHaveLength(1);
+
+    // 冷却满 1 小时后再凑满 20 次：再发一条
+    clock.advance(cooldownMs);
+    await reject(threshold);
+    expect(await authAlerts()).toHaveLength(2);
+
+    // 结构化日志：两次发送各一条，只有上游 ID、次数、时间窗
+    const logged = logs.capture
+      .records()
+      .filter((r) => r.code === 'upstream_auth_rejected_alert' && r.upstreamId === upstreamId);
+    expect(logged).toHaveLength(2);
+    expect(logged[0]).toMatchObject({ upstreamId, count: threshold, windowMinutes: 10 });
+    expect(JSON.stringify(logged)).not.toContain('ISOLATION_CANARY_TEXT');
+
+    // 后台运行提醒列表：push 收下这条提醒后按正式种类显示（不是 unsupported），同一上游累加次数
+    const alerts = app.get(AdminAlertService);
+    for (const facts of await authAlerts()) await db.transaction((tx) => alerts.raise(tx, facts));
+    const page = await alerts.list({ status: 'open' });
+    const listed = page.items.filter((a) => a.dedupeKey === `upstream_auth_rejected:${upstreamId}`);
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).toMatchObject({ kind: 'upstream_auth_rejected', occurrences: 2 });
   });
 
   it('被拦消息按会话隔离：A 会话登记的消息不影响 B 会话', async () => {

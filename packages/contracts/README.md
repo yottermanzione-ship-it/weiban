@@ -95,6 +95,13 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 5.7（2026-11-04，ChatReadPort 全部读方法可选事务、上游权限类拒绝提醒）
+
+- 端口 `ChatReadPort`：`getParticipants`、`findDirectConversation`、`findOfficialConversation`、`readMessages` 新增可选参数 `tx`（`getConversation`、`getMessage` 原来就有）。调用方拿着事务时必须传，见 `docs/backend/kernel.md`「事务与端口」。传 `tx` 时在调用方事务里执行：`getParticipants` 不锁会话行；其余方法锁会话行（`FOR UPDATE`）到调用方事务结束。不传时行为不变。服务器内部过渡类型 `ChatReadInTxPort`（T-20261104c）随之删除。
+- `AdminAlertKind` 新增 `upstream_auth_rejected`（上游权限类拒绝）：同一上游短时间内多次回 401 / 403、但同一把密钥的连通测试是好的（这类回答按内容被拒处理，上游不标失效）。发出方 model_access，级别 warning，合并键 `upstream_auth_rejected:{upstreamId}`；说明只有上游名称、次数和时间窗。阈值、时间窗与冷却期在服务器 `product-params.ts` 的 `UPSTREAM_AUTH_REJECTED_ALERT`。旧版后台读到这一种按接收端容错显示 `unsupported`，不报错。
+- 端口参数只在服务器模块之间使用，不影响客户端；提醒种类是新增可选取值，按规则升次版本；Android 生成产物同步版本号。WebSocket 鉴权已放行 5.x，不用改。
+- 依据：任务卡 `docs/tasks/T-20261104f-tx-hardening.md`（T-20261104c、T-20261104a 交接遗留）。
+
 ### 5.6（2026-11-04，联网查找候选的身份与出处、后台搜索身份修正）
 
 - `CharacterSearchCandidate`（3.30 联网查找的候选）新增**可选**字段：`candidateId`（候选 ID，`web_` + 22 位）、`identity`（一句身份说明，只按固定规则从公开结果的标题括注或摘要首句摘出，或取后台核实的说明；不调用模型、不编，摘不出为 null）、`identitySourceUrl`、`sources`（逐项出处，最多 5 条）、`entityKey`（公开资料标识如 `baike:…` / `wiki:zh:…`，或后台人工关联的 `manual:<uuid>`）、`unverified`、`ambiguous`、`action`（add / chat / create，`tolerantEnum`）、`characterId`、`conversationId`、`added`、`character`。原有 `name`、`title`、`description`、`sourceUrl` 含义不变，旧客户端只读这四个字段不受影响。同名的不同人物分开列出：只有同一公开资料标识或后台登记的实体才合并成一项。

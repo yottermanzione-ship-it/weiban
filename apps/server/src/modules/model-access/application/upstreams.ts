@@ -20,6 +20,7 @@ import {
   LOGGER,
   OUTBOX,
   PLATFORM_KEY_OWNER,
+  UPSTREAM_AUTH_REJECTED_ALERT,
   newId,
   type AppConfig,
   type AuditLog,
@@ -40,6 +41,7 @@ import {
   type UpstreamTestFailure,
 } from '../domain/rules.js';
 import {
+  modelAccessSettings,
   modelCatalog,
   modelRoutes,
   upstreamStatus,
@@ -61,6 +63,12 @@ export type StatusSource = 'created' | 'admin_test' | 'key_rotated' | 'gateway' 
  * 这段时间内同一上游再遇到 401 / 403 直接用这次的结论，不再发测试（避免同一时间很多请求一起自检）。
  */
 export const KEY_SELF_CHECK_TTL_MS = 60_000;
+
+/**
+ * T-20261104f：上游「权限类拒绝」提醒发过的时间记在 model_access.settings 的这个键下（每个上游一行，值 { at }）。
+ * 冷却期按它判断：进程重启、以后多进程也不会在冷却期内重复发。
+ */
+export const AUTH_REJECTED_ALERT_KEY_PREFIX = 'upstream_auth_rejected_alerted:';
 
 export function toUpstream(
   row: UpstreamRow,
@@ -112,6 +120,10 @@ export class UpstreamService {
   private readonly log: Logger;
   /** T-20261104a：密钥自检结果（按上游；存进行中的 Promise，同一时间的请求共用一次测试）。 */
   private readonly keyChecks = new Map<string, { at: number; ok: Promise<boolean> }>();
+  /** T-20261104f：每个上游最近的「401 / 403 但自检通过」时刻（毫秒，进程内滑动窗口）。 */
+  private readonly authRejections = new Map<string, number[]>();
+  /** T-20261104f：提醒冷却到期时刻（进程内快路径；权威记录在 model_access.settings）。 */
+  private readonly authAlertQuietUntil = new Map<string, number>();
 
   constructor(
     @Inject(DATABASE) private readonly database: Database,
@@ -581,6 +593,22 @@ export class UpstreamService {
     return ok;
   }
 
+  /**
+   * T-20261104f：网关拿到一次真实调用的 401 / 403（invalid_key，正文不是已知安全策略格式）时调用，代替直接问 keyStillWorks。
+   * 返回值同 keyStillWorks（密钥自检是否通过）。通过时这次计一次「权限类拒绝」：同一上游 windowMs 内满 threshold 次，
+   * 发一条管理员提醒 upstream_auth_rejected（UPSTREAM_AUTH_REJECTED_ALERT，product-params.ts），cooldownMs 内不重复发。
+   * 只在网关第一次拿到上游结果的地方调（文本网关 callUpstreams、媒体网关 withTarget）；reportStatus / recordFailure
+   * 是同一次失败的兜底，仍只问 keyStillWorks，不重复计数。提醒出错只记日志，不影响这次调用。
+   */
+  async confirmAuthRejection(upstreamId: string): Promise<boolean> {
+    const ok = await this.keyStillWorks(upstreamId);
+    if (ok)
+      await this.noteAuthRejection(upstreamId).catch((error: unknown) =>
+        this.log.warn({ err: error, upstreamId }, '上游权限类拒绝提醒写入失败'),
+      );
+    return ok;
+  }
+
   /** 换密钥、手动测试、改地址或协议后，之前的自检结论作废。 */
   forgetKeyCheck(upstreamId: string): void {
     this.keyChecks.delete(upstreamId);
@@ -604,6 +632,95 @@ export class UpstreamService {
         : '上游回了 401/403，密钥自检也失败：按密钥失效处理',
     );
     return result === 'ok';
+  }
+
+  /**
+   * 计一次「401 / 403 但自检通过」，到阈值发提醒。计数在进程内（单实例部署够用，与自检缓存同口径）；
+   * 冷却以 model_access.settings 里的发送时间为准，在发提醒的同一事务里条件写入（冷却期内不写、不发）。
+   */
+  private async noteAuthRejection(upstreamId: string): Promise<void> {
+    const { threshold, windowMs, cooldownMs } = UPSTREAM_AUTH_REJECTED_ALERT;
+    const now = this.clock.nowMs();
+    if ((this.authAlertQuietUntil.get(upstreamId) ?? 0) > now) return;
+    const hits = (this.authRejections.get(upstreamId) ?? []).filter((at) => now - at < windowMs);
+    hits.push(now);
+    if (hits.length < threshold) {
+      this.authRejections.set(upstreamId, hits);
+      return;
+    }
+    // 先在内存里占住冷却：同一时间到达的请求不会一起去发
+    this.authRejections.delete(upstreamId);
+    this.authAlertQuietUntil.set(upstreamId, now + cooldownMs);
+    const count = hits.length;
+    const minutes = Math.round(windowMs / 60_000);
+    const outcome = await this.raiseAuthRejectedAlert(upstreamId, now, count, minutes).catch(
+      (error: unknown) => {
+        // 没发出去：放开内存冷却，下一轮满阈值时再试
+        this.authAlertQuietUntil.delete(upstreamId);
+        throw error;
+      },
+    );
+    if (!outcome) return;
+    this.authAlertQuietUntil.set(upstreamId, outcome.lastMs + cooldownMs);
+    if (outcome.alerted)
+      this.log.warn(
+        { code: 'upstream_auth_rejected_alert', upstreamId, count, windowMinutes: minutes },
+        '同一上游短时间内多次 401/403 而密钥自检通过：已发管理员提醒',
+      );
+  }
+
+  /** 同一事务里：条件写入发送时间（冷却期内写不进去）→ 发件箱提醒 → 审计。返回 null = 上游已删除。 */
+  private async raiseAuthRejectedAlert(
+    upstreamId: string,
+    now: number,
+    count: number,
+    minutes: number,
+  ): Promise<{ alerted: boolean; lastMs: number } | null> {
+    const { cooldownMs } = UPSTREAM_AUTH_REJECTED_ALERT;
+    return this.database.transaction(async (tx) => {
+      const [row] = await tx.db
+        .select({ name: upstreams.name, deletedAt: upstreams.deletedAt })
+        .from(upstreams)
+        .where(eq(upstreams.id, upstreamId));
+      if (!row || row.deletedAt) return null;
+      const key = AUTH_REJECTED_ALERT_KEY_PREFIX + upstreamId;
+      const at = new Date(now);
+      const claimed = await tx.query<{ key: string }>(
+        `INSERT INTO model_access.settings (key, value, updated_at) VALUES ($1, $2::jsonb, $3)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at
+           WHERE coalesce((model_access.settings.value->>'at')::timestamptz, '-infinity') <= $4
+         RETURNING key`,
+        [key, JSON.stringify({ at: at.toISOString() }), at, new Date(now - cooldownMs)],
+      );
+      if (!claimed.rowCount) {
+        // 冷却期内（重启前或别的进程已发过）：不发，内存冷却对齐到那次发送
+        const [previous] = await tx.db
+          .select({ value: modelAccessSettings.value })
+          .from(modelAccessSettings)
+          .where(eq(modelAccessSettings.key, key));
+        const last = Date.parse(String((previous?.value as { at?: unknown } | undefined)?.at));
+        return { alerted: false, lastMs: Number.isFinite(last) ? last : now };
+      }
+      await this.outbox.publish(tx, 'platform.admin_alert_raised', 'model_access', {
+        kind: 'upstream_auth_rejected',
+        severity: 'warning',
+        dedupeKey: `upstream_auth_rejected:${upstreamId}`,
+        summary: upstreamAuthRejectedSummary(row.name, count, minutes),
+        refs: { upstreamId },
+      });
+      await this.audit.record(
+        {
+          module: 'model_access',
+          action: 'upstream.auth_rejected_alert',
+          actorType: 'system',
+          targetType: 'upstream',
+          targetId: upstreamId,
+          details: { count, windowMinutes: minutes },
+        },
+        tx,
+      );
+      return { alerted: true, lastMs: now };
+    });
   }
 
   async get(upstreamId: string): Promise<UpstreamRow> {
@@ -753,6 +870,17 @@ export function upstreamAlert(
         ? null
         : { kind: 'upstream_recovered', severity: 'info', summary: `${label}已恢复可用` };
   }
+}
+
+/**
+ * 上游「权限类拒绝」提醒的说明（契约 5.7；AdminAlertFacts.summary 最多 200 字）。
+ * 只有上游展示名（管理员自己起的平台数据）、次数和时间窗，不含用户内容和密钥。
+ */
+export function upstreamAuthRejectedSummary(name: string, count: number, minutes: number): string {
+  return `上游「${name.slice(0, 40)}」${minutes} 分钟内有 ${count} 次请求被拒（401/403），但密钥连通测试正常：多半是密钥没有所用模型的权限，或账号被服务商限制。这些请求已按内容被拒处理（用户收到推托语），请到供应商控制台检查。`.slice(
+    0,
+    200,
+  );
 }
 
 function testFailed(reason: UpstreamTestFailure): AppError {

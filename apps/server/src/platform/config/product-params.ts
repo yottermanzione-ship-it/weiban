@@ -206,6 +206,19 @@ export const PRIVATE_BLOCK_LIMIT = {
 } as const;
 
 /**
+ * 上游「权限类拒绝」提醒（T-20261104f，契约 5.7 管理员提醒种类 upstream_auth_rejected）。
+ * 来源：总负责人 2026-11-04 任务卡建议值，总经理可调。
+ * 规则：同一上游 windowMs 内出现 threshold 次「回 401 / 403、但同一把密钥的连通测试通过」（这类回答按内容被拒处理，
+ * 上游不标失效），发一条管理员提醒（warning）；发过之后 cooldownMs 内同一上游不再发。
+ * 实现见 model-access/application/upstreams.ts（UpstreamService.confirmAuthRejection）。
+ */
+export const UPSTREAM_AUTH_REJECTED_ALERT = {
+  threshold: 20,
+  windowMs: 10 * MINUTE_MS,
+  cooldownMs: 1 * HOUR_MS,
+} as const;
+
+/**
  * 来源：PRD 第 5 节 P-36（v1.3）。经期主动关心：每个经期周期最多 2 次（经期前提醒 1 次 + 经期中关心 1 次），
  * 所有授权角色合计，每次只由一个角色发出。PLAY-01（契约 3.1 收口时从 ai-runtime/health-care.ts 挪入）
  */
