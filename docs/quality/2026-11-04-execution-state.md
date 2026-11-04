@@ -20,8 +20,8 @@
 | 6    | 朋友圈与动态                               | 首轮不通过；Q-030；[报告 PR #72](https://github.com/yottermanzione-ship-it/weiban/pull/72)                     |
 | 7    | 生态与主动行为                             | 未完成验收；[报告 PR #73](https://github.com/yottermanzione-ship-it/weiban/pull/73)                            |
 | 8    | 玩法、小程序、健康与宠物                   | 首轮不通过；Q-031 到点提醒漏发；[报告 PR #74](https://github.com/yottermanzione-ship-it/weiban/pull/74) |
-| 9    | 通话与语音                                 | 未完成验收；自动检查通过，真实供应商与手机未测；报告准备提交 |
-| 10   | 官方助手与公告                             | 待开始                                                                                                         |
+| 9    | 通话与语音                                 | 未完成验收；[报告 PR #75](https://github.com/yottermanzione-ship-it/weiban/pull/75) |
+| 10   | 官方助手与公告                             | 未完成验收；43 项原检查、2 项独立检查通过；真实模型/手机及客服收费范围待确认 |
 | 11   | 微信、QQ、微博渠道                         | 待开始                                                                                                         |
 | 12   | 管理后台                                   | 待开始；资金相关入口提前随板块 1 检查                                                                          |
 | 13   | 部署、备份、回滚与告警                     | 待开始；交接期仅核对版本和健康状态                                                                             |
