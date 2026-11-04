@@ -16,10 +16,10 @@
 | 2    | 注册登录、账号设置、注销与隐私             | 首轮不通过；Q-027/028；[报告 PR #67](https://github.com/yottermanzione-ship-it/weiban/pull/67)，待修复复核     |
 | 3    | 私聊、记忆、熟悉度、表情包、图片与私密模型 | 首轮不通过；旧 Q-017～020 仍在；[报告 PR #69](https://github.com/yottermanzione-ship-it/weiban/pull/69)        |
 | 4    | 通讯录、角色创建、搜索与广场               | 首轮不通过；Q-029；[报告 PR #70](https://github.com/yottermanzione-ship-it/weiban/pull/70)                     |
-| 5    | 群聊                                       | 未完成验收；已测群管理通过，真实调度/真机待补；仓库平台推送错误，文档本地已提交                                |
-| 6    | 朋友圈与动态                               | 首轮不通过；Q-030 评论并发重试失败，文档本地待提交                                                             |
-| 7    | 生态与主动行为                             | 未完成验收；规则和数据库检查通过，真实多日观察待补                                                             |
-| 8    | 玩法、小程序、健康与宠物                   | 待开始                                                                                                         |
+| 5    | 群聊                                       | 未完成验收；[报告 PR #71](https://github.com/yottermanzione-ship-it/weiban/pull/71)                            |
+| 6    | 朋友圈与动态                               | 首轮不通过；Q-030；[报告 PR #72](https://github.com/yottermanzione-ship-it/weiban/pull/72)                     |
+| 7    | 生态与主动行为                             | 未完成验收；[报告 PR #73](https://github.com/yottermanzione-ship-it/weiban/pull/73)                            |
+| 8    | 玩法、小程序、健康与宠物                   | 首轮不通过；Q-031 到点提醒漏发；报告准备提交                                                                   |
 | 9    | 通话与语音                                 | 待开始                                                                                                         |
 | 10   | 官方助手与公告                             | 待开始                                                                                                         |
 | 11   | 微信、QQ、微博渠道                         | 待开始                                                                                                         |

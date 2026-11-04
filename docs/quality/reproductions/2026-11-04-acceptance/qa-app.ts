@@ -2,6 +2,7 @@
 import 'reflect-metadata';
 import { randomBytes } from 'node:crypto';
 import { Test } from '@nestjs/testing';
+import type { InjectionToken } from '@nestjs/common';
 import { AppModule } from '../../../../apps/server/src/app.module.js';
 import { configureHttpApp } from '../../../../apps/server/src/main.js';
 import { AccountService } from '../../../../apps/server/src/modules/identity/application/accounts.js';
@@ -20,7 +21,7 @@ import {
   testKekRing,
 } from '../../../../apps/server/test/support/fixtures.js';
 
-export async function makeQaApp(overrides: Array<{ token: any; value: any }> = []) {
+export async function makeQaApp(overrides: Array<{ token: InjectionToken; value: unknown }> = []) {
   if (new URL(process.env.TEST_DATABASE_URL ?? '').pathname !== '/wbqa_probe_20261104')
     throw new Error('QA functional probes require their own named database');
   await resetTestDatabase();
@@ -51,22 +52,20 @@ export async function makeQaApp(overrides: Array<{ token: any; value: any }> = [
     const commands = app.get(IdentityCommands),
       id = await commands.createAdmin(name, password);
     await commands.setRole(name, 'user');
-    const auth = await app
-      .get(AccountService)
-      .login(
-        {
-          username: name,
-          password,
-          kind: 'app',
-          device: {
-            platform: 'web',
-            name: 'QA synthetic',
-            appVersion: 'qa',
-            timeZone: 'Asia/Shanghai',
-          },
+    const auth = await app.get(AccountService).login(
+      {
+        username: name,
+        password,
+        kind: 'app',
+        device: {
+          platform: 'web',
+          name: 'QA synthetic',
+          appVersion: 'qa',
+          timeZone: 'Asia/Shanghai',
         },
-        '192.0.2.20',
-      );
+      },
+      '192.0.2.20',
+    );
     return { id, token: auth.session.token };
   };
   const http = async (token: string, path: string, method = 'GET', body?: unknown) => {

@@ -7,9 +7,8 @@ import { makeQaApp } from './qa-app.js';
 let qa: Awaited<ReturnType<typeof makeQaApp>>,
   owner: Awaited<ReturnType<typeof qa.user>>,
   other: typeof owner;
-let ids: string[] = [],
-  groupId: string,
-  postId: string;
+const ids: string[] = [];
+let groupId: string, postId: string;
 beforeAll(async () => {
   qa = await makeQaApp();
   owner = await qa.user('qa_social_owner');
@@ -76,7 +75,9 @@ it('群聊：加人、移出、重入和改名恢复；会员到期后历史可�
   ).toBe(200);
   const left = await qa.http(owner.token, `/groups/${groupId}/members/${ids[0]}`, 'DELETE');
   expect(left.status).toBe(200);
-  expect(left.data.group.formerParticipants.some((x: any) => x.refId === ids[0])).toBe(true);
+  expect(
+    left.data.group.formerParticipants.some((x: { refId: string }) => x.refId === ids[0]),
+  ).toBe(true);
   expect(
     (await qa.http(owner.token, `/groups/${groupId}/members`, 'POST', { characterIds: [ids[0]] }))
       .status,

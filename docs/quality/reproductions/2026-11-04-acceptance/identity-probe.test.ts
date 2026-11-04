@@ -30,7 +30,10 @@ import {
 const serverRequire = createRequire(
   new URL('../../../../apps/server/package.json', import.meta.url),
 );
-let app: any, db: Database, accounts: AccountService, commands: IdentityCommands;
+let app: import('@nestjs/common').INestApplication,
+  db: Database,
+  accounts: AccountService,
+  commands: IdentityCommands;
 let hasher: PasswordHasher, baseUrl: string;
 const device = {
   platform: 'web' as const,
