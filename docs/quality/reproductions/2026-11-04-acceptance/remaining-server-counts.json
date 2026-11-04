@@ -1,0 +1,323 @@
+{
+  "sha": "0bf2434cdc080b9920c27a6db40e0d7b371c7fc1",
+  "passed": 620,
+  "failed": 0,
+  "pending": 0,
+  "files": [
+    {
+      "file": "apps/server/test/channels-helper.test.ts",
+      "passed": 8,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/test/channels-qq.test.ts",
+      "passed": 11,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/test/custom-voice.test.ts",
+      "passed": 4,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/test/db-session-guards.test.ts",
+      "passed": 4,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/test/job-queue.test.ts",
+      "passed": 6,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/test/migrations.test.ts",
+      "passed": 6,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/test/official-assistant.test.ts",
+      "passed": 4,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/test/outbox-inbox.test.ts",
+      "passed": 10,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/test/push-devices.test.ts",
+      "passed": 5,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/test/push-events.test.ts",
+      "passed": 1,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/test/push-reliability.test.ts",
+      "passed": 3,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/test/push-runtime.test.ts",
+      "passed": 5,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/test/server-flow.test.ts",
+      "passed": 1,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/channels/channel-allowlist.test.ts",
+      "passed": 8,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/channels/channel-protocol.test.ts",
+      "passed": 21,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/channels/channel-public.test.ts",
+      "passed": 20,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/channels/channel-store-di.test.ts",
+      "passed": 1,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/channels/qq-protocol.test.ts",
+      "passed": 12,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/calls/application/calls.test.ts",
+      "passed": 4,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/cascade-asr.test.ts",
+      "passed": 4,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/decision-model-status.test.ts",
+      "passed": 1,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/legacy-receiver.test.ts",
+      "passed": 8,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/live-model-fixes.test.ts",
+      "passed": 7,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/media-cache-link.test.ts",
+      "passed": 2,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/models.test.ts",
+      "passed": 9,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/private-care.test.ts",
+      "passed": 4,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/private-model-fixed.test.ts",
+      "passed": 11,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/realtime-voice-billing.test.ts",
+      "passed": 7,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/realtime-voice-clone.test.ts",
+      "passed": 16,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/realtime-voice-session.test.ts",
+      "passed": 8,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/tts-reported-usage.test.ts",
+      "passed": 6,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/upstream-isolation.test.ts",
+      "passed": 19,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/voice-call-composite.test.ts",
+      "passed": 17,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/voice-call-minute-price.test.ts",
+      "passed": 4,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/voice-call-runtime.test.ts",
+      "passed": 12,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/voice-model-selection.test.ts",
+      "passed": 6,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/domain/context-budget.test.ts",
+      "passed": 6,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/domain/hot-order.test.ts",
+      "passed": 6,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/domain/rules.test.ts",
+      "passed": 29,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/domain/voice-call-pipeline.test.ts",
+      "passed": 6,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/domain/web-candidates.test.ts",
+      "passed": 6,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/infra/dashscope-audio.test.ts",
+      "passed": 21,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/infra/dashscope-realtime.test.ts",
+      "passed": 8,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/infra/dashscope-stream-wav.test.ts",
+      "passed": 2,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/infra/dashscope-tts-adapter.test.ts",
+      "passed": 6,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/infra/dashscope-voice-clone.test.ts",
+      "passed": 10,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/infra/json-truncation.test.ts",
+      "passed": 8,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/infra/mimo-asr.test.ts",
+      "passed": 54,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/infra/mimo-tts-adapter.test.ts",
+      "passed": 7,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/infra/native-asr.test.ts",
+      "passed": 69,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/infra/native-opus-adapter.test.ts",
+      "passed": 8,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/infra/native-opus.test.ts",
+      "passed": 30,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/infra/native-stream-lifecycle.test.ts",
+      "passed": 11,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/model-access/infra/safety-policy.test.ts",
+      "passed": 8,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/official-assistant/application/brief.test.ts",
+      "passed": 3,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/official-assistant/application/broadcast.test.ts",
+      "passed": 4,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/official-assistant/application/engine.test.ts",
+      "passed": 13,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/official-assistant/domain/knowledge-base.test.ts",
+      "passed": 11,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/official-assistant/domain/prompt.test.ts",
+      "passed": 8,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/push/domain/notification-rules.test.ts",
+      "passed": 3,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/push/infra/channels.test.ts",
+      "passed": 3,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/push/infra/endpoint-policy.test.ts",
+      "passed": 2,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/push/infra/http-transport.test.ts",
+      "passed": 3,
+      "failed": 0
+    }
+  ]
+}
