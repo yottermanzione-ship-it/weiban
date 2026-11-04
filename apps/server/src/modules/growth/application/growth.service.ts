@@ -15,6 +15,9 @@ import {
   type ContactsReadPort,
   type FamiliarityEventType,
   type IdentityMembershipReadPort,
+  type ChatReadPort,
+  type MediaTranscriptPort,
+  type Message,
 } from '@weiban/contracts';
 import {
   AppError,
@@ -32,6 +35,8 @@ import {
 import { BILLING_PAID_HISTORY_PORT } from '../../billing/index.js';
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { IDENTITY_MEMBERSHIP_READ_PORT } from '../../identity/index.js';
+import { CHAT_READ_PORT } from '../../chat/index.js';
+import { MEDIA_TRANSCRIPT_PORT } from '../../media/index.js';
 import { familiarity, familiarityEvents, anniversaries } from '../infra/db/schema.js';
 import {
   LEVEL_NAMES,
@@ -121,6 +126,8 @@ export class GrowthService {
     @Inject(GrowthContext) private readonly ctx: GrowthContext,
     @Inject(FamiliarityStageSettingsService)
     private readonly stages: FamiliarityStageSettingsService,
+    @Inject(CHAT_READ_PORT) private readonly chatRead: ChatReadPort,
+    @Inject(MEDIA_TRANSCRIPT_PORT) private readonly transcripts: MediaTranscriptPort,
     @Optional()
     @Inject(IDENTITY_MEMBERSHIP_READ_PORT)
     private readonly membership?: IdentityMembershipReadPort,
@@ -304,7 +311,7 @@ export class GrowthService {
    * 目标角色正确；这里负责「有效消息」判定与幂等（键用消息 ID + 角色 ID，群里 @ 多个角色各计一次）。
    * - 去掉空白后至少 minChars 个字；
    * - 与该用户对该角色上一条消息（不论是否计分）内容不完全相同（去空白后比较指纹，不存正文）；
-   * - 距上一条计分消息至少 minIntervalMs（按消息发送时刻；乱序到达时取差的绝对值）。
+   * - 按发送时刻比上一条计分消息晚至少 minIntervalMs；迟到消息不回退时间或覆盖最新计分指纹。
    * 返回本次实际加的点数（无效、已计过或当天已满为 0）。
    */
   async awardUserMessage(
@@ -381,6 +388,52 @@ export class GrowthService {
       sentAt,
     );
     return res.pointsAdded;
+  }
+
+  /** 用户语音成功转写后补计：使用原消息时间和同一幂等键；模型调用发生在本事务之外。 */
+  async awardUserVoice(
+    userId: string,
+    source: Pick<Message, 'messageId' | 'conversationId' | 'scope'>,
+  ): Promise<number> {
+    // 转发记录中的嵌套媒体用“消息号:序号”，不能作为用户本人新发的语音计分。
+    if (!Id.safeParse(source.messageId).success) return 0;
+    const contact = (await this.contacts.listActiveContacts(userId)).find(
+      (item) => item.conversationId === source.conversationId,
+    );
+    // 语音内容没有 @ 字段，群语音和小V会话不属于此计分入口。
+    if (!contact) return 0;
+    return this.db.transaction(async (tx) => {
+      await this.lockFamiliarity(tx, userId, contact.characterId);
+      const message = await this.chatRead.getMessage(source.messageId, [source.scope], tx);
+      if (
+        !message ||
+        message.conversationId !== source.conversationId ||
+        message.senderKind !== 'user' ||
+        message.status !== 'normal' ||
+        message.content?.type !== 'voice'
+      )
+        return 0;
+      const participants = await this.chatRead.getParticipants(source.conversationId, tx);
+      if (
+        !participants.some(
+          (item) =>
+            item.participantId === message.senderParticipantId &&
+            item.kind === 'user' &&
+            item.refId === userId,
+        )
+      )
+        return 0;
+      const transcript = await this.transcripts.getTranscript(message.content.mediaId, tx);
+      if (transcript.status !== 'ready' || !transcript.text?.trim()) return 0;
+      return this.awardUserMessage(
+        tx,
+        userId,
+        contact.characterId,
+        message.messageId,
+        transcript.text,
+        new Date(message.createdAt),
+      );
+    });
   }
 
   /**

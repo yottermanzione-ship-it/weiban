@@ -427,19 +427,16 @@ export class RemindersService implements PlayFeature, PlayReminderPhrasings, OnM
       if (!stale && (await this.shouldDeliver(tx, row, timeZone, now))) {
         const { text, nextCursor } = await this.compose(tx, row);
         cursor = nextCursor;
-        try {
-          await this.ctx.postToDirectChat(tx, {
-            userId: row.userId,
-            characterId: row.characterId,
-            sender: 'character',
-            content: { type: 'text', text },
-            idempotencyKey: `reminder:${row.id}:${due.toISOString()}`,
-            ...(row.health ? { labels: ['health'] } : {}),
-          });
-        } catch (err) {
-          // 私聊不可用（角色刚被删除等）：跳过这一次，照常推进。
-          this.logger.warn({ err, reminderId: row.id }, '提醒发送失败，跳过本次');
-        }
+        // 消息与进度同事务提交；发送失败必须回滚，让任务/分钟扫描重试。
+        // 毫秒时间戳稳定且符合聊天幂等键字符限制，ISO 日期的小数点不被接受。
+        await this.ctx.postToDirectChat(tx, {
+          userId: row.userId,
+          characterId: row.characterId,
+          sender: 'character',
+          content: { type: 'text', text },
+          idempotencyKey: `reminder:${row.id}:${due.getTime()}`,
+          ...(row.health ? { labels: ['health'] } : {}),
+        });
       }
       const next = nextFire(JSON.parse(row.repeat) as Repeat, row.time, timeZone, due);
       await tx.db

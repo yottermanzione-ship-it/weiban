@@ -345,7 +345,7 @@ describeDb('T041真实启动：注册→延迟接受→HTTP上游→计费/消�
           (r) =>
             r.status === 'succeeded' &&
             r.model_key === FLOW_MODEL &&
-            Number(r.charged_micros) === 360 &&
+            Number(r.charged_micros) === 234 &&
             r.purpose === 'chat_reply',
         ),
       ).toBe(true);
@@ -361,13 +361,14 @@ describeDb('T041真实启动：注册→延迟接受→HTTP上游→计费/消�
           e.characterId === fixture.character.characterId &&
           e.modelKey === FLOW_MODEL &&
           e.category === 'chat' &&
-          e.amountMicros === -360,
+          e.amountMicros === -234,
       ),
     ).toBe(true);
     const wallet = Wallet.parse(
       (await http().get('/api/v1/billing/wallet').set('Authorization', auth).expect(200)).body,
     );
-    expect(wallet.balanceMicros).toBe(bonusMicros - 720);
+    // 两次调用均按成本加三成：100 输入 × 1.3 + 20 输出 × 5.2 = 234 微元。
+    expect(wallet.balanceMicros).toBe(bonusMicros - 468);
     expect(wallet.heldMicros).toBe(0);
     await vi.waitFor(async () => {
       const plans = await db.query<{ kind: string; status: string }>(

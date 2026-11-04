@@ -110,8 +110,10 @@ export class AccountService {
         if (existing && existing.status === 'active') {
           const fresh = now.getTime() - existing.createdAt.getTime() <= REGISTER_RETRY_WINDOW_MS;
           if (fresh && (await this.hasher.verify(existing.passwordHash, input.password))) {
-            const session = await this.sessions.create(tx, existing.id, 'app', input.device);
-            return { response: await this.authResponse(tx, existing, session), created: false };
+            const current = await this.lockVerifiedUser(tx, existing, input.password);
+            if (!current) throw new AppError('username_taken', '用户名已被占用');
+            const session = await this.sessions.create(tx, current.id, 'app', input.device);
+            return { response: await this.authResponse(tx, current, session), created: false };
           }
         }
         if (existing) throw new AppError('username_taken', '用户名已被占用');
@@ -169,12 +171,14 @@ export class AccountService {
       throw new AppError('invalid_credentials', '用户名或密码错误');
     }
     await this.throttle.clear(keys);
-    if (input.kind === 'admin' && user.role !== 'admin') {
-      throw new AppError('forbidden', '该账号不是管理员，不能登录管理后台');
-    }
     return this.database.transaction(async (tx) => {
+      const current = await this.lockVerifiedUser(tx, user, input.password);
+      if (!current) throw new AppError('invalid_credentials', '用户名或密码错误');
+      if (input.kind === 'admin' && current.role !== 'admin') {
+        throw new AppError('forbidden', '该账号不是管理员，不能登录管理后台');
+      }
       // 旧版微伴用 bcrypt 存密码：登录成功后静默升级为 argon2id，用户无感（迁移兼容）。
-      if (this.hasher.needsRehash(user.passwordHash)) {
+      if (this.hasher.needsRehash(current.passwordHash)) {
         const upgraded = await this.hasher.hash(input.password);
         await tx.db
           .update(users)
@@ -200,7 +204,7 @@ export class AccountService {
         { userId: user.id, sessionId: session.sessionId, kind: input.kind },
         '登录成功',
       );
-      return this.authResponse(tx, user, session);
+      return this.authResponse(tx, current, session);
     });
   }
 
@@ -243,7 +247,7 @@ export class AccountService {
       // 用 403 而不是默认的 401：密码输错不代表登录失效，客户端不应因此退出登录
       throw new AppError('invalid_credentials', '密码错误', { status: 403 });
     }
-    await this.beginDeletion(userId, { actorType: 'user' });
+    await this.beginDeletion(userId, { actorType: 'user' }, { user, password });
   }
 
   /**
@@ -269,8 +273,18 @@ export class AccountService {
   private async beginDeletion(
     userId: string,
     actor: { actorType: 'user' } | { actorType: 'admin'; operatorUserId: string; reason: string },
+    credentials?: { user: UserRow; password: string },
   ): Promise<void> {
     await this.database.transaction(async (tx) => {
+      if (credentials) {
+        const current = await this.lockVerifiedUser(
+          tx,
+          credentials.user,
+          credentials.password,
+          new AppError('unauthenticated', '登录已失效'),
+        );
+        if (!current) throw new AppError('invalid_credentials', '密码错误', { status: 403 });
+      }
       const now = this.clock.now();
       const updated = await tx.db
         .update(users)
@@ -312,6 +326,34 @@ export class AccountService {
   }
 
   // ---------- 内部 ----------
+
+  /**
+   * 与重置密码共用 users 行锁，把已验证的凭据绑定到本次写入。
+   * 哈希可能因另一次合法登录升级而改变，此时重验最新哈希，不误拒绝同密码登录。
+   * 锁保持到会话创建或注销事务提交，期间不能插入一次重置再使用旧校验结果。
+   */
+  private async lockVerifiedUser(
+    tx: DbTx,
+    verifiedUser: UserRow,
+    password: string,
+    inactiveError?: AppError,
+  ): Promise<UserRow | null> {
+    const [current] = await tx.db
+      .select()
+      .from(users)
+      .where(eq(users.id, verifiedUser.id))
+      .for('update');
+    if (!current || current.status !== 'active') {
+      if (inactiveError) throw inactiveError;
+      return null;
+    }
+    if (
+      current.passwordHash !== verifiedUser.passwordHash &&
+      !(await this.hasher.verify(current.passwordHash, password))
+    )
+      return null;
+    return current;
+  }
 
   private async findUserByUsername(
     executor: Database | DbTx,

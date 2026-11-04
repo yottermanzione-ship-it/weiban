@@ -66,14 +66,35 @@ describe('evaluateUserMessage 有效消息判定', () => {
     expect(evaluateUserMessage({ text: '睡了吗', sentAt: later(3_000), ...base }).valid).toBe(true);
   });
 
-  it('乱序到达（发送时刻早于上一条计分消息）按差的绝对值判断', () => {
+  it('乱序到达不得回退计分时刻或覆盖最新消息指纹', () => {
     const base = { lastMessageHash: 'x', lastMessageScoredAt: t0 };
     expect(evaluateUserMessage({ text: '你好呀', sentAt: later(-1_000), ...base }).valid).toBe(
       false,
     );
     expect(evaluateUserMessage({ text: '你好呀', sentAt: later(-5_000), ...base }).valid).toBe(
-      true,
+      false,
     );
+    expect(evaluateUserMessage({ text: '你好呀', sentAt: later(-5_000), ...base }).hash).toBe('x');
+  });
+
+  it('先后处理零秒、十秒、一秒，再到十三秒时，旧消息不会突破间隔或重复内容限制', () => {
+    let lastMessageHash: string | null = null,
+      lastMessageScoredAt: Date | null = null;
+    const valid: boolean[] = [];
+    for (const [text, ms] of [
+      ['今天好吗', 0],
+      ['已经好了', 10_000],
+      ['今天再说', 1000],
+      ['已经好了', 13_000],
+      ['周末见吧', 13_000],
+    ] as const) {
+      const sentAt = later(ms);
+      const result = evaluateUserMessage({ text, sentAt, lastMessageHash, lastMessageScoredAt });
+      lastMessageHash = result.hash;
+      if (result.valid) lastMessageScoredAt = sentAt;
+      valid.push(result.valid);
+    }
+    expect(valid).toEqual([true, true, false, false, true]);
   });
 
   it('emoji 按一个字计', () => {

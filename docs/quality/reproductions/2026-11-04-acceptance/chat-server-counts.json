@@ -1,0 +1,440 @@
+[
+  {
+    "file": "apps/server/test/ai-runtime-queue.test.ts",
+    "passed": 1,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/test/ai-runtime.test.ts",
+    "passed": 26,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/test/chat.test.ts",
+    "passed": 13,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/test/growth-familiarity-stage6.test.ts",
+    "passed": 2,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/test/media.test.ts",
+    "passed": 6,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/test/memory-persona.test.ts",
+    "passed": 14,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/test/memory-vector.test.ts",
+    "passed": 10,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/test/private-digest-quarantine.test.ts",
+    "passed": 1,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/test/quirks.test.ts",
+    "passed": 7,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/test/realtime-sockets.test.ts",
+    "passed": 9,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/test/realtime.test.ts",
+    "passed": 6,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/test/upstream-isolation.test.ts",
+    "passed": 6,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/domain/care-signal-rules.test.ts",
+    "passed": 3,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/domain/character-prompt.test.ts",
+    "passed": 4,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/domain/chat-form-suppression.test.ts",
+    "passed": 11,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/domain/chat-summary.test.ts",
+    "passed": 15,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/domain/ecology-actions-cleanup.test.ts",
+    "passed": 11,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/domain/ecology-counters.test.ts",
+    "passed": 11,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/domain/ecology-decision.test.ts",
+    "passed": 7,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/domain/ecology-fallback.test.ts",
+    "passed": 1,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/domain/ecology-murmur.test.ts",
+    "passed": 30,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/domain/follow-ups.test.ts",
+    "passed": 8,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/domain/image-caption.test.ts",
+    "passed": 13,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/domain/image-public-search.test.ts",
+    "passed": 4,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/domain/knowledge.test.ts",
+    "passed": 1,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/domain/legacy-prompt.test.ts",
+    "passed": 3,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/domain/live-reply-fixes.test.ts",
+    "passed": 4,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/domain/moments-reactions.test.ts",
+    "passed": 6,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/domain/photo-marker.test.ts",
+    "passed": 12,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/domain/post-photo.test.ts",
+    "passed": 9,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/domain/private-digest.test.ts",
+    "passed": 4,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/domain/quirks.test.ts",
+    "passed": 11,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/domain/reply-delivery.test.ts",
+    "passed": 16,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/domain/reply-media-candidates.test.ts",
+    "passed": 9,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/domain/reply-media-rules.test.ts",
+    "passed": 14,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/domain/reply-rules.test.ts",
+    "passed": 12,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/domain/sticker-marker.test.ts",
+    "passed": 13,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/domain/weibo-media.test.ts",
+    "passed": 7,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/call-agent.test.ts",
+    "passed": 17,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/character-image.test.ts",
+    "passed": 13,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/chat-photo.test.ts",
+    "passed": 7,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/closeout-hooks.test.ts",
+    "passed": 5,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/content-text.test.ts",
+    "passed": 2,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/ecology-gate.test.ts",
+    "passed": 5,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/ecology-jev.test.ts",
+    "passed": 21,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/ecology-murmur-service.test.ts",
+    "passed": 4,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/ecology-settings-cleanup.test.ts",
+    "passed": 5,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/gap-closure.test.ts",
+    "passed": 2,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/group-chat-sticker.test.ts",
+    "passed": 4,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/image-public-search.test.ts",
+    "passed": 3,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/image-understanding.test.ts",
+    "passed": 8,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/media-ai-batch.test.ts",
+    "passed": 27,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/media-ai-diversity.test.ts",
+    "passed": 8,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/media-ai-photo.test.ts",
+    "passed": 13,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/memory-batch.test.ts",
+    "passed": 4,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/memory-trigger.test.ts",
+    "passed": 3,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/model-blocked-messages.test.ts",
+    "passed": 5,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/moment-scenery.test.ts",
+    "passed": 8,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/moments-memory.test.ts",
+    "passed": 38,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/moments-reactions-split.test.ts",
+    "passed": 11,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/planner-batch.test.ts",
+    "passed": 14,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/proactive-charge.test.ts",
+    "passed": 2,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/proactive-forms.test.ts",
+    "passed": 8,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/proactive-plan-action.test.ts",
+    "passed": 5,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/realtime-call-agent.test.ts",
+    "passed": 13,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/settings.test.ts",
+    "passed": 4,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/timeline.test.ts",
+    "passed": 10,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/web-photo.test.ts",
+    "passed": 10,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/ai-runtime/application/weibo-material-service.test.ts",
+    "passed": 8,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/growth/domain/familiarity-rules.test.ts",
+    "passed": 9,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/media/application/legacy-content-object.test.ts",
+    "passed": 7,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/media/application/sticker-asset-importer.test.ts",
+    "passed": 6,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "file": "apps/server/src/modules/media/application/sticker-labels.test.ts",
+    "passed": 6,
+    "failed": 0,
+    "pending": 0
+  }
+]

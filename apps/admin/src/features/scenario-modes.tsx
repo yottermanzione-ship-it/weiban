@@ -241,6 +241,10 @@ function ModeDrawer({
   onSaved: (mode: ScenarioMode) => void;
 }) {
   const [form] = Form.useForm<ModeForm>();
+  // 新建标识由界面生成，同一次保存的网络重试保持不变。
+  const [createId] = useState(
+    () => `custom_${crypto.randomUUID().replaceAll('-', '').slice(0, 24)}`,
+  );
   const feedback = useFormFeedback(form);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -252,6 +256,7 @@ function ModeDrawer({
     setSaving(true);
     setError('');
     const data: Partial<ScenarioMode> = {
+      ...(mode ? {} : { id: createId }),
       name: values.name,
       description: values.description,
       presetPrompt: values.presetPrompt?.trim() || null,

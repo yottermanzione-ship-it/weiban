@@ -482,6 +482,7 @@ export class SyncEngine {
   private applyUpdate(update: UserUpdate): void {
     switch (update.type) {
       case 'message.created':
+      case 'message.updated':
         this.upsertMessage(update.data.message);
         break;
       case 'message.recalled': {
@@ -665,6 +666,8 @@ export class SyncEngine {
     const before = this.value.messages.find((item) => item.messageId === message.messageId);
     // 撤回是单向状态；后到的旧快照不能复原正文。
     if (before?.status === 'recalled' && message.status === 'normal') return;
+    // 卡片只能选择一次；先收到选择更新、后收到旧历史页时，不能擦掉已确认的选择。
+    if (before?.actionChoice && !message.actionChoice) message.actionChoice = before.actionChoice;
     this.value.messages = this.value.messages.filter(
       (item) => item.messageId !== message.messageId,
     );

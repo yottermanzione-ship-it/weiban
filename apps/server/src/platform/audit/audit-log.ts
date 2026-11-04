@@ -105,7 +105,8 @@ export class AuditLog {
 
   /**
    * 注销完成时调用（ACC-06 / ADM-10「审计只记用户 ID 的哈希」）：把审计记录里该用户的明文 ID
-   * （对象、details 中出现的）替换为哈希；操作人列是 uuid 类型，置空并把哈希写进 details.actorHash。返回改动的行数。可重复调用。
+   * （对象、details 中出现的）替换为哈希；操作人列是 uuid 类型，置空并把哈希写进 details.actorHash。
+   * 旧改名审计的账号名一并移除，包括此前已替换成哈希的记录。返回改动的行数。可重复调用。
    */
   async anonymizeUser(userId: string, userHash: string, tx?: DbTx): Promise<number> {
     const result = await (tx ?? this.database).query(
@@ -113,22 +114,30 @@ export class AuditLog {
           SET actor_id = CASE WHEN actor_id::text = $1::text THEN NULL ELSE actor_id END,
               target_type = CASE WHEN target_id = $1::text THEN 'user_hash' ELSE target_type END,
               target_id = CASE WHEN target_id = $1::text THEN $2::text ELSE target_id END,
-              details = (CASE WHEN strpos(details::text, $1::text) > 0
+              details = ((CASE WHEN strpos(details::text, $1::text) > 0
                               THEN replace(details::text, $1::text, $2::text)::jsonb ELSE details END)
+                        - CASE WHEN module = 'identity' AND action = 'alias.updated'
+                               THEN ARRAY['previous', 'username'] ELSE ARRAY[]::text[] END)
                         || CASE WHEN actor_id::text = $1::text THEN jsonb_build_object('actorHash', $2::text)
                                 ELSE '{}'::jsonb END
-        WHERE actor_id::text = $1::text OR target_id = $1::text OR strpos(details::text, $1::text) > 0`,
+        WHERE actor_id::text = $1::text OR target_id = $1::text OR strpos(details::text, $1::text) > 0
+           OR (module = 'identity' AND action = 'alias.updated'
+               AND (target_id = $2::text OR details->>'actorHash' = $2::text)
+               AND details ?| ARRAY['previous', 'username'])`,
       [userId, userHash],
     );
     return result.rowCount ?? 0;
   }
 
-  /** 核验用：审计记录中仍含该用户明文 ID 的行数（注销完成后必须为 0）。 */
-  async countPlainUser(userId: string): Promise<number> {
+  /** 核验用：明文 ID 或已匿名化改名审计里仍残留账号名的行数，注销后必须为 0。 */
+  async countPlainUser(userId: string, userHash?: string): Promise<number> {
     const { rows } = await this.database.query<{ n: string }>(
       `SELECT count(*) AS n FROM platform.audit_log
-        WHERE actor_id::text = $1::text OR target_id = $1::text OR strpos(details::text, $1::text) > 0`,
-      [userId],
+        WHERE actor_id::text = $1::text OR target_id = $1::text OR strpos(details::text, $1::text) > 0
+           OR (module = 'identity' AND action = 'alias.updated'
+               AND (target_id = $2::text OR details->>'actorHash' = $2::text)
+               AND details ?| ARRAY['previous', 'username'])`,
+      [userId, userHash ?? null],
     );
     return Number(rows[0]?.n ?? 0);
   }

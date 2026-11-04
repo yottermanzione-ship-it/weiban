@@ -2,7 +2,8 @@
  * 每日对账（billing.md 8.2，每天凌晨 3:30 北京时间对前一天跑一次，结果在管理后台查看；同一天重跑覆盖）。
  *
  * ① 账本自洽：每个账户 流水合计 = balance_micros；held_micros = 有效冻结合计；超过 1 小时仍 active 的冻结；
- *    用户钱包余额低于 −(安全透支上限 + 1 元)。任一不满足 → ledgerConsistent = false，异常明细存 details。
+ *    用户当前欠费区间有未经先用后扣授权的负余额扣款。任一不满足 → ledgerConsistent = false，异常明细存 details。
+ *    已批准的先用后扣欠费由欠费名单展示，不因余额为负就判账本异常。
  * ② model-access 比对用量与流水后经事件回写；重跑①③层只更新自己的字段。
  * ③ 与上游账单比对：近 35 天内结束的账单，按成本价汇总同期（北京时间）流水的 cost_micros，偏差超过阈值标红。
  *
@@ -118,11 +119,25 @@ export class ReconciliationService {
       [new Date(now.getTime() - STALE_HOLD_MS)],
     );
 
-    const floor = 0; // 取消透支；任何用户负余额都须核对，历史金额不自动追扣。
+    // 3.27 允许先用后扣；只排除与本账户已结算 postpaid hold 对应的扣费。
+    // 看最后一次恢复非负余额之后的全部负余额扣款，避免正常扣费掩盖一次异常扣款。
+    // 与流水分页一致，created_at + id 确定顺序（同一时刻的多笔也逐笔检查）。
     const overdrawn = await db.query<{ id: string; user_id: string | null; balance: string }>(
-      `SELECT id, user_id, balance_micros AS balance FROM billing.accounts
-        WHERE kind = 'user' AND balance_micros < $1`,
-      [floor],
+      `SELECT a.id, a.user_id, a.balance_micros AS balance FROM billing.accounts a
+        WHERE a.kind = 'user' AND a.balance_micros < 0 AND EXISTS (
+          SELECT 1 FROM billing.ledger_entries l
+          WHERE l.account_id = a.id AND l.amount_micros < 0 AND l.balance_after_micros < 0
+            AND NOT EXISTS (
+              SELECT 1 FROM billing.holds h
+              WHERE l.type = 'charge' AND h.id = l.hold_id AND h.account_id = a.id
+                AND h.postpaid AND h.status = 'settled' AND h.ledger_entry_id = l.id
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM billing.ledger_entries recovered
+              WHERE recovered.account_id = a.id AND recovered.balance_after_micros >= 0
+                AND (recovered.created_at, recovered.id) > (l.created_at, l.id)
+            )
+        )`,
     );
     const overdrawnAccounts = overdrawn.rows.map((r) => ({
       accountId: r.id,

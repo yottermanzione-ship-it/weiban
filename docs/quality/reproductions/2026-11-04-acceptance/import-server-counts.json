@@ -1,0 +1,13 @@
+{
+  "sha": "0bf2434cdc080b9920c27a6db40e0d7b371c7fc1",
+  "passed": 4,
+  "failed": 0,
+  "pending": 0,
+  "files": [
+    {
+      "file": "apps/server/test/import-draft.test.ts",
+      "passed": 4,
+      "failed": 0
+    }
+  ]
+}

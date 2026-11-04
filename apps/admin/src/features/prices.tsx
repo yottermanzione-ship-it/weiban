@@ -18,6 +18,7 @@ import {
   BillingAdminEndpoints,
   ModelAccessAdminEndpoints,
   PriceUnit,
+  costPlusPriceMicros,
   type AdminPriceVersion,
 } from '@weiban/contracts';
 import { yuanToMicros } from '@weiban/client-core';
@@ -29,6 +30,7 @@ import { FieldHelp, FormSection, Page, StatusTag, useDangerConfirm, useToast } f
 import { formatDateTime, formatYuan } from '../ui/format.js';
 import { useFormFeedback } from '../data/form-feedback.js';
 import { splitSelected } from './batch-helpers.js';
+import { CostPlusHint } from './model/cost-plus.js';
 
 type PriceVersion = z.infer<typeof AdminPriceVersion>;
 type PriceItem = PriceVersion['items'][number];
@@ -56,7 +58,7 @@ interface PriceRow {
   modelKey: string;
   unit: PriceUnit;
   price: number;
-  cost: number;
+  cost: number | null;
   bandEnabled: boolean;
   bandName?: string;
   bandStart?: string;
@@ -292,7 +294,7 @@ export function PricesPage() {
         onRefresh={list.refresh}
         onRowClick={openDetail}
         emptyTitle="还没有价目表"
-        emptyHint="点右上角「新建价格版本」，给每个模型填上每百万 token 的售价和成本价，然后启用。"
+        emptyHint="点右上角「新建价格版本」，填写每个计费单位的成本，系统自动加三成算售价，然后启用。"
         emptyAction={
           <Button type="primary" onClick={() => setEditing({ mode: 'new' })}>
             新建第一个版本
@@ -455,7 +457,7 @@ function VersionDrawer({
       const items = values.rows.map((row) => ({
         modelKey: row.modelKey,
         unit: row.unit,
-        priceMicros: yuanToMicros(String(row.price ?? 0)),
+        priceMicros: costPlusPriceMicros(yuanToMicros(String(row.cost))),
         costMicros: yuanToMicros(String(row.cost ?? 0)),
         band:
           row.bandEnabled && row.bandStart && row.bandEnd
@@ -501,7 +503,7 @@ function VersionDrawer({
       modelKey: '',
       unit: 'input_tokens_per_million' as PriceUnit,
       price: 0,
-      cost: 0,
+      cost: null,
       bandEnabled: false,
     },
   ];
@@ -519,7 +521,7 @@ function VersionDrawer({
             ? `复制调价 · 基于「${version.versionLabel}」`
             : '新建价格版本'
       }
-      subtitle="价格单位是元；1 元 = 100 积分"
+      subtitle="填写成本，日常售价自动加三成；1 元 = 100 积分，限时折扣另算"
       width={860}
       footer={<DrawerActions onCancel={onClose} onSubmit={() => void save()} saving={saving} />}
     >
@@ -576,18 +578,22 @@ function VersionDrawer({
                       }))}
                     />
                   </Form.Item>
-                  <Form.Item name={[field.name, 'price']} style={{ marginBottom: 6 }}>
+                  <Form.Item
+                    name={[field.name, 'cost']}
+                    style={{ marginBottom: 6 }}
+                    rules={[
+                      {
+                        required: true,
+                        type: 'number',
+                        min: 0,
+                        message: '填写成本；零成本请明确填 0',
+                      },
+                    ]}
+                    extra={<CostPlusHint name={['rows', field.name, 'cost']} />}
+                  >
                     <InputNumber
                       min={0}
-                      step={0.01}
-                      addonBefore="售价"
-                      addonAfter="元"
-                      style={{ width: '100%' }}
-                    />
-                  </Form.Item>
-                  <Form.Item name={[field.name, 'cost']} style={{ marginBottom: 6 }}>
-                    <InputNumber
-                      min={0}
+                      precision={6}
                       step={0.01}
                       addonBefore="成本"
                       addonAfter="元"
@@ -645,7 +651,7 @@ function VersionDrawer({
                     modelKey: '',
                     unit: 'input_tokens_per_million',
                     price: 0,
-                    cost: 0,
+                    cost: null,
                     bandEnabled: false,
                   })
                 }

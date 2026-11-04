@@ -6,7 +6,7 @@ import type { AddressInfo } from 'node:net';
 import { WebSocket } from 'ws';
 import request from 'supertest';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { AuthResponse, ServerFrame, type SyncPort } from '@weiban/contracts';
+import { AuthResponse, CONTRACT_VERSION, ServerFrame, type SyncPort } from '@weiban/contracts';
 import { createWorker } from '../src/main.js';
 import { AppModule } from '../src/app.module.js';
 import {
@@ -123,12 +123,12 @@ describeDb('realtime 真实 WS：鉴权、提交推送、替换、前台、超�
     await once(c.ws, 'open');
     return c;
   }
-  async function authenticate(c: SocketClient, credential = token) {
+  async function authenticate(c: SocketClient, credential = token, contractVersion = '2.1') {
     c.send(
       'auth',
       {
         token: credential,
-        contractVersion: '2.1',
+        contractVersion,
         device: {
           platform: 'web',
           name: 'socket test',
@@ -143,6 +143,24 @@ describeDb('realtime 真实 WS：鉴权、提交推送、替换、前台、超�
     expect(frame.ref).toBe('auth-ref');
     return frame;
   }
+  it('当前构建版本与兼容旧版都能鉴权，不接受尚未支持的未来主版本', async () => {
+    for (const version of ['2.0', '3.0', '4.0', '5.7', CONTRACT_VERSION]) {
+      const client = await open();
+      expect((await authenticate(client, token, version)).data).toMatchObject({
+        minClientVersion: '2.0',
+      });
+      await client.close();
+    }
+    const future = await open();
+    const closed = once(future.ws, 'close');
+    future.send('auth', {
+      token,
+      contractVersion: `${Number(CONTRACT_VERSION.split('.')[0]) + 1}.0`,
+      device: { platform: 'web', name: 'future', appVersion: '0', timeZone: 'UTC' },
+      lastUpdateSeq: 0,
+    });
+    expect((await closed)[0]).toBe(4426);
+  });
   it('首帧必须鉴权；错误令牌、旧契约和鉴权10秒超时关闭', async () => {
     const first = await open();
     const closed = once(first.ws, 'close');

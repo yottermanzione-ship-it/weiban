@@ -1,0 +1,104 @@
+{
+  "sha": "0bf2434cdc080b9920c27a6db40e0d7b371c7fc1",
+  "passed": 114,
+  "failed": 0,
+  "pending": 0,
+  "files": [
+    {
+      "file": "packages/ai-evals/test/adult-boundaries.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "packages/ai-evals/test/character-boundaries.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "packages/ai-evals/test/cross-character.test.ts",
+      "passed": 5,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "packages/ai-evals/test/observations.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "packages/ai-evals/test/proactive-boundaries.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "packages/ai-evals/test/registry.test.ts",
+      "passed": 5,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "packages/ai-evals/test/relationships.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "packages/ai-evals/test/runner.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "packages/ai-evals/test/safety-care.test.ts",
+      "passed": 5,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "packages/ai-evals/test/time-awareness.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "packages/eslint-config/test/module-boundaries.test.ts",
+      "passed": 37,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "packages/eslint-config/test/module-cycles.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/web/test/guide-triggers.test.ts",
+      "passed": 9,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/web/test/guided-tour-policy.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/web/test/permission-steps.test.ts",
+      "passed": 6,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/web/test/site-search.test.ts",
+      "passed": 16,
+      "failed": 0,
+      "pending": 0
+    }
+  ]
+}

@@ -1,0 +1,133 @@
+{
+  "sha": "0bf2434cdc080b9920c27a6db40e0d7b371c7fc1",
+  "passed": 162,
+  "failed": 0,
+  "pending": 0,
+  "files": [
+    {
+      "file": "apps/server/test/admin-character-purge.test.ts",
+      "passed": 4,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/test/admin-private-character.test.ts",
+      "passed": 6,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/test/characters-policy.test.ts",
+      "passed": 8,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/test/contacts-queue.test.ts",
+      "passed": 1,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/test/contacts.test.ts",
+      "passed": 10,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/test/custom-characters.test.ts",
+      "passed": 14,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/test/custom-trial-runtime.test.ts",
+      "passed": 8,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/test/site-search.test.ts",
+      "passed": 12,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/test/web-candidates.test.ts",
+      "passed": 7,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/characters/application/plaza-official.test.ts",
+      "passed": 4,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/characters/application/weibo-legacy.test.ts",
+      "passed": 2,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/characters/domain/child-features.test.ts",
+      "passed": 1,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/characters/domain/custom-card.test.ts",
+      "passed": 2,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/characters/domain/legacy-admin.domain.test.ts",
+      "passed": 21,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/characters/domain/legacy-avatar-import.test.ts",
+      "passed": 6,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/characters/domain/legacy-card.test.ts",
+      "passed": 3,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/characters/domain/legacy-import.test.ts",
+      "passed": 3,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/characters/domain/legacy-revisions.domain.test.ts",
+      "passed": 11,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/characters/domain/legacy-voice-import.test.ts",
+      "passed": 10,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/plaza/application/plaza-official.service.test.ts",
+      "passed": 2,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/plaza/application/role-requests.service.test.ts",
+      "passed": 6,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/plaza/domain/role-request-quota.test.ts",
+      "passed": 5,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/plaza/domain/rules.test.ts",
+      "passed": 6,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/plaza/domain/site-search.test.ts",
+      "passed": 6,
+      "failed": 0
+    },
+    {
+      "file": "apps/server/src/modules/plaza/domain/web-merge.test.ts",
+      "passed": 4,
+      "failed": 0
+    }
+  ]
+}

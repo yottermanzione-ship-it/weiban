@@ -1,0 +1,1247 @@
+{
+  "sha": "0bf2434cdc080b9920c27a6db40e0d7b371c7fc1",
+  "serverTracked": 210,
+  "serverMissing": [],
+  "files": [
+    {
+      "file": "apps/admin/src/components/character-voice-state.test.ts",
+      "passed": 3,
+      "evidence": "shared-checks-result.log"
+    },
+    {
+      "file": "apps/admin/src/components/persona-text-sections.test.ts",
+      "passed": 2,
+      "evidence": "shared-checks-result.log"
+    },
+    {
+      "file": "apps/admin/src/features/batch-helpers.test.ts",
+      "passed": 9,
+      "evidence": "shared-checks-result.log"
+    },
+    {
+      "file": "apps/admin/src/features/model/list-parse.test.ts",
+      "passed": 3,
+      "evidence": "shared-checks-result.log"
+    },
+    {
+      "file": "apps/admin/src/features/model/realtime-models.test.ts",
+      "passed": 4,
+      "evidence": "shared-checks-result.log"
+    },
+    {
+      "file": "apps/admin/src/features/search-entities-helpers.test.ts",
+      "passed": 4,
+      "evidence": "shared-checks-result.log"
+    },
+    {
+      "file": "apps/server/src/cli/seed-sticker-labels-options.test.ts",
+      "passed": 7,
+      "evidence": "final-original-result.log"
+    },
+    {
+      "file": "apps/server/src/cli/voice-call-pipeline-options.test.ts",
+      "passed": 17,
+      "evidence": "final-original-result.log"
+    },
+    {
+      "file": "apps/server/src/cli/voice-catalog-options.test.ts",
+      "passed": 17,
+      "evidence": "final-original-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/call-agent.test.ts",
+      "passed": 17,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/character-image.test.ts",
+      "passed": 13,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/chat-photo.test.ts",
+      "passed": 7,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/closeout-hooks.test.ts",
+      "passed": 5,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/content-text.test.ts",
+      "passed": 2,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/ecology-gate.test.ts",
+      "passed": 5,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/ecology-jev.test.ts",
+      "passed": 21,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/ecology-murmur-service.test.ts",
+      "passed": 4,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/ecology-settings-cleanup.test.ts",
+      "passed": 5,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/gap-closure.test.ts",
+      "passed": 2,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/group-chat-sticker.test.ts",
+      "passed": 4,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/image-public-search.test.ts",
+      "passed": 3,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/image-understanding.test.ts",
+      "passed": 8,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/media-ai-batch.test.ts",
+      "passed": 27,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/media-ai-diversity.test.ts",
+      "passed": 8,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/media-ai-photo.test.ts",
+      "passed": 13,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/memory-batch.test.ts",
+      "passed": 4,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/memory-trigger.test.ts",
+      "passed": 3,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/model-blocked-messages.test.ts",
+      "passed": 5,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/moment-scenery.test.ts",
+      "passed": 8,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/moments-memory.test.ts",
+      "passed": 38,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/moments-reactions-split.test.ts",
+      "passed": 11,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/planner-batch.test.ts",
+      "passed": 14,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/proactive-charge.test.ts",
+      "passed": 2,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/proactive-forms.test.ts",
+      "passed": 8,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/proactive-plan-action.test.ts",
+      "passed": 5,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/realtime-call-agent.test.ts",
+      "passed": 13,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/settings.test.ts",
+      "passed": 4,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/timeline.test.ts",
+      "passed": 10,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/web-photo.test.ts",
+      "passed": 10,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/application/weibo-material-service.test.ts",
+      "passed": 8,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/domain/care-signal-rules.test.ts",
+      "passed": 3,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/domain/character-prompt.test.ts",
+      "passed": 4,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/domain/chat-form-suppression.test.ts",
+      "passed": 11,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/domain/chat-summary.test.ts",
+      "passed": 15,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/domain/ecology-actions-cleanup.test.ts",
+      "passed": 11,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/domain/ecology-counters.test.ts",
+      "passed": 11,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/domain/ecology-decision.test.ts",
+      "passed": 7,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/domain/ecology-fallback.test.ts",
+      "passed": 1,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/domain/ecology-murmur.test.ts",
+      "passed": 30,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/domain/follow-ups.test.ts",
+      "passed": 8,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/domain/image-caption.test.ts",
+      "passed": 13,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/domain/image-public-search.test.ts",
+      "passed": 4,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/domain/knowledge.test.ts",
+      "passed": 1,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/domain/legacy-prompt.test.ts",
+      "passed": 3,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/domain/live-reply-fixes.test.ts",
+      "passed": 4,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/domain/moments-reactions.test.ts",
+      "passed": 6,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/domain/photo-marker.test.ts",
+      "passed": 12,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/domain/post-photo.test.ts",
+      "passed": 9,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/domain/private-digest.test.ts",
+      "passed": 4,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/domain/quirks.test.ts",
+      "passed": 11,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/domain/reply-delivery.test.ts",
+      "passed": 16,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/domain/reply-media-candidates.test.ts",
+      "passed": 9,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/domain/reply-media-rules.test.ts",
+      "passed": 14,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/domain/reply-rules.test.ts",
+      "passed": 12,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/domain/sticker-marker.test.ts",
+      "passed": 13,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/ai-runtime/domain/weibo-media.test.ts",
+      "passed": 7,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/billing/application/model-rates.test.ts",
+      "passed": null,
+      "evidence": "billing-files.json; billing-evidence.md"
+    },
+    {
+      "file": "apps/server/src/modules/billing/domain/rules.test.ts",
+      "passed": null,
+      "evidence": "billing-files.json; billing-evidence.md"
+    },
+    {
+      "file": "apps/server/src/modules/calls/application/calls.test.ts",
+      "passed": 4,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/channels/channel-allowlist.test.ts",
+      "passed": 8,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/channels/channel-protocol.test.ts",
+      "passed": 21,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/channels/channel-public.test.ts",
+      "passed": 20,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/channels/channel-store-di.test.ts",
+      "passed": 1,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/channels/qq-protocol.test.ts",
+      "passed": 12,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/characters/application/plaza-official.test.ts",
+      "passed": 4,
+      "evidence": "contacts-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/characters/application/weibo-legacy.test.ts",
+      "passed": 2,
+      "evidence": "contacts-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/characters/domain/child-features.test.ts",
+      "passed": 1,
+      "evidence": "contacts-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/characters/domain/custom-card.test.ts",
+      "passed": 2,
+      "evidence": "contacts-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/characters/domain/legacy-admin.domain.test.ts",
+      "passed": 21,
+      "evidence": "contacts-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/characters/domain/legacy-avatar-import.test.ts",
+      "passed": 6,
+      "evidence": "contacts-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/characters/domain/legacy-card.test.ts",
+      "passed": 3,
+      "evidence": "contacts-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/characters/domain/legacy-import.test.ts",
+      "passed": 3,
+      "evidence": "contacts-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/characters/domain/legacy-revisions.domain.test.ts",
+      "passed": 11,
+      "evidence": "contacts-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/characters/domain/legacy-voice-import.test.ts",
+      "passed": 10,
+      "evidence": "contacts-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/chat/application/group-access.test.ts",
+      "passed": 3,
+      "evidence": "social-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/client-logs/application/client-logs.test.ts",
+      "passed": 4,
+      "evidence": "final-original-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/growth/domain/familiarity-rules.test.ts",
+      "passed": 9,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/identity/domain/rules.test.ts",
+      "passed": 11,
+      "evidence": "identity-tests.log"
+    },
+    {
+      "file": "apps/server/src/modules/identity/infra/password-hasher.test.ts",
+      "passed": 4,
+      "evidence": "identity-tests.log"
+    },
+    {
+      "file": "apps/server/src/modules/importer/application/merge-results.test.ts",
+      "passed": 4,
+      "evidence": "final-original-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/media/application/legacy-content-object.test.ts",
+      "passed": 7,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/media/application/sticker-asset-importer.test.ts",
+      "passed": 6,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/media/application/sticker-labels.test.ts",
+      "passed": 6,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/cascade-asr.test.ts",
+      "passed": 4,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/decision-model-status.test.ts",
+      "passed": 1,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/legacy-receiver.test.ts",
+      "passed": 8,
+      "evidence": "legacy-receiver-recheck.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/live-model-fixes.test.ts",
+      "passed": 7,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/media-cache-link.test.ts",
+      "passed": 2,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/models.test.ts",
+      "passed": 9,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/private-care.test.ts",
+      "passed": 4,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/private-model-fixed.test.ts",
+      "passed": 11,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/realtime-voice-billing.test.ts",
+      "passed": 7,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/realtime-voice-clone.test.ts",
+      "passed": 16,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/realtime-voice-session.test.ts",
+      "passed": 8,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/tts-reported-usage.test.ts",
+      "passed": 6,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/upstream-isolation.test.ts",
+      "passed": 19,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/voice-call-composite.test.ts",
+      "passed": 17,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/voice-call-minute-price.test.ts",
+      "passed": 4,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/voice-call-runtime.test.ts",
+      "passed": 12,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/application/voice-model-selection.test.ts",
+      "passed": 6,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/domain/context-budget.test.ts",
+      "passed": 6,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/domain/hot-order.test.ts",
+      "passed": 6,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/domain/rules.test.ts",
+      "passed": 29,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/domain/voice-call-pipeline.test.ts",
+      "passed": 6,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/domain/web-candidates.test.ts",
+      "passed": 6,
+      "evidence": "social-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/infra/dashscope-audio.test.ts",
+      "passed": 21,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/infra/dashscope-realtime.test.ts",
+      "passed": 8,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/infra/dashscope-stream-wav.test.ts",
+      "passed": 2,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/infra/dashscope-tts-adapter.test.ts",
+      "passed": 6,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/infra/dashscope-voice-clone.test.ts",
+      "passed": 10,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/infra/json-truncation.test.ts",
+      "passed": 8,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/infra/mimo-asr.test.ts",
+      "passed": 54,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/infra/mimo-tts-adapter.test.ts",
+      "passed": 7,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/infra/native-asr.test.ts",
+      "passed": 69,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/infra/native-opus-adapter.test.ts",
+      "passed": 8,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/infra/native-opus.test.ts",
+      "passed": 30,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/infra/native-stream-lifecycle.test.ts",
+      "passed": 11,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/model-access/infra/safety-policy.test.ts",
+      "passed": 8,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/official-assistant/application/brief.test.ts",
+      "passed": 3,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/official-assistant/application/broadcast.test.ts",
+      "passed": 4,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/official-assistant/application/engine.test.ts",
+      "passed": 13,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/official-assistant/domain/knowledge-base.test.ts",
+      "passed": 11,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/official-assistant/domain/prompt.test.ts",
+      "passed": 8,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/plaza/application/plaza-official.service.test.ts",
+      "passed": 2,
+      "evidence": "contacts-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/plaza/application/role-requests.service.test.ts",
+      "passed": 6,
+      "evidence": "contacts-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/plaza/domain/role-request-quota.test.ts",
+      "passed": 5,
+      "evidence": "contacts-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/plaza/domain/rules.test.ts",
+      "passed": 6,
+      "evidence": "contacts-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/plaza/domain/site-search.test.ts",
+      "passed": 6,
+      "evidence": "contacts-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/plaza/domain/web-merge.test.ts",
+      "passed": 4,
+      "evidence": "contacts-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/policy/application/character-mode-eligibility.test.ts",
+      "passed": 2,
+      "evidence": "final-original-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/push/domain/notification-rules.test.ts",
+      "passed": 3,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/push/infra/channels.test.ts",
+      "passed": 3,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/push/infra/endpoint-policy.test.ts",
+      "passed": 2,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/push/infra/http-transport.test.ts",
+      "passed": 3,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/recap/application/recap.service.test.ts",
+      "passed": 10,
+      "evidence": "final-original-result.log"
+    },
+    {
+      "file": "apps/server/src/modules/recap/domain/recap-rules.test.ts",
+      "passed": 11,
+      "evidence": "final-original-result.log"
+    },
+    {
+      "file": "apps/server/src/platform/clock/clock.test.ts",
+      "passed": 3,
+      "evidence": "final-original-result.log"
+    },
+    {
+      "file": "apps/server/src/platform/config/config.test.ts",
+      "passed": 10,
+      "evidence": "final-original-result.log"
+    },
+    {
+      "file": "apps/server/src/platform/crypto/aes-gcm.test.ts",
+      "passed": 2,
+      "evidence": "final-original-result.log"
+    },
+    {
+      "file": "apps/server/src/platform/crypto/envelope-batch.test.ts",
+      "passed": 2,
+      "evidence": "final-original-result.log"
+    },
+    {
+      "file": "apps/server/src/platform/crypto/kek-ring.test.ts",
+      "passed": 2,
+      "evidence": "final-original-result.log"
+    },
+    {
+      "file": "apps/server/src/platform/deletion/user-data-registry.test.ts",
+      "passed": 3,
+      "evidence": "identity-tests.log"
+    },
+    {
+      "file": "apps/server/src/platform/http/app-error.test.ts",
+      "passed": 4,
+      "evidence": "final-original-result.log"
+    },
+    {
+      "file": "apps/server/src/platform/logging/sanitize.test.ts",
+      "passed": 5,
+      "evidence": "final-original-result.log"
+    },
+    {
+      "file": "apps/server/src/platform/search/public-identity.test.ts",
+      "passed": 4,
+      "evidence": "social-server-result.log"
+    },
+    {
+      "file": "apps/server/src/platform/search/search-text.test.ts",
+      "passed": 9,
+      "evidence": "social-server-result.log"
+    },
+    {
+      "file": "apps/server/test/admin-character-purge.test.ts",
+      "passed": 4,
+      "evidence": "contacts-server-result.log"
+    },
+    {
+      "file": "apps/server/test/admin-private-character.test.ts",
+      "passed": 6,
+      "evidence": "contacts-server-result.log"
+    },
+    {
+      "file": "apps/server/test/ai-runtime-queue.test.ts",
+      "passed": 1,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/test/ai-runtime.test.ts",
+      "passed": 26,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/test/arena-dataset.test.ts",
+      "passed": 31,
+      "evidence": "final-original-result.log"
+    },
+    {
+      "file": "apps/server/test/arena-sync.test.ts",
+      "passed": 9,
+      "evidence": "final-original-result.log"
+    },
+    {
+      "file": "apps/server/test/billing-c13.test.ts",
+      "passed": null,
+      "evidence": "billing-files.json; billing-evidence.md"
+    },
+    {
+      "file": "apps/server/test/billing-postpaid.test.ts",
+      "passed": null,
+      "evidence": "billing-files.json; billing-evidence.md"
+    },
+    {
+      "file": "apps/server/test/billing.test.ts",
+      "passed": null,
+      "evidence": "billing-files.json; billing-evidence.md"
+    },
+    {
+      "file": "apps/server/test/care-missing-signals.test.ts",
+      "passed": 8,
+      "evidence": "social-server-result.log"
+    },
+    {
+      "file": "apps/server/test/channels-helper.test.ts",
+      "passed": 8,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/test/channels-qq.test.ts",
+      "passed": 11,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/test/character-image-fallback.test.ts",
+      "passed": 5,
+      "evidence": "final-original-result.log"
+    },
+    {
+      "file": "apps/server/test/characters-policy.test.ts",
+      "passed": 8,
+      "evidence": "contacts-server-result.log"
+    },
+    {
+      "file": "apps/server/test/chat.test.ts",
+      "passed": 13,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/test/client-logs.test.ts",
+      "passed": 3,
+      "evidence": "identity-client-logs.log"
+    },
+    {
+      "file": "apps/server/test/closeout-assembly.test.ts",
+      "passed": 1,
+      "evidence": "final-original-result.log"
+    },
+    {
+      "file": "apps/server/test/contacts-queue.test.ts",
+      "passed": 1,
+      "evidence": "contacts-server-result.log"
+    },
+    {
+      "file": "apps/server/test/contacts.test.ts",
+      "passed": 10,
+      "evidence": "contacts-server-result.log"
+    },
+    {
+      "file": "apps/server/test/custom-characters.test.ts",
+      "passed": 14,
+      "evidence": "contacts-server-result.log"
+    },
+    {
+      "file": "apps/server/test/custom-deletion-race.test.ts",
+      "passed": 5,
+      "evidence": "identity-tests.log"
+    },
+    {
+      "file": "apps/server/test/custom-trial-runtime.test.ts",
+      "passed": 8,
+      "evidence": "contacts-server-result.log"
+    },
+    {
+      "file": "apps/server/test/custom-voice.test.ts",
+      "passed": 4,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/test/db-session-guards.test.ts",
+      "passed": 4,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/test/envelope-crypto.test.ts",
+      "passed": 7,
+      "evidence": "identity-tests.log"
+    },
+    {
+      "file": "apps/server/test/growth-familiarity-stage6.test.ts",
+      "passed": 2,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/test/http-kernel.test.ts",
+      "passed": 7,
+      "evidence": "identity-tests.log"
+    },
+    {
+      "file": "apps/server/test/identity.test.ts",
+      "passed": 34,
+      "evidence": "identity-tests.log"
+    },
+    {
+      "file": "apps/server/test/import-draft.test.ts",
+      "passed": 4,
+      "evidence": "import-server-result.log"
+    },
+    {
+      "file": "apps/server/test/job-queue.test.ts",
+      "passed": 6,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/test/kek-rotation.test.ts",
+      "passed": 3,
+      "evidence": "identity-tests.log"
+    },
+    {
+      "file": "apps/server/test/legacy-character-media-import.test.ts",
+      "passed": 2,
+      "evidence": "final-original-result.log"
+    },
+    {
+      "file": "apps/server/test/library-snapshot.test.ts",
+      "passed": 7,
+      "evidence": "social-server-result.log"
+    },
+    {
+      "file": "apps/server/test/media.test.ts",
+      "passed": 6,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/test/memory-persona.test.ts",
+      "passed": 14,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/test/memory-vector.test.ts",
+      "passed": 10,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/test/migrations.test.ts",
+      "passed": 6,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/test/model-access.test.ts",
+      "passed": null,
+      "evidence": "billing-files.json; billing-evidence.md"
+    },
+    {
+      "file": "apps/server/test/model-gateway.test.ts",
+      "passed": null,
+      "evidence": "billing-files.json; billing-evidence.md"
+    },
+    {
+      "file": "apps/server/test/moments-contact-reset.test.ts",
+      "passed": 7,
+      "evidence": "social-server-result.log"
+    },
+    {
+      "file": "apps/server/test/official-assistant.test.ts",
+      "passed": 4,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/test/outbox-inbox.test.ts",
+      "passed": 10,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/test/play-continuity.test.ts",
+      "passed": 5,
+      "evidence": "social-server-result.log"
+    },
+    {
+      "file": "apps/server/test/play-tx-deadlock.test.ts",
+      "passed": 3,
+      "evidence": "social-server-result.log"
+    },
+    {
+      "file": "apps/server/test/private-digest-quarantine.test.ts",
+      "passed": 1,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/test/proactive.test.ts",
+      "passed": 12,
+      "evidence": "social-server-result.log"
+    },
+    {
+      "file": "apps/server/test/push-devices.test.ts",
+      "passed": 5,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/test/push-events.test.ts",
+      "passed": 1,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/test/push-reliability.test.ts",
+      "passed": 3,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/test/push-runtime.test.ts",
+      "passed": 5,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/test/quirks.test.ts",
+      "passed": 7,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/test/realtime-sockets.test.ts",
+      "passed": 9,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/test/realtime.test.ts",
+      "passed": 6,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/test/server-flow.test.ts",
+      "passed": 1,
+      "evidence": "remaining-server-result.log"
+    },
+    {
+      "file": "apps/server/test/simulation.test.ts",
+      "passed": 8,
+      "evidence": "social-server-result.log"
+    },
+    {
+      "file": "apps/server/test/site-search.test.ts",
+      "passed": 12,
+      "evidence": "contacts-server-result.log"
+    },
+    {
+      "file": "apps/server/test/subscriber-tx.test.ts",
+      "passed": 1,
+      "evidence": "social-server-result.log"
+    },
+    {
+      "file": "apps/server/test/upstream-isolation.test.ts",
+      "passed": 6,
+      "evidence": "chat-server-result.log"
+    },
+    {
+      "file": "apps/server/test/web-candidates.test.ts",
+      "passed": 7,
+      "evidence": "contacts-server-result.log"
+    },
+    {
+      "file": "apps/server/test/web-feedback-catalog.test.ts",
+      "passed": 5,
+      "evidence": "final-original-result.log"
+    },
+    {
+      "file": "apps/web/test/guide-triggers.test.ts",
+      "passed": 9,
+      "evidence": "final-client-result.log"
+    },
+    {
+      "file": "apps/web/test/guided-tour-policy.test.ts",
+      "passed": 4,
+      "evidence": "final-client-result.log"
+    },
+    {
+      "file": "apps/web/test/permission-steps.test.ts",
+      "passed": 6,
+      "evidence": "final-client-result.log"
+    },
+    {
+      "file": "apps/web/test/site-search.test.ts",
+      "passed": 16,
+      "evidence": "final-client-result.log"
+    },
+    {
+      "file": "packages/ai-evals/test/adult-boundaries.test.ts",
+      "passed": 3,
+      "evidence": "final-client-result.log"
+    },
+    {
+      "file": "packages/ai-evals/test/character-boundaries.test.ts",
+      "passed": 4,
+      "evidence": "final-client-result.log"
+    },
+    {
+      "file": "packages/ai-evals/test/cross-character.test.ts",
+      "passed": 5,
+      "evidence": "final-client-result.log"
+    },
+    {
+      "file": "packages/ai-evals/test/observations.test.ts",
+      "passed": 3,
+      "evidence": "final-client-result.log"
+    },
+    {
+      "file": "packages/ai-evals/test/proactive-boundaries.test.ts",
+      "passed": 3,
+      "evidence": "final-client-result.log"
+    },
+    {
+      "file": "packages/ai-evals/test/registry.test.ts",
+      "passed": 5,
+      "evidence": "final-client-result.log"
+    },
+    {
+      "file": "packages/ai-evals/test/relationships.test.ts",
+      "passed": 4,
+      "evidence": "final-client-result.log"
+    },
+    {
+      "file": "packages/ai-evals/test/runner.test.ts",
+      "passed": 3,
+      "evidence": "final-client-result.log"
+    },
+    {
+      "file": "packages/ai-evals/test/safety-care.test.ts",
+      "passed": 5,
+      "evidence": "final-client-result.log"
+    },
+    {
+      "file": "packages/ai-evals/test/time-awareness.test.ts",
+      "passed": 3,
+      "evidence": "final-client-result.log"
+    },
+    {
+      "file": "packages/client-core/test/avatar.test.ts",
+      "passed": 19,
+      "evidence": "shared-checks-result.log"
+    },
+    {
+      "file": "packages/client-core/test/channel-credentials.test.ts",
+      "passed": 6,
+      "evidence": "shared-checks-result.log"
+    },
+    {
+      "file": "packages/client-core/test/client.test.ts",
+      "passed": 16,
+      "evidence": "shared-checks-result.log"
+    },
+    {
+      "file": "packages/client-core/test/history.test.ts",
+      "passed": 4,
+      "evidence": "shared-checks-result.log"
+    },
+    {
+      "file": "packages/client-core/test/sync-runner.test.ts",
+      "passed": 6,
+      "evidence": "shared-checks-result.log"
+    },
+    {
+      "file": "packages/client-core/test/sync-vectors.test.ts",
+      "passed": 19,
+      "evidence": "shared-checks-result.log"
+    },
+    {
+      "file": "packages/client-core/test/wechat-bind-link.test.ts",
+      "passed": 13,
+      "evidence": "shared-checks-result.log"
+    },
+    {
+      "file": "packages/contracts/test/admin-model-key.test.ts",
+      "passed": 11,
+      "evidence": "shared-checks-result.log"
+    },
+    {
+      "file": "packages/contracts/test/character-card.test.ts",
+      "passed": 10,
+      "evidence": "shared-checks-result.log"
+    },
+    {
+      "file": "packages/contracts/test/character-purge.test.ts",
+      "passed": 4,
+      "evidence": "shared-checks-result.log"
+    },
+    {
+      "file": "packages/contracts/test/ecology-actions.test.ts",
+      "passed": 4,
+      "evidence": "shared-checks-result.log"
+    },
+    {
+      "file": "packages/contracts/test/generate.test.ts",
+      "passed": 9,
+      "evidence": "shared-checks-result.log"
+    },
+    {
+      "file": "packages/contracts/test/schemas.test.ts",
+      "passed": 45,
+      "evidence": "shared-checks-result.log"
+    },
+    {
+      "file": "packages/contracts/test/service-unit-pricing.test.ts",
+      "passed": 7,
+      "evidence": "shared-checks-result.log"
+    },
+    {
+      "file": "packages/contracts/test/site-search.test.ts",
+      "passed": 9,
+      "evidence": "shared-checks-result.log"
+    },
+    {
+      "file": "packages/contracts/test/voice-read-compat.test.ts",
+      "passed": 2,
+      "evidence": "shared-checks-result.log"
+    },
+    {
+      "file": "packages/eslint-config/test/module-boundaries.test.ts",
+      "passed": 37,
+      "evidence": "final-client-result.log"
+    },
+    {
+      "file": "packages/eslint-config/test/module-cycles.test.ts",
+      "passed": 4,
+      "evidence": "final-client-result.log"
+    }
+  ]
+}

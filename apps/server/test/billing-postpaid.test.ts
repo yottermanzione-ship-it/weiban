@@ -19,6 +19,7 @@ import {
   PostpaidSettingsService,
   PriceService,
   ReservationService,
+  ReconciliationService,
 } from '../src/modules/billing/testing.js';
 import { DATABASE, TestClock, newId, type Database } from '../src/platform/index.js';
 import { describeDb, resetTestDatabase } from './support/db.js';
@@ -152,12 +153,12 @@ describeDb('3.27 先用后扣、可欠一次（真实 PostgreSQL）', () => {
     expect(await balance(id)).toEqual({ balance: 5_000, held: 0 });
     const row = await q.hold(hold.holdId);
     expect(row?.postpaid).toBe(true);
-    expect(Number(row?.estimate_micros)).toBe(10_000);
+    expect(Number(row?.estimate_micros)).toBe(6_500);
 
     const settled = await settle(hold.holdId);
-    expect(settled.amountMicros).toBe(10_000);
-    expect(settled.balanceAfterMicros).toBe(-5_000);
-    expect(await balance(id)).toEqual({ balance: -5_000, held: 0 });
+    expect(settled.amountMicros).toBe(6_500);
+    expect(settled.balanceAfterMicros).toBe(-1_500);
+    expect(await balance(id)).toEqual({ balance: -1_500, held: 0 });
 
     // 欠费：聊天、后台任务都拒绝
     for (const purpose of ['chat_reply', 'memory'] as const) {
@@ -166,7 +167,7 @@ describeDb('3.27 先用后扣、可欠一次（真实 PostgreSQL）', () => {
       if (!r.ok) expect(r.error).toBe('insufficient_balance');
     }
     // 余额正好 0 也拒绝
-    await grant(id, 5_000);
+    await grant(id, 1_500);
     const zero = await reservations.estimateAndReserve(input(id));
     expect(zero.ok ? null : zero.error).toBe('insufficient_balance');
     // 充值后转正 → 恢复
@@ -178,10 +179,63 @@ describeDb('3.27 先用后扣、可欠一次（真实 PostgreSQL）', () => {
     await settle((await reserveOk(input(debtor))).holdId);
     const debts = await app.get(BillingAdminService).listDebts();
     const item = debts.items.find((d) => d.userId === debtor);
-    expect(item?.debtMicros).toBe(9_000);
-    expect(item?.debtPoints).toBe(0.9);
+    expect(item?.debtMicros).toBe(5_500);
+    expect(item?.debtPoints).toBe(0.55);
     expect(debts.count).toBeGreaterThanOrEqual(1);
-    expect(debts.totalDebtMicros).toBeGreaterThanOrEqual(9_000);
+    expect(debts.totalDebtMicros).toBeGreaterThanOrEqual(5_500);
+  });
+
+  it('对账接受获准欠费，但仍发现余额和冻结合计被破坏', async () => {
+    const id = await user(1_000);
+    await settle((await reserveOk(input(id))).holdId);
+    const reconciliation = app.get(ReconciliationService);
+    expect((await reconciliation.run('2026-10-21')).ledgerConsistent).toBe(true);
+    expect((await reconciliation.details('2026-10-21'))?.overdrawnAccounts).toEqual([]);
+    await db.query(
+      'UPDATE billing.accounts SET balance_micros=balance_micros+1, held_micros=held_micros+1 WHERE user_id=$1',
+      [id],
+    );
+    try {
+      expect((await reconciliation.run('2026-10-21')).ledgerConsistent).toBe(false);
+      const details = await reconciliation.details('2026-10-21');
+      expect(details?.balanceMismatches).toHaveLength(1);
+      expect(details?.heldMismatches).toHaveLength(1);
+    } finally {
+      await db.query(
+        'UPDATE billing.accounts SET balance_micros=balance_micros-1, held_micros=held_micros-1 WHERE user_id=$1',
+        [id],
+      );
+    }
+  });
+
+  it('合法先用后扣不能掩盖当前欠费区间中的异常扣款；补足后新欠费不误报', async () => {
+    const id = await user(1_000);
+    const first = await reserveOk(input(id));
+    const second = await reserveOk(input(id));
+    await settle(first.holdId);
+    // 合成异常：金额与余额仍相等，但这笔负余额扣款没有 postpaid 授权。
+    await db.transaction(async (tx) => {
+      const result = await tx.query<{ id: string; balance_micros: string }>(
+        'UPDATE billing.accounts SET balance_micros=balance_micros-100 WHERE user_id=$1 RETURNING id,balance_micros',
+        [id],
+      );
+      const row = result.rows[0]!;
+      await tx.query(
+        `INSERT INTO billing.ledger_entries(id,account_id,created_at,type,amount_micros,balance_after_micros,idempotency_key,absorbed,safety_overdraft)
+        VALUES($1,$2,$3,'adjustment',-100,$4,$5,false,false)`,
+        [newId(), row.id, clock.now(), row.balance_micros, newId()],
+      );
+    });
+    await settle(second.holdId);
+    const reconciliation = app.get(ReconciliationService);
+    expect((await reconciliation.run('2026-10-21')).ledgerConsistent).toBe(false);
+    const details = await reconciliation.details('2026-10-21');
+    expect(details?.balanceMismatches).toEqual([]);
+    expect(details?.overdrawnAccounts.map((row) => row.userId)).toEqual([id]);
+    await grant(id, -(await balance(id)).balance + 1);
+    await settle((await reserveOk(input(id))).holdId);
+    expect((await reconciliation.run('2026-10-21')).ledgerConsistent).toBe(true);
+    expect((await reconciliation.details('2026-10-21'))?.overdrawnAccounts).toEqual([]);
   });
 
   it('并发上限：满了后台任务直接拒绝；结算一笔后可继续；前台排队等到空位', async () => {
@@ -234,7 +288,7 @@ describeDb('3.27 先用后扣、可欠一次（真实 PostgreSQL）', () => {
     if (platform.ok) {
       const row = await q.hold(platform.value.holdId);
       expect(row?.postpaid).toBe(false);
-      expect(platform.value.amountMicros).toBe(232_000);
+      expect(platform.value.amountMicros).toBe(150_800);
     } else {
       // 测试配置的平台每日上限太小时只会是 budget_exceeded，不会是先用后扣的拒绝原因
       expect(platform.error).toBe('budget_exceeded');
