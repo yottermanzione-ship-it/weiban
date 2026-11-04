@@ -95,6 +95,17 @@ v2.0 将 WB-Card 1.0 完整卡、可保存未完成的草稿卡与媒体下载/�
 
 ## 变更记录
 
+### 5.6（2026-11-04，联网查找候选的身份与出处、后台搜索身份修正）
+
+- `CharacterSearchCandidate`（3.30 联网查找的候选）新增**可选**字段：`candidateId`（候选 ID，`web_` + 22 位）、`identity`（一句身份说明，只按固定规则从公开结果的标题括注或摘要首句摘出，或取后台核实的说明；不调用模型、不编，摘不出为 null）、`identitySourceUrl`、`sources`（逐项出处，最多 5 条）、`entityKey`（公开资料标识如 `baike:…` / `wiki:zh:…`，或后台人工关联的 `manual:<uuid>`）、`unverified`、`ambiguous`、`action`（add / chat / create，`tolerantEnum`）、`characterId`、`conversationId`、`added`、`character`。原有 `name`、`title`、`description`、`sourceUrl` 含义不变，旧客户端只读这四个字段不受影响。同名的不同人物分开列出：只有同一公开资料标识或后台登记的实体才合并成一项。
+- 新增 `SearchEndpoints.resolveCandidate`（`POST /api/v1/search/character-candidates/resolve`，请求体只有 `candidateId`，严格校验）：点击候选时服务器重读保存的候选和当前实体关联，返回 `WebCandidateResolution`（添加 / 去聊天的官方角色，或创建页预填资料）。不接受客户端提交的名字和网址，不收费、不联网；候选过期（24 小时）或不存在返回 404。添加仍走 `POST /contacts` 的添加闸门。
+- `SiteSearchResult.entityKey` / `sourceUrl` 开始有值：官方角色被后台关联到实体时为实体键与实体登记的第一条出处（字段本身 5.5 已有）。
+- 新增后台 `SearchAdminEndpoints`（均为管理员）：实体列表 / 详情、新建、修改身份说明与出处、关联 / 取消关联标识与官方角色、合并、拆分，官方角色搜索别名查看与修改（添加待审核、通过、驳回、从搜索里去掉、恢复）。每次修改必须写 2～200 字原因，写审计，返回含修正历史（谁、何时、改了什么、原因）。
+- 新增端口 `WebCandidateSearchPort`（model-access 提供，plaza 聚合层调用）；`CharacterSearchPort` 新增 `resolveEntities`，`CharacterSearchNameHit` 新增 `entityKey`、`sourceUrl`。
+- 联网查找的额度、公共缓存、租约去重与按实际供应商结果计费含义不变（S 原样）；同一个词并发时后到的等先到的那次结果，不再打一次供应商。
+- 只新增可选字段、接口与 schema，不删不改旧字段含义，按规则升次版本；Android 生成产物同步版本号与新 schema。WebSocket 鉴权已放行 5.x，不用改。
+- 依据：`docs/refactor/24-character-search.md` 第 3 步，任务卡 `docs/tasks/T-20261104e-character-search-p1-step3.md`。
+
 ### 5.5（2026-11-04，站内角色搜索：联想与聚合结果）
 
 - 新增 `SearchEndpoints.suggest`（`GET /api/v1/search/suggest?q=`）：站内联想，边输入边查。按名字、经审核别名、关键词做精确、前缀、完整拼音、拼音首字母与包含匹配，只查已上架官方角色、上架中的广场作品和本人角色（私人角色只按本人查）。返回最多 8 条 `SiteSearchSuggestion`（名字、命中方式、命中的别名 / 关键词、出现在哪些来源）和最多 5 条 `didYouMean` 错字建议（同音字、单处编辑；只在没有精确命中时给，点击才采用，服务器不改写搜索词）。

@@ -66,6 +66,8 @@ export const MEDIA_ADAPTER = Symbol('weiban.model-access.media-adapter');
 /** 契约 3.1 ModelQuotePort：按用户所选模型报价（调用方 ai-runtime）。 */
 export const MODEL_QUOTE_PORT = Symbol('weiban.model-access.quote');
 export const SHARED_WEB_SEARCH_PORT = Symbol('weiban.model-access.shared-web-search');
+/** 5.6（T-20261104e）：联网查找的站外候选出口（WebCandidateSearchPort），调用方 plaza 的聚合层。 */
+export const MODEL_WEB_CANDIDATES = Symbol('weiban.model-access.web-candidates');
 
 /**
  * V2（2026-10-28）：实时通话按需复刻要用角色自己的声音样本（默认音色登记的参考音频）。characters 依赖 model-access，

@@ -12,12 +12,17 @@
  * 资格：官方 = 预设且已上架（下架 / 停用 / 草稿都不进）；本人 = 非试聊自定义角色，只按 owner 查。
  * 查询时仍 JOIN characters 再核一次，所以刷新前的旧投影也不会让下架角色出现在结果里。
  * 投影只存名字、经审核别名、关键词（代表作品、后台检索词、旧卡签名）与拼音，以及一句身份说明。
+ *
+ * 5.6（T-20261104e）：官方角色再叠加后台人工修正（SearchEntityService）：已通过的搜索别名进投影、
+ * 被去掉的人设别名 / 关键词不进投影、关联实体的核实身份说明优先，并带上实体键与第一条出处。
+ * 这些修正表的写入由 0158 的触发器登记待刷新，走同一套刷新。
  */
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import { asc, eq, inArray } from 'drizzle-orm';
 import {
   CharacterSummary,
   type CharacterSearchCard,
+  type CharacterSearchEntity,
   type CharacterSearchNameHit,
   type CharacterSearchPort,
   type CharacterSearchTypoHit,
@@ -29,6 +34,7 @@ import {
   LOGGER,
   escapeLikePattern,
   scoreTerm,
+  searchKey,
   termRecord,
   typoKind,
   uniqueTerms,
@@ -42,6 +48,7 @@ import { parseLegacyCard } from '../domain/legacy-card.js';
 import { legacyIdentity, officialIdentity, ownIdentity } from '../domain/search-identity.js';
 import { characters, searchDirty, searchTerms } from '../infra/db/schema.js';
 import { CharacterService } from './characters.js';
+import { SearchEntityService, type SearchProjectionInput } from './search-entities.js';
 
 type CharacterRow = typeof characters.$inferSelect;
 type TermInsert = typeof searchTerms.$inferInsert;
@@ -70,6 +77,8 @@ interface TermRow {
   scope: 'official' | 'own';
   display_name: string;
   identity: string | null;
+  entity_key: string | null;
+  source_url: string | null;
 }
 
 /** 两种可见范围的资格条件（t = 投影，c = 角色表；$1 = 当前用户）。 */
@@ -78,7 +87,7 @@ const VISIBLE = `(
   OR (t.scope = 'own' AND t.owner_id = $1 AND c.kind = 'custom' AND c.owner_id = $1 AND NOT c.is_trial)
 )`;
 const SELECT_TERMS = `SELECT t.character_id, t.term_key, t.term, t.kind, t.pinyin, t.initials, t.scope,
-  t.display_name, t.identity
+  t.display_name, t.identity, t.entity_key, t.source_url
 FROM characters.search_terms t JOIN characters.characters c ON c.id = t.character_id`;
 
 @Injectable()
@@ -88,6 +97,7 @@ export class CharacterSearchIndex implements CharacterSearchPort, OnModuleInit {
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
     @Inject(LOGGER) private readonly logger: Logger,
     @Inject(CharacterService) private readonly characterService: CharacterService,
+    @Inject(SearchEntityService) private readonly entities: SearchEntityService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -164,23 +174,43 @@ export class CharacterSearchIndex implements CharacterSearchPort, OnModuleInit {
   }
 
   private async projectOfficial(row: CharacterRow): Promise<TermInsert[]> {
+    const overrides = await this.entities.projectionInput(row.id);
+    const base = await this.officialTerms(row);
+    if (!base) return [];
+    return this.rows(
+      row,
+      'official',
+      null,
+      base.name,
+      [
+        ...base.others.filter((o) => !overrides.blocked.has(searchKey(o.text))),
+        ...overrides.approved.map((text) => ({ text, kind: 'alias' as const })),
+      ],
+      overrides.entity?.identity ?? base.identity,
+      overrides,
+    );
+  }
+
+  /** 已上架官方角色自己的名字、别名、关键词和自动身份说明（不含后台搜索修正）；不可搜为 null。 */
+  private async officialTerms(row: CharacterRow): Promise<{
+    name: string;
+    others: Array<{ text: string; kind: Exclude<ProjectedKind, 'name'> }>;
+    identity: string | null;
+  } | null> {
     if (row.legacyCard) {
       const legacy = parseLegacyCard(row.legacyCard);
       const name = legacyDisplayName(row.legacyCard);
-      if (!legacy) return this.rows(row, 'official', null, name, [], null);
-      return this.rows(
-        row,
-        'official',
-        null,
+      if (!legacy) return { name, others: [], identity: null };
+      return {
         name,
-        [
+        others: [
           ...legacy.aliases.map((text) => ({ text, kind: 'alias' as const })),
           { text: legacy.nickname, kind: 'alias' },
           { text: legacy.canonicalName, kind: 'alias' },
           { text: legacy.signature, kind: 'keyword' },
         ],
-        legacyIdentity(legacy.signature),
-      );
+        identity: legacyIdentity(legacy.signature),
+      };
     }
     let source: Awaited<ReturnType<CharacterService['publishedPresetSource']>>;
     try {
@@ -191,31 +221,28 @@ export class CharacterSearchIndex implements CharacterSearchPort, OnModuleInit {
         { err: error, characterId: row.id },
         '站内搜索：读取已上架人设失败，只按名字收录',
       );
-      return this.rows(row, 'official', null, row.name, [], null);
+      return { name: row.name, others: [], identity: null };
     }
-    if (!source) return [];
+    if (!source) return null;
     if (source.kind === 'legacy') {
-      return this.rows(row, 'official', null, legacyDisplayName(row.legacyCard ?? {}), [], null);
+      return { name: legacyDisplayName(row.legacyCard ?? {}), others: [], identity: null };
     }
     const body = source.body;
     const extra = body.card.data.profileExtra;
-    return this.rows(
-      row,
-      'official',
-      null,
-      body.name,
-      [
+    return {
+      name: body.name,
+      others: [
         ...body.aliases.map((text) => ({ text, kind: 'alias' as const })),
         ...body.works.map((text) => ({ text, kind: 'keyword' as const })),
         ...(extra?.searchKeywords ?? []).map((text) => ({ text, kind: 'keyword' as const })),
       ],
-      officialIdentity({
+      identity: officialIdentity({
         occupation: extra?.occupation,
         workSource: extra?.workSource,
         works: body.works,
         tagline: body.tagline,
       }),
-    );
+    };
   }
 
   private rows(
@@ -225,6 +252,7 @@ export class CharacterSearchIndex implements CharacterSearchPort, OnModuleInit {
     name: string,
     others: Array<{ text: string; kind: Exclude<ProjectedKind, 'name'> }>,
     identity: string | null,
+    overrides?: SearchProjectionInput,
   ): TermInsert[] {
     const named = termRecord(name, 'name');
     if (!named) return [];
@@ -246,6 +274,8 @@ export class CharacterSearchIndex implements CharacterSearchPort, OnModuleInit {
         ownerId,
         displayName: named.term,
         identity,
+        entityKey: overrides?.entity?.entityKey ?? null,
+        sourceUrl: overrides?.entity?.sourceUrl ?? null,
       }));
   }
 
@@ -291,6 +321,8 @@ export class CharacterSearchIndex implements CharacterSearchPort, OnModuleInit {
         match: scored.match,
         matchedTerm: row.kind === 'name' ? null : { text: row.term, kind: row.kind },
         identity: row.identity,
+        entityKey: row.scope === 'official' ? row.entity_key : null,
+        sourceUrl: row.scope === 'official' ? row.source_url : null,
       });
     }
     return [...best.values()]
@@ -344,6 +376,11 @@ export class CharacterSearchIndex implements CharacterSearchPort, OnModuleInit {
       if (kind) out.push({ text: row.term, kind, scope: row.scope });
     }
     return out;
+  }
+
+  /** 5.6：按公开资料标识查后台登记的实体（站外候选合并用）。 */
+  resolveEntities(identifiers: string[]): Promise<CharacterSearchEntity[]> {
+    return this.entities.resolveEntities(identifiers);
   }
 
   async searchCards(userId: string, characterIds: string[]): Promise<CharacterSearchCard[]> {

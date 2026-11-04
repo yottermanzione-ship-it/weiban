@@ -404,9 +404,80 @@ export const searchTerms = charactersSchema.table(
     ownerId: uuid('owner_id'),
     displayName: text('display_name').notNull(),
     identity: text('identity'),
+    /** 迁移 0158：后台人工关联的实体键与第一条公开出处（只有官方角色可能有）。 */
+    entityKey: text('entity_key'),
+    sourceUrl: text('source_url'),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.characterId, t.termKey] })],
+);
+
+/** 迁移 0158（T-20261104e）：一条公开出处。 */
+export interface SearchEntitySource {
+  url: string;
+  title: string;
+  site: string | null;
+}
+
+/**
+ * 迁移 0158：后台登记的搜索实体。实体键 = 公开资料标识（baike:…、wiki:zh:… 等）或 manual:<uuid>。
+ * 不存操作人（审计在 platform.audit_log）。
+ */
+export const searchEntities = charactersSchema.table('search_entities', {
+  entityKey: text('entity_key').primaryKey(),
+  displayName: text('display_name').notNull(),
+  identity: text('identity'),
+  sources: jsonb('sources').$type<SearchEntitySource[]>().notNull().default([]),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull(),
+});
+
+/** 迁移 0158：公开资料标识 → 实体（一个标识最多属于一个实体；人工合并 = 多个标识指向同一实体）。 */
+export const searchEntityIdentifiers = charactersSchema.table(
+  'search_entity_identifiers',
+  {
+    identifier: text('identifier').primaryKey(),
+    entityKey: text('entity_key')
+      .notNull()
+      .references(() => searchEntities.entityKey, { onDelete: 'cascade' }),
+    sourceUrl: text('source_url'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
+  },
+  (t) => [index('search_entity_identifiers_entity_idx').on(t.entityKey)],
+);
+
+/** 迁移 0158：官方角色 → 实体（一个角色最多属于一个实体）。 */
+export const searchEntityCharacters = charactersSchema.table(
+  'search_entity_characters',
+  {
+    characterId: uuid('character_id')
+      .primaryKey()
+      .references(() => characters.id, { onDelete: 'cascade' }),
+    entityKey: text('entity_key')
+      .notNull()
+      .references(() => searchEntities.entityKey, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
+  },
+  (t) => [index('search_entity_characters_entity_idx').on(t.entityKey)],
+);
+
+/**
+ * 迁移 0158：官方角色的后台搜索别名。pending 待审核（不进投影）、approved 进投影、
+ * blocked = 把人设里的同名别名从搜索里去掉（不改人设）。
+ */
+export const searchAliases = charactersSchema.table(
+  'search_aliases',
+  {
+    characterId: uuid('character_id')
+      .notNull()
+      .references(() => characters.id, { onDelete: 'cascade' }),
+    aliasKey: text('alias_key').notNull(),
+    alias: text('alias').notNull(),
+    status: text('status').$type<'pending' | 'approved' | 'blocked'>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true, mode: 'date' }),
+  },
+  (t) => [primaryKey({ columns: [t.characterId, t.aliasKey] })],
 );
 
 /** 迁移 0157：待刷新登记（数据库触发器在相关列变化时写入，version 自增）。 */

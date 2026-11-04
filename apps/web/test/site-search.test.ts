@@ -1,9 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import type { SiteSearchResult } from '@weiban/contracts';
+import type { CharacterSearchCandidate, SiteSearchResult } from '@weiban/contracts';
 import {
   RequestGate,
   SuggestRunner,
   allowWebSearch,
+  refineWebQuery,
+  safeExternalUrl,
+  sourceLabel,
+  webCandidateAction,
+  webCandidateIdentity,
+  webCandidatePrefillHref,
+  webCandidateSources,
+  webCandidateUnverified,
+  webCandidatesAmbiguous,
+  webPrefillDescription,
+  webResolutionHref,
   siteActionLabel,
   siteIdentityText,
   siteQueryMode,
@@ -211,5 +222,113 @@ describe('联想请求：防抖、迟到响应、账号切换、断网', () => {
     expect(gate.accept(b, 'u1', 'q')).toBe(true);
     gate.reset();
     expect(gate.accept(b, 'u1', 'q')).toBe(false);
+  });
+});
+
+describe('5.6 联网查找候选（T-20261104e）', () => {
+  const ID = 'web_AAAAAAAAAAAAAAAAAAAAAA';
+  const CHAR = '00000000-0000-4000-8000-000000000001';
+  const CONV = '00000000-0000-4000-8000-000000000002';
+  const candidate = (patch: Partial<CharacterSearchCandidate>): CharacterSearchCandidate => ({
+    name: '李晨',
+    title: '李晨（中国内地男演员）_百度百科',
+    description: '李晨，中国内地男演员。',
+    sourceUrl: 'https://baike.baidu.com/item/%E6%9D%8E%E6%99%A8/1001',
+    ...patch,
+  });
+
+  it('旧服务器只有四个字段时：动作退回创建、当未核实、出处用 sourceUrl、身份写「暂未核实身份」', () => {
+    const old = candidate({});
+    expect(webCandidateAction(old)).toBe('create');
+    expect(webCandidateUnverified(old)).toBe(true);
+    expect(webCandidateIdentity(old)).toBe('暂未核实身份');
+    expect(webCandidateSources(old)).toEqual([
+      { url: old.sourceUrl, title: old.title, site: null },
+    ]);
+  });
+
+  it('不认识的动作（unsupported）不伪造添加按钮；明确核实过的才去掉未核实标记', () => {
+    expect(webCandidateAction(candidate({ action: 'unsupported' }))).toBe('create');
+    expect(webCandidateAction(candidate({ action: 'add' }))).toBe('add');
+    expect(webCandidateUnverified(candidate({ unverified: false }))).toBe(false);
+    expect(webCandidateIdentity(candidate({ identity: '中国内地男演员' }))).toBe('中国内地男演员');
+  });
+
+  it('出处只留 http(s)，javascript: 之类丢掉；显示网站名或域名', () => {
+    expect(safeExternalUrl('javascript:alert(1)')).toBeNull();
+    expect(safeExternalUrl('https://example.com/a')).toBe('https://example.com/a');
+    const list = webCandidateSources(
+      candidate({
+        sources: [
+          { url: 'javascript:alert(1)', title: 'x', site: null },
+          { url: 'https://zh.wikipedia.org/wiki/X', title: 'X', site: null },
+          { url: 'https://example.com/b', title: 'B', site: '某站' },
+        ],
+      }),
+    );
+    expect(list.map((s) => s.url)).toEqual([
+      'https://zh.wikipedia.org/wiki/X',
+      'https://example.com/b',
+    ]);
+    expect(list.map(sourceLabel)).toEqual(['zh.wikipedia.org', '某站']);
+  });
+
+  it('同名的不止一位时提示补作品 / 职业再查', () => {
+    expect(webCandidatesAmbiguous([candidate({}), candidate({ identity: '设计师' })])).toBe(true);
+    expect(webCandidatesAmbiguous([candidate({ ambiguous: true })])).toBe(true);
+    expect(webCandidatesAmbiguous([candidate({}), candidate({ name: '李晨曦' })])).toBe(false);
+  });
+
+  it('补充作品或职业：接在原词后面，合起来仍要 2～64 字，空的或重复的不发请求', () => {
+    expect(refineWebQuery('李晨', ' 演员 ')).toBe('李晨 演员');
+    expect(refineWebQuery('李晨', '   ')).toBeNull();
+    expect(refineWebQuery('李晨 演员', '演员')).toBeNull();
+    expect(refineWebQuery('李晨', '长'.repeat(64))).toBeNull();
+  });
+
+  it('点击后只按服务器重读的结果跳转；创建 / 申请页只带候选 ID', () => {
+    expect(
+      webResolutionHref({
+        candidateId: ID,
+        action: 'chat',
+        characterId: CHAR,
+        conversationId: CONV,
+        prefill: null,
+      }),
+    ).toBe(`/chat/${CONV}`);
+    expect(
+      webResolutionHref({
+        candidateId: ID,
+        action: 'add',
+        characterId: CHAR,
+        conversationId: null,
+        prefill: null,
+      }),
+    ).toBe(`/characters/${CHAR}`);
+    expect(
+      webResolutionHref({
+        candidateId: ID,
+        action: 'create',
+        characterId: null,
+        conversationId: null,
+        prefill: null,
+      }),
+    ).toBeNull();
+    expect(webCandidatePrefillHref('create', ID)).toBe(`/characters/custom/new?candidate=${ID}`);
+    expect(webCandidatePrefillHref('request', ID)).toBe(`/role-requests/new?candidate=${ID}`);
+    const href = webCandidatePrefillHref('create', ID);
+    expect(href).not.toContain('candidateName');
+    expect(href).not.toContain('http');
+  });
+
+  it('预填描述写明身份与出处都尚未核实', () => {
+    const text = webPrefillDescription({
+      name: '李晨',
+      identity: '中国内地男演员',
+      description: '李晨，中国内地男演员。',
+      sourceUrl: 'https://baike.baidu.com/item/x/1',
+    });
+    expect(text).toContain('身份（来自公开资料，尚未核实）：中国内地男演员');
+    expect(text).toContain('参考公开资料（尚未核实）：https://baike.baidu.com/item/x/1');
   });
 });

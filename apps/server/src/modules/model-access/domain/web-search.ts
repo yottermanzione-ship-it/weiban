@@ -1,5 +1,4 @@
 import { isIP } from 'node:net';
-import { CharacterSearchCandidate, type WebSearchResultItem } from '@weiban/contracts';
 
 /** 21号 §6：不向搜索供应商发送私人联系方式、健康、住址或跟踪查询。 */
 export function privateSearchText(text: string): boolean {
@@ -49,24 +48,4 @@ export function publicWebUrl(raw: string): string | null {
 
 export function normalizeSearchQuery(raw: string): string {
   return raw.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLowerCase();
-}
-
-export function characterCandidates(query: string, hits: readonly WebSearchResultItem[]) {
-  const seen = new Set<string>();
-  return hits
-    .flatMap((hit) => {
-      const sourceUrl = publicWebUrl(hit.url);
-      if (!sourceUrl || seen.has(sourceUrl) || privateSearchText(`${hit.title} ${hit.snippet}`))
-        return [];
-      seen.add(sourceUrl);
-      const titleName = hit.title.split(/[_|｜]|\s[-–—]\s/u)[0]?.trim() ?? '';
-      const parsed = CharacterSearchCandidate.safeParse({
-        name: (titleName && [...titleName].length <= 32 ? titleName : query).slice(0, 32),
-        title: hit.title,
-        description: hit.snippet.slice(0, 500),
-        sourceUrl,
-      });
-      return parsed.success ? [parsed.data] : [];
-    })
-    .slice(0, 5);
 }

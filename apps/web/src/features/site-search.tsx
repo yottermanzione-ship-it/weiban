@@ -3,6 +3,8 @@
  * - SiteSuggestions：边输入边出的站内联想（防抖 250ms）和「你是否想找…」，点击才采用，不改写搜索词；
  * - SiteSearchResults：提交搜索后的聚合结果，每项标来源与动作（添加 / 看作品 / 去聊天 / 我的角色），
  *   同名的不同人物分开显示并附身份说明；站内一个都没有时才显示 empty（各页放现有的联网查找）。
+ *   5.6：站内有结果时在列表下面显示 footer（各页放「查找公开人物或作品」，找同名的另一位）；
+ *   官方角色被后台关联到公开资料实体时，第二行带一条可点击的公开出处。
  * 样式沿用全局搜索页的微信式分组行（.wx-search-group / .wx-search-row）。
  * 切换账号、换搜索词后迟到的旧响应一律丢弃；断网只提示，不清掉已经显示的结果。不调用模型、不收费。
  */
@@ -19,6 +21,8 @@ import { Highlight } from './search.js';
 import {
   RequestGate,
   SITE_SEARCH_DEBOUNCE_MS,
+  safeExternalUrl,
+  sourceLabel,
   SuggestRunner,
   siteActionLabel,
   siteIdentityText,
@@ -159,12 +163,15 @@ export function SiteSearchResults({
   prefer,
   onPick,
   empty,
+  footer,
   title = '站内结果',
 }: {
   query: string;
   prefer?: 'official' | 'plaza';
   onPick: (text: string) => void;
   empty?: ReactNode;
+  /** 5.6：站内有结果时显示在列表下面（联网查找入口）。 */
+  footer?: ReactNode;
   title?: string;
 }) {
   const owner = useOwner();
@@ -252,6 +259,7 @@ export function SiteSearchResults({
         </p>
       )}
       {status === 'ready' && !items.length && empty}
+      {status === 'ready' && items.length > 0 && footer}
     </div>
   );
 }
@@ -295,7 +303,7 @@ function ResultRow({ item, keyword }: { item: SiteSearchResult; keyword: string 
       </span>
     </>
   );
-  return href ? (
+  const row = href ? (
     <Link to={href} className="wx-search-row site-search-row" data-candidate={item.candidateId}>
       {body}
     </Link>
@@ -303,5 +311,24 @@ function ResultRow({ item, keyword }: { item: SiteSearchResult; keyword: string 
     <div className="wx-search-row site-search-row" data-candidate={item.candidateId}>
       {body}
     </div>
+  );
+  // 5.6：后台关联到公开资料实体的官方角色带一条出处（放在行外，链接不嵌在行链接里）。
+  const proof = item.sourceUrl ? safeExternalUrl(item.sourceUrl) : null;
+  if (!proof) return row;
+  return (
+    <>
+      {row}
+      <p className="hint page-note site-search-source">
+        身份出处：
+        <a
+          href={proof}
+          target="_blank"
+          rel="noopener noreferrer nofollow"
+          referrerPolicy="no-referrer"
+        >
+          {sourceLabel({ url: proof, site: null })}
+        </a>
+      </p>
+    </>
   );
 }

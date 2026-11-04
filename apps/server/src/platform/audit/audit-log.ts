@@ -24,6 +24,15 @@ export interface AuditEntry {
   details?: Record<string, unknown>;
 }
 
+/** 读出的一条审计（details 是写入时脱敏后的内容）。 */
+export interface AuditRecord {
+  id: string;
+  occurredAt: Date;
+  action: string;
+  actorId: string | null;
+  details: Record<string, unknown>;
+}
+
 export class AuditLog {
   constructor(
     private readonly database: Database,
@@ -50,6 +59,48 @@ export class AuditLog {
       ],
     );
     return id;
+  }
+
+  /**
+   * 5.6（T-20261104e）：按对象读最近的审计记录（后台页面显示「谁、何时、改了什么、原因」用）。
+   * 只读本平台写入的审计；模块不要自己去查 platform.audit_log。
+   */
+  async list(filter: {
+    module: string;
+    targetType: string;
+    targetId: string;
+    /** 只要动作以此开头的记录（例如 'search.'）。 */
+    actionPrefix?: string;
+    limit?: number;
+  }): Promise<AuditRecord[]> {
+    const { rows } = await this.database.query<{
+      id: string;
+      occurred_at: Date;
+      action: string;
+      actor_id: string | null;
+      details: Record<string, unknown> | null;
+    }>(
+      `SELECT id, occurred_at, action, actor_id, details
+         FROM platform.audit_log
+        WHERE module = $1 AND target_type = $2 AND target_id = $3
+          AND ($5::text IS NULL OR starts_with(action, $5::text))
+        ORDER BY occurred_at DESC, id DESC
+        LIMIT $4`,
+      [
+        filter.module,
+        filter.targetType,
+        filter.targetId,
+        Math.min(filter.limit ?? 50, 200),
+        filter.actionPrefix ?? null,
+      ],
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      occurredAt: row.occurred_at,
+      action: row.action,
+      actorId: row.actor_id,
+      details: row.details ?? {},
+    }));
   }
 
   /**

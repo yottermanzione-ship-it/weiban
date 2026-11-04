@@ -8,27 +8,45 @@
  *
  * 结果每项都由服务器重新核对资格后给出（下架、撤稿、停权、不是本人的都跳过）；点击后客户端只拿 ID 走现有页面
  * 和接口（添加闸门、作品可见性在那里再查一遍），旧搜索结果不能绕过。
+ *
+ * 5.6（T-20261104e，方案第 3 步）：联网查找（POST /search/character-candidates）也在这里组合——
+ * model-access 出站外候选（S 的额度、缓存、计费不变，结构化不调用模型），characters 给后台登记的实体关联，
+ * 这里按实体合并（只认登记过的公开资料标识，名字相同不合并）并补「添加 / 去聊天」。点击只提交候选 ID，
+ * 服务器重读保存的候选和当前的实体关联（resolveWebCandidate），不信任客户端提交的名字和网址。
  */
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import {
   SITE_SEARCH_DID_YOU_MEAN_LIMIT,
   SITE_SEARCH_SUGGEST_LIMIT,
+  type CharacterSearchCandidate,
   type CharacterSearchCard,
   type CharacterSearchNameHit,
   type ContactsReadPort,
   type SiteSearchResult,
+  type WebCandidateResolution,
+  type WebCandidateSearchError,
+  type WebCandidateSearchPort,
+  type WebCharacterCandidate,
 } from '@weiban/contracts';
-import { analyzeQuery, displayTerm, searchKey, type SearchQuery } from '../../../platform/index.js';
+import {
+  AppError,
+  analyzeQuery,
+  displayTerm,
+  searchKey,
+  type SearchQuery,
+} from '../../../platform/index.js';
 import {
   CONTACTS_CHARACTER_STATS,
   CONTACTS_READ_PORT,
   type ContactsCharacterStats,
 } from '../../contacts/index.js';
+import { MODEL_WEB_CANDIDATES } from '../../model-access/index.js';
 import {
   ambiguousIds,
   decodeSearchCursor,
   encodeSearchCursor,
   mergeSuggestions,
+  mergeWebCandidates,
   pageAfter,
   pickDidYouMean,
   plazaIdentity,
@@ -50,6 +68,8 @@ interface Candidate extends RankedCandidate {
   characterId: string | null;
   workId: string | null;
   conversationId: string | null;
+  entityKey: string | null;
+  sourceUrl: string | null;
 }
 
 export interface SuggestResponse {
@@ -74,6 +94,7 @@ export class SiteSearchService {
     @Optional()
     @Inject(CONTACTS_CHARACTER_STATS)
     private readonly contactStats?: ContactsCharacterStats,
+    @Optional() @Inject(MODEL_WEB_CANDIDATES) private readonly web?: WebCandidateSearchPort,
   ) {}
 
   /** 搜索词的显示形式（标准化、截断到 64 字）。 */
@@ -197,6 +218,8 @@ export class SiteSearchService {
         characterId: hit.characterId,
         workId: null,
         conversationId,
+        entityKey: hit.entityKey,
+        sourceUrl: hit.sourceUrl,
       });
     }
     for (const hit of works) {
@@ -215,6 +238,8 @@ export class SiteSearchService {
         characterId: conversationId ? copy : null,
         workId: hit.workId,
         conversationId,
+        entityKey: null,
+        sourceUrl: null,
       });
     }
     return out;
@@ -281,8 +306,8 @@ export class SiteSearchService {
         identity: c.identity,
         unverified: c.identity === null,
         ambiguous: ambiguous.has(c.candidateId),
-        entityKey: null,
-        sourceUrl: null,
+        entityKey: c.entityKey,
+        sourceUrl: c.sourceUrl,
         characterId: c.characterId,
         workId: card.plazaWorkId,
         conversationId: c.conversationId,
@@ -292,6 +317,98 @@ export class SiteSearchService {
       });
     }
     return items;
+  }
+
+  // ---------- 5.6：联网查找（站外候选） ----------
+
+  /** 一次主动联网查找（S 的额度、缓存、计费不变），按后台实体关联合并并补「添加 / 去聊天」。 */
+  async webCandidates(
+    userId: string,
+    query: string,
+  ): Promise<{ items: CharacterSearchCandidate[] }> {
+    if (!this.web) throw new AppError('service_unavailable', '联网查找暂未开通');
+    const found = await this.web.search(userId, query);
+    if (!found.ok) throw webSearchError(found.error);
+    return { items: await this.composeWeb(userId, found.value) };
+  }
+
+  /**
+   * 点击站外候选：只认候选 ID，服务器重读保存的候选与当前实体关联。关联到仍上架的官方角色时返回它
+   * （添加仍走 POST /contacts 的添加闸门），否则返回服务器保存的公开资料作创建页预填。
+   */
+  async resolveWebCandidate(userId: string, candidateId: string): Promise<WebCandidateResolution> {
+    const candidate = this.web ? await this.web.read(candidateId) : null;
+    if (!candidate) throw new AppError('not_found', '这个候选已过期，请重新联网查找');
+    const [item] = await this.composeWeb(userId, [candidate]);
+    if (!item) throw new AppError('not_found', '这个候选已过期，请重新联网查找');
+    const action = item.action ?? 'create';
+    return {
+      candidateId,
+      action,
+      characterId: item.characterId ?? null,
+      conversationId: item.conversationId ?? null,
+      prefill:
+        action === 'create'
+          ? {
+              name: candidate.name,
+              identity: item.identity ?? null,
+              description: candidate.description,
+              sourceUrl: candidate.sources[0]!.url,
+            }
+          : null,
+    };
+  }
+
+  private async composeWeb(
+    userId: string,
+    candidates: WebCharacterCandidate[],
+  ): Promise<CharacterSearchCandidate[]> {
+    const identifiers = [...new Set(candidates.flatMap((c) => c.identifiers))];
+    const entities =
+      identifiers.length && this.characters
+        ? await this.characters.resolveEntities(identifiers)
+        : [];
+    const merged = mergeWebCandidates(candidates, entities);
+    const linked = [...new Set(merged.flatMap((m) => m.characterIds))];
+    const cards = new Map<string, CharacterSearchCard>();
+    const chats = new Map<string, string>();
+    if (linked.length && this.characters) {
+      const [cardList, contactList] = await Promise.all([
+        this.characters.searchCards(userId, linked),
+        this.contacts.listActiveContacts(userId),
+      ]);
+      // 重新核对资格：只认仍上架的官方角色。
+      for (const card of cardList)
+        if (card.scope === 'official') cards.set(card.summary.characterId, card);
+      for (const contact of contactList)
+        if (contact.status === 'active' && contact.conversationId)
+          chats.set(contact.characterId, contact.conversationId);
+    }
+    return merged.map((m) => {
+      const eligible = m.characterIds.filter((id) => cards.has(id));
+      const characterId = eligible.find((id) => chats.has(id)) ?? eligible[0] ?? null;
+      const conversationId = characterId ? (chats.get(characterId) ?? null) : null;
+      const card = characterId ? cards.get(characterId) : undefined;
+      const added = conversationId !== null;
+      return {
+        name: m.name,
+        title: m.title,
+        description: m.description,
+        sourceUrl: m.sources[0]!.url,
+        candidateId: m.candidateId,
+        identity: m.identity,
+        identitySourceUrl: m.identitySourceUrl,
+        sources: m.sources,
+        entityKey: m.entityKey,
+        unverified: m.unverified,
+        ambiguous: m.ambiguous,
+        action: characterId ? (added ? 'chat' : 'add') : 'create',
+        characterId,
+        conversationId,
+        added,
+        character: card ? { ...card.summary, added } : null,
+      };
+    });
   }
 
   private async didYouMean(
@@ -311,5 +428,19 @@ export class SiteSearchService {
     const exclude = new Set(shownNames.map(searchKey).filter(Boolean));
     exclude.add(query.key);
     return pickDidYouMean(typos, exclude, SITE_SEARCH_DID_YOU_MEAN_LIMIT);
+  }
+}
+
+/** 联网查找失败的提示（与 3.30 的文案、状态码一致）。 */
+function webSearchError(error: WebCandidateSearchError): AppError {
+  switch (error) {
+    case 'private_query':
+      return new AppError('bad_request', '只能搜索公众人物或知名作品角色，请勿输入私人信息');
+    case 'unavailable':
+      return new AppError('service_unavailable', '联网查找暂未开通');
+    case 'rate_limited':
+      return new AppError('rate_limited', '今天联网找得太多啦，请稍后或明天再试');
+    default:
+      return new AppError('service_unavailable', '联网查找暂时不可用，请稍后重试');
   }
 }

@@ -6,3 +6,6 @@ export { childFeaturesIn } from './domain/child-features.js';
 
 export { CharacterCheckWorker } from './application/check-worker.js';
 export { CharacterTrialService } from './application/trials.js';
+
+// 5.6（T-20261104e）：后台搜索实体 / 别名修正（集成测试直接调用）。
+export { SearchEntityService } from './application/search-entities.js';

@@ -47,3 +47,7 @@ export {
   suggestArenaNames,
   type ArenaSuggestion,
 } from './domain/leaderboard.js';
+
+// 5.6（T-20261104e）：站外候选结构化（plaza 的同名语料测试、联网候选集成测试用）。
+export { structureCandidates, candidateIdFor } from './domain/web-candidates.js';
+export { WebCandidateSearch } from './application/web-candidates.js';

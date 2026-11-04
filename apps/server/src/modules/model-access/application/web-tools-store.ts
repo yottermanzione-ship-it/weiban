@@ -1,10 +1,11 @@
 /** 公开搜索缓存、跨进程候选额度和 Search/Fetch 节流。原查询不落库，正文不进共享缓存。 */
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, lt } from 'drizzle-orm';
+import { and, eq, gt, lt, sql } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import {
   WebSearchHit,
+  type WebCharacterCandidate,
   type MediaCallResult,
   type WebSearchResultItem,
   type ModelPurpose,
@@ -19,11 +20,27 @@ import {
   type DbTx,
 } from '../../../platform/index.js';
 import { localDate } from '../../../platform/time/local-time.js';
-import { webSearchCache, webToolLimits } from '../infra/db/schema.js';
+import { webCandidates, webSearchCache, webToolLimits } from '../infra/db/schema.js';
 import { normalizeSearchQuery } from '../domain/web-search.js';
 import { GatewayLimitsService } from './limits.js';
 import { IDENTITY_ACCOUNT_STATUS_PORT } from '../../identity/index.js';
 
+/** 5.6（T-20261104e）：候选快照与联网查找的公共缓存同期（24 小时）。 */
+const CANDIDATE_TTL_MS = 86400000;
+const CandidateSource = z.object({
+  url: z.string().max(2000),
+  title: z.string().max(300),
+  site: z.string().max(200).nullable(),
+});
+const StoredCandidate = z.object({
+  name: z.string().min(1).max(32),
+  title: z.string().max(300),
+  description: z.string().max(500),
+  identity: z.string().max(120).nullable(),
+  identitySourceUrl: z.string().max(2000).nullable(),
+  sources: z.array(CandidateSource).min(1).max(5),
+  identifiers: z.array(z.string().max(120)).max(5),
+});
 const Shared = z.object({
   items: z.array(WebSearchHit),
   modelKey: z.string(),
@@ -183,6 +200,49 @@ export class WebToolsStore {
         : []),
     ]);
   }
+  /**
+   * 5.6：保存联网查找结构化后的候选，点击时按候选 ID 重读（不信任客户端提交的名字和网址）。
+   * 只存公开搜索结果（已过滤）；候选 ID 由公开资料标识 / 规范化出处算出，同一条目覆盖更新。
+   * 单条语句、不开事务；按候选 ID 排序写入，并发写同一批候选时加锁顺序一致。
+   */
+  async saveCandidates(items: readonly WebCharacterCandidate[]): Promise<void> {
+    if (!items.length) return;
+    const now = this.clock.now();
+    const expiresAt = new Date(this.clock.nowMs() + CANDIDATE_TTL_MS);
+    const rows = [...items]
+      .sort((a, b) => a.candidateId.localeCompare(b.candidateId))
+      .map(({ candidateId, ...payload }) => ({
+        candidateId,
+        payload: StoredCandidate.parse(payload),
+        createdAt: now,
+        expiresAt,
+      }));
+    await this.db.db
+      .insert(webCandidates)
+      .values(rows)
+      .onConflictDoUpdate({
+        target: webCandidates.candidateId,
+        set: {
+          payload: sql`excluded.payload`,
+          createdAt: sql`excluded.created_at`,
+          expiresAt: sql`excluded.expires_at`,
+        },
+      });
+  }
+  /** 5.6：按候选 ID 重读；过期、不存在或内容不合格都返回 null。 */
+  async readCandidate(candidateId: string): Promise<WebCharacterCandidate | null> {
+    const [row] = await this.db.db
+      .select()
+      .from(webCandidates)
+      .where(
+        and(
+          eq(webCandidates.candidateId, candidateId),
+          gt(webCandidates.expiresAt, this.clock.now()),
+        ),
+      );
+    const parsed = row ? StoredCandidate.safeParse(row.payload) : null;
+    return parsed?.success ? { candidateId, ...parsed.data } : null;
+  }
   async cleanup() {
     await this.db.db
       .delete(webSearchCache)
@@ -192,6 +252,7 @@ export class WebToolsStore {
           lt(webSearchCache.leaseUntil, this.clock.now()),
         ),
       );
+    await this.db.db.delete(webCandidates).where(lt(webCandidates.expiresAt, this.clock.now()));
     await this.db.db
       .delete(webToolLimits)
       .where(lt(webToolLimits.updatedAt, new Date(this.clock.nowMs() - 7 * 86400000)));

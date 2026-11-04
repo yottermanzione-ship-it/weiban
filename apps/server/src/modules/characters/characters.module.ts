@@ -13,6 +13,8 @@ import { CharacterEligibilityService } from './application/eligibility.js';
 import { CharacterLegacyAdminService } from './application/legacy-admin.js';
 import { CharacterPurgeService } from './application/purge.js';
 import { CharacterSearchIndex } from './application/search-index.js';
+import { SearchEntityService } from './application/search-entities.js';
+import { SearchAdminController } from './http/search-admin.controller.js';
 import { CharacterCheckWorker } from './application/check-worker.js';
 import { CustomCharacterService } from './application/custom-character.js';
 import { CharacterTrialService } from './application/trials.js';
@@ -62,6 +64,7 @@ import {
     RelationAdminController,
     UserRelationController,
     WorkLinkAdminController,
+    SearchAdminController,
   ],
   providers: [
     WeiboPublication,
@@ -71,6 +74,7 @@ import {
     { provide: CHARACTER_SUPPLEMENT_CONFLICTS, useExisting: CharacterSupplementService },
     CharacterService,
     CharacterPurgeService,
+    SearchEntityService,
     CharacterSearchIndex,
     { provide: CHARACTER_SEARCH_PORT, useExisting: CharacterSearchIndex },
     CharacterEligibilityService,

@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 5.5. Regenerate: pnpm android:generate
+// Contract 5.6. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "5.5"
+const val CONTRACT_VERSION: String = "5.6"
 
 @Serializable
 data class AccountAlias(
@@ -855,6 +855,147 @@ data class AdminScenarioModeUpdateInput(
     @SerialName("hasAdultContent") val `hasAdultContent`: Boolean? = null,
     @SerialName("enabled") val `enabled`: Boolean? = null,
     @SerialName("sortOrder") val `sortOrder`: Long? = null,
+)
+
+@Serializable
+data class AdminSearchAlias(
+    @SerialName("alias") val `alias`: String,
+    @SerialName("aliasKey") val `aliasKey`: String,
+    @SerialName("origin") val `origin`: String,
+    @SerialName("status") val `status`: SearchAliasStatus,
+    @SerialName("searchable") val `searchable`: Boolean,
+)
+
+@Serializable
+data class AdminSearchAliasChange(
+    @SerialName("op") val `op`: AdminSearchAliasOp,
+    @SerialName("alias") val `alias`: String,
+    @SerialName("reason") val `reason`: String,
+)
+
+typealias AdminSearchAliasOp = String
+
+@Serializable
+data class AdminSearchCharacterView(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("published") val `published`: Boolean,
+    @SerialName("entity") val `entity`: AdminSearchEntity?,
+    @SerialName("aliases") val `aliases`: List<AdminSearchAlias>,
+    @SerialName("history") val `history`: List<AdminSearchCorrection>,
+)
+
+@Serializable
+data class AdminSearchCorrection(
+    @SerialName("auditId") val `auditId`: Id,
+    @SerialName("at") val `at`: Timestamp,
+    @SerialName("action") val `action`: String,
+    @SerialName("actorName") val `actorName`: String,
+    @SerialName("reason") val `reason`: String,
+    @SerialName("summary") val `summary`: String,
+)
+
+@Serializable
+data class AdminSearchEntity(
+    @SerialName("entityKey") val `entityKey`: String,
+    @SerialName("displayName") val `displayName`: String,
+    @SerialName("identity") val `identity`: String?,
+    @SerialName("sources") val `sources`: List<WebCandidateSource>,
+    @SerialName("identifiers") val `identifiers`: List<AdminSearchEntityIdentifiersItem>,
+    @SerialName("characters") val `characters`: List<AdminSearchEntityCharactersItem>,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+)
+
+@Serializable
+data class AdminSearchEntityCreate(
+    @SerialName("displayName") val `displayName`: String,
+    @SerialName("identity") val `identity`: String?,
+    @SerialName("sources") val `sources`: List<AdminSearchEntityCreateSourcesItem>,
+    @SerialName("identifiers") val `identifiers`: List<String>,
+    @SerialName("characterIds") val `characterIds`: List<Id>,
+    @SerialName("reason") val `reason`: String,
+)
+
+@Serializable
+data class AdminSearchEntityCreateInput(
+    @SerialName("displayName") val `displayName`: String,
+    @SerialName("identity") val `identity`: String? = null,
+    @SerialName("sources") val `sources`: List<AdminSearchEntityCreateInputSourcesItem>? = null,
+    @SerialName("identifiers") val `identifiers`: List<String>? = null,
+    @SerialName("characterIds") val `characterIds`: List<Id>? = null,
+    @SerialName("reason") val `reason`: String,
+)
+
+@Serializable
+data class AdminSearchEntityDetail(
+    @SerialName("entity") val `entity`: AdminSearchEntity,
+    @SerialName("history") val `history`: List<AdminSearchCorrection>,
+)
+
+@Serializable
+data class AdminSearchEntityLinks(
+    @SerialName("entityKey") val `entityKey`: String,
+    @SerialName("addIdentifiers") val `addIdentifiers`: List<String>,
+    @SerialName("removeIdentifiers") val `removeIdentifiers`: List<String>,
+    @SerialName("addCharacterIds") val `addCharacterIds`: List<Id>,
+    @SerialName("removeCharacterIds") val `removeCharacterIds`: List<Id>,
+    @SerialName("reason") val `reason`: String,
+)
+
+@Serializable
+data class AdminSearchEntityLinksInput(
+    @SerialName("entityKey") val `entityKey`: String,
+    @SerialName("addIdentifiers") val `addIdentifiers`: List<String>? = null,
+    @SerialName("removeIdentifiers") val `removeIdentifiers`: List<String>? = null,
+    @SerialName("addCharacterIds") val `addCharacterIds`: List<Id>? = null,
+    @SerialName("removeCharacterIds") val `removeCharacterIds`: List<Id>? = null,
+    @SerialName("reason") val `reason`: String,
+)
+
+@Serializable
+data class AdminSearchEntityMerge(
+    @SerialName("entityKey") val `entityKey`: String,
+    @SerialName("fromEntityKey") val `fromEntityKey`: String,
+    @SerialName("reason") val `reason`: String,
+)
+
+@Serializable
+data class AdminSearchEntitySplit(
+    @SerialName("entityKey") val `entityKey`: String,
+    @SerialName("identifiers") val `identifiers`: List<String>,
+    @SerialName("characterIds") val `characterIds`: List<Id>,
+    @SerialName("displayName") val `displayName`: String,
+    @SerialName("identity") val `identity`: String?,
+    @SerialName("reason") val `reason`: String,
+)
+
+@Serializable
+data class AdminSearchEntitySplitInput(
+    @SerialName("entityKey") val `entityKey`: String,
+    @SerialName("identifiers") val `identifiers`: List<String>? = null,
+    @SerialName("characterIds") val `characterIds`: List<Id>? = null,
+    @SerialName("displayName") val `displayName`: String,
+    @SerialName("identity") val `identity`: String? = null,
+    @SerialName("reason") val `reason`: String,
+)
+
+@Serializable
+data class AdminSearchEntityUpdate(
+    @SerialName("entityKey") val `entityKey`: String,
+    @SerialName("displayName") val `displayName`: String? = null,
+    @SerialName("identity") val `identity`: String? = null,
+    @SerialName("sources") val `sources`: List<AdminSearchEntityUpdateSourcesItem>? = null,
+    @SerialName("reason") val `reason`: String,
+)
+
+@Serializable
+data class AdminSearchEntityUpdateInput(
+    @SerialName("entityKey") val `entityKey`: String,
+    @SerialName("displayName") val `displayName`: String? = null,
+    @SerialName("identity") val `identity`: String? = null,
+    @SerialName("sources") val `sources`: List<AdminSearchEntityUpdateInputSourcesItem>? = null,
+    @SerialName("reason") val `reason`: String,
 )
 
 @Serializable
@@ -2241,6 +2382,18 @@ data class CharacterSearchCandidate(
     @SerialName("title") val `title`: String,
     @SerialName("description") val `description`: String,
     @SerialName("sourceUrl") val `sourceUrl`: String,
+    @SerialName("candidateId") val `candidateId`: WebCandidateId? = null,
+    @SerialName("identity") val `identity`: String? = null,
+    @SerialName("identitySourceUrl") val `identitySourceUrl`: String? = null,
+    @SerialName("sources") val `sources`: List<WebCandidateSource>? = null,
+    @SerialName("entityKey") val `entityKey`: String? = null,
+    @SerialName("unverified") val `unverified`: Boolean? = null,
+    @SerialName("ambiguous") val `ambiguous`: Boolean? = null,
+    @SerialName("action") val `action`: String? = null,
+    @SerialName("characterId") val `characterId`: Id? = null,
+    @SerialName("conversationId") val `conversationId`: Id? = null,
+    @SerialName("added") val `added`: Boolean? = null,
+    @SerialName("character") val `character`: CharacterSummary? = null,
 )
 
 @Serializable
@@ -9960,6 +10113,28 @@ data class ScenarioSelection(
 )
 
 @Serializable
+data class SearchAdminEndpointsGetCharacterParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class SearchAdminEndpointsGetEntityQuery(
+    @SerialName("entityKey") val `entityKey`: String,
+)
+
+@Serializable
+data class SearchAdminEndpointsListEntitiesQuery(
+    @SerialName("q") val `q`: String? = null,
+)
+
+@Serializable
+data class SearchAdminEndpointsListEntitiesResponse(
+    @SerialName("items") val `items`: List<AdminSearchEntity>,
+)
+
+typealias SearchAliasStatus = String
+
+@Serializable
 data class SearchEndpointsCharacterCandidatesBody(
     @SerialName("query") val `query`: String,
 )
@@ -9967,6 +10142,11 @@ data class SearchEndpointsCharacterCandidatesBody(
 @Serializable
 data class SearchEndpointsCharacterCandidatesResponse(
     @SerialName("items") val `items`: List<CharacterSearchCandidate>,
+)
+
+@Serializable
+data class SearchEndpointsResolveCandidateBody(
+    @SerialName("candidateId") val `candidateId`: WebCandidateId,
 )
 
 @Serializable
@@ -12214,6 +12394,26 @@ data class Wallet(
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
 )
 
+typealias WebCandidateAction = String
+
+typealias WebCandidateId = String
+
+@Serializable
+data class WebCandidateResolution(
+    @SerialName("candidateId") val `candidateId`: WebCandidateId,
+    @SerialName("action") val `action`: String,
+    @SerialName("characterId") val `characterId`: Id?,
+    @SerialName("conversationId") val `conversationId`: Id?,
+    @SerialName("prefill") val `prefill`: WebCandidateResolutionPrefill?,
+)
+
+@Serializable
+data class WebCandidateSource(
+    @SerialName("url") val `url`: String,
+    @SerialName("title") val `title`: String,
+    @SerialName("site") val `site`: String?,
+)
+
 @Serializable
 data class WebPage(
     @SerialName("title") val `title`: String,
@@ -12604,6 +12804,43 @@ data class AdminRoleRequestHistoryItem(
     @SerialName("status") val `status`: String,
     @SerialName("message") val `message`: String?,
     @SerialName("at") val `at`: Timestamp,
+)
+
+@Serializable
+data class AdminSearchEntityIdentifiersItem(
+    @SerialName("identifier") val `identifier`: String,
+    @SerialName("sourceUrl") val `sourceUrl`: String?,
+)
+
+@Serializable
+data class AdminSearchEntityCharactersItem(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("published") val `published`: Boolean,
+)
+
+@Serializable
+data class AdminSearchEntityCreateSourcesItem(
+    @SerialName("url") val `url`: String,
+    @SerialName("title") val `title`: String,
+)
+
+@Serializable
+data class AdminSearchEntityCreateInputSourcesItem(
+    @SerialName("url") val `url`: String,
+    @SerialName("title") val `title`: String? = null,
+)
+
+@Serializable
+data class AdminSearchEntityUpdateSourcesItem(
+    @SerialName("url") val `url`: String,
+    @SerialName("title") val `title`: String,
+)
+
+@Serializable
+data class AdminSearchEntityUpdateInputSourcesItem(
+    @SerialName("url") val `url`: String,
+    @SerialName("title") val `title`: String? = null,
 )
 
 @Serializable
@@ -15031,6 +15268,14 @@ data class WalletBackgroundBudget(
     @SerialName("resetsAt") val `resetsAt`: Timestamp,
     @SerialName("dailyLimitPoints") val `dailyLimitPoints`: NonNegativePoints? = null,
     @SerialName("spentTodayPoints") val `spentTodayPoints`: NonNegativePoints? = null,
+)
+
+@Serializable
+data class WebCandidateResolutionPrefill(
+    @SerialName("name") val `name`: String,
+    @SerialName("identity") val `identity`: String?,
+    @SerialName("description") val `description`: String,
+    @SerialName("sourceUrl") val `sourceUrl`: String,
 )
 
 @Serializable

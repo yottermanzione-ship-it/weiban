@@ -7,6 +7,11 @@
  *   热度只在最后比较，热门同名者不会盖过精确匹配。
  * - 稳定游标：上一页最后一项的排序键（连同搜索词与 prefer），下一页取严格排在它后面的项。
  */
+import type {
+  CharacterSearchEntity,
+  WebCandidateSource,
+  WebCharacterCandidate,
+} from '@weiban/contracts';
 import { searchKey } from '../../../platform/index.js';
 
 export type SiteSource = 'official' | 'plaza' | 'own';
@@ -221,4 +226,96 @@ export function plazaIdentity(input: {
   if (input.kind === 'preset_variant' && input.basedOnPresetName)
     return `基于官方角色「${input.basedOnPresetName}」改编 · 作者 ${author}`;
   return `广场原创 · 作者 ${author}`;
+}
+
+// ---------- 5.6：站外候选与后台实体合并（T-20261104e，方案第 3 步） ----------
+
+/** 站外候选与后台登记的实体合并后的一项（角色卡与动作由服务层补）。 */
+export interface MergedWebCandidate {
+  candidateId: string;
+  name: string;
+  title: string;
+  description: string;
+  identity: string | null;
+  identitySourceUrl: string | null;
+  sources: WebCandidateSource[];
+  entityKey: string | null;
+  unverified: boolean;
+  ambiguous: boolean;
+  /** 实体关联且仍上架的官方角色。 */
+  characterIds: string[];
+}
+
+const WEB_SOURCE_LIMIT = 5;
+const WEB_NAME_MAX_UNITS = 32;
+
+/** 按码点截断，UTF-16 长度不超过 max（契约 z.string().max 按 UTF-16 计）。 */
+function fitUnits(text: string, max: number): string {
+  let out = '';
+  for (const ch of text) {
+    if (out.length + ch.length > max) break;
+    out += ch;
+  }
+  return out;
+}
+
+function pushSources(into: WebCandidateSource[], more: readonly WebCandidateSource[]): void {
+  for (const source of more)
+    if (into.length < WEB_SOURCE_LIMIT && !into.some((s) => s.url === source.url))
+      into.push(source);
+}
+
+/**
+ * 合并规则：只有后台登记到同一实体的公开资料标识才把几个站外候选并成一项（实体的显示名、核实的身份说明优先）；
+ * 没登记的候选各自一项（model-access 已按同一公开资料标识合并过），名字相同也不合并。
+ * 同名（标准化后名字相同）出现不止一次的项都标 ambiguous。
+ */
+export function mergeWebCandidates(
+  candidates: readonly WebCharacterCandidate[],
+  entities: readonly CharacterSearchEntity[],
+): MergedWebCandidate[] {
+  const entityOf = new Map<string, CharacterSearchEntity>();
+  for (const entity of entities) for (const id of entity.identifiers) entityOf.set(id, entity);
+  const groups = new Map<string, MergedWebCandidate>();
+  for (const candidate of candidates) {
+    const entity =
+      candidate.identifiers.map((id) => entityOf.get(id)).find((e) => e !== undefined) ?? null;
+    const key = entity ? `entity:${entity.entityKey}` : `candidate:${candidate.candidateId}`;
+    const existing = groups.get(key);
+    if (existing) {
+      pushSources(existing.sources, candidate.sources);
+      if (existing.unverified && !existing.identity && candidate.identity) {
+        existing.identity = candidate.identity;
+        existing.identitySourceUrl = candidate.identitySourceUrl;
+      }
+      continue;
+    }
+    const verified = !!entity?.identity;
+    const sources: WebCandidateSource[] = [];
+    pushSources(sources, candidate.sources);
+    if (entity) pushSources(sources, entity.sources);
+    groups.set(key, {
+      candidateId: candidate.candidateId,
+      name:
+        fitUnits(entity ? entity.displayName : candidate.name, WEB_NAME_MAX_UNITS) ||
+        candidate.name,
+      title: candidate.title,
+      description: candidate.description,
+      identity: verified ? entity!.identity : candidate.identity,
+      identitySourceUrl: verified ? (entity!.sources[0]?.url ?? null) : candidate.identitySourceUrl,
+      sources,
+      entityKey: entity?.entityKey ?? candidate.identifiers[0] ?? null,
+      unverified: !verified,
+      ambiguous: false,
+      characterIds: entity ? [...entity.characterIds] : [],
+    });
+  }
+  const list = [...groups.values()];
+  const counts = new Map<string, number>();
+  for (const item of list) {
+    const k = searchKey(item.name);
+    counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  for (const item of list) item.ambiguous = (counts.get(searchKey(item.name)) ?? 0) > 1;
+  return list;
 }

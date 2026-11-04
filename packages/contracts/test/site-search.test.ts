@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CharacterSearchCandidate,
   SITE_SEARCH_DID_YOU_MEAN_LIMIT,
   SITE_SEARCH_PAGE_LIMIT,
   SITE_SEARCH_SUGGEST_LIMIT,
+  SearchAdminEndpoints,
   SearchEndpoints,
   SiteSearchResult,
   SiteSearchSuggestion,
+  WebCandidateResolution,
 } from '../src/index.js';
 
 const result = {
@@ -103,5 +106,102 @@ describe('5.5 站内角色搜索契约（T-20261104b）', () => {
         didYouMean: [{ text: '李晨' }],
       }).success,
     ).toBe(true);
+  });
+});
+
+describe('5.6 联网候选身份与出处、点击只认候选 ID、后台修正（T-20261104e）', () => {
+  const CANDIDATE_ID = 'web_AAAAAAAAAAAAAAAAAAAAAA';
+  const legacy = {
+    name: '李晨',
+    title: '李晨（中国内地男演员）_百度百科',
+    description: '李晨，中国内地男演员。',
+    sourceUrl: 'https://baike.baidu.com/item/x/1001',
+  };
+
+  it('向后兼容：旧服务器只给四个字段仍能解析；新字段都可选', () => {
+    expect(CharacterSearchCandidate.parse(legacy)).toEqual(legacy);
+    const full = CharacterSearchCandidate.parse({
+      ...legacy,
+      candidateId: CANDIDATE_ID,
+      identity: '中国内地男演员',
+      identitySourceUrl: legacy.sourceUrl,
+      sources: [{ url: legacy.sourceUrl, title: legacy.title, site: '百度百科' }],
+      entityKey: 'baike:1001',
+      unverified: true,
+      ambiguous: true,
+      action: 'create',
+      characterId: null,
+      conversationId: null,
+      added: false,
+      character: null,
+    });
+    expect(full.action).toBe('create');
+  });
+
+  it('接收端容错：以后新增的候选动作读成 unsupported', () => {
+    expect(CharacterSearchCandidate.parse({ ...legacy, action: 'subscribe' }).action).toBe(
+      'unsupported',
+    );
+    expect(
+      WebCandidateResolution.parse({
+        candidateId: CANDIDATE_ID,
+        action: 'later',
+        characterId: null,
+        conversationId: null,
+        prefill: null,
+      }).action,
+    ).toBe('unsupported');
+  });
+
+  it('出处最多 5 条且必须是网址；候选 ID 格式固定', () => {
+    const source = { url: legacy.sourceUrl, title: 't', site: null };
+    expect(
+      CharacterSearchCandidate.safeParse({ ...legacy, sources: Array(6).fill(source) }).success,
+    ).toBe(false);
+    expect(
+      CharacterSearchCandidate.safeParse({ ...legacy, sources: [{ ...source, url: 'not url' }] })
+        .success,
+    ).toBe(false);
+    expect(CharacterSearchCandidate.safeParse({ ...legacy, candidateId: 'web_x' }).success).toBe(
+      false,
+    );
+  });
+
+  it('点击接口只收候选 ID（不收客户端的网址、名字、角色 ID）', () => {
+    expect(SearchEndpoints.resolveCandidate).toMatchObject({
+      method: 'POST',
+      path: '/api/v1/search/character-candidates/resolve',
+      auth: 'user',
+    });
+    const body = SearchEndpoints.resolveCandidate.body!;
+    expect(body.safeParse({ candidateId: CANDIDATE_ID }).success).toBe(true);
+    expect(body.safeParse({ candidateId: CANDIDATE_ID, url: legacy.sourceUrl }).success).toBe(
+      false,
+    );
+    expect(body.safeParse({ candidateId: CANDIDATE_ID, name: '李晨' }).success).toBe(false);
+    expect(body.safeParse({ candidateId: legacy.sourceUrl }).success).toBe(false);
+  });
+
+  it('后台修正接口都要管理员身份，修改都要写 2～200 字的原因', () => {
+    for (const endpoint of Object.values(SearchAdminEndpoints)) expect(endpoint.auth).toBe('admin');
+    const ok = { entityKey: 'baike:1001', fromEntityKey: 'wiki:zh:李晨', reason: '核对为同一人' };
+    expect(SearchAdminEndpoints.mergeEntity.body!.safeParse(ok).success).toBe(true);
+    expect(SearchAdminEndpoints.mergeEntity.body!.safeParse({ ...ok, reason: ' ' }).success).toBe(
+      false,
+    );
+    expect(
+      SearchAdminEndpoints.changeAlias.body!.safeParse({
+        op: 'propose',
+        alias: '晨哥',
+        reason: '粉丝称呼',
+      }).success,
+    ).toBe(true);
+    expect(
+      SearchAdminEndpoints.changeAlias.body!.safeParse({
+        op: 'delete_everything',
+        alias: '晨哥',
+        reason: '粉丝称呼',
+      }).success,
+    ).toBe(false);
   });
 });

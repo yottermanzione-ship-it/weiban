@@ -80,6 +80,7 @@ import { pcmWavSeconds, roundAsr } from '../domain/media-billing-bounds.js';
 import { probeAudioSeconds } from '../infra/audio-duration.js';
 import { WebToolsStore } from './web-tools-store.js';
 import { privateSearchText, publicWebUrl } from '../domain/web-search.js';
+import { publicCandidateHit } from '../domain/web-candidates.js';
 import { decisionQuestions } from '../infra/jev-adapter.js';
 import type { RealtimeConnection } from '../infra/dashscope-realtime.js';
 import { realtimeResponseEstimate, realtimeVoiceCloneCostYuan } from './realtime-call.js';
@@ -153,6 +154,9 @@ type PendingMediaResult = {
 
 /** 实时识别：16 kHz PCM16 单声道，每秒 32000 字节。 */
 const PCM16K_BYTES_PER_SECOND = 32_000;
+/** 5.6：联网查找同词并发时等先到者结果的轮数与间隔（最多约 15 秒，供应商单次请求的正常耗时之内）。 */
+const CANDIDATE_LEASE_WAIT_ROUNDS = 75;
+const CANDIDATE_LEASE_WAIT_MS = 200;
 /** 每段冻结 1 分钟（ADR-0025「长通话分段冻结」）。 */
 
 /** 断句：说话后静音 700 毫秒，或单句超过 15 秒。 */
@@ -391,7 +395,18 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
         input.originalQuestion,
       );
       // 请求正文不进长期共享缓存；需要正文的调用仍受每用户幂等保护。
-      const claim = input.needContent ? null : await this.webTools.claim(key, input.purpose);
+      let claim = input.needContent ? null : await this.webTools.claim(key, input.purpose);
+      // 5.6（T-20261104e）：联网查找同一个词并发时，后到的等先到的那次供应商调用落进公共缓存再读（命中不计费），
+      // 不再打一次供应商。每轮只开一个短事务领租约，等待期间不占数据库连接；先到的失败时租约释放，后到的再自己查。
+      if (input.purpose === 'search_candidates')
+        for (
+          let round = 0;
+          claim?.kind === 'busy' && round < CANDIDATE_LEASE_WAIT_ROUNDS;
+          round++
+        ) {
+          await new Promise<void>((resolve) => setTimeout(resolve, CANDIDATE_LEASE_WAIT_MS));
+          claim = await this.webTools.claim(key, input.purpose);
+        }
       if (claim?.kind === 'hit') return { ok: true, value: claim.value };
       if (claim?.kind === 'busy') return { ok: false, error: 'provider_unavailable' };
       try {
@@ -412,8 +427,12 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
             return {
               ok: true,
               value: {
+                // 5.6：联网查找的结果（也就是写进公共缓存的）只留公开人物 / 虚构作品类网页；
+                // 丢弃不影响下面按供应商原始结果计费。
                 items: found.value.hits.filter(
-                  (hit) => !privateSearchText(`${hit.title} ${hit.snippet} ${hit.content ?? ''}`),
+                  (hit) =>
+                    !privateSearchText(`${hit.title} ${hit.snippet} ${hit.content ?? ''}`) &&
+                    (input.purpose !== 'search_candidates' || publicCandidateHit(hit)),
                 ),
               },
               actual: {

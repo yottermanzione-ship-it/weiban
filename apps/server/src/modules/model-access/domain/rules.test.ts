@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OpenAiCompatibleMediaAdapter } from '../infra/media-adapter.js';
 import { ModelGatewayMedia } from '../application/media-gateway.js';
 import { WebToolsStore } from '../application/web-tools-store.js';
-import { characterCandidates, privateSearchText, publicWebUrl } from './web-search.js';
+import { privateSearchText, publicWebUrl } from './web-search.js';
+import { candidateIdFor, structureCandidates } from './web-candidates.js';
 import { TestClock } from '../../../platform/index.js';
 import { GatewayLimitsService } from '../application/limits.js';
 import { SharedWebSearch } from '../application/shared-search.js';
@@ -595,17 +596,21 @@ describe('S DeepSeek Search / Fetch 协议', () => {
       publishedAt: null,
     };
     expect(
-      characterCandidates('程澈', [
+      structureCandidates('程澈', [
         good,
         good,
         { ...good, url: 'https://example.com/privacy', snippet: '私人手机号 13800138000' },
       ]),
     ).toEqual([
       {
+        candidateId: candidateIdFor('url:https://example.com/cc'),
         name: '程澈',
         title: good.title,
         description: good.snippet,
-        sourceUrl: 'https://example.com/cc',
+        identity: null,
+        identitySourceUrl: null,
+        sources: [{ url: 'https://example.com/cc', title: good.title, site: 'example.com' }],
+        identifiers: [],
       },
     ]);
   });

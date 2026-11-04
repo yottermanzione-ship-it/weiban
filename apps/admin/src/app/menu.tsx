@@ -36,6 +36,7 @@ export const MENU: MenuDataItem[] = [
       { path: '/characters', name: '角色库' },
       { path: '/plaza', name: '角色广场' },
       { path: '/role-requests', name: '制作申请' },
+      { path: '/search-entities', name: '搜索身份修正' },
       { path: '/relations', name: '关系网' },
       { path: '/public-updates', name: '公开动态' },
     ],

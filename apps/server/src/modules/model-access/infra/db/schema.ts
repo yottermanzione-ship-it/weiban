@@ -53,6 +53,20 @@ export const webToolLimits = modelAccessSchema.table(
   },
   (t) => [check('web_tool_limits_count_check', sql`${t.count} >= 0`)],
 );
+/**
+ * 迁移 0158（T-20261104e）：联网查找结构化后的候选快照，点击时按候选 ID 重读。
+ * 只存公开搜索结果（已过滤），不存查询原文和用户 ID；24 小时过期。
+ */
+export const webCandidates = modelAccessSchema.table(
+  'web_candidates',
+  {
+    candidateId: text('candidate_id').primaryKey(),
+    payload: jsonb('payload').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [index('web_candidates_expires_idx').on(t.expiresAt)],
+);
 
 const tz = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
 const money = (name: string) => bigint(name, { mode: 'number' });
