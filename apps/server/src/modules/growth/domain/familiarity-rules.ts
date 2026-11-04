@@ -12,7 +12,7 @@ import { P25_FAMILIARITY } from '../../../platform/index.js';
  * 判定一条用户消息是否算「有效消息」，并给出它的内容指纹（去空白后的 SHA-256，不保存正文）。
  * - 去掉空白后至少 minChars 个字（按字符计，emoji 算一个）；
  * - 指纹与上一条消息（不论是否计分）不同；
- * - 距上一条计分消息至少 minIntervalMs（乱序到达时取差的绝对值）。
+ * - 发送时刻必须比上一条计分消息晚至少 minIntervalMs，迟到旧消息不推进计分状态。
  */
 export function evaluateUserMessage(input: {
   text: string;
@@ -23,11 +23,14 @@ export function evaluateUserMessage(input: {
   const rule = P25_FAMILIARITY.userMessage;
   const normalized = input.text.replace(/\s+/gu, '');
   const hash = createHash('sha256').update(normalized).digest('hex');
+  const elapsed = input.lastMessageScoredAt
+    ? input.sentAt.getTime() - input.lastMessageScoredAt.getTime()
+    : null;
+  if (elapsed !== null && elapsed < 0) return { hash: input.lastMessageHash ?? hash, valid: false };
   const valid =
     Array.from(normalized).length >= rule.minChars &&
     input.lastMessageHash !== hash &&
-    (!input.lastMessageScoredAt ||
-      Math.abs(input.sentAt.getTime() - input.lastMessageScoredAt.getTime()) >= rule.minIntervalMs);
+    (elapsed === null || elapsed >= rule.minIntervalMs);
   return { hash, valid };
 }
 

@@ -132,14 +132,18 @@ export function renderStableMemory(input: {
   monthly: DayEntry[];
   /**
    * 摘要只用这一天（YYYY-MM-DD，含）之后的；null / 不传 = 全部（v5：免费只用最近 7 天）。
-   * 月摘要按月份末尾判断，整月早于该日的不用。
+   * 月/年摘要无法逐条拆分日期，必须整个周期都落在范围内（以周期首日判断）。
    */
   summarySince?: string | null;
   /** 年度回忆（PRO+，v5 先留口子，暂无数据来源时传空）。 */
   annual?: DayEntry[];
 }): string {
   const since = input.summarySince ?? null;
-  const fresh = (period: string) => !since || period >= since.slice(0, period.length);
+  const fresh = (period: string) => {
+    const start =
+      period.length === 4 ? `${period}-01-01` : period.length === 7 ? `${period}-01` : period;
+    return !since || start >= since;
+  };
   const parts: string[] = [];
   if (input.resident.length)
     parts.push(
@@ -168,6 +172,7 @@ export function renderStableMemory(input: {
   }
   const older = [
     ...(input.annual ?? [])
+      .filter((e) => fresh(e.period))
       .slice(-1)
       .map((e) => ({ label: `${e.period} 年`, text: pick(e).slice(-300) })),
     ...input.monthly
