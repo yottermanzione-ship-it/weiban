@@ -83,6 +83,9 @@ test('断网与账号切换：本机资料可读，旧账号余额不会进入�
   await login(page);
   await page.goto('/wallet');
   await expect(page.locator('.wallet-number')).toHaveText('5,000');
+  // 离线刷新以应用资源已完成安装为前提；资料接口先返回不代表离线缓存已就绪。
+  await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
+  await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
   await context.setOffline(true);
   await page.reload();
   await expect(page.locator('.wallet-number')).toHaveText('5,000');
@@ -167,7 +170,16 @@ test('真实Service Worker升级不打断使用，明确刷新后接续新版且
   const file = new URL('../../dist/sw.js', import.meta.url);
   const original = await readFile(file, 'utf8');
   try {
-    await writeFile(file, original + '\nself.weibanBrowserUpgrade = true;\n');
+    // 从当前页面的 controller 询问版本；不要在等待中的 worker 内执行调试代码。
+    // 那既不能证明它已接管页面，也可能改变浏览器的 worker 生命周期。
+    await writeFile(
+      file,
+      original +
+        `\nself.addEventListener('message', (event) => {
+          if (event.data?.type === 'WEIBAN_TEST_VERSION')
+            event.ports[0]?.postMessage('browser-upgrade-fixture');
+        });\n`,
+    );
     await page.evaluate(async () => {
       await (await navigator.serviceWorker.ready).update();
     });
@@ -176,18 +188,6 @@ test('真实Service Worker升级不打断使用，明确刷新后接续新版且
       .toBe(true);
     await expect(page.getByText('新版本已准备好')).toHaveCount(0);
     await page.reload();
-    await expect
-      .poll(async () => {
-        const workers = page.context().serviceWorkers();
-        return (
-          await Promise.all(
-            workers.map((worker) =>
-              worker.evaluate(() => 'weibanBrowserUpgrade' in globalThis).catch(() => false),
-            ),
-          )
-        ).some(Boolean);
-      })
-      .toBe(true);
     await expect
       .poll(
         () =>
@@ -214,6 +214,23 @@ test('真实Service Worker升级不打断使用，明确刷新后接续新版且
         { timeout: 15_000 },
       )
       .toContain('"waiting":false');
+    const controlledVersion = await page.evaluate(
+      () =>
+        new Promise<unknown>((resolve) => {
+          const channel = new MessageChannel();
+          const finish = (value: unknown) => {
+            window.clearTimeout(timer);
+            channel.port1.close();
+            resolve(value);
+          };
+          const timer = window.setTimeout(() => finish(null), 2000);
+          channel.port1.onmessage = (event) => finish(event.data);
+          navigator.serviceWorker.controller?.postMessage({ type: 'WEIBAN_TEST_VERSION' }, [
+            channel.port2,
+          ]);
+        }),
+    );
+    expect(controlledVersion).toBe('browser-upgrade-fixture');
     await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
   } finally {
     await writeFile(file, original);
