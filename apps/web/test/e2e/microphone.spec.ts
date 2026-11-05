@@ -69,13 +69,13 @@ test('旧引导完成后仍可申请麦克风，拒绝后重试成功且取消�
   expect(await counts(page)).toEqual({ calls: 1, stopped: 0 });
   await allow(page);
   await dialog.getByRole('button', { name: '重新尝试' }).click();
-  const hold = page.getByRole('button', { name: '按住说话' });
+  const hold = page.getByRole('button', { name: '按住说话', exact: true });
   await expect(hold).toBeVisible();
   expect(await counts(page)).toEqual({ calls: 2, stopped: 1 });
   await hold.dispatchEvent('pointerdown', { pointerId: 1, clientY: 800 });
   await expect(page.getByText('手指上滑，取消发送')).toBeVisible();
   await page
-    .getByRole('button', { name: '松开发送' })
+    .getByRole('button', { name: '松开发送', exact: true })
     .dispatchEvent('pointercancel', { pointerId: 1 });
   await expect(hold).toBeVisible();
   await expect.poll(() => counts(page)).toEqual({ calls: 3, stopped: 2 });
@@ -99,16 +99,16 @@ test('等待设备时离开聊天，迟到的录音流也会关闭', async ({ pa
   await microphone(page);
   await openChat(page);
   await page.getByRole('button', { name: '切换到按住说话' }).click();
-  await expect(page.getByRole('button', { name: '按住说话' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '按住说话', exact: true })).toBeVisible();
   await page.evaluate(() => {
     (window as unknown as { microphoneTest: { delay: boolean } }).microphoneTest.delay = true;
   });
   await page
-    .getByRole('button', { name: '按住说话' })
+    .getByRole('button', { name: '按住说话', exact: true })
     .dispatchEvent('pointerdown', { pointerId: 1, clientY: 800 });
   await expect.poll(() => counts(page)).toEqual({ calls: 2, stopped: 1 });
   await page.getByRole('link', { name: '聊天信息', exact: true }).click();
-  await expect(page.getByRole('button', { name: '按住说话' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '按住说话', exact: true })).toHaveCount(0);
   await page.evaluate(() => {
     (window as unknown as { microphoneTest: { release(): void } }).microphoneTest.release();
   });
@@ -130,4 +130,19 @@ test('通话按钮先申请麦克风；拒绝时不创建通话', async ({ page 
   await expect(page.getByRole('dialog', { name: '没有找到麦克风' })).toBeVisible();
   expect(await counts(page)).toEqual({ calls: 1, stopped: 0 });
   expect(starts).toBe(0);
+});
+
+test('缺少浏览器录音接口时给出真实原因，聊天与设置均可返回', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: undefined });
+  });
+  await openChat(page);
+  await page.getByRole('button', { name: '切换到按住说话', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: '当前浏览器不支持录音' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '按住说话', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '知道了', exact: true }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.goto('/settings');
+  await page.getByRole('button', { name: /麦克风权限/ }).click();
+  await expect(page.getByRole('dialog', { name: '当前浏览器不支持录音' })).toBeVisible();
 });
