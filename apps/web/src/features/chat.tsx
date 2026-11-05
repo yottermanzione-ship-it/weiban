@@ -15,6 +15,7 @@ import {
   type ChangeEvent,
   type FormEvent,
   type ReactNode,
+  type SetStateAction,
 } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { DailyQuestionBubble, LetterBubble } from './play.js';
@@ -569,6 +570,11 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   const location = useLocation();
   const prefill = (location.state as { prefill?: string } | null)?.prefill;
   const [text, setText] = useState(prefill ?? '');
+  const textRevision = useRef(0);
+  function editText(value: SetStateAction<string>) {
+    textRevision.current++;
+    setText(value);
+  }
   const [mentions, setMentions] = useState<Array<{ participantId: string; name: string }>>([]);
   const [picking, setPicking] = useState(false);
   const [overrides, setOverrides] = useState<Record<string, Message>>({});
@@ -592,6 +598,11 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
   const [quoteId, setQuoteId] = useState<string | null>(null);
+  const quoteRevision = useRef(0);
+  function editQuote(value: string | null) {
+    quoteRevision.current++;
+    setQuoteId(value);
+  }
   const [atBottom, setAtBottom] = useState(true);
   /** U5「↓ N 条新消息 / 回到最新」：离底部超过一屏半、回底 nonce、上翻那一刻的最后序号。 */
   const [farFromBottom, setFarFromBottom] = useState(false);
@@ -959,7 +970,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   }, [id, lastVisibleSeq, conversation.state.readSeq, visible, atBottom]);
   function insertMention(participant: Participant) {
     const name = displayName(participant.refId);
-    setText((value) => `${value.endsWith('@') ? value.slice(0, -1) : value}@${name} `);
+    editText((value) => `${value.endsWith('@') ? value.slice(0, -1) : value}@${name} `);
     setMentions((list) =>
       list.some((m) => m.participantId === participant.participantId)
         ? list
@@ -981,7 +992,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
       showToast('消息已达到字数上限');
       return;
     }
-    setText(edited.value);
+    editText(edited.value);
     requestAnimationFrame(() => input.current?.setSelectionRange(edited.cursor, edited.cursor));
   }
   async function submit(event?: FormEvent) {
@@ -994,14 +1005,19 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     if (modelGate.block()) return;
     setSending(true);
     setError('');
+    const submittedTextRevision = textRevision.current;
+    const submittedQuoteRevision = quoteRevision.current;
     try {
       const mentioned = group
         ? mentions.filter((m) => text.includes(`@${m.name}`)).map((m) => m.participantId)
         : [];
       await chat.send(id, text, quote?.messageId, mentioned);
-      setText('');
-      setMentions([]);
-      setQuoteId(null);
+      // 本机保存也可能较慢；只清掉本次提交的草稿，保留等待期间的新输入（含同文）。
+      if (textRevision.current === submittedTextRevision) {
+        setText('');
+        setMentions([]);
+      }
+      if (quoteRevision.current === submittedQuoteRevision) setQuoteId(null);
     } catch (e) {
       setError(friendlyError(e));
     } finally {
@@ -1083,7 +1099,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     const quoteItem = {
       label: '引用',
       icon: 'wechat/reply',
-      onClick: () => setQuoteId(message.messageId),
+      onClick: () => editQuote(message.messageId),
     };
     const del = {
       label: '删除',
@@ -1677,7 +1693,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           characterId={role.refId}
           onOpenChange={setAwayOpen}
           onAsk={(value) => {
-            setText(value);
+            editText(value);
             input.current?.focus();
           }}
         />
@@ -1883,7 +1899,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
               }}
               onChange={(event) => {
                 const value = event.target.value;
-                setText(value);
+                editText(value);
                 if (cardOpen && whileAway.data) setAwayOpen(false);
                 if (group && value.endsWith('@') && value.length > text.length) {
                   if (members.length === 1) insertMention(members[0]!);
@@ -1950,7 +1966,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
                 : content(quote)}
             </span>
           </span>
-          <button type="button" aria-label="取消引用" onClick={() => setQuoteId(null)}>
+          <button type="button" aria-label="取消引用" onClick={() => editQuote(null)}>
             <OldIcon name="wechat/close" size={18} />
           </button>
         </div>
