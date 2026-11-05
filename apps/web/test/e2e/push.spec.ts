@@ -6,6 +6,15 @@ async function login(page: Page) {
   await page.getByLabel('账号', { exact: true }).fill('browser_user');
   await page.getByLabel('密码', { exact: true }).fill('correct horse battery');
   await page.getByRole('button', { name: '同意并登录', exact: true }).click();
+  const onboarding = page.getByRole('heading', { name: 'TA 该怎么称呼你？', exact: true });
+  await expect(page.getByRole('navigation', { name: '主导航' }).or(onboarding)).toBeVisible();
+  if (await onboarding.isVisible()) {
+    await page.getByLabel('昵称', { exact: true }).fill('通知测试用户');
+    await page.getByRole('button', { name: '下一步', exact: true }).click();
+    await page.getByRole('button', { name: /测试陪伴角色/ }).click();
+    await expect(page).toHaveURL(/\/chat\//);
+    await page.goto('/chat');
+  }
   await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
 }
@@ -83,28 +92,61 @@ async function clickFirstNotice(worker: Worker) {
     await Promise.all(pending);
   });
 }
-test('未配置通道时明确失败，不向系统请求通知权限', async ({ page }) => {
+test('设置页先申请通知；未配置通道时明确说明且开关保持关闭', async ({ page }) => {
   await page.addInitScript(() => {
     Object.assign(window, { weibanPermissionRequests: 0 });
-    const original = Notification.requestPermission.bind(Notification);
+    let permission: NotificationPermission = 'default';
+    Object.defineProperty(Notification, 'permission', {
+      configurable: true,
+      get: () => permission,
+    });
     Object.defineProperty(Notification, 'requestPermission', {
-      value: () => {
+      configurable: true,
+      value: async () => {
         const state = window as unknown as { weibanPermissionRequests: number };
         state.weibanPermissionRequests++;
-        return original();
+        permission = 'granted';
+        return permission;
       },
     });
   });
   await login(page);
   await page.goto('/settings');
   await page.getByRole('switch', { name: '新消息通知', exact: true }).click();
-  await expect(page.getByRole('status')).toBeVisible();
+  await expect(page.getByRole('dialog', { name: '通知设置未完成' })).toContainText(
+    '通知权限已允许，但通知服务暂时不可用',
+  );
+  await page
+    .getByRole('dialog', { name: '通知设置未完成' })
+    .getByRole('button', { name: '知道了', exact: true })
+    .click();
+  await expect(page.getByRole('switch', { name: '新消息通知', exact: true })).not.toBeChecked();
   expect(
     await page.evaluate(
       () => (window as unknown as { weibanPermissionRequests: number }).weibanPermissionRequests,
     ),
-  ).toBe(0);
-  expect(await page.evaluate(() => Notification.permission)).not.toBe('granted');
+  ).toBe(1);
+  expect(await page.evaluate(() => Notification.permission)).toBe('granted');
+});
+
+test('苹果普通网页解释主屏幕要求，不冒充已开启通知', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'userAgent', {
+      configurable: true,
+      value:
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Version/18.0 Mobile Safari/604.1',
+    });
+    Object.defineProperty(navigator, 'standalone', { configurable: true, value: false });
+  });
+  await login(page);
+  await page.goto('/settings');
+  await page.getByRole('switch', { name: '新消息通知', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: '通知设置未完成' })).toContainText('添加到主屏幕');
+  await page
+    .getByRole('dialog', { name: '通知设置未完成' })
+    .getByRole('button', { name: '知道了', exact: true })
+    .click();
+  await expect(page.getByRole('switch', { name: '新消息通知', exact: true })).not.toBeChecked();
 });
 test('实际Service Worker与通知系统夹具：归属/时效、去重、点击与退出清理', async ({
   page,

@@ -73,6 +73,7 @@ import {
 import { stickerPromptText } from '../domain/sticker-marker.js';
 import { photoPromptText, type PhotoOffer } from '../domain/photo-marker.js';
 import { detectFormSuppressions } from '../domain/chat-form-suppression.js';
+import { voiceIntent } from '../domain/voice-request.js';
 import {
   characterMessages,
   photoRoom,
@@ -91,8 +92,6 @@ const VOICE_CHANCE = 0.06;
 const VOICE_MAX_CHARS = 120;
 /** 语音目标长度：主动穿插的语音只挑 80 字以内的短回复（硬上限仍是 120 字）。 */
 const VOICE_TARGET_CHARS = 80;
-const VOICE_REQUEST =
-  /(发|来)(条|个|段|一段|一条)?语音|语音(给我|发我|说)|听听你的声音|想听你(的)?声音|用语音/u;
 const LINK_REQUEST =
   /(推荐|分享|发我|发给我|想听|想看|听听|看看).{0,8}(歌|歌曲|音乐|作品|新歌|视频|电影|剧|专辑)|(歌|作品|视频|专辑).{0,4}(链接|地址)/u;
 
@@ -574,6 +573,41 @@ export class MediaAiService {
     return sticker ? stickerContent(sticker) : null;
   }
 
+  /** Read-only per-turn capabilities after history; no provider call or paid preflight. */
+  async voiceReplyPrompt(input: {
+    ctx: MediaCallContext;
+    userText: string;
+    history: Message[];
+    voiceId: string | null;
+    sensitive: boolean;
+  }): Promise<string> {
+    if (!/语音|声音/u.test(input.userText)) return '';
+    const prefix = '微伴有角色语音消息功能。不要沿用旧聊天里否认平台语音功能的说法。';
+    const textOnly = '本轮保持文字，不声称已发语音，也不把暂时不可用说成平台没有语音功能。';
+    if (input.ctx.modelRole === 'adult')
+      return `${prefix}当前私密模式只支持文字和图片。${textOnly}`;
+    if (input.sensitive) return `${prefix}当前关怀或健康话题不转换语音。${textOnly}`;
+    if (
+      detectFormSuppressions(recentUserTexts(input.history, input.userText)).suppressed.has('voice')
+    )
+      return `${prefix}用户现在不想收语音，尊重这个选择。${textOnly}`;
+    const until = await this.quiet.getInconvenientUntil(input.ctx.userId).catch(() => undefined);
+    if (until === undefined) return `${prefix}暂时无法确认语音可用状态。${textOnly}`;
+    if (until && Date.parse(until) > this.clock.nowMs())
+      return `${prefix}用户开启了不方便接收语音的时段，暂时不发。${textOnly}`;
+    if (!(await this.media.isServiceEnabled('speech_synthesis').catch(() => false)))
+      return `${prefix}语音服务当前暂不可用。${textOnly}`;
+    const voice = await this.resolveVoice(
+      input.ctx.characterId,
+      input.voiceId,
+      input.ctx.defaultVoiceId,
+    ).catch(() => null);
+    if (!voice) return `${prefix}当前角色还没有可用音色，可在陪伴设置中选择可用音色。${textOnly}`;
+    return voiceIntent(input.userText) === 'request'
+      ? `${prefix}用户明确要听语音，当前服务和音色可用。请直接写适合自然朗读的简短回复，总长不超过100字，保留句号、逗号等停顿；发送阶段会把整段回复合成一条语音。不要写“我没有语音功能”，不要提前宣称已经发送成功。`
+      : `${prefix}当前服务和音色可用，可以如实介绍：用户可发文字请你回语音，收听角色语音不需要开启用户自己的麦克风。用户自己录音时才需要麦克风；实时通话是否可用另看通话入口。`;
+  }
+
   /**
    * 在文字回复确定后决定是否改发语音、附表情包、照片或作品链接。返回完整的待发内容列表；不改变时返回 null。
    * history：该会话最近的消息（升序）。只在日常范围、非关怀时调用。
@@ -613,7 +647,7 @@ export class MediaAiService {
     const joined = bubbles.join('，');
     const mine = characterMessages(input.history);
     const seed = `${input.triggerId}:${ctx.characterId}`;
-    const requested = VOICE_REQUEST.test(input.userText);
+    const requested = voiceIntent(input.userText) === 'request';
     const recent = mine.slice(-100);
     // 会话压制：用户在聊天里明确说过不喜欢某一种形式，就不发那一种；后来明确要了就恢复。
     const suppressedForms = detectFormSuppressions(
@@ -639,7 +673,12 @@ export class MediaAiService {
     const until = await this.quiet.getInconvenientUntil(ctx.userId).catch(() => undefined);
     const voiceQuietOk = until !== undefined && (!until || Date.parse(until) <= this.clock.nowMs());
     let availableVoice: string | null = null;
-    if (shortEnough && voiceQuietOk && (requested || (!input.quiet && voiceGuardOk))) {
+    if (
+      shortEnough &&
+      voiceQuietOk &&
+      !suppressedForms.has('voice') &&
+      (requested || (!input.quiet && voiceGuardOk))
+    ) {
       const enabled = await this.media.isServiceEnabled('speech_synthesis').catch(() => false);
       if (enabled)
         availableVoice = await this.resolveVoice(
@@ -778,8 +817,8 @@ export class MediaAiService {
     onMediaCharged?: (chargedMicros: number) => void;
   }): Promise<MessageContent | null> {
     const { ctx } = input;
-    const until = await this.quiet.getInconvenientUntil(ctx.userId).catch(() => null);
-    if (until && Date.parse(until) > this.clock.nowMs()) return null;
+    const until = await this.quiet.getInconvenientUntil(ctx.userId).catch(() => undefined);
+    if (until === undefined || (until && Date.parse(until) > this.clock.nowMs())) return null;
     if (!(await this.media.isServiceEnabled('speech_synthesis'))) return null;
     const voiceId = await this.resolveVoice(ctx.characterId, input.voiceId, ctx.defaultVoiceId);
     if (!voiceId) return null;

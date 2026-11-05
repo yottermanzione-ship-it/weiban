@@ -25,6 +25,7 @@ import { useChat } from '../app/chat.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { Dialog, showToast } from './toast.js';
 import { formatDuration, isIPhone, voicePlayer } from './media.js';
+import { openMicrophone, microphoneProblem, type MicrophoneProblem } from './microphone.js';
 
 /*
  * 网页语音通话（MED-06、MED-07；call.md、media-l5.md 第 7 节；ADR-0025 音频流协议）。
@@ -309,17 +310,18 @@ export function useCallEntry(characterId: string | undefined) {
 /** 3.28（H2）：私密模式不能语音通话时的说明。 */
 export const PRIVATE_MODE_CALL_HINT = '私密模式只支持文字和图片，切换到其他模式后才能语音通话';
 
-async function askMicrophone(): Promise<MediaStream | null> {
+async function askMicrophone(
+  onError: (problem: MicrophoneProblem) => void,
+): Promise<MediaStream | null> {
   try {
-    return await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-        channelCount: 1,
-      },
+    return await openMicrophone({
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+      channelCount: 1,
     });
-  } catch {
+  } catch (error) {
+    onError(microphoneProblem(error));
     return null;
   }
 }
@@ -338,6 +340,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const { state } = useChat();
   const [view, setView] = useState<CallView | null>(null);
   const [dialog, setDialog] = useState<null | 'iphone' | 'browser' | 'balance' | 'mic'>(null);
+  const [micProblem, setMicProblem] = useState<MicrophoneProblem | null>(null);
+  const starting = useRef(false);
   const engine = useRef<CallEngine | null>(null);
   const viewRef = useRef<CallView | null>(null);
   viewRef.current = view;
@@ -394,6 +398,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
   const start = useCallback(
     (characterId: string) => {
+      if (starting.current) return;
       const current = viewRef.current;
       if (current && current.phase !== 'ended') {
         patch({ minimized: false });
@@ -407,8 +412,18 @@ export function CallProvider({ children }: { children: ReactNode }) {
       // 必须在点击的同一个调用栈里创建 AudioContext（iPhone 要求用户手势）。
       const ctx = newAudioContext();
       voicePlayer.stop();
+      // Ask while the call button's user gesture is still active, before a network round trip.
+      const microphone = askMicrophone(setMicProblem);
+      starting.current = true;
       void (async () => {
+        let stream: MediaStream | null = null;
+        let attached = false;
         try {
+          stream = await microphone;
+          if (!stream) {
+            setDialog('mic');
+            return;
+          }
           const availability = await api.call(CallEndpoints.getAvailability, {
             query: { characterId },
             networkOnly: true,
@@ -424,23 +439,26 @@ export function CallProvider({ children }: { children: ReactNode }) {
             } else showToast('暂时无法通话');
             return;
           }
-          const stream = await askMicrophone();
-          if (!stream) {
-            void ctx.close();
-            setDialog('mic');
-            return;
-          }
           const call = await api.call(CallEndpoints.startCall, {
             body: { characterId, clientRequestId: crypto.randomUUID() },
           });
           setView(base(call, 'outgoing'));
-          if (call.stream) await attach(call, call.stream, ctx, stream);
+          if (call.stream) {
+            await attach(call, call.stream, ctx, stream);
+            attached = true;
+          }
         } catch (e) {
           void ctx.close().catch(() => {});
           if (e instanceof ApiFailure && e.code === 'insufficient_balance') setDialog('balance');
           else if (e instanceof ApiFailure && e.code === 'private_mode_unsupported')
             showToast(PRIVATE_MODE_CALL_HINT, 3000, 'info');
           else showToast(friendlyError(e));
+        } finally {
+          starting.current = false;
+          if (!attached) {
+            stream?.getTracks().forEach((track) => track.stop());
+            void ctx.close().catch(() => {});
+          }
         }
       })();
     },
@@ -456,7 +474,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   async function answer() {
     if (!view) return;
     const ctx = newAudioContext();
-    const stream = await askMicrophone();
+    const stream = await askMicrophone(setMicProblem);
     if (!stream) {
       void ctx.close();
       setDialog('mic');
@@ -491,7 +509,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   async function reattach() {
     if (!view) return;
     const ctx = newAudioContext();
-    const stream = await askMicrophone();
+    const stream = await askMicrophone(setMicProblem);
     if (!stream) {
       void ctx.close();
       setDialog('mic');
@@ -624,10 +642,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
       )}
       {dialog === 'mic' && (
         <Dialog
-          title="需要麦克风权限才能通话"
+          title={micProblem?.title ?? '麦克风暂时无法使用'}
           actions={[{ label: '知道了', tone: 'primary', onClick: () => setDialog(null) }]}
         >
-          <p className="hint">请在浏览器地址栏左侧的网站设置里允许麦克风</p>
+          <p className="hint">{micProblem?.message}处理后可重新点击通话。</p>
         </Dialog>
       )}
     </CallContext.Provider>

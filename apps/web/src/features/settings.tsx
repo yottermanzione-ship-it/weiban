@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import { IdentityEndpoints } from '@weiban/contracts';
 import { ApiFailure } from '@weiban/client-core';
 import { HomeScreenGuide } from './home-screen-guide.js';
+import { MicrophoneSettingsRow } from './microphone-settings.js';
 import { useAuth } from '../app/auth.js';
 import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
@@ -24,7 +25,7 @@ import {
   setScheme,
   type Scheme,
 } from '../data/display-prefs.js';
-import { enableWebPush, disableWebPush } from '../notifications/client.js';
+import { enableWebPush, disableWebPush, webPushEnabled } from '../notifications/client.js';
 import { OldIcon } from './old-icons.js';
 import {
   getMessageSoundEnabled,
@@ -45,7 +46,7 @@ import {
   SwitchRow,
 } from './shell-kit.js';
 import { useAnnouncementUnread } from './release.js';
-import { AlertDialog, showToast } from './toast.js';
+import { AlertDialog, Dialog, showToast } from './toast.js';
 import { SubPageLayer } from './edit-page.js';
 
 const schemeNames: Record<Scheme, string> = {
@@ -138,18 +139,12 @@ function SoundPage({
   );
 }
 
-async function pushEnabled(): Promise<boolean> {
-  if (!('serviceWorker' in navigator) || !('Notification' in window)) return false;
-  if (Notification.permission !== 'granted') return false;
-  const registration = await navigator.serviceWorker.getRegistration();
-  return !!(await registration?.pushManager?.getSubscription());
-}
-
 export function SettingsPage() {
   const auth = useAuth();
   const announcements = useAnnouncementUnread();
   const notification = useRemote(IdentityEndpoints.getNotificationSettings);
   const [push, setPush] = useState(false);
+  const [pushProblem, setPushProblem] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [scheme, setSchemeState] = useState(getScheme);
   const [font, setFont] = useState(getFontScale);
@@ -160,19 +155,20 @@ export function SettingsPage() {
   const [choice, setChoice] = useState<'scheme' | 'font' | 'sound' | null>(null);
   const [logout, setLogout] = useState(false);
   useEffect(() => {
-    void pushEnabled()
+    void webPushEnabled()
       .then(setPush)
       .catch(() => {});
   }, []);
   async function togglePush(enable: boolean) {
     setPending(true);
+    setPushProblem(null);
     try {
       if (enable) await enableWebPush();
       else await disableWebPush();
       setPush(enable);
       showToast(enable ? '已开启此设备通知' : '已关闭此设备通知', 2000, 'success');
     } catch (e) {
-      showToast(
+      setPushProblem(
         e instanceof ApiFailure ? e.message : e instanceof Error ? e.message : '通知设置暂未完成',
       );
     } finally {
@@ -244,6 +240,7 @@ export function SettingsPage() {
       </MenuGroup>
       <GroupHeader>隐私</GroupHeader>
       <MenuGroup>
+        <MicrophoneSettingsRow />
         <MenuRow to="/settings/privacy" label="角色之间共享我的信息" />
         <MenuRow to="/services/period/settings" label="经期日记相关" />
       </MenuGroup>
@@ -287,6 +284,14 @@ export function SettingsPage() {
         <MenuRow to="/settings/about" label="关于微伴" dot={announcements > 0} />
       </MenuGroup>
       <HomeScreenGuide manual />
+      {pushProblem && (
+        <Dialog
+          title="通知设置未完成"
+          actions={[{ label: '知道了', tone: 'primary', onClick: () => setPushProblem(null) }]}
+        >
+          <p className="hint">{pushProblem}</p>
+        </Dialog>
+      )}
       <MenuGroup>
         <MenuRow label="退出登录" danger center chevron={false} onClick={() => setLogout(true)} />
       </MenuGroup>

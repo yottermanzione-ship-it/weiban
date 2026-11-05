@@ -346,7 +346,7 @@ class AgentSession implements CallAgentSession {
       idempotencyKey: `call:${this.info.callId}:${this.startedAt}:turn:${n}`,
       meta: {
         stablePrefixChars: this.info.brain.prefix.length,
-        promptTemplateVersion: 'brain-v1:call',
+        promptTemplateVersion: 'brain-v2-platform:call',
         personaVersion: this.info.role.personaVersion,
         conversationKind: 'direct',
         scenarioMode: adult ? 'adult' : 'daily',

@@ -8,6 +8,7 @@
 #   --note 文字      写进 deployment-version.txt 的 deployedBy
 #   --no-prune       最后不自动清理（新清理规则第一次上线时用：先手动 release-prune.sh --dry-run 核对）
 #   --force-backup   不含迁移也先备份
+#   --enable-webpush 明确授权后准备网页推送专用凭据，与本次切换一起生效；已存在时复用、不轮换
 #
 # 步骤（任何一步失败就停；切换之前失败，线上一直是原版本）：
 #   1. 检查：提交号、加锁、src 是软链接、源码包校验和；
@@ -39,11 +40,11 @@ die() {
   exit 1
 }
 usage() {
-  echo "用法：$0 [--pr 号] [--note 说明] [--no-prune] [--force-backup] <完整提交号>" >&2
+  echo "用法：$0 [--pr 号] [--note 说明] [--no-prune] [--force-backup] [--enable-webpush] <完整提交号>" >&2
   exit 2
 }
 
-pr=- note=release.sh prune=1 force_backup=0 commit=
+pr=- note=release.sh prune=1 force_backup=0 enable_webpush=0 commit=
 while (($#)); do
   case $1 in
     --pr)
@@ -58,6 +59,7 @@ while (($#)); do
       ;;
     --no-prune) prune=0 && shift ;;
     --force-backup) force_backup=1 && shift ;;
+    --enable-webpush) enable_webpush=1 && shift ;;
     -h | --help) usage ;;
     -*) usage ;;
     *)
@@ -134,8 +136,20 @@ avail=$(df -B1 --output=avail -- "$WEIBAN_RELEASES_DIR" | tail -n 1 | tr -dc '0-
 echo "构建 $APP_NEW、$EDGE_NEW（应用照常运行）"
 build_compose=(docker compose --env-file "$WEIBAN_DEPLOY_ENV" -p "${WEIBAN_COMPOSE_PROJECT:-weiban-prod}"
   -f "$D/deploy/prod/compose.yml" -f "$D/deploy/hk/compose.override.yml")
+if [[ -n $(kv_get "$WEIBAN_DEPLOY_ENV" PUSH_CREDENTIALS_PATH) ]]; then
+  build_compose+=(-f "$D/deploy/prod/push.override.yml")
+fi
 APP_IMAGE=$APP_NEW EDGE_IMAGE=$EDGE_NEW "${build_compose[@]}" build app caddy || die '构建失败，线上仍是原版本'
 { image_id "$APP_NEW" && image_id "$EDGE_NEW"; } >/dev/null || die '构建命令成功了，但找不到新镜像'
+if ((enable_webpush)); then
+  PUSH_APP_IMAGE=$APP_NEW bash "$D/deploy/hk/enable-webpush.sh" --prepare "$D" "$commit"
+  # Reload optional compose arguments after the protected configuration was prepared.
+  # shellcheck source=deploy/hk/ops-lib.sh
+  . "$D/deploy/hk/ops-lib.sh"
+elif [[ -L ${WEIBAN_OPS_ROOT:-/srv/weiban/ops}/current ]]; then
+  # Keep rollback/backup helpers current before switching; failure leaves the live app untouched.
+  bash "$D/deploy/hk/install-ops-runtime.sh" "$D" "$commit"
+fi
 
 # ---------- 4. 要不要备份 ----------
 new_journal=$D/apps/server/drizzle/meta/_journal.json
@@ -231,4 +245,6 @@ else
   echo "按 --no-prune 跳过清理。核对清单：bash $D/deploy/hk/release-prune.sh --dry-run"
 fi
 rm -f -- "$archive" "$meta" "$ARCHIVE_DIR/rel-$commit.release.sh"
-echo "发版完成。需要退回时：bash $WEIBAN_SRC/deploy/hk/rollback.sh --list"
+rollback_script=$WEIBAN_SRC/deploy/hk/rollback.sh
+if [[ -L ${WEIBAN_OPS_ROOT:-/srv/weiban/ops}/current ]]; then rollback_script=${WEIBAN_OPS_ROOT:-/srv/weiban/ops}/current/rollback.sh; fi
+echo "发版完成。需要退回时：bash $rollback_script --list"

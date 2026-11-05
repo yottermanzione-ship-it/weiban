@@ -1,3 +1,5 @@
+import { voiceIntent } from './voice-request.js';
+
 /**
  * 聊天里「不喜欢某一种形式」的会话压制（多样性草案 §1、对照表 v3 第 13 项）。
  *
@@ -25,10 +27,6 @@ const DISLIKE: ReadonlyArray<{ form: ChatForm; re: RegExp }> = [
     form: 'sticker',
     re: /别发(个|张|一[个张])?(表情包?|表情)|不要发(个|张)?(表情包?|表情)|别发表情|不喜欢(发)?表情|不要表情包|别用表情包/u,
   },
-  {
-    form: 'voice',
-    re: /别发(条|段|一[条段])?语音|不要发(条|段)?语音|别用语音|不喜欢(发)?语音|不要语音消息|别发语音消息/u,
-  },
   { form: 'nudge', re: /别拍(我|拍)?|不要拍(我)?|别拍一拍|不喜欢被拍|别拍我了/u },
   {
     form: 'photo',
@@ -38,7 +36,6 @@ const DISLIKE: ReadonlyArray<{ form: ChatForm; re: RegExp }> = [
 
 const REQUEST: ReadonlyArray<{ form: ChatForm; re: RegExp }> = [
   { form: 'sticker', re: /发(个|张|一[个张])?(表情包?|表情)|来(个|张)表情包/u },
-  { form: 'voice', re: /发(条|段|一[条段])?语音|用语音(说|讲|回)?|来(条|段)语音|语音(说|讲)给我/u },
   { form: 'nudge', re: /拍(一)?拍我|拍我一下|拍一拍我|拍拍我/u },
   // 照片的「要」得说清是要角色发：「我给你发张照片」是用户自己要发，不算。
   {
@@ -58,6 +55,9 @@ export function detectFormSuppressions(userTexts: readonly string[]): {
   const active = new Map<ChatForm, FormSuppression>();
   userTexts.forEach((raw, index) => {
     const text = raw.normalize('NFKC');
+    const voice = voiceIntent(text);
+    if (voice === 'avoid') active.set('voice', { form: 'voice', text: text.slice(0, 60), index });
+    else if (voice === 'request') active.delete('voice');
     const disliked = new Set<ChatForm>();
     for (const { form, re } of DISLIKE) {
       if (re.test(text)) {

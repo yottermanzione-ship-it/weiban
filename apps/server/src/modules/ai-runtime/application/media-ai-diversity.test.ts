@@ -57,6 +57,8 @@ function userMessage(i: number, text: string): Message {
 }
 
 function setup() {
+  const isServiceEnabled = vi.fn(async () => true);
+  const getInconvenientUntil = vi.fn(async (): Promise<string | null> => null);
   const listStickersForCharacter = vi.fn(async () => [happy]);
   const getVoice = vi.fn(async () => ({ enabled: true }));
   const decideBatch = vi.fn(async (req: PlanBatchRequest): Promise<Record<string, PlanResult>> =>
@@ -77,7 +79,7 @@ function setup() {
   const service = new MediaAiService(
     ...([
       {
-        isServiceEnabled: async () => true,
+        isServiceEnabled,
         synthesizeSpeech: (async () => ({
           ok: true,
           value: {
@@ -101,7 +103,7 @@ function setup() {
       {},
       {},
       {},
-      { getInconvenientUntil: async (): Promise<string | null> => null },
+      { getInconvenientUntil },
       { nowMs: () => 1000 },
       {
         generate: async () => {
@@ -111,7 +113,14 @@ function setup() {
       { decideBatch },
     ] as unknown as ConstructorParameters<typeof MediaAiService>),
   );
-  return { service, decideBatch, listStickersForCharacter };
+  return {
+    service,
+    decideBatch,
+    listStickersForCharacter,
+    isServiceEnabled,
+    getInconvenientUntil,
+    getVoice,
+  };
 }
 
 function baseInput(
@@ -134,6 +143,49 @@ function baseInput(
 const tenTexts = () => Array.from({ length: 10 }, (_, i) => characterMessage(i));
 const questions = (s: ReturnType<typeof setup>) =>
   s.decideBatch.mock.calls[0]?.[0].questions.map((q) => q.questionId) ?? [];
+
+describe('平台语音能力与明确请求', () => {
+  it('一句语音绕过主动概率与比例，先给模型真实能力，再发送语音', async () => {
+    const s = setup();
+    const input = baseInput([], '给我来句语音吧', ['晚安，明天见。'], null);
+    expect(await s.service.voiceReplyPrompt({ ...input, sensitive: false })).toContain(
+      '当前服务和音色可用',
+    );
+    expect((await s.service.planExtras(input))?.map((c) => c.type)).toEqual(['voice']);
+    expect(s.decideBatch).not.toHaveBeenCalled();
+  });
+  it('明确不要语音时，本轮不得误触发合成，提示与发送一致', async () => {
+    const s = setup();
+    const input = baseInput(tenTexts(), '不要发一句语音', ['好，打字聊。'], null);
+    expect(await s.service.voiceReplyPrompt({ ...input, sensitive: false })).toContain(
+      '用户现在不想收语音',
+    );
+    expect(await s.service.planExtras(input)).toBeNull();
+    expect(s.isServiceEnabled).not.toHaveBeenCalled();
+    expect(s.decideBatch).not.toHaveBeenCalled();
+  });
+  it('临时停用、无音色、不方便、私密和关怀各自给出事实，不编造平台没有语音', async () => {
+    const s = setup();
+    const input = { ...baseInput([], '发一句语音', ['你好。'], null), sensitive: false };
+    s.isServiceEnabled.mockResolvedValue(false);
+    expect(await s.service.voiceReplyPrompt(input)).toContain('语音服务当前暂不可用');
+    expect(await s.service.planExtras(input)).toBeNull();
+    s.isServiceEnabled.mockResolvedValue(true);
+    s.getVoice.mockResolvedValue({ enabled: false });
+    expect(await s.service.voiceReplyPrompt(input)).toContain('还没有可用音色');
+    s.getInconvenientUntil.mockResolvedValue(new Date(100_000).toISOString());
+    expect(await s.service.voiceReplyPrompt(input)).toContain('不方便接收语音');
+    s.getInconvenientUntil.mockRejectedValue(new Error('quiet state unavailable'));
+    expect(await s.service.voiceReplyPrompt(input)).toContain('暂时无法确认');
+    expect(await s.service.planExtras(input)).toBeNull();
+    expect(
+      await s.service.voiceReplyPrompt({ ...input, ctx: { ...input.ctx, modelRole: 'adult' } }),
+    ).toContain('私密模式只支持文字和图片');
+    expect(await s.service.voiceReplyPrompt({ ...input, sensitive: true })).toContain(
+      '关怀或健康话题',
+    );
+  });
+});
 
 describe('会话压制', () => {
   it('用户说「别发表情包了」：模型标了表情也不发，语音照常问', async () => {
