@@ -29,9 +29,16 @@ function harness(
 ) {
   let snapshot = initial;
   let locked = true;
+  let lease: unknown = null;
   const saved: LeaderboardSnapshot[] = [];
   const tx = {
-    query: vi.fn(async () => ({ rows: [{ locked }] })),
+    query: vi.fn(async (sql: string, values?: unknown[]) => {
+      if (sql.includes('pg_try_advisory_xact_lock')) return { rows: [{ locked }] };
+      if (sql.startsWith('SELECT value')) return { rows: lease ? [{ value: lease }] : [] };
+      if (sql.includes('INSERT INTO model_access.settings'))
+        lease = JSON.parse(String(values?.[1]));
+      return { rows: [] };
+    }),
     db: {
       insert: () => ({
         values: (row: { value: LeaderboardSnapshot }) => ({
@@ -43,7 +50,13 @@ function harness(
       }),
     },
   };
-  const database = { transaction: async (work: (t: typeof tx) => Promise<void>) => work(tx) };
+  const database = {
+    transaction: async <T>(work: (t: typeof tx) => Promise<T>) => work(tx),
+    query: async () => {
+      lease = null;
+      return { rows: [] };
+    },
+  };
   const clock = {
     now: () => new Date('2026-10-22T10:00:00Z'),
     nowMs: () => Date.parse('2026-10-22T10:00:00Z'),
@@ -127,9 +140,7 @@ describe('Arena snapshot refresh coordinator', () => {
     const first = h.service.refresh(null);
     const second = h.service.refresh('admin');
     expect(second).toBe(first);
-    // Let source, lock, and snapshot promises reach the fetcher.
-    for (let i = 0; i < 10 && !fetcher.mock.calls.length; i++) await Promise.resolve();
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
     finish(dataset);
     await first;
     expect(h.saved).toHaveLength(1);
