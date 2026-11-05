@@ -34,7 +34,7 @@ export class ChatDriver {
   private authenticated = false;
   private replaced = false;
   private bootstrapping = false;
-  private polling = false;
+  private polling: AbortController | null = null;
   private syncFailures = 0;
   private restoring = false;
   private canSync = false;
@@ -110,6 +110,7 @@ export class ChatDriver {
     this.timer = window.setInterval(() => this.tick(), 250);
     window.addEventListener('online', this.online);
     window.addEventListener('offline', this.offline);
+    window.addEventListener('pageshow', this.online);
     document.addEventListener('visibilitychange', this.visibility);
   }
   stop(): void {
@@ -117,17 +118,21 @@ export class ChatDriver {
     this.upToDate = false;
     this.lifetime.abort();
     this.runner?.stop();
+    this.polling?.abort();
+    this.polling = null;
     window.clearTimeout(this.reconnectTimer);
     window.clearInterval(this.timer);
-    this.socket?.close();
-    this.socket = null;
+    this.releaseSocket();
     window.removeEventListener('online', this.online);
     window.removeEventListener('offline', this.offline);
+    window.removeEventListener('pageshow', this.online);
     document.removeEventListener('visibilitychange', this.visibility);
   }
   async pause(): Promise<void> {
     this.paused = true;
     this.lifetime.abort();
+    this.polling?.abort();
+    this.polling = null;
     window.clearTimeout(this.reconnectTimer);
     const socket = this.socket;
     if (socket && socket.readyState !== WebSocket.CLOSED) {
@@ -142,6 +147,8 @@ export class ChatDriver {
         socket.close();
       });
     }
+    // close() 只是开始关闭握手；不能让没有 close 回调的旧连接挡住 resume。
+    this.releaseSocket();
     this.upToDate = false;
     await this.runner?.dispatch({ type: 'offline' });
   }
@@ -340,7 +347,16 @@ export class ChatDriver {
       this.socket.send(JSON.stringify(ClientFrame.parse(frame)));
   }
   private connect(): void {
-    if (this.stopped || this.paused || this.replaced || !navigator.onLine || this.socket) return;
+    if (
+      this.stopped ||
+      this.paused ||
+      this.replaced ||
+      !navigator.onLine ||
+      !this.api.owns(this.owner)
+    )
+      return;
+    if (this.staleSocket(Date.now())) this.releaseSocket();
+    if (this.socket) return;
     window.clearTimeout(this.reconnectTimer);
     const url = new URL(WS_PATH, window.location.href);
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -427,13 +443,16 @@ export class ChatDriver {
       if (!current()) return;
       this.socket = null;
       this.authenticated = false;
-      this.observer.connection(false);
+      // 实时连接只是加速通道；HTTP 已能对账和发送时，不能仅因 WS 断开显示整页断网。
+      if (!this.canSync) this.observer.connection(false);
       if (this.paused) return;
       if (event.code === WsCloseCode.unauthenticated) {
+        this.observer.connection(false);
         void this.api.forgetIf(this.owner);
         return;
       }
       if (event.code === WsCloseCode.clientTooOld) {
+        this.observer.connection(false);
         this.observer.error('请更新微伴后继续', 'fatal');
         this.stop();
         return;
@@ -442,37 +461,80 @@ export class ChatDriver {
         this.replaced = true;
         return;
       }
-      const seconds = [0.5, 1, 2, 4, 8, 10][Math.min(this.reconnectAttempt++, 5)]!;
-      runtimeLogs.connection(false, this.reconnectAttempt);
-      this.reconnectTimer = window.setTimeout(
-        () => this.connect(),
-        seconds * 1000 * (0.8 + Math.random() * 0.4),
-      );
+      this.scheduleReconnect();
     };
+  }
+  private staleSocket(now: number): boolean {
+    return Boolean(
+      this.socket &&
+      (this.socket.readyState === WebSocket.CLOSING ||
+        this.socket.readyState === WebSocket.CLOSED ||
+        (!this.authenticated && now - this.openedAt > 12_000) ||
+        (this.authenticated && now - this.lastPong > 45_000)),
+    );
+  }
+  private releaseSocket(): void {
+    const socket = this.socket;
+    this.socket = null;
+    this.authenticated = false;
+    if (!socket) return;
+    // 放弃旧连接的所有回调；迟到的鉴权/关闭不能影响新连接或新账号。
+    socket.onopen = socket.onmessage = socket.onerror = socket.onclose = null;
+    socket.close();
+  }
+  private scheduleReconnect(): void {
+    if (this.stopped || this.paused || this.replaced || !navigator.onLine) return;
+    window.clearTimeout(this.reconnectTimer);
+    const seconds = [0.5, 1, 2, 4, 8, 10][Math.min(this.reconnectAttempt++, 5)]!;
+    runtimeLogs.connection(false, this.reconnectAttempt);
+    this.reconnectTimer = window.setTimeout(
+      () => this.connect(),
+      seconds * 1000 * (0.8 + Math.random() * 0.4),
+    );
   }
   /** since：读到 seq 时本机的游标；排队期间被推送超过的读数不算服务器倒退。 */
   private async reconnect(seq: number, since: number): Promise<void> {
     if (!this.runner || this.stopped || this.paused || !navigator.onLine || this.bootstrapping)
       return;
     this.bootstrapping = !this.view?.initialized;
+    const lifetime = this.lifetime;
     await this.runner.reconnect(seq, since, Date.now());
-    if (!this.stopped) {
+    if (!this.stopped && !this.paused && this.lifetime === lifetime && this.api.owns(this.owner)) {
       this.upToDate = this.runner.active;
       this.canSync = true;
       this.observer.connection(true);
     }
   }
   private async poll(): Promise<void> {
-    if (this.polling || this.stopped || this.paused || !navigator.onLine || this.bootstrapping)
+    if (
+      this.stopped ||
+      this.paused ||
+      !navigator.onLine ||
+      this.bootstrapping ||
+      !this.api.owns(this.owner)
+    )
       return;
-    this.polling = true;
+    if (this.polling) {
+      if (Date.now() - this.lastPoll < 20_000) return;
+      // 浏览器挂起时原生请求超时也会暂停。按墙上时间放弃过期轮次，恢复后立即再试。
+      this.polling.abort();
+    }
+    const polling = new AbortController();
+    this.polling = polling;
+    const current = () =>
+      this.polling === polling &&
+      !polling.signal.aborted &&
+      !this.stopped &&
+      !this.paused &&
+      this.api.owns(this.owner);
     this.lastPoll = Date.now();
     const since = this.runner?.lastUpdateSeq ?? 0;
     try {
       const state = await this.api.call(SyncEndpoints.getState, {
         networkOnly: true,
-        signal: this.lifetime.signal,
+        signal: AbortSignal.any([this.lifetime.signal, polling.signal]),
       });
+      if (!current()) return;
       /*
        * U8：服务器没有新内容（序号没涨，或只是排队期间被实时推送超过的过时读数）且上次对账成功时，
        * 不再走 reconnect：那一趟要把整份本机数据复制几遍、整份写回 IndexedDB、再通知界面整页重画，
@@ -489,18 +551,22 @@ export class ChatDriver {
         !runner.isRebuilding &&
         state.latestUpdateSeq >= since &&
         state.latestUpdateSeq <= runner.lastUpdateSeq
-      )
+      ) {
+        this.observer.connection(true);
         return;
+      }
       await this.reconnect(state.latestUpdateSeq, since);
     } catch {
-      if (!this.stopped) {
+      if (current()) {
         this.upToDate = false;
         this.canSync = false;
         this.observer.connection(false);
         this.bootstrapping = false;
+        // 已知服务不可用时暂停发件队列；恢复后沿用原消息编号补发。
+        await this.runner?.dispatch({ type: 'offline' }).catch(() => {});
       }
     } finally {
-      this.polling = false;
+      if (this.polling === polling) this.polling = null;
     }
   }
   private tick(): void {
@@ -515,10 +581,12 @@ export class ChatDriver {
     )
       void this.runner.dispatch({ type: 'tick', now }).catch(() => {});
     if (now - this.lastPoll >= 5000) void this.poll();
-    if (this.socket && !this.authenticated && now - this.openedAt > 12_000) this.socket.close();
+    if (this.staleSocket(now)) {
+      this.releaseSocket();
+      this.scheduleReconnect();
+    }
     if (this.authenticated) {
-      if (now - this.lastPong > 45_000) this.socket?.close();
-      else if (now - this.lastPing >= 25_000) {
+      if (now - this.lastPing >= 25_000) {
         this.lastPing = now;
         this.send({ v: 1, type: 'ping', data: {} });
         this.presence();
