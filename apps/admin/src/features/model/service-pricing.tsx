@@ -2,7 +2,6 @@ import { Alert, Button, Checkbox, Form, InputNumber, Select } from 'antd';
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import type { RouteBillingBounds } from '@weiban/contracts';
 import { FieldHelp } from '../../ui/page.js';
-import { CostPlusHint } from './cost-plus.js';
 
 export const SERVICE_UNIT_LABELS = {
   search_call: '每次成功搜索',
@@ -85,7 +84,7 @@ export function ServicePriceFields() {
       <Alert
         type="info"
         showIcon
-        message="按服务成本加三成定价"
+        message="按服务实际用量定价"
         description="单位是什么，就填写每个该单位的人民币金额。搜索填「元/次」，不是「元/千次」，也不用伪造 token 价格。字数/分钟单位仅用于上游确实按该维度计费的旧语音；实时语音 / Omni 通话模型：文字 token 填在上方「输入 / 输出」价格，音频 token 在这里分别填「实时通话音频输入 / 输出」（元 / 百万 token），不要换算成分钟。DeepSeek 公开标价 5 元/千次成功请求相当于 0.005 元/次；请核对供应商当前价及账户优惠后保存。"
       />
       <Form.List
@@ -117,26 +116,39 @@ export function ServicePriceFields() {
                   />
                 </Form.Item>
                 <Form.Item
-                  name={[field.name, 'cost']}
-                  label="成本（元 / 该单位）"
-                  extra={<CostPlusHint name={['serviceRates', field.name, 'cost']} />}
+                  name={[field.name, 'price']}
+                  label="售价（元 / 该单位）"
                   rules={[
                     {
                       required: true,
                       type: 'number',
                       min: 0,
-                      max: 76923.076923,
-                      message: '填写非负成本；零成本请明确填 0',
+                      max: 100000,
+                      message: '填写非负单价；免费请明确填 0',
                     },
                   ]}
                 >
                   <InputNumber
                     min={0}
-                    max={76923.076923}
+                    max={100000}
                     precision={6}
                     step={0.001}
                     style={{ width: '100%' }}
-                    placeholder="填写实际成本或已核定参考成本"
+                    placeholder="如 0.005 元/次"
+                  />
+                </Form.Item>
+                <Form.Item
+                  name={[field.name, 'cost']}
+                  label="成本（元 / 该单位）"
+                  extra={<FieldHelp>不填＝同售价；账户明确免费时可填 0。</FieldHelp>}
+                >
+                  <InputNumber
+                    min={0}
+                    max={100000}
+                    precision={6}
+                    step={0.001}
+                    style={{ width: '100%' }}
+                    placeholder="同售价"
                   />
                 </Form.Item>
                 <Button

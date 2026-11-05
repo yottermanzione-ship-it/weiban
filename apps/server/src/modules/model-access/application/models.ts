@@ -184,10 +184,6 @@ export class ModelAdminService {
   async upsert(adminId: string, pathKey: string, body: Write): Promise<AdminModel> {
     const { rates, costRates, serviceRates, routes, displayMultiplierManual, discount, ...rest } =
       body;
-    if (rates && !costRates)
-      throw new AppError('bad_request', '请填写模型成本，日常售价自动按成本加三成计算');
-    if (serviceRates?.some((rate) => rate.cost == null))
-      throw new AppError('bad_request', '请填写每项服务的成本或已核定参考成本；免费成本请明确填零');
     if (serviceRates !== undefined) {
       if (!this.rates.publishModelServiceRates)
         throw new AppError('bad_request', '当前服务不支持服务单价写入，不能忽略该请求');

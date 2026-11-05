@@ -53,15 +53,6 @@ export function pointsToMicros(points: number): number {
   return Math.round(points * MICROS_PER_POINT);
 }
 
-/** 日常模型基价 = 已登记成本 × 1.3，向上取整到整数微元；折扣在报价时另算。 */
-export function costPlusPriceMicros(costMicros: number): number {
-  if (!Number.isSafeInteger(costMicros) || costMicros < 0)
-    throw new RangeError('成本必须是非负整数微元');
-  const price = (BigInt(costMicros) * 13n + 9n) / 10n;
-  if (price > BigInt(Number.MAX_SAFE_INTEGER)) throw new RangeError('成本加三成后金额过大');
-  return Number(price);
-}
-
 /**
  * 计费用途分组（用量页按此分类）。由服务器从 ports/model-gateway.ts 的 ModelPurpose 换算，
  * 对照表见 billing.md 5.2 节。v1.1：新增 planning（行为规划，PRD MDL-05 第 1 条）；
@@ -399,7 +390,6 @@ export const AdminAdjustmentRequest = z.object({
 
 export const AdminPriceItem = PublicPriceItem.extend({
   /** 成本价（上游收平台的钱），对账用。 */
-  /** 2026-11-04：新建/修改草稿和首次启用时由此自动计算 priceMicros = ceil(costMicros × 1.3)。历史版本不变。 */
   costMicros: z.number().int().nonnegative(),
 });
 

@@ -313,7 +313,7 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
       ok: true,
       value: {
         text: output,
-        chargedMicros: 215,
+        chargedMicros: 330,
         usage: { inputTokens: 70, cachedInputTokens: 30, outputTokens: 20, estimated: false },
       },
     });
@@ -335,7 +335,7 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
     );
     expect(ledger.rows).toHaveLength(1);
     expect(ledger.rows[0]?.upstream_id).toBe(upstreamId);
-    expect(Number(ledger.rows[0]?.amount_micros)).toBe(-215);
+    expect(Number(ledger.rows[0]?.amount_micros)).toBe(-330);
   });
   async function setOutputModel(upstreamModelId: string, maxOutputTokens: number) {
     await app.get(CatalogService).upsert(admin, modelKey, {

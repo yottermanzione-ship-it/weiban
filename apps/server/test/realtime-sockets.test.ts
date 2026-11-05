@@ -144,7 +144,7 @@ describeDb('realtime 真实 WS：鉴权、提交推送、替换、前台、超�
     return frame;
   }
   it('当前构建版本与兼容旧版都能鉴权，不接受尚未支持的未来主版本', async () => {
-    for (const version of ['2.0', '3.0', '4.0', '5.7', CONTRACT_VERSION]) {
+    for (const version of ['2.0', '3.0', '4.0', '5.7', '6.1', CONTRACT_VERSION]) {
       const client = await open();
       expect((await authenticate(client, token, version)).data).toMatchObject({
         minClientVersion: '2.0',
