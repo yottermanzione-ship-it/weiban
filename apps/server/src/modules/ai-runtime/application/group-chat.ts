@@ -381,6 +381,15 @@ export class GroupChatService {
         candidates: result,
         adminAllowlist: roleAdminAllowlist(characterView(role)),
       });
+      // 日常是安全回落；角色允许列表不能让停用后的群聊无处可退。
+      // 仅补内置日常并重核角色资格，不扩大自定义预设的允许范围。
+      const daily = result.find((mode) => mode.modeId === 'daily');
+      if (
+        daily &&
+        !allowed.some((mode) => mode.modeId === 'daily') &&
+        (await this.policy.checkScenarioMode({ userId, characterId, mode: daily })).allowed
+      )
+        allowed.push(daily);
       result = result.filter((mode) => allowed.some((m) => m.modeId === mode.modeId));
     }
     return result;
