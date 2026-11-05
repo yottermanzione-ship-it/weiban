@@ -148,6 +148,35 @@ test('苹果普通网页解释主屏幕要求，不冒充已开启通知', async
     .click();
   await expect(page.getByRole('switch', { name: '新消息通知', exact: true })).not.toBeChecked();
 });
+
+test('聊天页面切到后台和返回时发送真实前后台状态', async ({ page }) => {
+  const focus: Array<{ conversationId: string | null; foreground: boolean }> = [];
+  page.on('websocket', (socket) => {
+    socket.on('framesent', ({ payload }) => {
+      const frame = JSON.parse(String(payload)) as {
+        type: string;
+        data: { conversationId: string | null; foreground: boolean };
+      };
+      // 只留测试会话的前后台字段，不保存认证帧或消息。
+      if (frame.type === 'presence.focus') focus.push(frame.data);
+    });
+  });
+  await login(page);
+  await page.getByRole('link', { name: /测试陪伴角色/ }).click();
+  await expect(page.getByRole('heading', { name: '测试陪伴角色' })).toBeVisible();
+  const conversationId = new URL(page.url()).pathname.split('/').at(-1)!;
+  await expect.poll(() => focus.at(-1)).toEqual({ conversationId, foreground: true });
+  for (const visibility of ['hidden', 'visible'] as const) {
+    await page.evaluate((state) => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: state });
+      document.dispatchEvent(new Event('visibilitychange'));
+    }, visibility);
+    await expect
+      .poll(() => focus.at(-1))
+      .toEqual({ conversationId, foreground: visibility === 'visible' });
+  }
+});
+
 test('实际Service Worker与通知系统夹具：归属/时效、去重、点击与退出清理', async ({
   page,
   context,
