@@ -227,6 +227,7 @@ function LetterIndex({
 
 export function ContactsPage() {
   const { state } = useChat();
+  const page = useRef<HTMLElement>(null);
   const newFriendsDot = useNewFriendsDot();
   const stars = useStars();
   const [query, setQuery] = useState('');
@@ -250,16 +251,31 @@ export function ContactsPage() {
     ...ordered,
   ];
   const jump = (letter: string) => {
+    const scroller = page.current?.closest('.app-shell.with-tabs')
+      ? page.current.closest<HTMLElement>('.route-content')
+      : null;
     if (letter === '↑') {
-      window.scrollTo({ top: 0 });
+      (scroller ?? window).scrollTo({ top: 0, behavior: 'instant' });
       return;
     }
-    document
-      .getElementById(`letter-${letter === '☆' ? 'star' : letter}`)
-      ?.scrollIntoView({ block: 'start' });
+    const section = page.current?.querySelector<HTMLElement>(
+      `[id="letter-${letter === '☆' ? 'star' : letter}"]`,
+    );
+    if (!section) return;
+    if (scroller) {
+      const header = page.current?.querySelector('.nav-bar')?.getBoundingClientRect().height ?? 0;
+      scroller.scrollTo({
+        top:
+          section.getBoundingClientRect().top -
+          scroller.getBoundingClientRect().top +
+          scroller.scrollTop -
+          header,
+        behavior: 'instant',
+      });
+    } else section.scrollIntoView({ block: 'start' });
   };
   return (
-    <main className="contacts-page">
+    <main className="contacts-page" ref={page}>
       <NavBar
         title="通讯录"
         back={false}

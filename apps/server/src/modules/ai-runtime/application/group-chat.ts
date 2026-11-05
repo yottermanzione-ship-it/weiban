@@ -31,7 +31,7 @@ import { AI_CHARACTER_READ } from './supplemented-character-read.js';
 import { BrainContextService, brainMessages, brainTail } from './brain.js';
 import { GROUP_MEMORY_BOUNDARY } from '../domain/brain.js';
 import { QuietStateService } from './quiet-state.js';
-import { and, desc, eq, gte, ne } from 'drizzle-orm';
+import { and, desc, eq, gte, ne, or, isNotNull } from 'drizzle-orm';
 import {
   type BillingReadPort,
   type CharacterReadPort,
@@ -99,6 +99,7 @@ import { PlannerService } from './planner.js';
 import { GroupReplyStore, type GroupReplyPlan } from './group-reply-store.js';
 import {
   characterView,
+  roleAdminAllowlist,
   roleCareFallback,
   roleDeflect,
   roleGroup,
@@ -163,6 +164,7 @@ interface GroupCheckpoint {
   queue: Speech[];
   members: string[];
   scenarioMode: ScenarioMode;
+  scenarioPresetId?: string | null;
   last: { member: Member; text: string } | null;
 }
 
@@ -198,6 +200,7 @@ function relevance(text: string, topics: string[]): number {
 }
 
 import { EcologySettingsService } from './ecology-settings.js';
+import { ScenarioCatalog, type RuntimeScenario } from './scenario-catalog.js';
 
 @Injectable()
 export class GroupChatService {
@@ -236,6 +239,7 @@ export class GroupChatService {
     @Optional() @Inject(ImagePublicSearch) private readonly imageSearch?: ImagePublicSearch,
     /** T-20261103g：群聊发言也能带表情包（同一套标记与挑图，群聊另有防刷屏规则）。 */
     @Optional() @Inject(MediaAiService) private readonly mediaAi?: MediaAiService,
+    @Optional() @Inject(ScenarioCatalog) private readonly catalog?: ScenarioCatalog,
   ) {}
 
   // =========================================================================
@@ -262,6 +266,7 @@ export class GroupChatService {
     userId: string,
     proactive: boolean,
     mode: ScenarioMode,
+    presetId: string | null = null,
   ): Promise<boolean> {
     const current = await this.chat.getConversation(conversation.conversationId);
     if (
@@ -278,7 +283,13 @@ export class GroupChatService {
         .join(',');
     if (signature(current) !== signature(conversation)) return false;
     const settings = await this.loadSettings(conversation.conversationId);
-    return settings.scenarioMode === mode && (!proactive || settings.selfChatEnabled);
+    const available = await this.allowedModes(userId, this.memberIds(current));
+    return (
+      settings.scenarioMode === mode &&
+      settings.scenarioPresetId === presetId &&
+      available.some((m) => m.modeId === (presetId ?? mode)) &&
+      (!proactive || settings.selfChatEnabled)
+    );
   }
   private async typingIfPresent(
     input: Parameters<ChatParticipantPort['setTyping']>[0],
@@ -296,12 +307,26 @@ export class GroupChatService {
   }
 
   async getSettings(userId: string, conversationId: string) {
-    await this.ownedGroup(userId, conversationId);
-    return this.loadSettings(conversationId);
+    const conversation = await this.ownedGroup(userId, conversationId);
+    const settings = await this.loadSettings(conversationId);
+    if (settings.scenarioMode === 'daily' && !settings.scenarioPresetId) return settings;
+    const allowed = await this.allowedModes(userId, this.memberIds(conversation));
+    if (
+      allowed.some(
+        (m) =>
+          m.modeId === (settings.scenarioPresetId ?? settings.scenarioMode) &&
+          m.baseMode === settings.scenarioMode,
+      )
+    )
+      return settings;
+    return this.updateSettings(userId, conversationId, {
+      scenarioMode: 'daily',
+      scenarioPresetId: null,
+    });
   }
 
-  private async loadSettings(conversationId: string) {
-    const [row] = await this.db.db
+  private async loadSettings(conversationId: string, tx?: DbTx) {
+    const [row] = await (tx?.db ?? this.db.db)
       .select()
       .from(groupCompanionSettings)
       .where(eq(groupCompanionSettings.conversationId, conversationId));
@@ -310,6 +335,14 @@ export class GroupChatService {
       instantReply: row?.instantReply ?? false,
       selfChatEnabled: row?.selfChatEnabled ?? true,
       scenarioMode: (row?.scenarioMode ?? 'daily') as ScenarioMode,
+      scenarioPresetId: row?.scenarioPresetId ?? null,
+      ...(row?.scenarioPresetId && this.catalog
+        ? {
+            scenarioPresetName: (await this.catalog.list(tx)).find(
+              (m) => m.modeId === row.scenarioPresetId,
+            )?.name,
+          }
+        : {}),
       updatedAt: (row?.updatedAt ?? this.clock.now()).toISOString(),
     };
   }
@@ -318,21 +351,46 @@ export class GroupChatService {
   async listModes(userId: string, conversationId: string) {
     const conversation = await this.ownedGroup(userId, conversationId);
     const allowed = await this.allowedModes(userId, this.memberIds(conversation));
-    return { items: allowed.map(modeOption) };
+    return this.catalog
+      ? this.catalog.options(allowed)
+      : {
+          items: allowed.map((m) =>
+            modeOption(INITIAL_MODES.find((b) => b.modeId === m.baseMode)!),
+          ),
+          customItems: [],
+        };
   }
 
   private async allowedModes(userId: string, characterIds: string[]) {
-    const result: typeof INITIAL_MODES = [];
-    for (const mode of SELECTABLE_MODES) {
-      let ok = true;
-      for (const characterId of characterIds) {
-        const decision = await this.policy.checkScenarioMode({ userId, characterId, mode });
-        if (!decision.allowed) {
-          ok = false;
-          break;
-        }
-      }
-      if (ok) result.push(mode);
+    const candidates = this.catalog
+      ? await this.catalog.list()
+      : SELECTABLE_MODES.map((mode) => ({
+          ...mode,
+          baseMode: mode.modeId,
+          prompt: null,
+          custom: false,
+          order: 0,
+        }));
+    let result: RuntimeScenario[] = candidates.filter((mode) => mode.baseMode !== 'adult');
+    for (const characterId of characterIds) {
+      const role = await this.characters.getForRuntime(userId, characterId);
+      if (!role) return [];
+      const allowed = await this.policy.listAllowedScenarioModes({
+        userId,
+        characterId,
+        candidates: result,
+        adminAllowlist: roleAdminAllowlist(characterView(role)),
+      });
+      // 日常是安全回落；角色允许列表不能让停用后的群聊无处可退。
+      // 仅补内置日常并重核角色资格，不扩大自定义预设的允许范围。
+      const daily = result.find((mode) => mode.modeId === 'daily');
+      if (
+        daily &&
+        !allowed.some((mode) => mode.modeId === 'daily') &&
+        (await this.policy.checkScenarioMode({ userId, characterId, mode: daily })).allowed
+      )
+        allowed.push(daily);
+      result = result.filter((mode) => allowed.some((m) => m.modeId === mode.modeId));
     }
     return result;
   }
@@ -340,20 +398,23 @@ export class GroupChatService {
   async updateSettings(
     userId: string,
     conversationId: string,
-    patch: { instantReply?: boolean; selfChatEnabled?: boolean; scenarioMode?: ScenarioMode },
+    patch: {
+      instantReply?: boolean;
+      selfChatEnabled?: boolean;
+      scenarioMode?: ScenarioMode;
+      scenarioPresetId?: string | null;
+    },
   ) {
     const conversation = await this.ownedGroup(userId, conversationId);
     const old = await this.loadSettings(conversationId);
-    if (patch.scenarioMode && patch.scenarioMode !== old.scenarioMode) {
-      // 3.27（H1）：「情侣暧昧」不再可选。
-      const mode = SELECTABLE_MODES.find((m) => m.modeId === patch.scenarioMode);
-      if (!mode) throw new AppError('bad_request', '情景模式无效');
+    let mode: RuntimeScenario | undefined;
+    if (patch.scenarioMode !== undefined || patch.scenarioPresetId !== undefined) {
       const allowed = await this.allowedModes(userId, this.memberIds(conversation));
-      if (!allowed.some((m) => m.modeId === mode.modeId))
-        throw new AppError(
-          mode.containsAdultContent ? 'adult_mode_not_eligible' : 'romance_not_allowed',
-          '群里有成员不能使用这个模式',
-        );
+      mode = allowed.find(
+        (m) => m.modeId === (patch.scenarioPresetId ?? patch.scenarioMode ?? old.scenarioMode),
+      );
+      if (!mode) throw new AppError('bad_request', '群里有成员不能使用这个情景预设');
+      patch.scenarioMode = mode.baseMode;
     }
     const now = this.clock.now();
     const values = {
@@ -362,6 +423,12 @@ export class GroupChatService {
       instantReply: patch.instantReply ?? old.instantReply,
       selfChatEnabled: patch.selfChatEnabled ?? old.selfChatEnabled,
       scenarioMode: patch.scenarioMode ?? old.scenarioMode,
+      scenarioPresetId:
+        patch.scenarioPresetId !== undefined
+          ? patch.scenarioPresetId
+          : patch.scenarioMode !== undefined
+            ? null
+            : old.scenarioPresetId,
       updatedAt: now,
     };
     await this.db.transaction(async (tx) => {
@@ -369,7 +436,10 @@ export class GroupChatService {
         .insert(groupCompanionSettings)
         .values(values)
         .onConflictDoUpdate({ target: groupCompanionSettings.conversationId, set: values });
-      if (patch.scenarioMode && patch.scenarioMode !== old.scenarioMode) {
+      if (
+        values.scenarioMode !== old.scenarioMode ||
+        values.scenarioPresetId !== old.scenarioPresetId
+      ) {
         await this.replies.cancelConversation(tx, conversationId);
         const result = await this.chatAdmin.setContentScope(
           { conversationId, scope: patch.scenarioMode === 'adult' ? 'adult' : 'normal' },
@@ -379,12 +449,16 @@ export class GroupChatService {
         await this.chatAdmin.postSystemMessage(tx, {
           conversationId,
           code: 'scenario_mode_changed',
-          params: { mode: patch.scenarioMode },
+          params: { mode: values.scenarioMode, ...(mode?.custom ? { modeName: mode.name } : {}) },
           idempotencyKey: `group-mode:${conversationId}:${now.getTime()}`,
         });
       }
     });
-    return { ...values, updatedAt: now.toISOString() };
+    return {
+      ...values,
+      ...(mode?.custom ? { scenarioPresetName: mode.name } : {}),
+      updatedAt: now.toISOString(),
+    };
   }
 
   /** T-090 / SAFE-03 第 5 条：角色分类变化 → 含该角色、处于非日常模式的群重新检查资格。 */
@@ -398,7 +472,10 @@ export class GroupChatService {
       .from(groupCompanionSettings)
       .where(
         and(
-          ne(groupCompanionSettings.scenarioMode, 'daily'),
+          or(
+            ne(groupCompanionSettings.scenarioMode, 'daily'),
+            isNotNull(groupCompanionSettings.scenarioPresetId),
+          ),
           ownerUserId ? eq(groupCompanionSettings.userId, ownerUserId) : undefined,
         ),
       );
@@ -412,19 +489,26 @@ export class GroupChatService {
   /** 成员变化：当前模式有人不具备资格 → 自动回到日常并发系统提示（SOC-03 第 4 条）。 */
   async onMembersChanged(tx: DbTx, conversationId: string, ownerUserId: string): Promise<void> {
     await this.replies.cancelConversation(tx, conversationId);
-    const settings = await this.loadSettings(conversationId);
-    if (settings.scenarioMode === 'daily') return;
+    const settings = await this.loadSettings(conversationId, tx);
+    if (settings.scenarioMode === 'daily' && !settings.scenarioPresetId) return;
     const conversation = await this.chat.getConversation(conversationId, tx);
     if (!conversation) return;
     const allowed = await this.allowedModes(ownerUserId, this.memberIds(conversation));
-    if (allowed.some((m) => m.modeId === settings.scenarioMode)) return;
+    if (allowed.some((m) => m.modeId === (settings.scenarioPresetId ?? settings.scenarioMode)))
+      return;
     const now = this.clock.now();
     await tx.db
       .insert(groupCompanionSettings)
-      .values({ conversationId, userId: ownerUserId, scenarioMode: 'daily', updatedAt: now })
+      .values({
+        conversationId,
+        userId: ownerUserId,
+        scenarioMode: 'daily',
+        scenarioPresetId: null,
+        updatedAt: now,
+      })
       .onConflictDoUpdate({
         target: groupCompanionSettings.conversationId,
-        set: { scenarioMode: 'daily', updatedAt: now },
+        set: { scenarioMode: 'daily', scenarioPresetId: null, updatedAt: now },
       });
     await this.chatAdmin.setContentScope({ conversationId, scope: 'normal' }, tx);
     await this.chatAdmin.postSystemMessage(tx, {
@@ -585,9 +669,23 @@ export class GroupChatService {
     );
     const settings = await this.loadSettings(conversation.conversationId);
     const saved = await this.replies.open<GroupCheckpoint>(row, 'plan');
+    const allowed = await this.allowedModes(job.userId, this.memberIds(conversation));
+    if (
+      !allowed.some(
+        (m) =>
+          m.modeId === (settings.scenarioPresetId ?? settings.scenarioMode) &&
+          m.baseMode === settings.scenarioMode,
+      )
+    ) {
+      // 停用后撤销旧情景下已排队的回复并通知回落，下一条消息可正常继续。
+      await this.getSettings(job.userId, conversation.conversationId);
+      await cancel();
+      return;
+    }
     if (
       saved &&
       (saved.scenarioMode !== settings.scenarioMode ||
+        (saved.scenarioPresetId ?? null) !== settings.scenarioPresetId ||
         saved.members.join(',') !==
           members
             .map((m) => m.participantId)
@@ -662,6 +760,7 @@ export class GroupChatService {
           queue: plan,
           members: members.map((m) => m.participantId).sort(),
           scenarioMode: settings.scenarioMode,
+          scenarioPresetId: settings.scenarioPresetId,
           last: null,
         },
       },
@@ -697,6 +796,7 @@ export class GroupChatService {
           input.userId,
           input.purpose === 'proactive',
           input.settings.scenarioMode,
+          input.settings.scenarioPresetId,
         ))
       ) {
         if (durable) await this.replies.checkpoint(durable.row, { status: 'cancelled' });
@@ -724,6 +824,7 @@ export class GroupChatService {
         reason: next.reason,
         instant: input.settings.instantReply,
         scenarioMode: input.settings.scenarioMode,
+        scenarioPresetId: input.settings.scenarioPresetId,
         idempotencyKey: `${input.keyPrefix}:${sent}`,
         purpose: input.purpose,
         topic: input.topic,
@@ -789,6 +890,7 @@ export class GroupChatService {
     reason: Speech['reason'];
     instant: boolean;
     scenarioMode: ScenarioMode;
+    scenarioPresetId?: string | null;
     idempotencyKey: string;
     purpose: 'chat_reply' | 'proactive';
     topic: string | null;
@@ -803,6 +905,7 @@ export class GroupChatService {
         input.userId,
         input.purpose === 'proactive',
         input.scenarioMode,
+        input.scenarioPresetId ?? null,
       ))
     )
       return null;
@@ -890,6 +993,10 @@ export class GroupChatService {
           : `你和${other.name}不认识（今天在群里第一次碰到），不能编造你们的共同经历或过去的交情`,
       );
     }
+    const presetPrompt = await this.catalog?.prompt(
+      { scenarioMode: input.scenarioMode, scenarioPresetId: input.scenarioPresetId },
+      'normal',
+    );
     const adult = false;
     const brain = await this.brain.build(input.userId, speaker.characterId, 'normal', transcript);
     if (!brain) return null;
@@ -929,6 +1036,7 @@ export class GroupChatService {
       idempotencyKey: `ai:${input.idempotencyKey}`,
       messages: [
         ...brainMessages(brain, 'chat'),
+        ...(presetPrompt ? [{ role: 'system' as const, content: presetPrompt }] : []),
         {
           role: 'system',
           content: `你在微伴的一个群聊里以角色身份发言。只输出你要发的这一条群消息的纯文本，不加名字前缀，不输出JSON或括号动作，不超过60字；不编造真人公开声明；儿童不得恋爱或性化。真人=${policy.isRealPerson}，儿童=${policy.isMinor}，允许恋爱=${policy.romanceAllowed}。不做情感操纵。群聊当前情景模式：${scenarioText(input.scenarioMode === 'auto' ? 'daily' : input.scenarioMode)}这是日常范围的群聊：不提起、不展开任何私密模式里发生的事。群聊原文是公开现场，私聊资料受下面的群聊隐私边界约束。`,
@@ -950,7 +1058,7 @@ export class GroupChatService {
         conversationKind: 'group',
         scenarioMode: input.scenarioMode,
         stablePrefixChars: brain.prefix.length,
-        promptTemplateVersion: 'brain-v1:group',
+        promptTemplateVersion: 'brain-v2-scenario:group',
       },
     };
     if (input.durable) {
@@ -980,6 +1088,7 @@ export class GroupChatService {
         input.userId,
         input.purpose === 'proactive',
         input.scenarioMode,
+        input.scenarioPresetId ?? null,
       ))
     )
       return null;
@@ -996,6 +1105,7 @@ export class GroupChatService {
               input.userId,
               input.purpose === 'proactive',
               input.scenarioMode,
+              input.scenarioPresetId ?? null,
             ))
           )
             return false;
@@ -1128,6 +1238,7 @@ export class GroupChatService {
         input.userId,
         input.purpose === 'proactive',
         input.scenarioMode,
+        input.scenarioPresetId ?? null,
       ))
     )
       return null;
@@ -1145,6 +1256,7 @@ export class GroupChatService {
           input.userId,
           input.purpose === 'proactive',
           input.scenarioMode,
+          input.scenarioPresetId ?? null,
         ))
       )
         return null;
@@ -1165,6 +1277,7 @@ export class GroupChatService {
               input.userId,
               input.purpose === 'proactive',
               input.scenarioMode,
+              input.scenarioPresetId ?? null,
             )) ||
             (await this.newerUserMessage(conversation, input.triggerSeq))
           )
@@ -1325,11 +1438,19 @@ export class GroupChatService {
   }): Promise<{ ok: true; sent: number } | { ok: false; reason: string }> {
     const conversation = await this.chat.getConversation(input.conversationId);
     if (!conversation || conversation.type !== 'group') return { ok: false, reason: 'no_group' };
-    const settings = await this.loadSettings(conversation.conversationId);
+    const settings = await this.getSettings(input.userId, conversation.conversationId);
     if (!settings.selfChatEnabled) return { ok: false, reason: 'self_chat_off' };
     if (await this.quiet.getFocusUntil(input.userId).catch(() => null))
       return { ok: false, reason: 'focus' };
-    if (!(await this.stillActive(conversation, input.userId, true, settings.scenarioMode)))
+    if (
+      !(await this.stillActive(
+        conversation,
+        input.userId,
+        true,
+        settings.scenarioMode,
+        settings.scenarioPresetId,
+      ))
+    )
       return { ok: false, reason: 'inactive' };
     const history = await this.history(conversation);
     const latest = history.at(-1);
@@ -1394,7 +1515,7 @@ export class GroupChatService {
     if (!LEGACY_SELF_CHAT_SCHEDULE) return;
     const conversation = await this.chat.getConversation(job.conversationId);
     if (!conversation || conversation.type !== 'group') return;
-    const settings = await this.loadSettings(conversation.conversationId);
+    const settings = await this.getSettings(job.userId, conversation.conversationId);
     if (!settings.selfChatEnabled) return;
     // T-096 PLAY-06 第 3 条：用户正在专注时群聊自发话题不发起。
     if (await this.quiet.getFocusUntil(job.userId).catch(() => null)) return;
@@ -1411,7 +1532,16 @@ export class GroupChatService {
     // T-090 proactive_slot：规则版时刻附近挑一个小时（或今天不聊），每群每天只问一次。
     const ruleHour = 9 + (h % 13);
     const hours = [...new Set([ruleHour, Math.max(9, ruleHour - 2), Math.min(21, ruleHour + 2)])];
-    if (!(await this.stillActive(conversation, job.userId, true, settings.scenarioMode))) return;
+    if (
+      !(await this.stillActive(
+        conversation,
+        job.userId,
+        true,
+        settings.scenarioMode,
+        settings.scenarioPresetId,
+      ))
+    )
+      return;
     const slot = await this.planner.decide({
       userId: job.userId,
       conversationId: conversation.conversationId,
@@ -1431,7 +1561,16 @@ export class GroupChatService {
       idempotencyKey: `selfchat:${conversation.conversationId}:${local.date}`,
       decisionKey: `selfchat:${conversation.conversationId}:${local.date}`,
     });
-    if (!(await this.stillActive(conversation, job.userId, true, settings.scenarioMode))) return;
+    if (
+      !(await this.stillActive(
+        conversation,
+        job.userId,
+        true,
+        settings.scenarioMode,
+        settings.scenarioPresetId,
+      ))
+    )
+      return;
     if (slot.choice === 'skip_today' || local.hour !== Number(slot.choice.slice(1))) return;
     if (!(await this.backgroundAllowed(job.userId))) return;
     // 刚有人在聊就不插自发话题。

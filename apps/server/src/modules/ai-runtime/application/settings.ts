@@ -1,5 +1,6 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { createHash } from 'node:crypto';
+import { and, eq, inArray, isNull, isNotNull, or } from 'drizzle-orm';
 import {
   Id,
   UpdateCompanionSettingsRequest,
@@ -38,6 +39,7 @@ import { invalidateReplyPlans } from './invalidate.js';
 import { companionSettings } from '../infra/db/schema.js';
 import { PrivateDigestService } from './private-digest.js';
 import { characterView, roleAdminAllowlist } from './character-view.js';
+import { ScenarioCatalog } from './scenario-catalog.js';
 @Injectable()
 export class CompanionSettingsService {
   constructor(
@@ -54,6 +56,7 @@ export class CompanionSettingsService {
     @Inject(MEDIA_ASSET_READ_PORT) private readonly assets: MediaAssetReadPort,
     /** H2：切出私密模式时登记「干净整理」（测试里可不注入）。 */
     @Optional() @Inject(PrivateDigestService) private readonly digests?: PrivateDigestService,
+    @Optional() @Inject(ScenarioCatalog) private readonly catalog?: ScenarioCatalog,
   ) {}
   private async guard(userId: string, characterId: string | null): Promise<void> {
     parseContract(Id, userId);
@@ -95,6 +98,7 @@ export class CompanionSettingsService {
       personaFit: row?.personaFit ?? 3,
       // 没有设置行 = 新账号默认：情景预设「自动」（docs/refactor/02 第 5.3 节，2026-10-13 AI 实现后启用）。
       scenarioMode: (row?.scenarioMode ?? 'auto') as ScenarioMode,
+      scenarioPresetId: row?.scenarioPresetId ?? null,
       proactiveMessages: row?.proactiveMessages ?? true,
       proactiveFrequency: (row?.proactiveFrequency ?? 'medium') as 'low' | 'medium' | 'high',
       proactiveCalls: row?.proactiveCalls ?? false,
@@ -108,17 +112,31 @@ export class CompanionSettingsService {
     await this.guard(userId, characterId);
     const role = await this.characters.getForRuntime(userId, characterId);
     if (!role) throw new AppError('not_found', '角色不存在');
+    const catalogModes = await this.catalog?.list();
+    const candidates = catalogModes ?? SELECTABLE_MODES;
     const allowed = await this.policy.listAllowedScenarioModes({
       userId,
       characterId,
-      candidates: SELECTABLE_MODES,
+      candidates,
       adminAllowlist: roleAdminAllowlist(characterView(role)),
     });
+    if (this.catalog && catalogModes)
+      return this.catalog.options(
+        catalogModes.filter((mode) => allowed.some((m) => m.modeId === mode.modeId)),
+      );
     return {
       items: SELECTABLE_MODES.filter((mode) => allowed.some((m) => m.modeId === mode.modeId)).map(
         modeOption,
       ),
+      customItems: [],
     };
+  }
+
+  async scenarioPrompt(
+    settings: CompanionSettings,
+    scope: 'normal' | 'adult',
+  ): Promise<string | null> {
+    return this.catalog?.prompt(settings, scope) ?? null;
   }
   async get(
     userId: string,
@@ -139,18 +157,32 @@ export class CompanionSettingsService {
       const value = await this.load(tx, userId, characterId);
       const mode = value.scenarioMode ?? 'daily';
       const adultModelUnavailable = mode === 'adult' && !!adult && !adult.available;
-      const modeAllowed = allowed?.items.some((m) => m.id === mode) ?? false;
+      const preset = value.scenarioPresetId
+        ? allowed?.customItems?.find((m) => m.presetId === value.scenarioPresetId && m.id === mode)
+        : undefined;
+      const modeAllowed = value.scenarioPresetId
+        ? !!preset
+        : (allowed?.items.some((m) => m.id === mode) ?? false);
+      if (preset) value.scenarioPresetName = preset.name;
       // 只有「角色不再允许该模式」才自动回落。私密模型没配置 / 暂不可用时保留私密范围：
       // 若静默改成 daily，之后的敏感输入会落进 normal，所以改为提示用户自己切换。
-      if (characterId && mode !== 'daily' && !modeAllowed) {
+      if (characterId && (mode !== 'daily' || value.scenarioPresetId) && !modeAllowed) {
         const reason = mode === 'adult' ? 'adult_mode_unavailable' : 'scenario_mode_unavailable';
         // 同一用户、同一角色、同一原因只登记 / 提示一次；幂等键不能带会随写入变化的 updatedAt。
-        const fallbackKey = `mode-unavailable:${userId}:${characterId}:${reason}`;
+        const fallbackKey = `mode-unavailable:${createHash('sha256')
+          .update(
+            [userId, characterId, reason, value.scenarioPresetId ?? mode, value.updatedAt].join(
+              ':',
+            ),
+          )
+          .digest('hex')}`;
         value.scenarioMode = 'daily';
+        value.scenarioPresetId = null;
+        delete value.scenarioPresetName;
         if (!value.inheritsDefaults)
           await tx.db
             .update(companionSettings)
-            .set({ scenarioMode: 'daily', updatedAt: this.clock.now() })
+            .set({ scenarioMode: 'daily', scenarioPresetId: null, updatedAt: this.clock.now() })
             .where(
               and(
                 eq(companionSettings.userId, userId),
@@ -211,7 +243,16 @@ export class CompanionSettingsService {
     const patch = parseContract(UpdateCompanionSettingsRequest, input);
     await this.guard(userId, characterId);
     const allowed =
-      characterId && patch.scenarioMode ? await this.listModes(userId, characterId) : null;
+      characterId && (patch.scenarioMode || patch.scenarioPresetId)
+        ? await this.listModes(userId, characterId)
+        : null;
+    const selectedPreset = patch.scenarioPresetId
+      ? allowed?.customItems?.find((mode) => mode.presetId === patch.scenarioPresetId)
+      : undefined;
+    if (patch.scenarioPresetId) {
+      if (!characterId || !selectedPreset) throw new AppError('bad_request', '该情景预设不可用');
+      patch.scenarioMode = selectedPreset.id;
+    }
     // 3.27（H1）：「情侣暧昧」不再可选（全局默认也不行）。
     if (patch.scenarioMode === 'romance')
       throw new AppError('bad_request', '情侣暧昧已改为随好感度阶段自动解锁');
@@ -226,7 +267,12 @@ export class CompanionSettingsService {
       const adult = await this.adultModels.getAdultModelStatus(userId, characterId);
       if (!adult.available) throw new AppError('adult_model_missing', '请先选择可用的成人模式模型');
     }
-    if (patch.scenarioMode && allowed && !allowed.items.some((m) => m.id === patch.scenarioMode))
+    if (
+      patch.scenarioMode &&
+      allowed &&
+      !selectedPreset &&
+      !allowed.items.some((m) => m.id === patch.scenarioMode)
+    )
       throw new AppError('bad_request', '该角色不允许此模式');
     // T-071：音色只能选音色库里启用的音色（MED-03 第 1 条，非克隆）。
     if (patch.voiceId) {
@@ -247,6 +293,12 @@ export class CompanionSettingsService {
         splitBubbles: patch.splitBubbles ?? old.splitBubbles,
         personaFit: patch.personaFit ?? old.personaFit ?? 3,
         scenarioMode: patch.scenarioMode ?? old.scenarioMode ?? 'auto',
+        scenarioPresetId:
+          patch.scenarioPresetId !== undefined
+            ? patch.scenarioPresetId
+            : patch.scenarioMode !== undefined
+              ? null
+              : (old.scenarioPresetId ?? null),
         proactiveMessages: patch.proactiveMessages ?? old.proactiveMessages ?? true,
         proactiveFrequency: patch.proactiveFrequency ?? old.proactiveFrequency ?? 'medium',
         proactiveCalls: patch.proactiveCalls ?? old.proactiveCalls ?? false,
@@ -254,13 +306,17 @@ export class CompanionSettingsService {
         voiceId: patch.voiceId === undefined ? (old.voiceId ?? null) : patch.voiceId,
         updatedAt: this.clock.now(),
       };
-      if (characterId && patch.scenarioMode && patch.scenarioMode !== old.scenarioMode) {
+      if (
+        characterId &&
+        (values.scenarioMode !== old.scenarioMode ||
+          values.scenarioPresetId !== old.scenarioPresetId)
+      ) {
         const contact = await this.contacts.getActiveContact(userId, characterId, tx);
         if (!contact?.conversationId) throw new AppError('not_found', '会话不存在');
         const switchId = newId();
         // H2（总经理 10-21 C14）：切出私密模式（切到自动或任何非私密模式）→ 登记一次「干净整理」，
         // 以这次切换为准（switchId），异步由私密模型生成，不阻塞切换。
-        if (old.scenarioMode === 'adult' && patch.scenarioMode !== 'adult')
+        if (old.scenarioMode === 'adult' && values.scenarioMode !== 'adult')
           await this.digests?.enqueue(tx, {
             userId,
             characterId,
@@ -270,7 +326,7 @@ export class CompanionSettingsService {
         const result = await this.chat.setContentScope(
           {
             conversationId: contact.conversationId,
-            scope: patch.scenarioMode === 'adult' ? 'adult' : 'normal',
+            scope: values.scenarioMode === 'adult' ? 'adult' : 'normal',
           },
           tx,
         );
@@ -278,7 +334,10 @@ export class CompanionSettingsService {
         await this.chat.postSystemMessage(tx, {
           conversationId: contact.conversationId,
           code: 'scenario_mode_changed',
-          params: { mode: patch.scenarioMode },
+          params: {
+            mode: values.scenarioMode,
+            ...(selectedPreset ? { modeName: selectedPreset.name } : {}),
+          },
           idempotencyKey: `mode:${userId}:${characterId}:${switchId}`,
         });
       }
@@ -298,7 +357,12 @@ export class CompanionSettingsService {
         type: 'settings.updated',
         data: { section: 'companion', characterId },
       });
-      return { ...values, updatedAt: values.updatedAt.toISOString(), inheritsDefaults: false };
+      return {
+        ...values,
+        ...(selectedPreset ? { scenarioPresetName: selectedPreset.name } : {}),
+        updatedAt: values.updatedAt.toISOString(),
+        inheritsDefaults: false,
+      };
     });
   }
 
@@ -326,15 +390,28 @@ export class CompanionSettingsService {
       .where(
         and(
           eq(companionSettings.characterId, p.characterId),
-          inArray(companionSettings.scenarioMode, modes),
+          or(
+            inArray(companionSettings.scenarioMode, modes),
+            isNotNull(companionSettings.scenarioPresetId),
+          ),
           p.ownerUserId ? eq(companionSettings.userId, p.ownerUserId) : undefined,
         ),
       );
     const now = this.clock.now();
+    const catalog = await this.catalog?.list(tx);
     for (const row of rows) {
+      if (row.scenarioPresetId && !modes.includes(row.scenarioMode)) {
+        const mode = catalog?.find((m) => m.modeId === row.scenarioPresetId);
+        if (
+          mode &&
+          (!mode.containsAdultContent || p.adultModeEligible) &&
+          (!mode.containsRomance || p.romanceAllowed)
+        )
+          continue;
+      }
       await tx.db
         .update(companionSettings)
-        .set({ scenarioMode: 'daily', updatedAt: now })
+        .set({ scenarioMode: 'daily', scenarioPresetId: null, updatedAt: now })
         .where(eq(companionSettings.id, row.id));
       const contact = await this.contacts.getActiveContact(row.userId, p.characterId, tx);
       if (contact?.conversationId) {

@@ -82,6 +82,7 @@ export const companionSettings = aiRuntimeSchema.table(
     splitBubbles: boolean('split_bubbles').notNull(),
     personaFit: integer('persona_fit').notNull().default(3),
     scenarioMode: text('scenario_mode').notNull().default('auto'),
+    scenarioPresetId: text('scenario_preset_id'),
     proactiveMessages: boolean('proactive_messages').notNull().default(true),
     proactiveFrequency: text('proactive_frequency').notNull().default('medium'),
     proactiveCalls: boolean('proactive_calls').notNull().default(false),
@@ -588,6 +589,7 @@ export const groupCompanionSettings = aiRuntimeSchema.table('group_companion_set
   instantReply: boolean('instant_reply').notNull().default(false),
   selfChatEnabled: boolean('self_chat_enabled').notNull().default(true),
   scenarioMode: text('scenario_mode').notNull().default('daily'),
+  scenarioPresetId: text('scenario_preset_id'),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
 });
 

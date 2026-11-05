@@ -66,7 +66,6 @@ import {
 } from '../domain/legacy-prompt.js';
 import {
   characterView,
-  roleAdminAllowlist,
   roleCareFallback,
   roleDeflect,
   rolePersonaTags,
@@ -74,7 +73,6 @@ import {
   roleTypoStyle,
 } from './character-view.js';
 import { memoryLine, type WindowTurn } from '../domain/memory-window.js';
-import { INITIAL_MODES } from '../domain/persona.js';
 import {
   autoScenarioStyle,
   autoStylePrompt,
@@ -414,13 +412,9 @@ export class ReplyContext {
     const inCare = risk === 'high' || triggerHigh || active.rows.length > 0;
     let autoResult: ScenarioStyle | null = null;
     if (mode === 'auto' && !inCare) {
-      const allowedModes = await this.policy
-        .listAllowedScenarioModes({
-          userId: row.userId,
-          characterId: row.characterId,
-          candidates: INITIAL_MODES,
-          adminAllowlist: roleAdminAllowlist(view),
-        })
+      const allowedModes = await this.settings
+        .listModes(row.userId, row.characterId)
+        .then((result) => result.items)
         .catch(() => []);
       const userTurns: string[] = [];
       let turn: string[] = [];
@@ -438,7 +432,7 @@ export class ReplyContext {
       autoResult = autoScenarioStyle({
         userTurns,
         localHour: localHourIn(this.clock.now(), profile.timeZone),
-        tsundereAllowed: allowedModes.some((m) => m.modeId === 'tsundere'),
+        tsundereAllowed: allowedModes.some((m) => m.id === 'tsundere'),
       });
     }
     const style = inCare ? 'daily' : effectiveStyle(mode, autoResult);
@@ -538,6 +532,9 @@ export class ReplyContext {
       selfReports,
       stableMemory: remembered.stableBlock,
       episodes: episodes.stable,
+      scenarioPrompt: inCare
+        ? undefined
+        : ((await this.settings.scenarioPrompt(settings, conversation.contentScope)) ?? undefined),
     });
 
     // ② 聊天记录：摘要边界之后的原文，只在尾部追加
@@ -674,13 +671,14 @@ export class ReplyContext {
             }),
           )
         : null;
-    const styleNote = inCare
+    const builtInNote = inCare
       ? null
       : card
         ? scenarioNote(card, mode, autoStyle?.prompt ?? null)
         : legacy
           ? legacyScenarioNote(legacy, mode, autoStyle?.prompt ?? null)
           : null;
+    const styleNote = builtInNote;
     if (styleNote)
       inserts.push({
         depth: AUTHOR_NOTE_DEPTH,

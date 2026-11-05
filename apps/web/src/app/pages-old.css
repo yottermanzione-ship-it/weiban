@@ -8,10 +8,44 @@
   padding-bottom: 0;
 }
 .app-shell.with-tabs {
-  padding-bottom: calc(var(--wb-size-tab-bar) + 1px + env(safe-area-inset-bottom));
+  /* 四个主页共用视口外框；只滚动内容，底栏不参与页面滚动或 fixed 合成定位。 */
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100dvh;
+  min-height: 0;
+  margin: 0 auto;
+  padding-bottom: 0;
+  overflow: clip;
 }
-body.pull-open .tabbar {
-  transform: translate(-50%, 110%);
+.app-shell.with-tabs > .route-frame > .route-content {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+.app-shell.with-tabs > .route-frame > .route-content > main {
+  flex-shrink: 0;
+  min-height: 100%;
+}
+.app-shell.with-tabs.on-chat-list > .route-frame > .route-content {
+  overflow: clip;
+}
+.app-shell.with-tabs.on-chat-list .chat-list-page {
+  height: 100%;
+  min-height: 0;
+  padding-bottom: 0;
+}
+.app-shell.with-tabs > .tabbar {
+  position: relative;
+  inset: auto;
+  flex: none;
+  transform: none;
+}
+.app-shell.with-tabs > .tabbar.hidden,
+body.pull-open .app-shell.with-tabs > .tabbar {
+  transform: translateY(110%);
 }
 body {
   overscroll-behavior-y: none;

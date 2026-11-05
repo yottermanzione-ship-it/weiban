@@ -95,6 +95,9 @@ test('新增情景模式生成有效标识，保存和编辑后刷新仍保留',
   await page.getByRole('button', { name: /新增情景模式$/ }).click();
   await page.getByLabel('名称', { exact: true }).fill('合成收尾情景');
   await page.getByLabel('说明', { exact: true }).fill('仅本地合成数据');
+  await page
+    .getByLabel('预设提示词', { exact: true })
+    .fill('先回应对方提到的具体事情，再温和地提一个问题。');
   const created = page.waitForResponse(
     (r) => r.request().method() === 'POST' && r.url().endsWith('/admin/scenario-modes'),
   );
@@ -281,6 +284,9 @@ test('角色结构化编辑、真实草稿保存、发布检测门禁和图片�
   await upload(page, '上传角色图片');
   await expect(page.getByText('已设置角色图片，保存后生效。', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '保存', exact: true }).click();
+  // 长通讯录夹具令角色库超过一页，按实际搜索定位新草稿，不假设它一定在第一页。
+  const search = page.getByRole('searchbox', { name: '搜索名字、别名、作品' });
+  await search.fill('浏览器角色');
   const row = page.getByRole('row').filter({ hasText: '浏览器角色' });
   await expect(row.getByText('草稿', { exact: true })).toBeVisible();
   const publish = page.waitForResponse(
@@ -290,6 +296,7 @@ test('角色结构化编辑、真实草稿保存、发布检测门禁和图片�
   expect((await publish).ok()).toBe(false);
   await expect(row.getByText('草稿', { exact: true })).toBeVisible();
   await page.reload();
+  await search.fill('浏览器角色');
   await row.getByRole('button', { name: '编辑', exact: true }).click();
   await expect(field('人设摘要')).toHaveValue('温柔的原创成年角色');
   await expect(page.getByText('已设置角色图片，保存后生效。', { exact: true })).toBeVisible();

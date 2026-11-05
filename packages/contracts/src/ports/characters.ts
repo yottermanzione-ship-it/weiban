@@ -1,4 +1,10 @@
 import type { PortResult, Tx } from './common.js';
+import type { AdminScenarioMode } from '../http/admin-content.js';
+
+/** 7.1：运行时读取平台维护的情景预设；不读取用户内容，支持调用方事务。 */
+export interface ScenarioModeReadPort {
+  listScenarioModes(tx?: Tx): Promise<AdminScenarioMode[]>;
+}
 import type { CharacterCard } from '../character-card.js';
 import type { LegacyDialogueExample, LegacyKnowledgeEntry } from '../legacy-character-card.js';
 import type {

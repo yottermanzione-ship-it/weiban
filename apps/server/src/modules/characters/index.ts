@@ -1,6 +1,7 @@
 export { CharactersModule } from './characters.module.js';
 export {
   CHARACTER_READ_PORT,
+  SCENARIO_MODE_READ_PORT,
   CHARACTER_TRIAL_READ_PORT,
   CHARACTER_TRIAL_CLEANUP_PORT,
   CHARACTER_NAME_READ_PORT,

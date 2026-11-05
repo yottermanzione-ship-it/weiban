@@ -262,11 +262,27 @@ async function preloadRecentAvatars(
       .filter((contact) => contact.customAvatarMediaId)
       .map((contact) => [contact.characterId, contact.customAvatarMediaId!]),
   );
+  const groups = [
+    ...new Set(
+      recentConversations(state)
+        .slice(0, RECENT_AVATARS)
+        .filter((item) => item.type === 'group' && item.group?.avatarMediaId)
+        .map((item) => item.group!.avatarMediaId!),
+    ),
+  ];
+  const work = [
+    ...groups.map((mediaId) => ({ kind: 'group' as const, id: mediaId })),
+    ...ids.map((id) => ({ kind: 'character' as const, id })),
+  ];
   await pool(
-    ids,
+    work,
     PARALLEL,
-    async (id) => {
+    async ({ kind, id }) => {
       if (!api.owns(owner)) return;
+      if (kind === 'group') {
+        await preloadAvatar(id);
+        return;
+      }
       const privateId = custom.get(id);
       if (privateId) {
         rememberCharacterAvatar(id, privateId);
@@ -274,6 +290,7 @@ async function preloadRecentAvatars(
         return;
       }
       const profile = await loadCharacterProfile(id, owner);
+      if (!api.owns(owner)) return;
       const image = profile.avatar.image;
       rememberCharacterAvatar(id, image?.mediaId ?? null);
       if (image && api.owns(owner)) await preloadAvatar(image.mediaId, image.url);

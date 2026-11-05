@@ -35,6 +35,7 @@ import { IdentityModule } from '../identity/index.js';
 import { ContactsModule } from '../contacts/index.js';
 import { RealtimeModule } from '../realtime/index.js';
 import { CompanionSettingsService } from './application/settings.js';
+import { ScenarioCatalog } from './application/scenario-catalog.js';
 import { CompanionSettingsController } from './http/settings.controller.js';
 import { SimulationService, SIMULATION_READ_PORT } from './application/simulation.js';
 import { HealthCareService, HEALTH_CARE_FAMILIARITY } from './application/health-care.js';
@@ -147,6 +148,7 @@ import {
     { provide: AI_CARD_LINE_WRITER, useExisting: CardLineService },
     MomentCardService,
     CompanionSettingsService,
+    ScenarioCatalog,
     MemoryService,
     ChatSummaryService,
     // H2：切出私密模式时的干净整理。

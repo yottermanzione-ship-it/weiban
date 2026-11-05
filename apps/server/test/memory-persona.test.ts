@@ -8,6 +8,7 @@ import sharp from 'sharp';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
   AdminCharacterWrite,
+  AdminScenarioModeCreate,
   AuthResponse,
   CharacterCard,
   MediaObject,
@@ -30,6 +31,7 @@ import {
 import { IdentityCommands } from '../src/modules/identity/index.js';
 import {
   CharacterService,
+  ScenarioModeService,
   CharacterCheckWorker,
   CHARACTER_EVALUATOR,
 } from '../src/modules/characters/testing.js';
@@ -255,6 +257,103 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
     await dispatch();
     return (await plans()).at(-1)!;
   }
+  it('管理员预设接入用户选择和真实生成请求，修改立即生效、停用回落且不绕过儿童资格', async () => {
+    const catalog = app.get(ScenarioModeService);
+    const settingsPath = `/api/v1/characters/${characterId}/companion-settings`;
+    const modesPath = `/api/v1/characters/${characterId}/scenario-modes`;
+    const original = (await http().get(settingsPath).set('Authorization', auth()).expect(200)).body;
+    const mode = await catalog.create(
+      adminId,
+      AdminScenarioModeCreate.parse({
+        id: 'qa_gentle_scene',
+        name: '温柔倾听',
+        description: '合成预设',
+        presetPrompt: 'SCENE_FIRST_CANARY：先复述一个具体感受，再询问对方是否想继续说。',
+      }),
+    );
+    const modes = (await http().get(modesPath).set('Authorization', auth()).expect(200)).body;
+    expect(modes.items.every((item: { id: string }) => item.id !== mode.id)).toBe(true);
+    expect(modes.customItems).toContainEqual(
+      expect.objectContaining({ presetId: mode.id, id: 'daily', aiReady: true }),
+    );
+    const selected = (
+      await http()
+        .patch(settingsPath)
+        .set('Authorization', auth())
+        .send({ scenarioPresetId: mode.id, scenarioMode: 'adult', personaFit: 1 })
+        .expect(200)
+    ).body;
+    // 客户端伪填的基础模式不能决定实际模型/内容范围。
+    expect(selected).toMatchObject({
+      scenarioMode: 'daily',
+      scenarioPresetId: mode.id,
+      scenarioPresetName: '温柔倾听',
+    });
+    const before = calls.length;
+    await finish((await user('今天想聊一下这周的日常')).id);
+    const styledCall = calls
+      .slice(before)
+      .find((call) => call.messages.some((m) => m.content.includes('SCENE_FIRST_CANARY')));
+    expect(styledCall?.messages[0]?.content).toContain('SCENE_FIRST_CANARY');
+    expect(
+      styledCall?.messages.slice(1).some((m) => m.content.includes('SCENE_FIRST_CANARY')),
+    ).toBe(false);
+    await catalog.update(adminId, mode.id, {
+      presetPrompt: 'SCENE_SECOND_CANARY：先接住情绪，不急着给建议。',
+    });
+    const pending = await user('继续说说今天的事情');
+    const prompt = JSON.stringify((await app.get(ReplyContext).build(pending))?.messages);
+    expect(prompt).toContain('SCENE_SECOND_CANARY');
+    expect(prompt).not.toContain('SCENE_FIRST_CANARY');
+    await finish(pending.id);
+    await http()
+      .patch(settingsPath)
+      .set('Authorization', auth())
+      .send({ scenarioMode: 'cheer' })
+      .expect(200);
+    expect(
+      (await http().get(settingsPath).set('Authorization', auth()).expect(200)).body
+        .scenarioPresetId,
+    ).toBeNull();
+    await http()
+      .patch(settingsPath)
+      .set('Authorization', auth())
+      .send({ scenarioPresetId: mode.id })
+      .expect(200);
+    await catalog.update(adminId, mode.id, { enabled: false });
+    expect(
+      (await http().get(settingsPath).set('Authorization', auth()).expect(200)).body,
+    ).toMatchObject({ scenarioMode: 'daily', scenarioPresetId: null });
+    await catalog.update(adminId, mode.id, { enabled: true, hasRomanceContent: true });
+    await db.query("UPDATE characters.characters SET age_setting='minor' WHERE id=$1", [
+      characterId,
+    ]);
+    try {
+      expect(
+        (await http().get(modesPath).set('Authorization', auth()).expect(200)).body.customItems,
+      ).toHaveLength(0);
+      await http()
+        .patch(settingsPath)
+        .set('Authorization', auth())
+        .send({ scenarioPresetId: mode.id })
+        .expect(400);
+    } finally {
+      await db.query("UPDATE characters.characters SET age_setting='adult' WHERE id=$1", [
+        characterId,
+      ]);
+      await catalog.delete(adminId, mode.id);
+      await http()
+        .patch(settingsPath)
+        .set('Authorization', auth())
+        .send({ ...original, scenarioPresetId: null })
+        .expect(200);
+      if (original.inheritsDefaults)
+        await db.query(
+          'DELETE FROM ai_runtime.companion_settings WHERE user_id=$1 AND character_id=$2',
+          [userId, characterId],
+        );
+    }
+  });
   it('HTTP鉴权、幂等并发写入、分页、加密与跨用户访问拒绝', async () => {
     await http().get(memoryPath()).expect(401);
     const clientMemoryId = newId();
@@ -308,7 +407,7 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
       const context = app.get(ReplyContext);
       const before = (await context.build(row))!;
       expect(before).not.toBeNull();
-      expect(before.promptTemplateVersion).toBe('chat-v5-cache');
+      expect(before.promptTemplateVersion).toBe('chat-v6-scenario');
       const historyEnd = before.messages.findIndex(
         (m) => m.role === 'user' && m.content.includes('CACHE_HISTORY_ANCHOR'),
       );

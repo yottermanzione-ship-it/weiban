@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { AdminScenarioModeCreate } from '@weiban/contracts';
+import { CharacterService, ScenarioModeService } from '../src/modules/characters/testing.js';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { ContactsCommands } from '../src/modules/contacts/testing.js';
 import { MembershipService } from '../src/modules/identity/testing.js';
 import { MomentsService } from '../src/modules/moments/testing.js';
@@ -69,6 +71,80 @@ describeDb('群聊与朋友圈并发回归', () => {
         })
       ).status,
     ).toBe(200);
+  });
+  it('群聊预设遵守全体成员资格，停用回落，普通预设之间切换确实产生提示', async () => {
+    const catalog = qa.app.get(ScenarioModeService);
+    const mode = await catalog.create(
+      owner.id,
+      AdminScenarioModeCreate.parse({
+        id: 'qa_group_scene',
+        name: '温柔讨论',
+        presetPrompt: '先回应群里刚刚提出的具体问题，再邀请另一位成员补充。',
+        hasRomanceContent: true,
+      }),
+    );
+    const path = `/groups/${groupId}/companion-settings`;
+    expect(
+      (await qa.http(owner.token, `/groups/${groupId}/scenario-modes`)).data.customItems,
+    ).toContainEqual(expect.objectContaining({ presetId: mode.id, id: 'daily' }));
+    const switched = await qa.http(owner.token, path, 'PATCH', { scenarioPresetId: mode.id });
+    expect(switched.status).toBe(200);
+    expect(switched.data).toMatchObject({ scenarioMode: 'daily', scenarioPresetId: mode.id });
+    await qa.db.query("UPDATE characters.characters SET age_setting='minor' WHERE id=$1", [ids[0]]);
+    try {
+      expect(
+        (await qa.http(owner.token, `/groups/${groupId}/scenario-modes`)).data.customItems,
+      ).toHaveLength(0);
+      expect((await qa.http(owner.token, path)).data).toMatchObject({
+        scenarioMode: 'daily',
+        scenarioPresetId: null,
+      });
+      expect(
+        (await qa.http(owner.token, path, 'PATCH', { scenarioPresetId: mode.id })).status,
+      ).toBe(400);
+    } finally {
+      // 自建角色资格只能收紧，不能把同一个儿童样本改回成年。改用适合全员的普通预设继续测试。
+      await catalog.update(owner.id, mode.id, { hasRomanceContent: false });
+    }
+    expect((await qa.http(owner.token, path, 'PATCH', { scenarioPresetId: mode.id })).status).toBe(
+      200,
+    );
+    await catalog.update(owner.id, mode.id, { enabled: false });
+    expect((await qa.http(owner.token, path)).data).toMatchObject({
+      scenarioMode: 'daily',
+      scenarioPresetId: null,
+    });
+    await catalog.delete(owner.id, mode.id);
+  });
+  it('角色仅允许的情景被停用后，群聊仍能回落到安全日常', async () => {
+    const catalog = qa.app.get(ScenarioModeService);
+    const characters = qa.app.get(CharacterService);
+    const readRole = characters.getForRuntime.bind(characters);
+    const role = await readRole(owner.id, ids[0]!);
+    expect(role?.card).toBeTruthy();
+    const restriction = vi
+      .spyOn(characters, 'getForRuntime')
+      .mockImplementation(async (userId, id) => {
+        const result = await readRole(userId, id);
+        if (result?.card) result.card.data.modes.adminAllowlist = ['treehole'];
+        return result;
+      });
+    const path = `/groups/${groupId}/companion-settings`;
+    try {
+      expect((await qa.http(owner.token, path, 'PATCH', { scenarioMode: 'treehole' })).status).toBe(
+        200,
+      );
+      await catalog.update(owner.id, 'treehole', { enabled: false });
+      const fallback = await qa.http(owner.token, path);
+      expect(fallback.status).toBe(200);
+      expect(fallback.data).toMatchObject({ scenarioMode: 'daily', scenarioPresetId: null });
+      expect(
+        (await qa.http(owner.token, `/groups/${groupId}/scenario-modes`)).data.items,
+      ).toContainEqual(expect.objectContaining({ id: 'daily' }));
+    } finally {
+      restriction.mockRestore();
+      await catalog.update(owner.id, 'treehole', { enabled: true });
+    }
   });
   it('群聊：加人、移出、重入和改名恢复；会员到期后历史可看而新消息被拒绝', async () => {
     expect(

@@ -11,7 +11,7 @@ export function RouteMotion({ children }: { children: ReactNode }) {
   const outgoing = useRef<HTMLElement | null>(null);
   const timer = useRef(0);
   const [rendered, setRendered] = useState({ path: location.pathname, children });
-  useRouteViewportScroll(rendered.path);
+  useRouteViewportScroll(rendered.path, content);
   useEffect(
     () => () => {
       window.clearTimeout(timer.current);

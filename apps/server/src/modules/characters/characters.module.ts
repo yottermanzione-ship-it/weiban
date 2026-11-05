@@ -34,6 +34,7 @@ import { CharacterSupplementService } from './application/supplements.js';
 import { CharacterSupplementController } from './http/supplements.controller.js';
 import {
   CHARACTER_READ_PORT,
+  SCENARIO_MODE_READ_PORT,
   CHARACTER_TRIAL_READ_PORT,
   CHARACTER_NAME_READ_PORT,
   CHARACTER_EVALUATOR,
@@ -88,6 +89,7 @@ import {
     { provide: CHARACTER_CHILD_FEATURES_WRITER, useExisting: CharacterPlazaService },
     GatewayCharacterEvaluator,
     ScenarioModeService,
+    { provide: SCENARIO_MODE_READ_PORT, useExisting: ScenarioModeService },
     PublicUpdateService,
     CharacterRelationService,
     CharacterWorkLinkService,
@@ -103,6 +105,7 @@ import {
     { provide: EVALUATOR_GATEWAY, useExisting: MODEL_GATEWAY_PORT },
   ],
   exports: [
+    SCENARIO_MODE_READ_PORT,
     WEIBO_PUBLICATION_PORT,
     CHARACTER_TRIAL_READ_PORT,
     CHARACTER_READ_PORT,

@@ -9,12 +9,15 @@ import type {
   AdminScenarioMode,
   AdminScenarioModeCreate,
   AdminScenarioModeUpdate,
+  ScenarioModeReadPort,
+  Tx,
 } from '@weiban/contracts';
 import {
   AUDIT_LOG,
   CLOCK,
   AppError,
   DATABASE,
+  asDbTx,
   type AuditLog,
   type Clock,
   type Database,
@@ -42,7 +45,7 @@ function toDto(r: Row): AdminScenarioMode {
 }
 
 @Injectable()
-export class ScenarioModeService {
+export class ScenarioModeService implements ScenarioModeReadPort {
   constructor(
     @Inject(DATABASE) private readonly database: Database,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -50,7 +53,11 @@ export class ScenarioModeService {
   ) {}
 
   async list(): Promise<AdminScenarioMode[]> {
-    const rows = await this.database.db
+    return this.listScenarioModes();
+  }
+
+  async listScenarioModes(tx?: Tx): Promise<AdminScenarioMode[]> {
+    const rows = await (tx ? asDbTx(tx).db : this.database.db)
       .select()
       .from(scenarioModes)
       .orderBy(asc(scenarioModes.sortOrder), asc(scenarioModes.id));
@@ -58,6 +65,8 @@ export class ScenarioModeService {
   }
 
   async create(adminId: string, input: CreateInput): Promise<AdminScenarioMode> {
+    if (input.enabled && !input.presetPrompt?.trim())
+      throw new AppError('bad_request', '启用情景模式前请填写预设提示词');
     const [existing] = await this.database.db
       .select()
       .from(scenarioModes)
@@ -96,11 +105,20 @@ export class ScenarioModeService {
   }
 
   async update(adminId: string, id: string, input: UpdateInput): Promise<AdminScenarioMode> {
+    if (id === 'daily' && input.enabled === false)
+      throw new AppError('bad_request', '日常模式用于其他预设停用后的回落，不能关闭');
     const [current] = await this.database.db
       .select()
       .from(scenarioModes)
       .where(eq(scenarioModes.id, id));
     if (!current) throw new AppError('not_found', '情景模式不存在');
+
+    if (
+      !current.isBuiltin &&
+      (input.enabled ?? current.enabled) &&
+      !(input.presetPrompt === undefined ? current.presetPrompt : input.presetPrompt)?.trim()
+    )
+      throw new AppError('bad_request', '启用情景模式前请填写预设提示词');
 
     // 内置模式的适用范围与内容标记不可改（MODE-01 第 3 条：内置模式固定其资格规则）。
     const patch = current.isBuiltin

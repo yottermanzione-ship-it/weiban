@@ -13,6 +13,7 @@
  * 假上游：目录模型 upstreamModelId 以 fake- 开头且非生产环境时走 FakeMediaAdapter，计费照常。
  */
 import { Inject, Injectable, Optional } from '@nestjs/common';
+import { speechText } from '../domain/speech-text.js';
 import {
   BACKGROUND_PURPOSES,
   BUDGET_EXEMPT_PURPOSES,
@@ -243,7 +244,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
   async synthesizeSpeech(
     input: SynthesizeSpeechInput,
   ): Promise<PortResult<MediaCallResult & { mediaId: string; durationMs: number }, GenerateError>> {
-    const text = input.text.trim().slice(0, 2000);
+    const text = speechText(input.text.trim().slice(0, 2000));
     if (!text || !Id.safeParse(input.voiceId).success) return { ok: false, error: 'bad_request' };
     return this.cached('tts', input, async () => {
       const voice = await this.assets.getVoice(input.voiceId);

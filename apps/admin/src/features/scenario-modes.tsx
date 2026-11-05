@@ -330,13 +330,22 @@ function ModeDrawer({
         <Form.Item
           name="presetPrompt"
           label="预设提示词"
+          dependencies={['enabled']}
+          rules={[
+            {
+              validator: async (_, value: string | undefined) => {
+                if (!mode?.isBuiltin && form.getFieldValue('enabled') && !value?.trim())
+                  throw new Error('启用前请填写角色在这个情景中怎么回应');
+              },
+            },
+          ]}
           extra={
             <FieldHelp>
-              会拼进角色的人设里。改动后需要重新运行人设稳定检查，相关角色才能继续发布。
+              写明角色在这个情景中怎么说、怎么回应；从下一次回复起生效，不改变角色身份和关系进展。保存后请试聊确认效果。
             </FieldHelp>
           }
         >
-          <Input.TextArea rows={5} maxLength={2000} showCount />
+          <Input.TextArea rows={5} maxLength={4000} showCount />
         </Form.Item>
         {!mode?.isBuiltin && (
           <>
@@ -357,7 +366,7 @@ function ModeDrawer({
           </>
         )}
         <Form.Item name="enabled" label="启用" valuePropName="checked">
-          <Switch />
+          <Switch disabled={mode?.id === 'daily'} />
         </Form.Item>
         {mode && (
           <div className="detail-muted">

@@ -7,7 +7,12 @@
  */
 import { z } from 'zod';
 import { API_PREFIX, Id, Timestamp, cursorPage, defineEndpoint, tolerantEnum } from '../common.js';
-import { ScenarioMode, ScenarioModeOption } from './companion.js';
+import {
+  ScenarioMode,
+  ScenarioModeOption,
+  ScenarioPresetId,
+  ScenarioPresetOption,
+} from './companion.js';
 
 // ---------- 跨角色共享（MEM-07） ----------
 
@@ -45,6 +50,8 @@ export const GroupCompanionSettings = z.object({
   /** 群聊情景模式，只作用于本群。 */
   scenarioMode: tolerantEnum(ScenarioMode),
   updatedAt: Timestamp,
+  scenarioPresetId: ScenarioPresetId.nullable().optional(),
+  scenarioPresetName: z.string().optional(),
 });
 export type GroupCompanionSettings = z.infer<typeof GroupCompanionSettings>;
 
@@ -68,6 +75,7 @@ export const GroupCompanionEndpoints = {
       instantReply: z.boolean().optional(),
       selfChatEnabled: z.boolean().optional(),
       scenarioMode: ScenarioMode.optional(),
+      scenarioPresetId: ScenarioPresetId.nullable().optional(),
     }),
     response: GroupCompanionSettings,
     summary:
@@ -78,7 +86,10 @@ export const GroupCompanionEndpoints = {
     path: `${API_PREFIX}/groups/:conversationId/scenario-modes`,
     auth: 'user',
     params: GroupParams,
-    response: z.object({ items: z.array(ScenarioModeOption) }),
+    response: z.object({
+      items: z.array(ScenarioModeOption),
+      customItems: z.array(ScenarioPresetOption).optional(),
+    }),
     summary: '本群可选的情景模式 = 所有成员都具备资格的模式（SOC-03 第 4 条）；不具备的不返回',
   }),
 } as const;

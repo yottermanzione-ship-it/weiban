@@ -54,6 +54,8 @@ export interface BrainInput {
   selfReports: string;
   stableMemory: string;
   episodes?: string;
+  /** Selected administrator instructions are stable until the mode or its text changes. */
+  scenarioPrompt?: string;
   /** Decisions have no dialogue examples; other personal scenes share the full prefix. */
   compact?: boolean;
 }
@@ -107,6 +109,7 @@ export function brainPrefix(input: BrainInput): PromptSection[] {
       title: '需要关怀或岔开话题时',
       text: card ? safetyStyleText(card) : '',
     },
+    { title: '当前情景补充', text: input.scenarioPrompt ?? '' },
     {
       title: '角色作者的写作要求',
       text: prompting?.systemNote ?? '',

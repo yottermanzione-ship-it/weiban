@@ -549,7 +549,9 @@ export class CallAgentService implements CallAgentPort {
     if (!this.media.openRealtimeVoice) return { ok: false, error: 'service_disabled' };
     const history = ctx.settingsHistory;
     const brain = await this.brain
-      .build(input.userId, input.characterId, 'normal', history.map((h) => h.content).join('\n'))
+      .build(input.userId, input.characterId, 'normal', history.map((h) => h.content).join('\n'), {
+        conversationStyle: true,
+      })
       .catch(() => null);
     if (!brain) return { ok: false, error: 'not_available' };
     const instructions = realtimeCallInstructions({ brain, policy: ctx.policy, history });
@@ -659,7 +661,9 @@ export class CallAgentService implements CallAgentPort {
 
     const history = await this.callHistory(input.conversationId, scope);
     const brain = await this.brain
-      .build(input.userId, input.characterId, scope, history.map((h) => h.content).join('\n'))
+      .build(input.userId, input.characterId, scope, history.map((h) => h.content).join('\n'), {
+        conversationStyle: true,
+      })
       .catch(() => null);
     if (!brain) return { ok: false, error: 'not_available' };
 
