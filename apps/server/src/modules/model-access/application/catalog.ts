@@ -528,8 +528,8 @@ export class CatalogService {
   }
 
   // ---------- 管理后台 ----------
-  async leaderboardSource() {
-    const [row] = await this.database.db
+  async leaderboardSource(tx?: DbTx) {
+    const [row] = await (tx ?? this.database).db
       .select()
       .from(modelAccessSettings)
       .where(eq(modelAccessSettings.key, 'leaderboard_source'));
@@ -568,8 +568,8 @@ export class CatalogService {
     return source;
   }
   /** 3.24：榜单快照（没有为 null）。 */
-  async leaderboardSnapshot(): Promise<LeaderboardSnapshot | null> {
-    const [row] = await this.database.db
+  async leaderboardSnapshot(tx?: DbTx): Promise<LeaderboardSnapshot | null> {
+    const [row] = await (tx ?? this.database).db
       .select()
       .from(modelAccessSettings)
       .where(eq(modelAccessSettings.key, LEADERBOARD_SNAPSHOT_KEY));

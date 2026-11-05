@@ -8,6 +8,7 @@ import {
   CLOCK,
   DATABASE,
   JOB_QUEUE,
+  newId,
   type AuditLog,
   type Clock,
   type Database,
@@ -31,6 +32,13 @@ export type LeaderboardFetcher = (url: string) => Promise<ArenaDataset>;
 export const defaultLeaderboardFetcher: LeaderboardFetcher = async () => fetchArenaDataset();
 export const LEADERBOARD_FETCHER = Symbol('weiban.model-access.leaderboard-fetcher');
 const LOCK_ID = 7261022;
+const REFRESH_LEASE_KEY = 'leaderboard_refresh_lease';
+// 官方抓取总时限为八分钟；十分钟租约容纳保存，进程退出后也能自动恢复。
+const REFRESH_LEASE_MS = 10 * 60_000;
+interface RefreshLease {
+  token: string;
+  expiresAt: string;
+}
 
 @Injectable()
 export class LeaderboardService implements OnModuleInit {
@@ -173,7 +181,7 @@ export class LeaderboardService implements OnModuleInit {
     return this.status();
   }
 
-  /** 同进程合并刷新；数据库咨询锁保证多个实例也不会同时抓取或被导入覆盖。 */
+  /** 同进程合并刷新；持久租约保证跨实例互斥，抓取期间不占数据库事务或连接。 */
   refresh(adminId: string | null): Promise<LeaderboardSnapshotStatus> {
     if (this.pending) return this.pending;
     this.pending = this.refreshOnce(adminId).finally(() => {
@@ -184,31 +192,87 @@ export class LeaderboardService implements OnModuleInit {
 
   private async refreshOnce(adminId: string | null): Promise<LeaderboardSnapshotStatus> {
     const source = await this.catalog.leaderboardSource();
-    await this.database.transaction(async (tx) => {
-      const { rows } = await tx.query<{ locked: boolean }>(
-        'select pg_try_advisory_xact_lock($1) as locked',
-        [LOCK_ID],
-      );
-      if (!rows[0]?.locked)
-        throw new AppError('bad_request', '榜单正在刷新，请稍后再查看', { status: 409 });
+    const claim = await this.database.transaction(async (tx) => {
+      await this.lock(tx);
+      if (this.leaseActive(await this.readLease(tx))) throw this.busy();
       // 跨实例短间隔去重 / 限流；失败也有冷却，避免手动刷新击穿第三方。
-      const old = await this.catalog.leaderboardSnapshot();
-      if (old?.lastAttemptAt && this.clock.nowMs() - Date.parse(old.lastAttemptAt) < 60_000) return;
+      const old = await this.catalog.leaderboardSnapshot(tx);
+      if (old?.lastAttemptAt && this.clock.nowMs() - Date.parse(old.lastAttemptAt) < 60_000)
+        return null;
+      const lease: RefreshLease = {
+        token: newId(),
+        expiresAt: new Date(this.clock.nowMs() + REFRESH_LEASE_MS).toISOString(),
+      };
+      await tx.query(
+        `INSERT INTO model_access.settings(key,value,updated_at) VALUES ($1,$2,$3)
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`,
+        [REFRESH_LEASE_KEY, JSON.stringify(lease), this.clock.now()],
+      );
+      return { lease, old };
+    });
+    if (!claim) return this.status();
+    try {
       let next: ArenaDataset | null;
       let error: string | null = null;
       try {
         next = await this.fetcher(source.url);
         if (!next.entries.length) throw new Error('官方数据集没有有效 Overall 榜单，保留上次结果');
-        if (old?.publishedAt && next.publishedAt < old.publishedAt)
+        if (claim.old?.publishedAt && next.publishedAt < claim.old.publishedAt)
           throw new Error('官方响应日期早于当前有效榜单，保留上次结果');
       } catch (e) {
         next = null;
         error = (e instanceof Error ? e.message : '抓取失败').slice(0, 300);
         this.logger.warn(`榜单同步失败：${error}`);
       }
-      await this.save(tx, old, next ? { ...next, method: 'fetch' } : null, error, adminId, 'fetch');
-    });
+      await this.database.transaction(async (tx) => {
+        await this.lock(tx);
+        const lease = await this.readLease(tx);
+        // 旧进程迟到时不得覆盖租约到期后的新刷新或手动导入。
+        if (lease?.token !== claim.lease.token || !this.leaseActive(lease))
+          throw new AppError('bad_request', '榜单刷新已过期，请重新刷新', { status: 409 });
+        await this.save(
+          tx,
+          claim.old,
+          next ? { ...next, method: 'fetch' } : null,
+          error,
+          adminId,
+          'fetch',
+        );
+      });
+    } finally {
+      // 条件删除只释放自己，不能清除接管者的租约；数据库不可用时由租约到期兜底。
+      await this.database
+        .query("DELETE FROM model_access.settings WHERE key=$1 AND value->>'token'=$2", [
+          REFRESH_LEASE_KEY,
+          claim.lease.token,
+        ])
+        .catch(() => undefined);
+    }
     return this.status();
+  }
+
+  private busy(): AppError {
+    return new AppError('bad_request', '榜单正在刷新，请稍后再查看或导入', { status: 409 });
+  }
+
+  private async lock(tx: DbTx): Promise<void> {
+    const { rows } = await tx.query<{ locked: boolean }>(
+      'select pg_try_advisory_xact_lock($1) as locked',
+      [LOCK_ID],
+    );
+    if (!rows[0]?.locked) throw this.busy();
+  }
+
+  private async readLease(tx: DbTx): Promise<RefreshLease | null> {
+    const { rows } = await tx.query<{ value: RefreshLease }>(
+      'SELECT value FROM model_access.settings WHERE key=$1',
+      [REFRESH_LEASE_KEY],
+    );
+    return rows[0]?.value ?? null;
+  }
+
+  private leaseActive(lease: RefreshLease | null): boolean {
+    return !!lease && Date.parse(lease.expiresAt) > this.clock.nowMs();
   }
 
   async importText(adminId: string, text: string): Promise<LeaderboardSnapshotStatus> {
@@ -216,14 +280,10 @@ export class LeaderboardService implements OnModuleInit {
     if (!entries.length)
       throw new AppError('bad_request', '没有解析出榜单：需要每行有名次和模型名', { status: 422 });
     await this.database.transaction(async (tx) => {
-      const { rows } = await tx.query<{ locked: boolean }>(
-        'select pg_try_advisory_xact_lock($1) as locked',
-        [LOCK_ID],
-      );
-      if (!rows[0]?.locked)
-        throw new AppError('bad_request', '榜单正在刷新，请稍后再导入', { status: 409 });
-      const old = await this.catalog.leaderboardSnapshot();
-      const source = await this.catalog.leaderboardSource();
+      await this.lock(tx);
+      if (this.leaseActive(await this.readLease(tx))) throw this.busy();
+      const old = await this.catalog.leaderboardSnapshot(tx);
+      const source = await this.catalog.leaderboardSource(tx);
       await this.save(
         tx,
         old,
