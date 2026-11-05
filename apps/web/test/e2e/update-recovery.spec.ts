@@ -132,7 +132,7 @@ test('新版本等待生效期间，发布断连后旧页不刷新即可补发�
     for (const content of [text, draft])
       expect(
         messages.filter(
-            (message) => message.content?.type === 'text' && message.content.text === content,
+          (message) => message.content?.type === 'text' && message.content.text === content,
         ),
       ).toHaveLength(1);
   } finally {
