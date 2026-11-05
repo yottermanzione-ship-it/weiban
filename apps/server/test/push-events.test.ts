@@ -116,7 +116,7 @@ describeDb('push真实聊天事件/隐私与会话', () => {
   afterAll(async () => {
     await app?.close();
   });
-  it('真实角色消息事件：三气泡合并、adult隐藏正文、前台不建通知、投递前已读/撤回/退出抑制', async () => {
+  it('真实角色消息事件：合并、隐私隐藏、前后台转换、已读/撤回/退出抑制', async () => {
     const auth = AuthResponse.parse(
       (
         await request(base)
@@ -178,11 +178,12 @@ describeDb('push真实聊天事件/隐私与会话', () => {
     const cid = conversation.conversationId;
     const participant = conversation.participants.find((p) => p.kind === 'character')!;
     const writer = app.get<ChatParticipantPort>(CHAT_PARTICIPANT_PORT);
-    const post = async (text: string) => {
+    const post = async (text: string, labels?: string[]) => {
       const result = await writer.postMessage({
         conversationId: cid,
         senderParticipantId: participant.participantId,
         content: { type: 'text', text },
+        ...(labels ? { labels } : {}),
         idempotencyKey: `notify:${newId()}`,
       });
       if (!result.ok) throw Error(result.error);
@@ -232,6 +233,26 @@ describeDb('push真实聊天事件/隐私与会话', () => {
     await app
       .get<ChatAdminPort>(CHAT_ADMIN_PORT)
       .setContentScope({ conversationId: cid, scope: 'normal' });
+    // 不让合并文案或关闭正文掩盖隐私回归：普通单条明确显示，健康单条必须隐藏。
+    clock.advance(31_000);
+    await post('普通单条通知显示对照');
+    await drain();
+    const normalCheckpoint = pushed.length;
+    for (const row of await queued()) await app.get(PushDeliveryEngine).run(row.id);
+    expect(pushed.slice(normalCheckpoint)).toHaveLength(2);
+    expect(pushed.slice(normalCheckpoint).every((e) => e.body === '普通单条通知显示对照')).toBe(
+      true,
+    );
+    clock.advance(31_000);
+    await post('虚构健康正文隐私金丝雀', ['health']);
+    await drain();
+    const healthCheckpoint = pushed.length;
+    for (const row of await queued()) await app.get(PushDeliveryEngine).run(row.id);
+    expect(pushed.slice(healthCheckpoint)).toHaveLength(2);
+    expect(pushed.slice(healthCheckpoint).every((e) => e.body === '推送角色 发来一条消息')).toBe(
+      true,
+    );
+    expect(JSON.stringify(pushed.slice(healthCheckpoint))).not.toContain('虚构健康正文隐私金丝雀');
     const presence = app.get(PresenceService);
     const connectionId = newId();
     await presence.connect(auth.user.userId, auth.session.sessionId, connectionId);
@@ -243,6 +264,21 @@ describeDb('push真实聊天事件/隐私与会话', () => {
     await post('前台查看不提醒');
     await drain();
     expect(await queued()).toHaveLength(0);
+    // 网页退到后台但连接尚未关闭：foreground=false 后新回复仍须投递。
+    await presence.focus(auth.user.userId, auth.session.sessionId, connectionId, {
+      v: 1,
+      type: 'presence.focus',
+      data: { conversationId: cid, foreground: false },
+    });
+    clock.advance(31_000);
+    await post('已退到后台的新回复');
+    await drain();
+    const backgroundCheckpoint = pushed.length;
+    for (const row of await queued()) await app.get(PushDeliveryEngine).run(row.id);
+    expect(pushed.slice(backgroundCheckpoint)).toHaveLength(2);
+    expect(pushed.slice(backgroundCheckpoint).every((e) => e.body === '已退到后台的新回复')).toBe(
+      true,
+    );
     await presence.disconnect(connectionId);
     const read = await post('之后已读不提醒');
     await drain();
