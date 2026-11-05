@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { MenuRow } from './shell-kit.js';
 import { Dialog } from './toast.js';
 import { checkMicrophone, microphoneProblem, type MicrophoneProblem } from './microphone.js';
+import { runtimeLogs } from '../data/runtime-logs.js';
 
 export function MicrophoneSettingsRow() {
   const [pending, setPending] = useState(false);
@@ -18,6 +19,7 @@ export function MicrophoneSettingsRow() {
         message: '已检查并关闭测试录音。现在可以回聊天发语音；浏览器已允许时，不会每次都弹授权框。',
       });
     } catch (error) {
+      runtimeLogs.captureMicrophone(error, 'capture');
       setAllowed(false);
       setResult(microphoneProblem(error));
     } finally {
