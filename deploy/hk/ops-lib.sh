@@ -53,6 +53,10 @@ kv_get() {
   [[ -r $1 ]] || return 0
   sed -n "s/^$2=//p" "$1" | tail -n 1 | tr -d "\"'\r"
 }
+# Optional push configuration is retained by deploy, backup recovery and rollback alike.
+if [[ -n $(kv_get "$WEIBAN_DEPLOY_ENV" PUSH_CREDENTIALS_PATH) ]]; then
+  weiban_compose+=(-f "$WEIBAN_SRC/deploy/prod/push.override.yml")
+fi
 image_id() { docker image inspect --format '{{.Id}}' "$1" 2>/dev/null; }
 short_id() {
   local id=${1#sha256:}

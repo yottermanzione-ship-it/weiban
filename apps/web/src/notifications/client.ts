@@ -75,6 +75,8 @@ export async function enableWebPush(): Promise<void> {
   // The permission call must precede every await (including local storage and the public key).
   const permission =
     Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+  if (permission === 'denied')
+    throw new Error('通知已被浏览器拒绝，请先在网站或系统设置中允许微伴通知，再回来重试');
   if (permission !== 'granted') throw new Error('通知尚未允许，可以稍后在这里重试');
   await subscribeWebPush();
 }

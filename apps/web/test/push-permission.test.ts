@@ -44,3 +44,11 @@ it('an existing denial gives recovery advice without making a fake prompt reques
   expect(request).not.toHaveBeenCalled();
   expect(mocks.get).not.toHaveBeenCalled();
 });
+
+it('a fresh denial immediately explains recovery and does not attempt a subscription', async () => {
+  browser('default');
+  vi.stubGlobal('Notification', { permission: 'default', requestPermission: async () => 'denied' });
+  await expect(enableWebPush()).rejects.toThrow('网站或系统设置');
+  expect(mocks.get).not.toHaveBeenCalled();
+  expect(mocks.call).not.toHaveBeenCalled();
+});

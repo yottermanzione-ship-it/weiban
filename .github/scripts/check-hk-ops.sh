@@ -11,6 +11,7 @@ set -euo pipefail
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 cd -- "$repo_root"
 hk=$repo_root/deploy/hk
+node --test "$hk/provision-webpush.test.mjs"
 
 if command -v shellcheck >/dev/null; then
   shellcheck --severity=warning -x deploy/hk/*.sh .github/scripts/check-hk-ops.sh
@@ -321,6 +322,24 @@ make_link "$work" "$work/link-probe"
 symlinks=1
 [[ -L $work/link-probe ]] || symlinks=0
 
+# The application may roll back to a source without optional push handling. Operations stay pinned.
+if ((symlinks)); then
+  export WEIBAN_OPS_ROOT=$work/ops
+  echo 'install-ops-runtime.sh：两槽切换、重入与失败保护'
+  bash "$hk/install-ops-runtime.sh" "$repo_root" 1111111111111111111111111111111111111111
+  check '首次固定在第一槽' equals "$(readlink "$WEIBAN_OPS_ROOT/current")" "$WEIBAN_OPS_ROOT/slot-a"
+  bash "$hk/install-ops-runtime.sh" "$repo_root" 1111111111111111111111111111111111111111
+  check '同提交重复调用不切槽' equals "$(readlink "$WEIBAN_OPS_ROOT/current")" "$WEIBAN_OPS_ROOT/slot-a"
+  bash "$hk/install-ops-runtime.sh" "$repo_root" 2222222222222222222222222222222222222222
+  check '新提交切到第二槽' equals "$(readlink "$WEIBAN_OPS_ROOT/current")" "$WEIBAN_OPS_ROOT/slot-b"
+  check '第一槽仍保留完整旧操作' test -f "$WEIBAN_OPS_ROOT/slot-a/rollback.sh"
+  rc=0
+  bash "$hk/install-ops-runtime.sh" "$work/missing-source" 3333333333333333333333333333333333333333 >"$work/out.log" 2>&1 || rc=$?
+  check '不完整来源拒绝安装' test "$rc" -ne 0
+  check '安装失败不切当前操作' equals "$(readlink "$WEIBAN_OPS_ROOT/current")" "$WEIBAN_OPS_ROOT/slot-b"
+  unset WEIBAN_OPS_ROOT
+fi
+
 # ---------- release-prune.sh（没有发版历史：按构建时间、修改时间补足 2 个可回退版本） ----------
 releases=$work/releases
 reset_images() {
@@ -425,9 +444,11 @@ check '一个镜像都没删' not_logged 'EVENT rm'
 # 用一个很小的临时仓库当发布源：脚本是本仓库当前的副本，外加迁移清单、契约版本号和 compose 文件。
 tiny=$work/tiny
 mkdir -p "$tiny/deploy/hk" "$tiny/deploy/prod" "$tiny/apps/server/drizzle/meta" "$tiny/packages/contracts/src"
-cp "$hk"/ops-lib.sh "$hk"/release.sh "$hk"/release-prune.sh "$hk"/rollback.sh "$hk"/upload-release.sh "$tiny/deploy/hk/"
+cp "$hk"/ops-lib.sh "$hk"/release.sh "$hk"/release-prune.sh "$hk"/rollback.sh "$hk"/upload-release.sh \
+  "$hk"/install-ops-runtime.sh "$hk"/backup.sh "$hk"/disk-check.sh "$tiny/deploy/hk/"
 echo 'services: {}' >"$tiny/deploy/prod/compose.yml"
 echo 'services: {}' >"$tiny/deploy/hk/compose.override.yml"
+echo 'services: {}' >"$tiny/deploy/prod/push.override.yml"
 echo "export const CONTRACT_VERSION = '9.1' as const;" >"$tiny/packages/contracts/src/version.ts"
 journal() {
   local t sep=''
@@ -489,6 +510,7 @@ if ((symlinks)); then
   for c in "$older" "$old"; do
     mkdir -p "$srv/releases/$c/deploy/prod" "$srv/releases/$c/apps/server/drizzle/meta"
     echo 'services: {}' >"$srv/releases/$c/deploy/prod/compose.yml"
+    echo 'services: {}' >"$srv/releases/$c/deploy/prod/push.override.yml"
     journal 0001_a 0002_b >"$srv/releases/$c/apps/server/drizzle/meta/_journal.json"
   done
   touch "$srv/releases/$older.tar"
@@ -518,6 +540,7 @@ EOF
     rc=0
     WEIBAN_SRC=$srv/src WEIBAN_DEPLOY_ENV=$srv/runtime.env WEIBAN_RELEASES_DIR=$srv/releases \
       WEIBAN_STATE_DIR=$srv/release-state WEIBAN_VERSION_FILE=$srv/deployment-version.txt \
+      WEIBAN_OPS_ROOT=$srv/ops \
       RELEASE_ARCHIVE_DIR=$remote RELEASE_BACKUP_ROOT=$sysbackups RELEASE_LOCK_FILE=$work/release.lock \
       RELEASE_MIN_FREE_BYTES=0 bash "$@" >"$work/out.log" 2>&1 || rc=$?
   }
@@ -550,6 +573,10 @@ EOF
   check '清理：上上一版的源码包保留' test -f "$srv/releases/$older.tar"
   check '上传的临时文件已删' test ! -e "$remote/rel-$c1.tgz"
 
+  echo '网页推送已配置：发布、自动退回、手动回滚、定时操作都保留挂载'
+  printf '\nPUSH_CREDENTIALS_PATH=/synthetic/no-real-credentials.json\n' >>"$srv/runtime.env"
+  WEIBAN_OPS_ROOT=$srv/ops bash "$hk/install-ops-runtime.sh" "$srv/releases/$c1" "$c1"
+
   echo 'release.sh：不含迁移、新版本健康检查没过'
   touch "$work/up-fail"
   STUB_UP_FAIL=$work/up-fail run_srv "$remote/rel-$c1b.release.sh" "$c1b"
@@ -560,11 +587,15 @@ EOF
   check 'runtime.env 退回原镜像' equals "$(kv "$srv/runtime.env" APP_IMAGE)" "weiban-app:release-$c1"
   check '版本文件没变' equals "$(kv "$srv/deployment-version.txt" sourceCommit)" "$c1"
   check '发版历史没有记这次' equals "$(history_lines)" 3
+  check '自动退回仍带推送挂载' equals "$(count_logged "-f $srv/src/deploy/prod/push.override.yml up -d --wait app caddy")" 2
 
   echo 'release.sh：含数据库迁移'
   run_srv "$remote/rel-$c2.release.sh" "$c2"
   check '成功退出' equals "$rc" 0
   check '切换前先备份' before 'EVENT systemctl start weiban-backup.service' 'EVENT up'
+  check '新镜像构建带推送配置' logged "-f $srv/releases/$c2/deploy/prod/push.override.yml build app caddy"
+  check '新应用启动保留推送挂载' logged "-f $srv/src/deploy/prod/push.override.yml up -d --wait app caddy"
+  check '运维运行副本跟到新提交' equals "$(cat "$srv/ops/current/source-commit")" "$c2"
   check '版本文件：迁移' equals "$(kv "$srv/deployment-version.txt" migrations)" 0003_c
   check '版本文件：用的是刚做的备份' test "$(kv "$srv/deployment-version.txt" backupDir)" != "$sysbackups/weiban-20000101T000000Z-recent"
   check '清理：保留上一版（c1）' has_image "weiban-app:release-$c1"
@@ -600,6 +631,18 @@ EOF
   check '版本文件：上一版是 c2' equals "$(kv "$srv/deployment-version.txt" previousSourceCommit)" "$c2"
   check '发版历史记了回滚' equals "$(tail -n 1 "$history" | cut -f2,3)" "rollback"$'\t'"$c1"
   check '回滚不删任何镜像' not_logged 'EVENT rm'
+  check '手动回滚仍带推送挂载' logged "-f $srv/src/deploy/prod/push.override.yml up -d --wait app caddy"
+
+  echo '回滚到不带推送操作脚本的老源码后，固定运维入口仍保留配置'
+  STUB_APPLIED='0001_a 0002_b' run_srv "$srv/ops/current/rollback.sh" "$old"
+  check '固定入口回滚成功' equals "$rc" 0
+  check '应用指向老源码' equals "$(current_src)" "$srv/releases/$old"
+  check '固定运维仍来自新提交' equals "$(cat "$srv/ops/current/source-commit")" "$c2"
+  check '老版本启动保留推送配置' logged "-f $srv/src/deploy/prod/push.override.yml up -d --wait app caddy"
+  run_srv "$srv/ops/current/backup.sh" "$backups"
+  check '老源码下固定备份成功' equals "$rc" 0
+  check '备份操作仍带推送配置' logged "-f $srv/src/deploy/prod/push.override.yml"
+  check '备份恢复原应用容器' logged 'EVENT start-app'
 else
   echo 'release.sh / rollback.sh：本机不能建软链接，跳过（CI 会做）'
 fi

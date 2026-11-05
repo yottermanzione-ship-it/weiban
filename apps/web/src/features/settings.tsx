@@ -46,7 +46,7 @@ import {
   SwitchRow,
 } from './shell-kit.js';
 import { useAnnouncementUnread } from './release.js';
-import { AlertDialog, showToast } from './toast.js';
+import { AlertDialog, Dialog, showToast } from './toast.js';
 import { SubPageLayer } from './edit-page.js';
 
 const schemeNames: Record<Scheme, string> = {
@@ -144,6 +144,7 @@ export function SettingsPage() {
   const announcements = useAnnouncementUnread();
   const notification = useRemote(IdentityEndpoints.getNotificationSettings);
   const [push, setPush] = useState(false);
+  const [pushProblem, setPushProblem] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [scheme, setSchemeState] = useState(getScheme);
   const [font, setFont] = useState(getFontScale);
@@ -160,13 +161,14 @@ export function SettingsPage() {
   }, []);
   async function togglePush(enable: boolean) {
     setPending(true);
+    setPushProblem(null);
     try {
       if (enable) await enableWebPush();
       else await disableWebPush();
       setPush(enable);
       showToast(enable ? '已开启此设备通知' : '已关闭此设备通知', 2000, 'success');
     } catch (e) {
-      showToast(
+      setPushProblem(
         e instanceof ApiFailure ? e.message : e instanceof Error ? e.message : '通知设置暂未完成',
       );
     } finally {
@@ -282,6 +284,14 @@ export function SettingsPage() {
         <MenuRow to="/settings/about" label="关于微伴" dot={announcements > 0} />
       </MenuGroup>
       <HomeScreenGuide manual />
+      {pushProblem && (
+        <Dialog
+          title="通知设置未完成"
+          actions={[{ label: '知道了', tone: 'primary', onClick: () => setPushProblem(null) }]}
+        >
+          <p className="hint">{pushProblem}</p>
+        </Dialog>
+      )}
       <MenuGroup>
         <MenuRow label="退出登录" danger center chevron={false} onClick={() => setLogout(true)} />
       </MenuGroup>
