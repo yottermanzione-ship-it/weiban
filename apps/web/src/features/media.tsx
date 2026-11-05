@@ -1,5 +1,7 @@
 import { memo, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { openMicrophone } from './microphone.js';
+import { releaseVoiceRecorder, startVoiceRecorder } from './voice-recorder.js';
+import { runtimeLogs } from '../data/runtime-logs.js';
 import { ImageBroken, LinkSimple, MusicNotes, VideoCamera, OldIcon } from './old-icons.js';
 import { Lightbox } from './lightbox.js';
 import { Dialog } from './toast.js';
@@ -653,13 +655,6 @@ export function useTranscriptUnavailableNotice(conversationMediaIds: Set<string>
 
 // ---------- 按住说话 ----------
 
-function pickMime(): string | undefined {
-  if (typeof MediaRecorder === 'undefined') return undefined;
-  return ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/webm'].find((t) =>
-    MediaRecorder.isTypeSupported(t),
-  );
-}
-
 export type RecordResult = { blob: Blob; durationMs: number };
 
 /** 按住说话（C 5.4）：上滑取消，短于 1 秒提示太短，最长 60 秒自动发出。 */
@@ -675,6 +670,7 @@ export function HoldToTalk({
   const recorder = useRef<MediaRecorder | null>(null);
   const startY = useRef(0);
   const startAt = useRef(0);
+  const stoppedAt = useRef(0);
   const cancelled = useRef(false);
   const timer = useRef(0);
   const held = useRef(false);
@@ -682,19 +678,34 @@ export function HoldToTalk({
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
-    return () => {
-      mounted.current = false;
+    const suspend = () => {
       held.current = false;
       cancelled.current = true;
       window.clearInterval(timer.current);
       const rec = recorder.current;
+      recorder.current = null;
       if (rec) {
-        rec.onstop = null;
-        rec.onerror = null;
-        if (rec.state !== 'inactive') rec.stop();
-        rec.stream.getTracks().forEach((track) => track.stop());
-        recorder.current = null;
+        try {
+          releaseVoiceRecorder(rec);
+        } catch {
+          // All tracks are released in finally, including a recorder that already ended.
+        }
       }
+      if (mounted.current) {
+        setState('idle');
+        setElapsed(0);
+      }
+    };
+    const visibility = () => {
+      if (document.visibilityState === 'hidden') suspend();
+    };
+    document.addEventListener('visibilitychange', visibility);
+    window.addEventListener('pagehide', suspend);
+    return () => {
+      mounted.current = false;
+      document.removeEventListener('visibilitychange', visibility);
+      window.removeEventListener('pagehide', suspend);
+      suspend();
     };
   }, []);
   async function start(y: number) {
@@ -710,7 +721,10 @@ export function HoldToTalk({
     try {
       stream = await openMicrophone();
     } catch (error) {
-      if (mounted.current) onError(error);
+      if (mounted.current) {
+        runtimeLogs.captureMicrophone(error, 'capture');
+        onError(error);
+      }
       return;
     } finally {
       pending.current = false;
@@ -721,22 +735,35 @@ export function HoldToTalk({
       if (mounted.current) showToast('麦克风已就绪，请重新按住说话');
       return;
     }
-    let rec: MediaRecorder;
-    try {
-      const mimeType = pickMime();
-      rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-      rec.start();
-    } catch (error) {
-      stream.getTracks().forEach((track) => track.stop());
-      onError(error);
-      return;
-    }
     const chunks: Blob[] = [];
-    rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
-    rec.onstop = () => {
-      stream.getTracks().forEach((t) => t.stop());
+    let rec: MediaRecorder;
+    const failed = (
+      error: unknown,
+      stage: 'encoder_start' | 'encoder_run' | 'encoder_stop' | 'empty',
+    ) => {
+      cancelled.current = true;
+      held.current = false;
+      if (rec) {
+        try {
+          releaseVoiceRecorder(rec);
+        } catch {
+          /* tracks are released even if stop throws */
+        }
+      } else stream.getTracks().forEach((track) => track.stop());
       window.clearInterval(timer.current);
-      const durationMs = Math.min(60_000, Date.now() - startAt.current);
+      if (recorder.current === rec) recorder.current = null;
+      if (mounted.current) {
+        setState('idle');
+        setElapsed(0);
+        runtimeLogs.captureMicrophone(error, stage);
+        onError(error);
+      }
+    };
+    const onstop = () => {
+      stream.getTracks().forEach((t) => t.stop());
+      if (recorder.current !== rec) return;
+      window.clearInterval(timer.current);
+      const durationMs = Math.min(60_000, (stoppedAt.current || Date.now()) - startAt.current);
       recorder.current = null;
       if (!mounted.current) return;
       setState('idle');
@@ -746,33 +773,61 @@ export function HoldToTalk({
         showToast('说话时间太短');
         return;
       }
-      onRecorded({ blob: new Blob(chunks, { type: rec.mimeType || 'audio/webm' }), durationMs });
-    };
-    rec.onerror = () => {
-      cancelled.current = true;
-      rec.onstop = null;
-      if (rec.state !== 'inactive') rec.stop();
-      stream.getTracks().forEach((track) => track.stop());
-      window.clearInterval(timer.current);
-      recorder.current = null;
-      if (mounted.current) {
-        setState('idle');
-        setElapsed(0);
-        onError(new DOMException('Recording failed', 'NotReadableError'));
+      const blob = new Blob(chunks, { type: rec.mimeType || chunks[0]?.type });
+      if (!blob.size) {
+        failed(new DOMException('Empty recording', 'EmptyRecordingError'), 'empty');
+        return;
       }
+      onRecorded({ blob, durationMs });
     };
+    try {
+      rec = startVoiceRecorder(stream, {
+        ondataavailable: (e) => {
+          if (e.data.size) chunks.push(e.data);
+        },
+        onstop,
+        onerror: (e) =>
+          failed(
+            'error' in e ? e.error : new DOMException('Recording failed', 'UnknownError'),
+            'encoder_run',
+          ),
+      });
+    } catch (error) {
+      failed(error, 'encoder_start');
+      return;
+    }
     recorder.current = rec;
     startAt.current = Date.now();
+    stoppedAt.current = 0;
     setState('recording');
     timer.current = window.setInterval(() => {
       const ms = Date.now() - startAt.current;
       setElapsed(ms);
-      if (ms >= 60_000 && rec.state === 'recording') rec.stop();
+      if (ms >= 60_000) finish();
     }, 250);
   }
   function finish() {
     held.current = false;
-    if (recorder.current?.state === 'recording') recorder.current.stop();
+    const rec = recorder.current;
+    if (rec?.state === 'recording') {
+      stoppedAt.current = Date.now();
+      try {
+        rec.stop();
+      } catch (error) {
+        cancelled.current = true;
+        window.clearInterval(timer.current);
+        try {
+          releaseVoiceRecorder(rec);
+        } catch {
+          /* device still released */
+        }
+        recorder.current = null;
+        setState('idle');
+        setElapsed(0);
+        runtimeLogs.captureMicrophone(error, 'encoder_stop');
+        onError(error);
+      }
+    }
   }
   const left = Math.max(0, 60 - Math.floor(elapsed / 1000));
   const active = state !== 'idle';
@@ -782,6 +837,7 @@ export function HoldToTalk({
         type="button"
         className={`wx-hold ${active ? 'active' : ''}`}
         onPointerDown={(e) => {
+          if (recorder.current || pending.current) return;
           try {
             e.currentTarget.setPointerCapture(e.pointerId);
           } catch {
@@ -802,6 +858,12 @@ export function HoldToTalk({
         onPointerCancel={() => {
           cancelled.current = true;
           finish();
+        }}
+        onLostPointerCapture={() => {
+          if (held.current) {
+            cancelled.current = true;
+            finish();
+          }
         }}
         onContextMenu={(e) => e.preventDefault()}
       >

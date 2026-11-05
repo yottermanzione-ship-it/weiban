@@ -238,13 +238,16 @@ describe('independent voice and sticker decisions in real planExtras', () => {
     ]);
     expect(s.synthesizeSpeech).not.toHaveBeenCalled();
   });
-  it('bypasses voice judgment when explicitly requested and does not require historical quota', async () => {
-    const s = setup();
-    s.listStickersForCharacter.mockResolvedValue([]);
-    const result = await s.service.planExtras({ ...input(), history: [], userText: '发条语音' });
-    expect(result?.[0]?.type).toBe('voice');
-    expect(s.decideBatch).not.toHaveBeenCalled();
-  });
+  it.each(['发条语音', '回我一条短语音', '请发一条短语音'])(
+    'bypasses voice judgment for %s without requiring historical quota',
+    async (userText) => {
+      const s = setup();
+      s.listStickersForCharacter.mockResolvedValue([]);
+      const result = await s.service.planExtras({ ...input(), history: [], userText });
+      expect(result?.[0]?.type).toBe('voice');
+      expect(s.decideBatch).not.toHaveBeenCalled();
+    },
+  );
   it('does not ask Jev about a voice with no enabled service or sound', async () => {
     const s = setup();
     s.isServiceEnabled.mockResolvedValue(false);

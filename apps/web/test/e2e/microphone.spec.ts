@@ -15,13 +15,19 @@ async function microphone(page: Page, error: string | null = null) {
             state.release = resolve;
           });
         const context = new AudioContext();
-        const stream = context.createMediaStreamDestination().stream;
+        const destination = context.createMediaStreamDestination();
+        const tone = context.createOscillator();
+        tone.connect(destination);
+        tone.start();
+        await context.resume();
+        const stream = destination.stream;
         for (const track of stream.getTracks()) {
           const stop = track.stop.bind(track);
           track.stop = () => {
             if (track.readyState !== 'ended') state.stopped++;
             stop();
-            void context.close();
+            tone.disconnect();
+            void context.close().catch(() => {});
           };
         }
         return stream;
@@ -145,4 +151,141 @@ test('缺少浏览器录音接口时给出真实原因，聊天与设置均可�
   await page.goto('/settings');
   await page.getByRole('button', { name: /麦克风权限/ }).click();
   await expect(page.getByRole('dialog', { name: '当前浏览器不支持录音' })).toBeVisible();
+});
+
+async function recordAndSend(page: Page) {
+  const upload = page.waitForResponse(
+    (r) => r.request().method() === 'POST' && r.url().includes('/media?purpose=chat_voice'),
+  );
+  await page
+    .getByRole('button', { name: '按住说话', exact: true })
+    .dispatchEvent('pointerdown', { pointerId: 1, clientY: 800 });
+  await expect(page.getByText('手指上滑，取消发送')).toBeVisible();
+  // Real encoder elapsed time: a sub-second recording is correctly rejected by the product.
+  await page.waitForTimeout(1250);
+  await page
+    .getByRole('button', { name: '松开发送', exact: true })
+    .dispatchEvent('pointerup', { pointerId: 1 });
+  const response = await upload;
+  expect(response.ok()).toBe(true);
+  const media = await response.json();
+  expect(media.sizeBytes).toBeGreaterThan(0);
+  await expect(page.getByRole('button', { name: '按住说话', exact: true })).toBeVisible();
+  return media.mediaId as string;
+}
+
+test('连续两条语音均上传并保存，第一条发出后释放设备，刷新仍可看到两条', async ({ page }) => {
+  await microphone(page);
+  await openChat(page);
+  const voices = page.getByRole('button', { name: /^语音 \d+ 秒，播放$/ });
+  const before = await voices.count();
+  await page.getByRole('button', { name: '切换到按住说话' }).click();
+  const first = await recordAndSend(page);
+  await expect(voices).toHaveCount(before + 1);
+  await expect.poll(() => counts(page)).toEqual({ calls: 2, stopped: 2 });
+  const second = await recordAndSend(page);
+  expect(second).not.toBe(first);
+  await expect(voices).toHaveCount(before + 2);
+  await expect.poll(() => counts(page)).toEqual({ calls: 3, stopped: 3 });
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.reload();
+  await expect(voices).toHaveCount(before + 2);
+});
+
+test('第二次录音编码器启动失败时换用可用格式，不重复请求麦克风或发送', async ({ page }) => {
+  await microphone(page);
+  await page.addInitScript(() => {
+    const Native = window.MediaRecorder;
+    let attempts = 0;
+    class Recorder extends Native {
+      override start(timeslice?: number) {
+        attempts++;
+        if (attempts === 2) throw new DOMException('synthetic restart failure', 'UnknownError');
+        super.start(timeslice);
+      }
+    }
+    window.MediaRecorder = Recorder;
+  });
+  await openChat(page);
+  await page.getByRole('button', { name: '切换到按住说话' }).click();
+  const first = await recordAndSend(page);
+  const second = await recordAndSend(page);
+  expect(second).not.toBe(first);
+  await expect.poll(() => counts(page)).toEqual({ calls: 3, stopped: 3 });
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('切到后台取消正在录制的内容并释放设备，返回后能够再录', async ({ page }) => {
+  await microphone(page);
+  await openChat(page);
+  await page.getByRole('button', { name: '切换到按住说话' }).click();
+  await page
+    .getByRole('button', { name: '按住说话', exact: true })
+    .dispatchEvent('pointerdown', { pointerId: 1, clientY: 800 });
+  await expect(page.getByText('手指上滑，取消发送')).toBeVisible();
+  let uploads = 0;
+  page.on('request', (r) => {
+    if (r.method() === 'POST' && r.url().includes('/media?purpose=chat_voice')) uploads++;
+  });
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await expect(page.getByRole('button', { name: '按住说话', exact: true })).toBeVisible();
+  await expect.poll(() => counts(page)).toEqual({ calls: 2, stopped: 2 });
+  expect(uploads).toBe(0);
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await recordAndSend(page);
+  expect(uploads).toBe(1);
+  await expect.poll(() => counts(page)).toEqual({ calls: 3, stopped: 3 });
+});
+
+test('连续录音中全部编码器失败时关闭设备，记录固定分类，手动重试后能发', async ({ page }) => {
+  await microphone(page);
+  await page.addInitScript(() => {
+    const Native = window.MediaRecorder;
+    Object.assign(window, { encoderFault: false });
+    class Recorder extends Native {
+      override start(timeslice?: number) {
+        if ((window as unknown as { encoderFault: boolean }).encoderFault)
+          throw new DOMException('synthetic-private-detail-not-for-logs', 'UnknownError');
+        super.start(timeslice);
+      }
+    }
+    window.MediaRecorder = Recorder;
+  });
+  await openChat(page);
+  await page.getByRole('button', { name: '切换到按住说话' }).click();
+  await recordAndSend(page);
+  await page.evaluate(() => {
+    (window as unknown as { encoderFault: boolean }).encoderFault = true;
+  });
+  await page
+    .getByRole('button', { name: '按住说话', exact: true })
+    .dispatchEvent('pointerdown', { pointerId: 1, clientY: 800 });
+  const dialog = page.getByRole('dialog', { name: '录音没有启动' });
+  await expect(dialog).toBeVisible();
+  await expect.poll(() => counts(page)).toEqual({ calls: 3, stopped: 3 });
+  const diagnostics = page.waitForRequest(
+    (r) => r.method() === 'POST' && r.url().endsWith('/client-logs'),
+  );
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event('pagehide'));
+    (window as unknown as { encoderFault: boolean }).encoderFault = false;
+  });
+  const batch = (await diagnostics).postDataJSON();
+  expect(JSON.stringify(batch)).not.toContain('synthetic-private-detail-not-for-logs');
+  expect(
+    batch.events.some(
+      (event: { kind: string; components?: string[] }) =>
+        event.kind === 'js_error' && event.components?.length === 2,
+    ),
+  ).toBe(true);
+  await dialog.getByRole('button', { name: '重新尝试' }).click();
+  await recordAndSend(page);
+  await expect.poll(() => counts(page)).toEqual({ calls: 5, stopped: 5 });
+  await expect(page.getByRole('dialog')).toHaveCount(0);
 });

@@ -4,8 +4,38 @@ export interface MicrophoneProblem {
   message: string;
 }
 
+export type MicrophoneStage =
+  'capture' | 'encoder_start' | 'encoder_run' | 'encoder_stop' | 'empty';
+/** Fixed categories only; never retain native exception text, device identifiers or audio. */
+export function microphoneFailureName(error: unknown): string {
+  const name = error && typeof error === 'object' && 'name' in error ? error.name : '';
+  return typeof name === 'string' &&
+    [
+      'NotAllowedError',
+      'PermissionDeniedError',
+      'SecurityError',
+      'NotFoundError',
+      'DevicesNotFoundError',
+      'NotReadableError',
+      'TrackStartError',
+      'AbortError',
+      'NotSupportedError',
+      'InvalidStateError',
+      'TypeError',
+      'UnknownError',
+      'EmptyRecordingError',
+    ].includes(name)
+    ? name
+    : 'OtherError';
+}
+
 export function microphoneProblem(error: unknown): MicrophoneProblem {
   const name = error && typeof error === 'object' && 'name' in error ? error.name : '';
+  if (name === 'EmptyRecordingError')
+    return {
+      title: '没有录到声音',
+      message: '这次没有生成可发送的语音，请重新按住说话；如果仍然这样，请刷新后重试。',
+    };
   if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError')
     return {
       title: '麦克风尚未获准使用',

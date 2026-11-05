@@ -36,6 +36,7 @@ import {
 } from '@weiban/contracts';
 import { useChat } from '../app/chat.js';
 import { api } from '../data/client.js';
+import { runtimeLogs } from '../data/runtime-logs.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
 import { useCharacterProfile } from '../data/character-profile.js';
 import { useUpdates } from '../data/updates.js';
@@ -617,6 +618,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
       setMode('voice');
       setPanel('none');
     } catch (error) {
+      runtimeLogs.captureMicrophone(error, 'capture');
       setMicProblem(microphoneProblem(error));
     } finally {
       setMicPending(false);

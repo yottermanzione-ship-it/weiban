@@ -1,7 +1,24 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { checkMicrophone, microphoneProblem, openMicrophone } from '../src/features/microphone.js';
+import {
+  checkMicrophone,
+  microphoneProblem,
+  openMicrophone,
+  microphoneFailureName,
+} from '../src/features/microphone.js';
 
 afterEach(() => vi.unstubAllGlobals());
+it('diagnostics keep only fixed exception categories, never arbitrary names or messages', () => {
+  expect(microphoneFailureName({ name: 'TypeError', message: 'synthetic private detail' })).toBe(
+    'TypeError',
+  );
+  expect(
+    microphoneFailureName({
+      name: 'synthetic private detail',
+      message: 'synthetic private detail',
+    }),
+  ).toBe('OtherError');
+  expect(microphoneFailureName(null)).toBe('OtherError');
+});
 it('requests in the caller stack, then stops every track after an access check', async () => {
   const stop = vi.fn();
   const getUserMedia = vi.fn(async () => ({ getTracks: () => [{ stop }, { stop }] }));
@@ -26,6 +43,7 @@ it.each([
   ['AbortError', '麦克风暂时无法使用'],
   ['NotSupportedError', '当前浏览器不支持录音'],
   ['UnknownError', '录音没有启动'],
+  ['EmptyRecordingError', '没有录到声音'],
 ])('distinguishes %s without pretending every failure is a denial', (name, title) => {
   expect(microphoneProblem(new DOMException('synthetic failure', name)).title).toBe(title);
 });

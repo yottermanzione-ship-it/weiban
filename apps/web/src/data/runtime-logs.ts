@@ -8,6 +8,7 @@ import {
   type ClientLogEnvironment,
 } from '@weiban/contracts';
 import { z } from 'zod';
+import { microphoneFailureName, type MicrophoneStage } from '../features/microphone.js';
 
 type Code = z.infer<typeof ClientLogCode>;
 type Environment = z.infer<typeof ClientLogEnvironment>;
@@ -251,6 +252,12 @@ class RuntimeLogs {
       .slice(0, 20)
       .map(clientLogCodeId);
     this.record('render_error', 'render_failed', { frames: frames(error), components });
+  }
+  captureMicrophone(error: unknown, stage: MicrophoneStage) {
+    const name = microphoneFailureName(error);
+    this.record('js_error', name === 'TypeError' ? 'type_error' : 'unknown', {
+      components: [clientLogCodeId(`microphone:${stage}`), clientLogCodeId(name)],
+    });
   }
   apiFailure(event: {
     route: string;
