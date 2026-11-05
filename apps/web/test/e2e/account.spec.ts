@@ -40,6 +40,9 @@ test('真实API：登录、资料、积分提醒、主题、刷新与退出清�
     .getByRole('dialog', { name: '积分提醒线', exact: true })
     .getByRole('textbox')
     .fill('500.0001');
+  await expect
+    .poll(() => page.evaluate(() => window.history.state?.usr?.wbLayers?.length ?? 0))
+    .toBe(1);
   const updated = page.waitForResponse(
     (r) => r.url().endsWith('/billing/wallet/settings') && r.request().method() === 'PATCH',
   );
@@ -50,6 +53,12 @@ test('真实API：登录、资料、积分提醒、主题、刷新与退出清�
   const wallet = await (await updated).json();
   expect(wallet.lowBalanceThresholdPoints).toBe(500.0001);
   expect(wallet.lowBalanceThresholdMicros).toBe(5_000_001);
+  await expect(page.getByRole('dialog', { name: '积分提醒线', exact: true })).toBeHidden();
+  // 保存响应先于浮层卸载及异步 history.go(-1)；等浮层历史退完再发起整页导航，
+  // 否则测试自己的 goto 会和返回争抢，偶发 ERR_ABORTED。这里同时验证没有遗留空历史层。
+  await expect
+    .poll(() => page.evaluate(() => window.history.state?.usr?.wbLayers?.length ?? 0))
+    .toBe(0);
   await page.goto('/settings/general');
   await page.getByRole('button', { name: /^深色模式/ }).click();
   await page.getByRole('radio', { name: '深色模式', exact: true }).click();
