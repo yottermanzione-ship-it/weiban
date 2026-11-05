@@ -84,7 +84,7 @@ function commonChars(a: string, b: string): number {
 const wire = (messages: { role: string; content: string }[]) =>
   messages.map((m) => `<${m.role}>${m.content}`).join('\n');
 
-it('跨日及记忆/自述/经历更新保留全部旧聊天前缀，最新材料仍进入本轮', () => {
+it('跨日保留旧聊天前缀，记忆/自述/经历变化仍立即进入本轮', () => {
   const first = input();
   const updated = {
     ...first,
@@ -94,12 +94,17 @@ it('跨日及记忆/自述/经历更新保留全部旧聊天前缀，最新材�
     episodes: '新经历锚点',
   };
   const before = request(first, history);
-  const after = request(updated, [...history, { role: 'user', content: '继续合成测试' }]);
+  const after = request({ ...first, now: updated.now }, [
+    ...history,
+    { role: 'user', content: '继续合成测试' },
+  ]);
   expect(after.messages.slice(0, before.messages.length - 1)).toEqual(before.messages.slice(0, -1));
-  const last = after.messages.at(-1)!.content;
-  for (const text of ['新自述锚点', '新记忆锚点', '新经历锚点', '2026-11-04T16:01:00.000Z'])
-    expect(last).toContain(text);
-  expect(wire(after.messages)).not.toMatch(/旧自述锚点|旧记忆锚点|旧经历锚点/);
+  const changed = request(updated, history);
+  const last = changed.messages.at(-1)!.content;
+  for (const text of ['新自述锚点', '新记忆锚点', '新经历锚点'])
+    expect(changed.messages[0]!.content).toContain(text);
+  expect(last).toContain('2026-11-04T16:01:00.000Z');
+  expect(wire(changed.messages)).not.toMatch(/旧自述锚点|旧记忆锚点|旧经历锚点/);
   expect(wire(after.messages)).toContain('公开资料锚点');
   expect(wire(after.messages)).toContain('用户补充锚点');
   expect(last).toContain('继续以程澈的身份');
@@ -138,7 +143,7 @@ it('切情景、修改角色设定和暂停亲密表达立即生效，不为缓�
 it('单系统与无系统协议转换后仍复用旧聊天前缀，不把动态内容移回开头', () => {
   const base = input();
   const first = request(base, [...history, { role: 'user', content: '本轮合成问题' }]);
-  const next = request({ ...base, stableMemory: '即时更新的记忆' }, [
+  const next = request({ ...base, now: new Date('2026-11-04T16:01:00Z') }, [
     ...history,
     { role: 'user', content: '本轮合成问题' },
     { role: 'assistant', content: '随后合成回复' },
@@ -154,13 +159,13 @@ it('单系统与无系统协议转换后仍复用旧聊天前缀，不把动态�
       mode,
     );
     expect(commonChars(wire(a), wire(b))).toBeGreaterThan(wire(first.messages.slice(1, -2)).length);
-    expect(wire(b)).toContain('即时更新的记忆');
+    expect(wire(b)).toContain('2026-11-04T16:01:00.000Z');
   }
 });
 
-it('合成对照：更新前缀材料后，相同旧聊天保留量超过旧模板', () => {
+it('合成对照：跨日后，相同旧聊天保留量超过旧模板', () => {
   const first = input();
-  const changed = { ...first, stableMemory: '新记忆锚点', now: new Date('2026-11-04T16:01:00Z') };
+  const changed = { ...first, now: new Date('2026-11-04T16:01:00Z') };
   const appended = [...history, { role: 'user' as const, content: '新的合成问题' }];
   // 固定旧版基线：完整 brain 在前，平台风格插于倒数四条之前。
   const legacy = (v: BrainInput, turns: ChatTurnMessage[]) =>
@@ -182,4 +187,19 @@ it('合成对照：更新前缀材料后，相同旧聊天保留量超过旧模�
       requestChars: wire(next).length,
     }),
   );
+});
+
+it('大块稳定记忆保留在可复用开头，短对话不把整块内容每轮移到尾部', () => {
+  const base = { ...input(), stableMemory: '一条合成事实。'.repeat(800) };
+  const first = request(base, [{ role: 'user', content: '合成第一句' }]);
+  const next = request(base, [
+    { role: 'user', content: '合成第一句' },
+    { role: 'assistant', content: '合成回答' },
+    { role: 'user', content: '合成第二句' },
+  ]);
+  expect(first.messages[0]).toEqual(next.messages[0]);
+  expect(commonChars(wire(first.messages), wire(next.messages))).toBeGreaterThan(
+    base.stableMemory.length,
+  );
+  expect(next.messages.at(-1)!.content).not.toContain(base.stableMemory);
 });

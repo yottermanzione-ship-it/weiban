@@ -295,7 +295,7 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
     expect(next.items).toHaveLength(1);
     expect(next.items[0]?.memoryId).not.toBe(page.items[0]?.memoryId);
   });
-  it('缓存优化：新增记忆和跨日保留旧前缀，手动更正和删除仍触发遗忘屏障', async () => {
+  it('缓存优化：跨日保留旧前缀，新增记忆立即更新，更正和删除仍触发遗忘屏障', async () => {
     const originalTime = clock.now();
     const entry = await memory().create(userId, characterId, {
       clientMemoryId: newId(),
@@ -313,21 +313,20 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
         (m) => m.role === 'user' && m.content.includes('CACHE_HISTORY_ANCHOR'),
       );
       expect(historyEnd).toBeGreaterThan(0);
-      expect(JSON.stringify(before.messages.slice(0, historyEnd + 1))).not.toContain(
-        'CACHE_OLD_FACT',
+      expect(JSON.stringify(before.messages.slice(0, historyEnd + 1))).toContain('CACHE_OLD_FACT');
+      expect(JSON.stringify(before.messages.slice(historyEnd + 1))).not.toContain('CACHE_OLD_FACT');
+      clock.advance(86_400_000);
+      const crossedDay = (await context.build(row))!;
+      expect(crossedDay.messages.slice(0, historyEnd + 1)).toEqual(
+        before.messages.slice(0, historyEnd + 1),
       );
-      expect(JSON.stringify(before.messages.slice(historyEnd + 1))).toContain('CACHE_OLD_FACT');
       const added = await memory().create(userId, characterId, {
         clientMemoryId: newId(),
         category: 'basic',
         content: 'CACHE_ADDED_FACT：合成测试喜欢散步',
       });
       addedMemoryId = added.memoryId;
-      clock.advance(86_400_000);
       const changed = (await context.build(row))!;
-      expect(changed.messages.slice(0, historyEnd + 1)).toEqual(
-        before.messages.slice(0, historyEnd + 1),
-      );
       expect(JSON.stringify(changed.messages)).toContain('CACHE_ADDED_FACT');
       await memory().update(userId, characterId, entry.memoryId, {
         content: 'CACHE_NEW_FACT：已更正喜欢红茶',

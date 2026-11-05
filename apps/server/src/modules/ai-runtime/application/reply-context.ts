@@ -712,7 +712,7 @@ export class ReplyContext {
           .catch(() => null)
       : null;
     const tail: PromptSection[] = [
-      // 记忆/自述/经历/日期仍逐轮现取。位置移到历史之后，更新和跨日不再使整段旧聊天缓存失效。
+      // 日期逐轮现取并放在历史之后；大块稳定材料保留前置，避免短对话每轮重复支付整块输入。
       ...brainContext,
       { title: '刚刚一起经历的', text: episodes.recent },
       { title: '相关经历', text: episodes.relevant },
@@ -880,7 +880,7 @@ export class ReplyContext {
           { brain: true },
         );
         if (JSON.stringify(remembered.rawFromSeqByScope) === before) break;
-        for (const section of brainContext)
+        for (const section of head)
           if (section.title === '记忆') section.text = remembered.stableBlock;
         const retained = chat.filter(
           (m) =>

@@ -57,11 +57,7 @@ export interface BrainInput {
   /** Decisions have no dialogue examples; other personal scenes share the full prefix. */
   compact?: boolean;
 }
-/** Reused role instructions and live scene material are separate so chat history can stay ahead of the latter. */
-export function brainPromptParts(input: BrainInput): {
-  head: PromptSection[];
-  context: PromptSection[];
-} {
+export function brainPrefix(input: BrainInput): PromptSection[] {
   const { card, legacyCard, settings, scope } = input;
   if (!card && !legacyCard) throw new Error('brain requires card or legacyCard');
   const prompting = card?.prompting;
@@ -116,14 +112,12 @@ export function brainPromptParts(input: BrainInput): {
       text: prompting?.systemNote ?? '',
     },
     { title: '', text: input.supplement.trim() },
-  ];
-  const context: PromptSection[] = [
     { title: '', text: input.selfReports },
     { title: '记忆', text: input.stableMemory },
     { title: '最近一起经历的', text: input.episodes ?? '' },
     { title: '', text: `${todayLine(input.now, input.timeZone)}（精确时间见场景补充）` },
   ];
-  if (!input.compact) return { head: sections, context };
+  if (!input.compact) return sections;
   const budgets: Record<string, number> = {
     你是谁: 900,
     说话方式: 400,
@@ -134,22 +128,18 @@ export function brainPromptParts(input: BrainInput): {
     角色作者的写作要求: 0,
     记忆: 1600,
   };
-  const head = sections.map((section, index) => ({
+  return sections.map((section, index) => ({
     ...section,
     text: index === 0 ? section.text : section.text.slice(0, budgets[section.title] ?? 300),
   }));
-  return {
-    head,
-    context: context.map((section) => ({
-      ...section,
-      text: section.text.slice(0, budgets[section.title] ?? 300),
-    })),
-  };
 }
-/** Other personal scenes keep the existing full brain text; only private-chat assembly moves its live context. */
-export function brainPrefix(input: BrainInput): PromptSection[] {
-  const parts = brainPromptParts(input);
-  return [...parts.head, ...parts.context];
+/** 私聊只把末尾的当天日期后置；大块记忆/自述/经历保留既有前缀顺序，避免短对话重复付费。 */
+export function brainPromptParts(input: BrainInput): {
+  head: PromptSection[];
+  context: PromptSection[];
+} {
+  const sections = brainPrefix(input);
+  return { head: sections.slice(0, -1), context: sections.slice(-1) };
 }
 /** Fail closed before any provider call. Metadata is supplied by the reader, never inferred from text. */
 export function assertBrainScope(scope: 'normal' | 'adult', modelRole: ModelRole): void {
