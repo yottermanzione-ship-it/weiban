@@ -862,9 +862,9 @@ export type ModelRates = z.infer<typeof ModelRates>;
 /** 3.36：非 token 单价，金额为元 / 该单位。 */
 export const ModelServiceRateWrite = z.strictObject({
   unit: ServicePriceUnit,
-  /** 日常基价，保存时服务端按已登记成本加三成重算；限时折扣另算。 */
+  /** 7.0：按官方模型价格维护的售价，独立于采购成本；限时折扣在结算时应用。 */
   price: z.number().nonnegative().max(100_000),
-  /** 写入价格时必须明确提供成本（含已批准参考成本）；零成本显式填 0。省略整个 serviceRates 则保留现价。 */
+  /** 采购或已核定参考成本；省略沿用同售价的旧兼容行为，不会据此覆盖售价。 */
   cost: z.number().nonnegative().max(100_000).nullable().optional(),
 });
 export type ModelServiceRateWrite = z.infer<typeof ModelServiceRateWrite>;

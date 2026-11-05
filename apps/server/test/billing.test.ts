@@ -322,7 +322,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
         expect(saved.enabled).toBe(true);
         expect(saved.rates).toBeNull();
         expect(saved.serviceRates).toEqual([
-          { unit: 'search_call', price: 0.0052, cost: 0.004, hasTimeBands: false },
+          { unit: 'search_call', price: 0.005, cost: 0.004, hasTimeBands: false },
         ]);
         expect(saved.routes?.[0]?.billingBounds?.search).toEqual({
           maxResults: 5,
@@ -425,19 +425,19 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
           expect.objectContaining({
             model_key: MODEL,
             unit: 'input_tokens_per_million',
-            price_micros: 1_300_000,
+            price_micros: 2 * YUAN,
           }),
-          expect.objectContaining({ model_key: MODEL, unit: 'tts_10k_chars', price_micros: 2600 }),
+          expect.objectContaining({ model_key: MODEL, unit: 'tts_10k_chars', price_micros: 3000 }),
           expect.objectContaining({
             model_key: 'other/search',
             unit: 'search_call',
-            price_micros: 10400,
+            price_micros: 9000,
           }),
           expect.objectContaining({
             model_key: MODEL,
             unit: 'search_call',
             band: null,
-            price_micros: 3900,
+            price_micros: 5000,
             cost_micros: 3000,
           }),
         ]),
@@ -614,15 +614,15 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       };
       const s1 = await port.settle(settleInput);
       expect(s1).toMatchObject({
-        amountMicros: 3900,
+        amountMicros: 6000,
         costMicros: 3000,
-        balanceAfterMicros: 996_100,
+        balanceAfterMicros: 994_000,
       });
       expect(await port.settle(settleInput)).toEqual(s1); // 重复结算只扣一次
       expect(await wallet(user.token)).toMatchObject({
-        balanceMicros: 996_100,
+        balanceMicros: 994_000,
         heldMicros: 0,
-        availableMicros: 996_100,
+        availableMicros: 994_000,
       });
 
       // 实际多于冻结：照常多扣
@@ -633,8 +633,8 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
         actual: { inputTokens: 1000, outputTokens: 2000 },
         startedAt: clock.now().toISOString(),
       });
-      expect(s2.amountMicros).toBe(11_700);
-      expect(await wallet(user.token)).toMatchObject({ balanceMicros: 984_400, heldMicros: 0 });
+      expect(s2.amountMicros).toBe(18_000);
+      expect(await wallet(user.token)).toMatchObject({ balanceMicros: 976_000, heldMicros: 0 });
       const charges = (await q.ledgerOf(user.userId)).filter((e) => e.type === 'charge');
       expect(charges).toHaveLength(2);
       // 已结算的冻结不能再用另一条用量记录结算
@@ -696,8 +696,8 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
         actual: SMALL,
         startedAt: clock.now().toISOString(),
       });
-      expect(settled.amountMicros).toBe(6_500);
-      expect(await wallet(user.token)).toMatchObject({ balanceMicros: 993_500, heldMicros: 0 });
+      expect(settled.amountMicros).toBe(10_000);
+      expect(await wallet(user.token)).toMatchObject({ balanceMicros: 990_000, heldMicros: 0 });
     });
   });
 
@@ -732,7 +732,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
             actual: SMALL,
             startedAt: clock.now().toISOString(),
           });
-      expect((await wallet(user.token)).balanceMicros).toBe(30_500);
+      expect((await wallet(user.token)).balanceMicros).toBe(20_000);
       // 结算后空位释放，可以继续调用
       const next = await reserveOk(reserveInput(user.userId));
       await port.release({ holdId: next.holdId, reason: 'cancelled' });
@@ -843,10 +843,10 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       await port.settle({
         holdId: hold.holdId,
         usageRecordId: uuid(),
-        actual: { inputTokens: 1000, outputTokens: 2000 }, // 11,700 > 10,000（成本加三成）
+        actual: { inputTokens: 1000, outputTokens: 1500 }, // 14,000 > 10,000
         startedAt: clock.now().toISOString(),
       });
-      expect((await wallet(user.token)).balanceMicros).toBe(-1700);
+      expect((await wallet(user.token)).balanceMicros).toBe(-4000);
       expect(await events('billing.balance_depleted', user.userId)).toHaveLength(1);
       expect(await events('billing.balance_low', user.userId)).toHaveLength(1);
       expect(await read.getSpendStatus(user.userId)).toMatchObject({
@@ -855,7 +855,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       });
       await grant(user.userId, 20_000).expect(201);
       const restored = await events('billing.balance_restored', user.userId);
-      expect(restored.at(-1)).toMatchObject({ trigger: 'crossed_zero', availableMicros: 18_300 });
+      expect(restored.at(-1)).toMatchObject({ trigger: 'crossed_zero', availableMicros: 16_000 });
       const changed = await events('billing.balance_changed', user.userId);
       expect(changed.map((e) => e.entryType)).toEqual(['admin_grant', 'charge', 'admin_grant']);
       // 同一天再扣费不再发 balance_low
@@ -875,7 +875,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
   // 余额为正时可以把余额扣成负数（欠一次），之后一切付费调用被拒，充值转正后恢复。
 
   describe('先用后扣（取代安全优先透支）', () => {
-    /** 估算 100,000 输出 token：成本 0.4 元，售价 0.52 元。 */
+    /** 估算 100,000 输出 token：售价 0.8 元。 */
     const BIG = { outputTokens: 100_000 };
 
     it('余额 0 时带 safetyOverdraft 的聊天 / 安全用途同样被拒，不写流水', async () => {
@@ -917,17 +917,17 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
         actual: BIG,
         startedAt: clock.now().toISOString(),
       });
-      expect((await wallet(user.token)).balanceMicros).toBe(-510_000);
+      expect((await wallet(user.token)).balanceMicros).toBe(-790_000);
       const c = await port.estimateAndReserve(
         reserveInput(user.userId, { purpose: 'safety_check', estimate: BIG }),
       );
       expect(c).toMatchObject({ ok: false, error: 'insufficient_balance' });
       await grant(user.userId, 3 * YUAN).expect(201);
-      expect((await wallet(user.token)).balanceMicros).toBe(2_490_000);
+      expect((await wallet(user.token)).balanceMicros).toBe(2_210_000);
       const restored = await events('billing.balance_restored', user.userId);
       expect(restored.at(-1)).toMatchObject({
         trigger: 'crossed_zero',
-        availableMicros: 2_490_000,
+        availableMicros: 2_210_000,
       });
     });
 
@@ -963,11 +963,11 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       (
         await http()
           .patch('/api/v1/billing/wallet/settings', user.token)
-          .send({ backgroundDailyLimitMicros: 10_000 })
+          .send({ backgroundDailyLimitMicros: 15_000 })
           .expect(200)
       ).body,
     );
-    expect(w.backgroundBudget.dailyLimitMicros).toBe(10_000);
+    expect(w.backgroundBudget.dailyLimitMicros).toBe(15_000);
     await reserveOk(reserveInput(user.userId, { purpose: 'memory' }));
     expect(
       await port.estimateAndReserve(reserveInput(user.userId, { purpose: 'simulation' })),
@@ -986,9 +986,9 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       const h = await reserveOk(reserveInput(user.userId, extra));
       await port.release({ holdId: h.holdId, reason: 'cancelled' });
     }
-    // 进行中的后台调用按成本加三成预估 6,500，占用今天的后台额度。
-    expect((await wallet(user.token)).backgroundBudget.spentTodayMicros).toBe(6_500);
-    expect((await read.getSpendStatus(user.userId)).backgroundRemainingTodayMicros).toBe(3_500);
+    // 进行中的后台调用（memory，先用后扣按预估 10,000 计）占用今天的后台额度
+    expect((await wallet(user.token)).backgroundBudget.spentTodayMicros).toBe(10_000);
+    expect((await read.getSpendStatus(user.userId)).backgroundRemainingTodayMicros).toBe(5_000);
     await http()
       .patch('/api/v1/billing/wallet/settings', user.token)
       .send({ backgroundDailyLimitMicros: -1 })
@@ -1114,19 +1114,19 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
         .get(`/api/v1/billing/usage-summary?from=${today}&to=${today}&groupBy=category`, user.token)
         .expect(200)
     ).body;
-    expect(summary.totalMicros).toBe(19_500);
+    expect(summary.totalMicros).toBe(30_000);
     // 积分制（1 元 = 100 积分）：汇总行多了 points 字段，10,000 微元 = 1 积分
     expect(summary.rows).toEqual([
-      { key: 'background', amountMicros: 6_500, points: 0.65, calls: 1 },
-      { key: 'chat', amountMicros: 6_500, points: 0.65, calls: 1 },
-      { key: 'planning', amountMicros: 6_500, points: 0.65, calls: 1 },
+      { key: 'background', amountMicros: 10_000, points: 1, calls: 1 },
+      { key: 'chat', amountMicros: 10_000, points: 1, calls: 1 },
+      { key: 'planning', amountMicros: 10_000, points: 1, calls: 1 },
     ]);
     const byDay = (
       await http()
         .get(`/api/v1/billing/usage-summary?from=${today}&to=${today}&groupBy=day`, user.token)
         .expect(200)
     ).body;
-    expect(byDay.rows).toEqual([{ key: today, amountMicros: 19_500, points: 1.95, calls: 3 }]);
+    expect(byDay.rows).toEqual([{ key: today, amountMicros: 30_000, points: 3, calls: 3 }]);
     await http().get('/api/v1/billing/ledger?cursor=garbage', user.token).expect(400);
   });
 
@@ -1178,10 +1178,10 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
         upstreamId,
       };
       await reservations.settle(tagged);
-      // 余额 = 流水合计：期初 0 + 收入 1 元 − 支出 0.0065 元 = 0.9935 元。
+      // 余额 = 流水合计：期初 0 + 收入 1 元 − 支出 0.01 元 = 0.99 元
       const ledger = await q.ledgerOf(user.userId);
-      expect(ledger.reduce((s, e) => s + Number(e.amount_micros), 0)).toBe(993_500);
-      expect(Number((await q.account(user.userId))?.balance_micros)).toBe(993_500);
+      expect(ledger.reduce((s, e) => s + Number(e.amount_micros), 0)).toBe(990_000);
+      expect(Number((await q.account(user.userId))?.balance_micros)).toBe(990_000);
 
       // 人为制造不一致：绕过流水直接改账户余额
       await withClient((c) =>
@@ -1218,7 +1218,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       ]);
       const details = await reconciliation.details('2026-10-09');
       expect(details?.balanceMismatches).toEqual([
-        expect.objectContaining({ balanceMicros: 993_501, ledgerSumMicros: 993_500 }),
+        expect.objectContaining({ balanceMicros: 990_001, ledgerSumMicros: 990_000 }),
       ]);
       const listed = (
         await http()
@@ -1246,7 +1246,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
 
       // 按用量记录 ID 查扣费（对账第 ② 层用的只读方法）
       expect(await reconciliation.chargesByUsage([tagged.usageRecordId])).toEqual([
-        expect.objectContaining({ amountMicros: 6_500, costMicros: 5000, absorbed: false }),
+        expect.objectContaining({ amountMicros: 10_000, costMicros: 5000, absorbed: false }),
       ]);
 
       // BillingChargeQueryPort（契约 1.3）：按 ID 查、按北京日列出（含分页）、列出有价格的模型键
@@ -1255,7 +1255,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       expect(byId).toEqual([
         expect.objectContaining({
           usageRecordId: tagged.usageRecordId,
-          amountMicros: 6_500,
+          amountMicros: 10_000,
           costMicros: 5000,
           absorbed: false,
           chargedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/),

@@ -12,7 +12,7 @@ const body = {
   enabled: true,
   capabilities: ['web_search'],
   rates: null,
-  serviceRates: [{ unit: 'search_call', price: 0.005, cost: 0.005 }],
+  serviceRates: [{ unit: 'search_call', price: 0.005 }],
 } as Write;
 function fixture(servicePort = true) {
   const order: string[] = [];
@@ -77,8 +77,8 @@ describe('ModelAdminService service rates', () => {
     expect(rates.publishModelServiceRates).not.toHaveBeenCalled();
     expect((await svc.list())[0]?.serviceRates?.[0]?.unit).toBe('search_call');
   });
-  it('accepts explicit zero cost but rejects missing cost before writing the model', async () => {
-    const { svc, rates, catalog } = fixture();
+  it('defaults null cost to price, while accepting explicit zero cost', async () => {
+    const { svc, rates } = fixture();
     await svc.upsert('admin', key, {
       ...body,
       serviceRates: [{ unit: 'search_call', price: 0.005, cost: 0 }],
@@ -88,24 +88,15 @@ describe('ModelAdminService service rates', () => {
         rates: [{ unit: 'search_call', priceMicros: 5000, costMicros: 0 }],
       }),
     );
-    rates.publishModelServiceRates?.mockClear();
-    catalog.upsert.mockClear();
-    await expect(
-      svc.upsert('admin', key, {
-        ...body,
-        serviceRates: [{ unit: 'search_call', price: 0.005, cost: null }],
+    await svc.upsert('admin', key, {
+      ...body,
+      serviceRates: [{ unit: 'search_call', price: 0.005, cost: null }],
+    });
+    expect(rates.publishModelServiceRates).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        rates: [{ unit: 'search_call', priceMicros: 5000, costMicros: 5000 }],
       }),
-    ).rejects.toThrow('参考成本');
-    await expect(
-      svc.upsert('admin', key, {
-        ...body,
-        serviceRates: undefined,
-        rates: { input: 1, output: 2, cache: 0 },
-      }),
-    ).rejects.toThrow('填写模型成本');
-    expect(rates.publishModelServiceRates).not.toHaveBeenCalled();
-    expect(rates.publishModelTokenRates).not.toHaveBeenCalled();
-    expect(catalog.upsert).not.toHaveBeenCalled();
+    );
   });
   it('fails explicitly before writing when the service-price port is unavailable or capability mismatches', async () => {
     const { svc, catalog } = fixture(false);

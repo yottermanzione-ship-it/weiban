@@ -153,12 +153,12 @@ describeDb('3.27 先用后扣、可欠一次（真实 PostgreSQL）', () => {
     expect(await balance(id)).toEqual({ balance: 5_000, held: 0 });
     const row = await q.hold(hold.holdId);
     expect(row?.postpaid).toBe(true);
-    expect(Number(row?.estimate_micros)).toBe(6_500);
+    expect(Number(row?.estimate_micros)).toBe(10_000);
 
     const settled = await settle(hold.holdId);
-    expect(settled.amountMicros).toBe(6_500);
-    expect(settled.balanceAfterMicros).toBe(-1_500);
-    expect(await balance(id)).toEqual({ balance: -1_500, held: 0 });
+    expect(settled.amountMicros).toBe(10_000);
+    expect(settled.balanceAfterMicros).toBe(-5_000);
+    expect(await balance(id)).toEqual({ balance: -5_000, held: 0 });
 
     // 欠费：聊天、后台任务都拒绝
     for (const purpose of ['chat_reply', 'memory'] as const) {
@@ -167,7 +167,7 @@ describeDb('3.27 先用后扣、可欠一次（真实 PostgreSQL）', () => {
       if (!r.ok) expect(r.error).toBe('insufficient_balance');
     }
     // 余额正好 0 也拒绝
-    await grant(id, 1_500);
+    await grant(id, 5_000);
     const zero = await reservations.estimateAndReserve(input(id));
     expect(zero.ok ? null : zero.error).toBe('insufficient_balance');
     // 充值后转正 → 恢复
@@ -179,10 +179,10 @@ describeDb('3.27 先用后扣、可欠一次（真实 PostgreSQL）', () => {
     await settle((await reserveOk(input(debtor))).holdId);
     const debts = await app.get(BillingAdminService).listDebts();
     const item = debts.items.find((d) => d.userId === debtor);
-    expect(item?.debtMicros).toBe(5_500);
-    expect(item?.debtPoints).toBe(0.55);
+    expect(item?.debtMicros).toBe(9_000);
+    expect(item?.debtPoints).toBe(0.9);
     expect(debts.count).toBeGreaterThanOrEqual(1);
-    expect(debts.totalDebtMicros).toBeGreaterThanOrEqual(5_500);
+    expect(debts.totalDebtMicros).toBeGreaterThanOrEqual(9_000);
   });
 
   it('对账接受获准欠费，但仍发现余额和冻结合计被破坏', async () => {
@@ -288,7 +288,7 @@ describeDb('3.27 先用后扣、可欠一次（真实 PostgreSQL）', () => {
     if (platform.ok) {
       const row = await q.hold(platform.value.holdId);
       expect(row?.postpaid).toBe(false);
-      expect(platform.value.amountMicros).toBe(150_800);
+      expect(platform.value.amountMicros).toBe(232_000);
     } else {
       // 测试配置的平台每日上限太小时只会是 budget_exceeded，不会是先用后扣的拒绝原因
       expect(platform.error).toBe('budget_exceeded');

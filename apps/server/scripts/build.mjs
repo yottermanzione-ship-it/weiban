@@ -35,7 +35,6 @@ await build({
     'import-sticker-assets': 'src/cli/import-sticker-assets.ts',
     'seed-sticker-labels': 'src/cli/seed-sticker-labels.ts',
     'ecology-config': 'src/cli/ecology-config.ts',
-    'price-policy': 'src/cli/price-policy.ts',
     'voice-call-pipeline': 'src/cli/voice-call-pipeline.ts',
     'voice-catalog': 'src/cli/voice-catalog.ts',
     'import-legacy-realtime-voices': 'src/cli/import-legacy-realtime-voices.ts',

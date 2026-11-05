@@ -4,7 +4,7 @@
  * 发布新版本时原生效版本自动停用。
  */
 import { Inject, Injectable } from '@nestjs/common';
-import { costPlusPrice, PRICE_PUBLISH_LOCK_SQL } from './price-publishing.js';
+import { PRICE_PUBLISH_LOCK_SQL } from './price-publishing.js';
 import type { PriceTable, PriceUnit } from '@weiban/contracts';
 import { AdminPriceVersion, microsToPoints } from '@weiban/contracts';
 import { and, asc, desc, eq } from 'drizzle-orm';
@@ -130,7 +130,6 @@ export class PriceService {
     operatorUserId: string,
     input: { versionLabel: string; note: string | null; items: PriceItemInput[] },
   ): Promise<AdminPriceVersion> {
-    input = { ...input, items: this.costPlusItems(input.items) };
     this.assertValid(input.items);
     const now = this.clock.now();
     const id = newId();
@@ -166,7 +165,6 @@ export class PriceService {
     priceVersionId: string,
     patch: { note?: string | null; items?: PriceItemInput[] },
   ): Promise<AdminPriceVersion> {
-    if (patch.items) patch = { ...patch, items: this.costPlusItems(patch.items) };
     if (patch.items) this.assertValid(patch.items);
     return this.database.transaction(async (tx) => {
       const version = await this.lockVersion(tx, priceVersionId);
@@ -225,12 +223,6 @@ export class PriceService {
       }
       const items = await this.itemsOf(priceVersionId, tx);
       if (items.length === 0) throw new AppError('bad_request', '价目表没有任何价格，不能发布');
-      // 旧草稿也必须在首次启用前应用现行定价规则；已生效版本上方已返回，绝不改历史。
-      for (const item of items) {
-        const priceMicros = costPlusPrice(item.costMicros);
-        if (priceMicros !== item.priceMicros)
-          await tx.db.update(priceItems).set({ priceMicros }).where(eq(priceItems.id, item.id));
-      }
       // 所有版本行按固定顺序加锁后再切换，避免两个发布同时进行
       await tx.query(`SELECT id FROM billing.price_versions WHERE status = 'active' FOR UPDATE`);
       await tx.db
@@ -257,65 +249,6 @@ export class PriceService {
   }
 
   // ---------- 内部 ----------
-
-  /** 运维显式调用：复制当前价目并应用已批准的成本加三成规则；不改历史版本、折扣、冻结或流水。 */
-  async publishCostPlusPolicy(): Promise<{ priceVersionId: string | null; changedItems: number }> {
-    return this.database.transaction(async (tx) => {
-      await tx.query(PRICE_PUBLISH_LOCK_SQL);
-      const { rows } = await tx.query<{ id: string }>(
-        "SELECT id FROM billing.price_versions WHERE status = 'active' FOR UPDATE",
-      );
-      const previousId = rows[0]?.id;
-      if (!previousId) return { priceVersionId: null, changedItems: 0 };
-      const previous = await this.itemsOf(previousId, tx);
-      const items = this.costPlusItems(previous.map(toRow));
-      const changedItems = previous.filter(
-        (row, i) => row.priceMicros !== items[i]!.priceMicros,
-      ).length;
-      if (!changedItems) return { priceVersionId: previousId, changedItems: 0 };
-      const now = this.clock.now(),
-        id = newId();
-      await tx.db.insert(priceVersions).values({
-        id,
-        versionLabel: `cost-plus-${now.toISOString().replace(/\D/g, '')}`.slice(0, 32),
-        status: 'draft',
-        effectiveFrom: null,
-        note: '日常基价按已登记成本加三成；保留参考成本和限时折扣',
-        createdAt: now,
-        createdBy: null,
-      });
-      await this.insertItems(tx, id, items);
-      await tx.db
-        .update(priceVersions)
-        .set({ status: 'retired', retiredAt: now })
-        .where(eq(priceVersions.id, previousId));
-      await tx.db
-        .update(priceVersions)
-        .set({ status: 'active', effectiveFrom: now })
-        .where(eq(priceVersions.id, id));
-      await this.audit.record(
-        {
-          module: 'billing',
-          action: 'price_version.cost_plus_published',
-          actorType: 'system',
-          targetType: 'price_version',
-          targetId: id,
-          details: {
-            replaced: previousId,
-            changedItems,
-            costBasis: 'recorded_or_approved_reference',
-            markupPercent: 30,
-          },
-        },
-        tx,
-      );
-      return { priceVersionId: id, changedItems };
-    });
-  }
-
-  private costPlusItems(items: PriceItemInput[]): PriceItemInput[] {
-    return items.map((item) => ({ ...item, priceMicros: costPlusPrice(item.costMicros) }));
-  }
 
   private assertValid(items: PriceItemInput[]): void {
     const problems = validatePriceItems(items);

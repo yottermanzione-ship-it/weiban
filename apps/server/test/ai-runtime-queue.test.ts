@@ -257,7 +257,7 @@ describeDb('AI真实HTTP网关/计费与跨应用持久队列', () => {
         "SELECT amount_micros FROM billing.ledger_entries WHERE type='charge'",
       );
     expect(rows.rows).toHaveLength(1);
-    expect(rows.rows[0]?.amount_micros).toBe('-234');
+    expect(rows.rows[0]?.amount_micros).toBe('-360');
     const ids = await worker
       .get<Database>(DATABASE)
       .query<{ id: string }>("SELECT id FROM ai_runtime.reply_plans WHERE status='done'");
