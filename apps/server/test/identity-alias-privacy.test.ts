@@ -18,7 +18,7 @@ import {
   type AuditLog,
   type Database,
 } from '../src/platform/index.js';
-import { Migrator } from '../src/platform/db/migrator.js';
+import { Migrator, readMigrations } from '../src/platform/db/migrator.js';
 import {
   describeDb,
   resetTestDatabase,
@@ -169,7 +169,12 @@ describeDb('账号改名审计隐私清理', () => {
 
   it('迁移覆盖全部旧改名审计，不误删其他动作/模块；回退不恢复隐私明文', async () => {
     const migrator = new Migrator(requireTestDatabaseUrl(), MIGRATIONS_DIR);
-    expect(await migrator.down(1)).toEqual(['0159_anonymize_alias_audits']);
+    const tags = readMigrations(MIGRATIONS_DIR).map((migration) => migration.tag);
+    const target = tags.indexOf('0159_anonymize_alias_audits');
+    expect(target).toBeGreaterThanOrEqual(0);
+    // 新迁移追加后仍明确回退到 0159 之前，不能把“最后一份”误当本次隐私修复。
+    const reapplied = tags.slice(target);
+    expect(await migrator.down(reapplied.length)).toEqual(reapplied.toReversed());
     const aliases = await Promise.all(
       ['raw', 'target-hash', 'actor-hash'].map((mode) =>
         insertLegacy(newId(), mode as 'raw' | 'target-hash' | 'actor-hash'),
@@ -178,7 +183,7 @@ describeDb('账号改名审计隐私清理', () => {
     const otherAction = await insertLegacy(newId(), 'raw', 'identity', 'unrelated.updated');
     const otherModule = await insertLegacy(newId(), 'raw', 'characters', 'alias.updated');
     const unchanged = await Promise.all([details(otherAction), details(otherModule)]);
-    expect(await migrator.up()).toEqual(['0159_anonymize_alias_audits']);
+    expect(await migrator.up()).toEqual(reapplied);
     for (const id of aliases) {
       const row = await details(id);
       expect(row).not.toHaveProperty('previous');
@@ -186,8 +191,8 @@ describeDb('账号改名审计隐私清理', () => {
       expect(row.preserved).toBe('audit-context');
     }
     expect(await Promise.all([details(otherAction), details(otherModule)])).toEqual(unchanged);
-    await migrator.down(1);
+    expect(await migrator.down(reapplied.length)).toEqual(reapplied.toReversed());
     for (const id of aliases) expect(await details(id)).not.toHaveProperty('username');
-    expect(await migrator.up()).toEqual(['0159_anonymize_alias_audits']);
+    expect(await migrator.up()).toEqual(reapplied);
   });
 });
