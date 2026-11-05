@@ -162,14 +162,14 @@ export function momentsTopicsText(topics: string[] | undefined): string {
   return list.length ? `常写主题：${list.join('、')}。` : '';
 }
 
-/** 作者注释（情景风格提示）固定插在倒数第 4 条消息之前（酒馆默认深度 4）。 */
-export const AUTHOR_NOTE_DEPTH = 4;
+/** 平台情景风格提示在历史末尾，避免每轮挪动历史中间的插入点而破坏前缀缓存。 */
+export const AUTHOR_NOTE_DEPTH = 0;
 /** 角色笔记默认深度（酒馆 depth prompt 默认 4）。 */
 export const CHARACTER_NOTE_DEPTH = 4;
 
 /**
  * 作者注释式的「写作提示」（docs/refactor/09 第 7.4 节）：一句人设锚点 + 当前情景风格。
- * 放在固定深度而不是开头：长对话里模型越来越「忘」开头的人设，离回答近的短提示最管用。
+ * 放在动态末尾：长对话里模型越来越「忘」开头的人设，离回答近的短提示最管用。
  * 日常模式且没有本轮风格时只给人设锚点。
  */
 export function scenarioNote(

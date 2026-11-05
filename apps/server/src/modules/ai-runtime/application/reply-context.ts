@@ -1,5 +1,5 @@
 import { EcologySettingsService } from './ecology-settings.js';
-import { brainPrefix } from '../domain/brain.js';
+import { brainPromptParts } from '../domain/brain.js';
 import { SharedEpisodesService } from './shared-episodes.js';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { readableMessageText } from './content-text.js';
@@ -521,7 +521,7 @@ export class ReplyContext {
       conversation.contentScope,
       userText,
     );
-    const head = brainPrefix({
+    const { head, context: brainContext } = brainPromptParts({
       name: role.profile.name,
       card,
       legacyCard: legacy,
@@ -636,8 +636,7 @@ export class ReplyContext {
             ...(/好看|厉害|真棒|太强|佩服|好帅|好美/u.test(userText) ? ['praised'] : []),
           ])
         : null;
-    // 深度插入（酒馆 @depth）：角色笔记 + 作者注释式的情景风格提示，固定在倒数第 N 条消息之前。
-    // 位置随聊天往后挪，只影响最近几条消息的缓存；离模型回答更近，长对话里人设不易走样。
+    // 作者明确设置的角色笔记保留深度；平台风格提示放末尾，不逐轮插回历史打断缓存。
     const inserts: DepthInsert[] = [];
     if (prompting?.characterNote)
       inserts.push({
@@ -713,6 +712,8 @@ export class ReplyContext {
           .catch(() => null)
       : null;
     const tail: PromptSection[] = [
+      // 记忆/自述/经历/日期仍逐轮现取。位置移到历史之后，更新和跨日不再使整段旧聊天缓存失效。
+      ...brainContext,
       { title: '刚刚一起经历的', text: episodes.recent },
       { title: '相关经历', text: episodes.relevant },
       {
@@ -813,7 +814,7 @@ export class ReplyContext {
     // ② 历史清洗：动态检出最近 20 条角色回复里过半出现、卡里没有的习惯词，只在喂给模型的那份原文里清掉，记录本身不删。
     const habits = detectHabits(
       chat.filter((m) => m.role === 'assistant').map((m) => m.content),
-      renderSections(head),
+      renderSections([...head, ...brainContext]),
     );
     let cleanedChat: ChatTurnMessage[] = habits.length
       ? chat.map((m) =>
@@ -879,7 +880,7 @@ export class ReplyContext {
           { brain: true },
         );
         if (JSON.stringify(remembered.rawFromSeqByScope) === before) break;
-        for (const section of head)
+        for (const section of brainContext)
           if (section.title === '记忆') section.text = remembered.stableBlock;
         const retained = chat.filter(
           (m) =>

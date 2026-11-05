@@ -57,7 +57,11 @@ export interface BrainInput {
   /** Decisions have no dialogue examples; other personal scenes share the full prefix. */
   compact?: boolean;
 }
-export function brainPrefix(input: BrainInput): PromptSection[] {
+/** Reused role instructions and live scene material are separate so chat history can stay ahead of the latter. */
+export function brainPromptParts(input: BrainInput): {
+  head: PromptSection[];
+  context: PromptSection[];
+} {
   const { card, legacyCard, settings, scope } = input;
   if (!card && !legacyCard) throw new Error('brain requires card or legacyCard');
   const prompting = card?.prompting;
@@ -112,12 +116,14 @@ export function brainPrefix(input: BrainInput): PromptSection[] {
       text: prompting?.systemNote ?? '',
     },
     { title: '', text: input.supplement.trim() },
+  ];
+  const context: PromptSection[] = [
     { title: '', text: input.selfReports },
     { title: '记忆', text: input.stableMemory },
     { title: '最近一起经历的', text: input.episodes ?? '' },
     { title: '', text: `${todayLine(input.now, input.timeZone)}（精确时间见场景补充）` },
   ];
-  if (!input.compact) return sections;
+  if (!input.compact) return { head: sections, context };
   const budgets: Record<string, number> = {
     你是谁: 900,
     说话方式: 400,
@@ -128,10 +134,22 @@ export function brainPrefix(input: BrainInput): PromptSection[] {
     角色作者的写作要求: 0,
     记忆: 1600,
   };
-  return sections.map((section, index) => ({
+  const head = sections.map((section, index) => ({
     ...section,
     text: index === 0 ? section.text : section.text.slice(0, budgets[section.title] ?? 300),
   }));
+  return {
+    head,
+    context: context.map((section) => ({
+      ...section,
+      text: section.text.slice(0, budgets[section.title] ?? 300),
+    })),
+  };
+}
+/** Other personal scenes keep the existing full brain text; only private-chat assembly moves its live context. */
+export function brainPrefix(input: BrainInput): PromptSection[] {
+  const parts = brainPromptParts(input);
+  return [...parts.head, ...parts.context];
 }
 /** Fail closed before any provider call. Metadata is supplied by the reader, never inferred from text. */
 export function assertBrainScope(scope: 'normal' | 'adult', modelRole: ModelRole): void {
