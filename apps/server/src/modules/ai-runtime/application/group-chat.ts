@@ -1058,7 +1058,7 @@ export class GroupChatService {
         conversationKind: 'group',
         scenarioMode: input.scenarioMode,
         stablePrefixChars: brain.prefix.length,
-        promptTemplateVersion: 'brain-v2-scenario:group',
+        promptTemplateVersion: 'brain-v3-platform:group',
       },
     };
     if (input.durable) {

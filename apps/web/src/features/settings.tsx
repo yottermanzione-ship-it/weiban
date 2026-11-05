@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import { IdentityEndpoints } from '@weiban/contracts';
 import { ApiFailure } from '@weiban/client-core';
 import { HomeScreenGuide } from './home-screen-guide.js';
+import { MicrophoneSettingsRow } from './microphone-settings.js';
 import { useAuth } from '../app/auth.js';
 import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
@@ -24,7 +25,7 @@ import {
   setScheme,
   type Scheme,
 } from '../data/display-prefs.js';
-import { enableWebPush, disableWebPush } from '../notifications/client.js';
+import { enableWebPush, disableWebPush, webPushEnabled } from '../notifications/client.js';
 import { OldIcon } from './old-icons.js';
 import {
   getMessageSoundEnabled,
@@ -138,13 +139,6 @@ function SoundPage({
   );
 }
 
-async function pushEnabled(): Promise<boolean> {
-  if (!('serviceWorker' in navigator) || !('Notification' in window)) return false;
-  if (Notification.permission !== 'granted') return false;
-  const registration = await navigator.serviceWorker.getRegistration();
-  return !!(await registration?.pushManager?.getSubscription());
-}
-
 export function SettingsPage() {
   const auth = useAuth();
   const announcements = useAnnouncementUnread();
@@ -160,7 +154,7 @@ export function SettingsPage() {
   const [choice, setChoice] = useState<'scheme' | 'font' | 'sound' | null>(null);
   const [logout, setLogout] = useState(false);
   useEffect(() => {
-    void pushEnabled()
+    void webPushEnabled()
       .then(setPush)
       .catch(() => {});
   }, []);
@@ -244,6 +238,7 @@ export function SettingsPage() {
       </MenuGroup>
       <GroupHeader>隐私</GroupHeader>
       <MenuGroup>
+        <MicrophoneSettingsRow />
         <MenuRow to="/settings/privacy" label="角色之间共享我的信息" />
         <MenuRow to="/services/period/settings" label="经期日记相关" />
       </MenuGroup>

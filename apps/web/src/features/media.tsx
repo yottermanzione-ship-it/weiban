@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { openMicrophone } from './microphone.js';
 import { ImageBroken, LinkSimple, MusicNotes, VideoCamera, OldIcon } from './old-icons.js';
 import { Lightbox } from './lightbox.js';
 import { Dialog } from './toast.js';
@@ -664,10 +665,10 @@ export type RecordResult = { blob: Blob; durationMs: number };
 /** 按住说话（C 5.4）：上滑取消，短于 1 秒提示太短，最长 60 秒自动发出。 */
 export function HoldToTalk({
   onRecorded,
-  onPermissionDenied,
+  onError,
 }: {
   onRecorded(result: RecordResult): void;
-  onPermissionDenied(): void;
+  onError(error: unknown): void;
 }) {
   const [state, setState] = useState<'idle' | 'recording' | 'cancel'>('idle');
   const [elapsed, setElapsed] = useState(0);
@@ -677,28 +678,59 @@ export function HoldToTalk({
   const cancelled = useRef(false);
   const timer = useRef(0);
   const held = useRef(false);
+  const pending = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      held.current = false;
+      cancelled.current = true;
+      window.clearInterval(timer.current);
+      const rec = recorder.current;
+      if (rec) {
+        rec.onstop = null;
+        rec.onerror = null;
+        if (rec.state !== 'inactive') rec.stop();
+        rec.stream.getTracks().forEach((track) => track.stop());
+        recorder.current = null;
+      }
+    };
+  }, []);
   async function start(y: number) {
-    if (recorder.current) return;
+    if (recorder.current || pending.current) return;
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       showToast('当前浏览器不支持录音');
       return;
     }
     startY.current = y;
     cancelled.current = false;
+    pending.current = true;
     let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch {
-      onPermissionDenied();
+      stream = await openMicrophone();
+    } catch (error) {
+      if (mounted.current) onError(error);
       return;
+    } finally {
+      pending.current = false;
     }
     // 第一次授权弹框期间用户已经松手：不开始录音。
-    if (!held.current) {
+    if (!held.current || !mounted.current) {
       stream.getTracks().forEach((t) => t.stop());
+      if (mounted.current) showToast('麦克风已就绪，请重新按住说话');
       return;
     }
-    const mimeType = pickMime();
-    const rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    let rec: MediaRecorder;
+    try {
+      const mimeType = pickMime();
+      rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      rec.start();
+    } catch (error) {
+      stream.getTracks().forEach((track) => track.stop());
+      onError(error);
+      return;
+    }
     const chunks: Blob[] = [];
     rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
     rec.onstop = () => {
@@ -706,6 +738,7 @@ export function HoldToTalk({
       window.clearInterval(timer.current);
       const durationMs = Math.min(60_000, Date.now() - startAt.current);
       recorder.current = null;
+      if (!mounted.current) return;
       setState('idle');
       setElapsed(0);
       if (cancelled.current) return;
@@ -715,14 +748,26 @@ export function HoldToTalk({
       }
       onRecorded({ blob: new Blob(chunks, { type: rec.mimeType || 'audio/webm' }), durationMs });
     };
+    rec.onerror = () => {
+      cancelled.current = true;
+      rec.onstop = null;
+      if (rec.state !== 'inactive') rec.stop();
+      stream.getTracks().forEach((track) => track.stop());
+      window.clearInterval(timer.current);
+      recorder.current = null;
+      if (mounted.current) {
+        setState('idle');
+        setElapsed(0);
+        onError(new DOMException('Recording failed', 'NotReadableError'));
+      }
+    };
     recorder.current = rec;
     startAt.current = Date.now();
-    rec.start();
     setState('recording');
     timer.current = window.setInterval(() => {
       const ms = Date.now() - startAt.current;
       setElapsed(ms);
-      if (ms >= 60_000) rec.stop();
+      if (ms >= 60_000 && rec.state === 'recording') rec.stop();
     }, 250);
   }
   function finish() {
@@ -737,7 +782,11 @@ export function HoldToTalk({
         type="button"
         className={`wx-hold ${active ? 'active' : ''}`}
         onPointerDown={(e) => {
-          e.currentTarget.setPointerCapture(e.pointerId);
+          try {
+            e.currentTarget.setPointerCapture(e.pointerId);
+          } catch {
+            /* Some mobile browsers release the pointer during their permission sheet. */
+          }
           held.current = true;
           // 按下立即开始录音（4.4.9），不等长按判定。
           void start(e.clientY);

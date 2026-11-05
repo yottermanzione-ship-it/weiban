@@ -340,6 +340,7 @@ export class ReplyContext {
       userId: row.userId,
       characterId: row.characterId,
       conversationId: row.conversationId,
+      defaultVoiceId: roleDefaultVoiceId(role, view),
       // 3.24：私密模式下发的图片交给私密模式模型看（不再有单独的图片识别场景）
       modelRole: conversation.contentScope === 'adult' ? ('adult' as const) : ('chat' as const),
     };
@@ -709,6 +710,16 @@ export class ReplyContext {
           })
           .catch(() => null)
       : null;
+    const voiceHint =
+      row.kind === 'message'
+        ? await this.mediaAi.voiceReplyPrompt({
+            ctx: mediaCtx,
+            userText,
+            history,
+            voiceId: settings.voiceId ?? null,
+            sensitive: inCare || healthHint.healthUsed,
+          })
+        : '';
     const tail: PromptSection[] = [
       // 日期逐轮现取并放在历史之后；大块稳定材料保留前置，避免短对话每轮重复支付整块输入。
       ...brainContext,
@@ -725,6 +736,7 @@ export class ReplyContext {
         }回答前可以先想，想完先单独写一行【正文】，然后只写正文聊天内容；【正文】这行本身不发给用户，正文不能为空。`,
       },
       { title: '表情包', text: stickerHint },
+      { title: '本轮语音能力', text: voiceHint },
       { title: '分享照片', text: photo?.text ?? '' },
       {
         title: '这轮可能用得上的记忆',

@@ -394,6 +394,20 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
     expect(next.items).toHaveLength(1);
     expect(next.items[0]?.memoryId).not.toBe(page.items[0]?.memoryId);
   });
+  it('平台说明稳定前置，本轮真实语音状态在用户消息后进入请求', async () => {
+    const row = await user('请用语音说声晚安');
+    const snapshot = (await app.get(ReplyContext).build(row))!;
+    const at = snapshot.messages.findIndex(
+      (m) => m.role === 'user' && m.content.includes('请用语音说声晚安'),
+    );
+    expect(at).toBeGreaterThan(0);
+    expect(JSON.stringify(snapshot.messages.slice(0, at))).toContain('你正在使用的微伴');
+    expect(JSON.stringify(snapshot.messages.slice(0, at))).not.toContain('本轮语音能力');
+    // This integration fixture has no synthesis provider: a real capability read must say so.
+    expect(JSON.stringify(snapshot.messages.slice(at + 1))).toContain('语音服务当前暂不可用');
+    expect(JSON.stringify(snapshot.messages.slice(at + 1))).toContain('不声称已发语音');
+    await store.cancel(row.id);
+  });
   it('缓存优化：跨日保留旧前缀，新增记忆立即更新，更正和删除仍触发遗忘屏障', async () => {
     const originalTime = clock.now();
     const entry = await memory().create(userId, characterId, {
@@ -407,7 +421,7 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
       const context = app.get(ReplyContext);
       const before = (await context.build(row))!;
       expect(before).not.toBeNull();
-      expect(before.promptTemplateVersion).toBe('chat-v6-scenario');
+      expect(before.promptTemplateVersion).toBe('chat-v7-platform');
       const historyEnd = before.messages.findIndex(
         (m) => m.role === 'user' && m.content.includes('CACHE_HISTORY_ANCHOR'),
       );

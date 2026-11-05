@@ -70,6 +70,7 @@ import {
 import { PRIVATE_MODE_CALL_HINT, useCall, useCallEntry } from './call.js';
 import { copyText } from './copy-text.js';
 import { Dialog, showToast } from './toast.js';
+import { checkMicrophone, microphoneProblem, type MicrophoneProblem } from './microphone.js';
 import { prepareImage, uploadMedia } from '../data/upload.js';
 import { ApiFailure } from '@weiban/client-core';
 import { SHARE_REJECT_TEXT, openShare } from './share.js';
@@ -605,7 +606,22 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [viewer, setViewer] = useState<number | null>(null);
   const [textShown, setTextShown] = useState<Record<string, boolean>>({});
-  const [micDenied, setMicDenied] = useState(false);
+  const [micProblem, setMicProblem] = useState<MicrophoneProblem | null>(null);
+  const [micPending, setMicPending] = useState(false);
+  async function enterVoiceMode() {
+    if (micPending) return;
+    setMicPending(true);
+    try {
+      await checkMicrophone();
+      setMicProblem(null);
+      setMode('voice');
+      setPanel('none');
+    } catch (error) {
+      setMicProblem(microphoneProblem(error));
+    } finally {
+      setMicPending(false);
+    }
+  }
   const albumInput = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const [selecting, setSelecting] = useState(false);
@@ -1714,12 +1730,20 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           onDelete={(m) => void action(m, 'hide')}
         />
       )}
-      {micDenied && (
+      {micProblem && (
         <Dialog
-          title="需要麦克风权限才能发语音"
-          actions={[{ label: '知道了', tone: 'primary', onClick: () => setMicDenied(false) }]}
+          title={micProblem.title}
+          actions={[
+            { label: '知道了', onClick: () => setMicProblem(null) },
+            {
+              label: '重新尝试',
+              tone: 'primary',
+              busy: micPending,
+              onClick: () => void enterVoiceMode(),
+            },
+          ]}
         >
-          <p className="hint">请在浏览器地址栏左侧的网站设置里允许麦克风</p>
+          <p className="hint">{micProblem.message}</p>
         </Dialog>
       )}
       {picking && (
@@ -1814,13 +1838,18 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
             className={privateMode ? 'wx-input-icon is-muted' : 'wx-input-icon'}
             aria-label={mode === 'text' ? '切换到按住说话' : '切换到键盘'}
             aria-disabled={privateMode || undefined}
+            disabled={micPending}
+            aria-busy={micPending}
             onClick={() => {
               if (privateMode) {
                 showToast('私密模式只支持文字和图片，暂时不能发语音', 3000, 'info');
                 return;
               }
-              setMode((m) => (m === 'text' ? 'voice' : 'text'));
-              setPanel('none');
+              if (mode === 'text') void enterVoiceMode();
+              else {
+                setMode('text');
+                setPanel('none');
+              }
             }}
           >
             {mode === 'text' ? (
@@ -1830,7 +1859,10 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
             )}
           </button>
           {mode === 'voice' ? (
-            <HoldToTalk onRecorded={sendVoice} onPermissionDenied={() => setMicDenied(true)} />
+            <HoldToTalk
+              onRecorded={sendVoice}
+              onError={(error) => setMicProblem(microphoneProblem(error))}
+            />
           ) : (
             <textarea
               ref={input}

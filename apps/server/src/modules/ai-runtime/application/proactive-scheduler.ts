@@ -1292,7 +1292,7 @@ ${careNote}`
           ],
           meta: {
             stablePrefixChars: (privateModel ? privateBrain : normalBrain)!.prefix.length,
-            promptTemplateVersion: 'brain-v2-scenario:proactive',
+            promptTemplateVersion: 'brain-v3-platform:proactive',
             conversationKind: 'direct',
             scenarioMode: privateModel
               ? 'adult'
