@@ -20,6 +20,65 @@ async function openChat(page: Page) {
   await expect(page.getByRole('heading', { name: '测试陪伴角色' })).toBeVisible();
   await expect(page.getByLabel('消息', { exact: true })).toBeVisible();
 }
+for (const sameText of [false, true]) {
+  test(`本机发送保存尚未完成时，新输入的${sameText ? '同文' : '不同'}草稿保留`, async ({
+    page,
+  }) => {
+    await openChat(page);
+    const sent = sameText ? '相同文字也属于下一条草稿' : '保存尚未完成的上一条消息';
+    const draft = sameText ? sent : '发送期间输入的新草稿';
+    await page.getByLabel('消息', { exact: true }).fill(sent);
+    // 用真实读写事务暂时占住本机存储，稳定重现发送保存晚于下一次输入的顺序。
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          const open = indexedDB.open('weiban-app', 1);
+          open.onerror = () => reject(open.error);
+          open.onsuccess = () => {
+            const db = open.result;
+            const tx = db.transaction('records', 'readwrite');
+            let holding = true;
+            (window as Window & { releaseDraftWrite?: () => void }).releaseDraftWrite = () => {
+              holding = false;
+            };
+            const keep = () => {
+              tx.objectStore('records').get('draft-test-lock').onsuccess = () => {
+                resolve();
+                if (holding) keep();
+              };
+            };
+            tx.oncomplete = tx.onabort = () => db.close();
+            keep();
+          };
+        }),
+    );
+    const release = () =>
+      page.evaluate(() => {
+        const control = window as Window & { releaseDraftWrite?: () => void };
+        control.releaseDraftWrite?.();
+        delete control.releaseDraftWrite;
+      });
+    try {
+      await page.getByRole('button', { name: '发送', exact: true }).click();
+      await expect(page.getByRole('button', { name: '发送', exact: true })).toBeDisabled();
+      // 同文也先清空再重新输入，不能只用字符串相等来判断是不是原草稿。
+      await page.getByLabel('消息', { exact: true }).fill('');
+      await page.getByLabel('消息', { exact: true }).fill(draft);
+      await release();
+      await expect(
+        page
+          .locator('.wx-msg-row.mine')
+          .filter({ hasText: sent })
+          .getByText('已送达', { exact: true }),
+      ).toBeVisible();
+      await expect(page.getByLabel('消息', { exact: true })).toHaveValue(draft);
+      await expect(page.getByRole('button', { name: '发送', exact: true })).toBeEnabled();
+    } finally {
+      await release();
+    }
+  });
+}
+
 test('六阶段相处弹层：第六级成长进度和六个徽记在亮暗色中可见', async ({ page }, testInfo) => {
   await page.clock.setSystemTime(new Date('2026-10-05T12:00:00.000Z'));
   // 仅将本地合成账号的响应设为第六级；不修改真实用户的等级或绕过业务加分规则。
