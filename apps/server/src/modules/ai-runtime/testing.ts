@@ -28,3 +28,14 @@ export { CharacterImageService, type ImageUse } from './application/character-im
 export { MediaAiService } from './application/media-ai.js';
 export { ProactiveSchedulerService } from './application/proactive-scheduler.js';
 export { EcologySettingsService } from './application/ecology-settings.js';
+export { brainPrefix, brainPromptParts, type BrainInput } from './domain/brain.js';
+export {
+  AUTHOR_NOTE_DEPTH,
+  CHARACTER_NOTE_DEPTH,
+  scenarioNote,
+} from './domain/character-prompt.js';
+export {
+  assemblePrompt,
+  type ChatTurnMessage,
+  type DepthInsert,
+} from './domain/prompt-assembly.js';

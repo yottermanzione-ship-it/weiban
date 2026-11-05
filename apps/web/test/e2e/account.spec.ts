@@ -214,23 +214,39 @@ test('真实Service Worker升级不打断使用，明确刷新后接续新版且
         { timeout: 15_000 },
       )
       .toContain('"waiting":false');
-    const controlledVersion = await page.evaluate(
-      () =>
-        new Promise<unknown>((resolve) => {
-          const channel = new MessageChannel();
-          const finish = (value: unknown) => {
-            window.clearTimeout(timer);
-            channel.port1.close();
-            resolve(value);
-          };
-          const timer = window.setTimeout(() => finish(null), 2000);
-          channel.port1.onmessage = (event) => finish(event.data);
-          navigator.serviceWorker.controller?.postMessage({ type: 'WEIBAN_TEST_VERSION' }, [
-            channel.port2,
-          ]);
-        }),
-    );
-    expect(controlledVersion).toBe('browser-upgrade-fixture');
+    // waiting 清空后，自动重载仍可能尚未结束。每次都向当前页面的 controller 询问，
+    // 只允许重载销毁执行上下文时重新读取；其他错误及错误版本仍必须失败。
+    await expect
+      .poll(
+        () =>
+          page
+            .evaluate(
+              () =>
+                new Promise<unknown>((resolve) => {
+                  const channel = new MessageChannel();
+                  const finish = (value: unknown) => {
+                    window.clearTimeout(timer);
+                    channel.port1.close();
+                    resolve(value);
+                  };
+                  const timer = window.setTimeout(() => finish(null), 2000);
+                  channel.port1.onmessage = (event) => finish(event.data);
+                  navigator.serviceWorker.controller?.postMessage({ type: 'WEIBAN_TEST_VERSION' }, [
+                    channel.port2,
+                  ]);
+                }),
+            )
+            .catch((error: unknown) => {
+              if (
+                error instanceof Error &&
+                error.message.includes('Execution context was destroyed')
+              )
+                return 'reloading';
+              throw error;
+            }),
+        { timeout: 15_000 },
+      )
+      .toBe('browser-upgrade-fixture');
     await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
   } finally {
     await writeFile(file, original);

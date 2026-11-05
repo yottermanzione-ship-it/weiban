@@ -33,7 +33,6 @@ import {
   safetyStyleText,
   scenarioNote,
   speechText,
-  AUTHOR_NOTE_DEPTH,
 } from '../domain/character-prompt.js';
 import {
   memoryLine,
@@ -325,7 +324,8 @@ function buildNew(
     history: chat,
     inserts: [
       {
-        depth: AUTHOR_NOTE_DEPTH,
+        // 历史 chat-v3 对照保留当时的深度，不跟随当前模板优化变化。
+        depth: 4,
         order: 1,
         text: [
           scenarioNote(card, 'daily', null),

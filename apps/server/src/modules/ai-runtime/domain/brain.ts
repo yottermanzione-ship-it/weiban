@@ -133,6 +133,14 @@ export function brainPrefix(input: BrainInput): PromptSection[] {
     text: index === 0 ? section.text : section.text.slice(0, budgets[section.title] ?? 300),
   }));
 }
+/** 私聊只把末尾的当天日期后置；大块记忆/自述/经历保留既有前缀顺序，避免短对话重复付费。 */
+export function brainPromptParts(input: BrainInput): {
+  head: PromptSection[];
+  context: PromptSection[];
+} {
+  const sections = brainPrefix(input);
+  return { head: sections.slice(0, -1), context: sections.slice(-1) };
+}
 /** Fail closed before any provider call. Metadata is supplied by the reader, never inferred from text. */
 export function assertBrainScope(scope: 'normal' | 'adult', modelRole: ModelRole): void {
   if (scope === 'adult' && modelRole !== 'adult')
