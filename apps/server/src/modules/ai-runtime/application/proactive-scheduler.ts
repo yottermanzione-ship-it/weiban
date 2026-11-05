@@ -1189,6 +1189,7 @@ export class ProactiveSchedulerService {
       plan.characterId,
       'normal',
       recentNormalOnly.map((m) => m.content).join('\n'),
+      { conversationStyle: !care },
     );
     const privateBrain = adult
       ? await this.brain.build(
@@ -1196,6 +1197,7 @@ export class ProactiveSchedulerService {
           plan.characterId,
           'adult',
           recent.map((m) => m.content).join('\n'),
+          { conversationStyle: !care },
         )
       : null;
     if (!normalBrain || (adult && !privateBrain)) return this.fail(plan, 'brain_unavailable');
@@ -1290,7 +1292,7 @@ ${careNote}`
           ],
           meta: {
             stablePrefixChars: (privateModel ? privateBrain : normalBrain)!.prefix.length,
-            promptTemplateVersion: 'brain-v1:proactive',
+            promptTemplateVersion: 'brain-v2-scenario:proactive',
             conversationKind: 'direct',
             scenarioMode: privateModel
               ? 'adult'

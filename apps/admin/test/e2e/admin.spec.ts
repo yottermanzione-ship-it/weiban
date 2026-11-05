@@ -95,6 +95,9 @@ test('新增情景模式生成有效标识，保存和编辑后刷新仍保留',
   await page.getByRole('button', { name: /新增情景模式$/ }).click();
   await page.getByLabel('名称', { exact: true }).fill('合成收尾情景');
   await page.getByLabel('说明', { exact: true }).fill('仅本地合成数据');
+  await page
+    .getByLabel('预设提示词', { exact: true })
+    .fill('先回应对方提到的具体事情，再温和地提一个问题。');
   const created = page.waitForResponse(
     (r) => r.request().method() === 'POST' && r.url().endsWith('/admin/scenario-modes'),
   );

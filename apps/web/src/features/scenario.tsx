@@ -123,6 +123,8 @@ export function useCurrentPreset(target: ScenarioTarget | null) {
   const mode = target?.kind === 'group' ? group.data?.scenarioMode : character.data?.scenarioMode;
   return {
     mode: mode as ScenarioMode | undefined,
+    presetId: (target?.kind === 'group' ? group.data : character.data)?.scenarioPresetId,
+    presetName: (target?.kind === 'group' ? group.data : character.data)?.scenarioPresetName,
     refresh: target?.kind === 'group' ? group.refresh : character.refresh,
   };
 }
@@ -130,12 +132,14 @@ export function useCurrentPreset(target: ScenarioTarget | null) {
 export function ScenarioSheet({
   target,
   current,
+  currentPresetId,
   privateModel,
   onClose,
   onChanged,
 }: {
   target: ScenarioTarget;
   current: string | undefined;
+  currentPresetId?: string | null;
   /**
    * 平台固定私密模型信息（由权威源解析后传入）。undefined = 让本组件走默认读取器；
    * null = 暂不可用。普通用户/角色自己的 adult 选择永远不会从这里或默认读取器回退。
@@ -168,20 +172,22 @@ export function ScenarioSheet({
     'not-configured' | 'unavailable' | 'unreadable' | 'intro' | null
   >(null);
   const [quote, setQuote] = useState<PlatformPrivateModel | null>(null);
-  const items = modes.data?.items ?? [];
+  type Option = ScenarioModeOption & { presetId?: string };
+  const items: Option[] = [...(modes.data?.items ?? []), ...(modes.data?.customItems ?? [])];
+  const [privatePresetId, setPrivatePresetId] = useState<string | undefined>();
 
-  async function apply(id: ScenarioMode) {
+  async function apply(id: ScenarioMode, presetId?: string) {
     setPending(true);
     try {
       if (target.kind === 'group')
         await api.call(GroupCompanionEndpoints.updateSettings, {
           params: { conversationId: target.conversationId },
-          body: { scenarioMode: id },
+          body: { scenarioMode: id, scenarioPresetId: presetId ?? null },
         });
       else
         await api.call(CompanionEndpoints.updateForCharacter, {
           params: { characterId: target.characterId },
-          body: { scenarioMode: id },
+          body: { scenarioMode: id, scenarioPresetId: presetId ?? null },
         });
       onChanged(id);
       onClose();
@@ -200,7 +206,7 @@ export function ScenarioSheet({
   /** 退出私密：回到上次普通模式；没有记录或已不可用时用自动，再退到第一个可用普通模式。 */
   async function exitPrivate() {
     const key = scenarioTargetKey(target);
-    const allowed = items.filter((m) => m.id !== 'adult').map((m) => m.id);
+    const allowed = items.filter((m) => m.id !== 'adult' && !m.presetId).map((m) => m.id);
     const last = getLastNormalMode(userId, key);
     const next: ScenarioMode =
       last && allowed.includes(last)
@@ -215,18 +221,19 @@ export function ScenarioSheet({
     if (current && current !== 'adult' && isNormalScenarioMode(current))
       rememberLastNormalMode(userId, scenarioTargetKey(target), current);
     setPrompt(null);
-    void apply('adult');
+    void apply('adult', privatePresetId);
   }
 
-  async function choose(option: ScenarioModeOption) {
+  async function choose(option: Option) {
     if (pending || checking) return;
-    if (option.id === current) {
+    if (option.id === current && (option.presetId ?? null) === (currentPresetId ?? null)) {
       // 再点已选私密 = 关闭并恢复上一次普通模式；普通模式重复点只关闭，不重复保存。
       if (option.id === 'adult') return exitPrivate();
       onClose();
       return;
     }
-    if (option.id !== 'adult') return apply(option.id);
+    if (option.id !== 'adult') return apply(option.id, option.presetId);
+    setPrivatePresetId(option.presetId);
     setChecking(true);
     try {
       // 平台固定模型：优先用上层按权威源解析好的结果；否则读 private-model 只读接口。
@@ -248,12 +255,13 @@ export function ScenarioSheet({
       setChecking(false);
     }
   }
-  const row = (option: ScenarioModeOption) => {
+  const row = (option: Option) => {
     const look = presetLook[option.id] ?? presetLook.daily!;
-    const selected = option.id === (current ?? 'daily');
+    const selected =
+      option.id === (current ?? 'daily') && (option.presetId ?? null) === (currentPresetId ?? null);
     return (
       <MenuRow
-        key={option.id}
+        key={option.presetId ?? option.id}
         disabled={pending || checking}
         chevron={false}
         onClick={() => void choose(option)}
@@ -261,7 +269,7 @@ export function ScenarioSheet({
           <>
             <IconTile icon={look.icon} tint={look.tint} size="md" />
             <span className="row-name">
-              {option.id === 'adult'
+              {option.id === 'adult' && !option.presetId
                 ? '私密模式'
                 : option.name || presetNames[option.id] || option.id}
               {option.recommended && <span className="mini-tag">推荐</span>}

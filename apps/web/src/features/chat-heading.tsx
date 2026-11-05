@@ -11,6 +11,7 @@ export function ChatHeading({
   name,
   characterId,
   mode,
+  modeLabel,
   active,
   group,
   typing,
@@ -18,6 +19,7 @@ export function ChatHeading({
   name: ReactNode;
   characterId?: string;
   mode?: string;
+  modeLabel?: string;
   active: boolean;
   group: boolean;
   typing: boolean;
@@ -35,7 +37,7 @@ export function ChatHeading({
         ) : (
           <>
             <span className="wx-chat-name">{name}</span>
-            <ScenarioModeBadge mode={mode} />
+            <ScenarioModeBadge mode={mode} label={modeLabel} />
             {!group && characterId && (
               <CharacterStatus key={characterId} characterId={characterId} enabled={active} />
             )}

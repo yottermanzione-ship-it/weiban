@@ -4,6 +4,7 @@ import { expect, it, vi } from 'vitest';
 import { CharacterCard } from '@weiban/contracts';
 import {
   brainPrefix,
+  brainPromptParts,
   brainText,
   assertBrainScope,
   GROUP_MEMORY_BOUNDARY,
@@ -80,6 +81,26 @@ it('M1 normal scenes ignore adult mode overrides; compact decisions bound every 
   expect(compact.find((s) => s.title === '说话示例')?.text).toBe('');
   expect(renderSections(compact).length).toBeLessThan(6000);
 });
+it('稳定的长情景预设置于新增历史之前，逐轮和跨日不重复移到尾部，修改立即可见', () => {
+  const input = { ...brainFixture(), scenarioPrompt: '倾听指令'.repeat(900) };
+  const first = brainPromptParts(input);
+  const next = brainPromptParts({ ...input, now: new Date('2026-10-22T10:00:00Z') });
+  const assemble = (parts: typeof first, text: string) =>
+    assemblePrompt({
+      macros: { user: '小雨', char: '程澈' },
+      head: parts.head,
+      history: [{ role: 'user', content: text }],
+      tail: parts.context,
+    }).messages;
+  const before = assemble(first, '第一轮合成消息');
+  const after = assemble(next, '第二轮合成消息');
+  expect(after[0]?.content).toBe(before[0]?.content);
+  expect(after[0]?.content).toContain(input.scenarioPrompt);
+  expect(after.slice(1).some((m) => m.content.includes(input.scenarioPrompt))).toBe(false);
+  const changed = brainPromptParts({ ...input, scenarioPrompt: '新的鼓励指令' });
+  expect(renderSections(changed.head)).not.toContain(input.scenarioPrompt);
+  expect(renderSections(changed.head)).toContain('新的鼓励指令');
+});
 it('M1 adult content is rejected before a normal or platform care provider is called', async () => {
   for (const modelRole of ['chat', 'background'] as const)
     expect(() => assertBrainScope('adult', modelRole)).toThrow();
@@ -125,7 +146,10 @@ it('M1 shared reader isolates scopes and characters, preserves retrieval limits 
     identity: {
       getProfile: async () => ({ nickname: fixture.nickname, timeZone: fixture.timeZone }),
     },
-    settings: { get: async () => fixture.settings },
+    settings: {
+      get: async () => fixture.settings,
+      scenarioPrompt: async () => 'selected-conversation-scene',
+    },
     growth: { relationshipStage: async () => fixture.stage },
     continuity: { context: async () => '' },
     episodes: { context: async () => '' },
@@ -153,6 +177,12 @@ it('M1 shared reader isolates scopes and characters, preserves retrieval limits 
   expect(social?.recall).toContain('普通事实');
   expect(social?.daily).toContain('在工作室画画');
   expect(social?.daily).not.toContain('经期');
+  const conversation = await service.build('user', 'role-a', 'normal', 'query', {
+    conversationStyle: true,
+  });
+  expect(conversation?.prefix).toContain('selected-conversation-scene');
+  expect(social?.prefix).not.toContain('selected-conversation-scene');
+  expect(normal?.prefix).not.toContain('selected-conversation-scene');
 });
 import { ModelPurpose, type GenerateTextInput, type ModelGatewayPort } from '@weiban/contracts';
 import { careFallback, callModelForCare } from '../application/safety-care.js';

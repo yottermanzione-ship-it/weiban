@@ -20,9 +20,9 @@ export function scenarioModeShortName(mode: string | null | undefined): string |
  * 昵称旁的模式徽标；开关关闭或未知模式时不渲染（不占位、不影响标题省略）。
  * 开关关闭是默认状态，同账号刷新后仍保持。
  */
-export function ScenarioModeBadge({ mode }: { mode?: string }) {
+export function ScenarioModeBadge({ mode, label: name }: { mode?: string; label?: string }) {
   const [visible] = useScenarioBadgeVisible();
-  const label = scenarioModeShortName(mode);
+  const label = name || scenarioModeShortName(mode);
   if (!visible || !label) return null;
   return (
     <span

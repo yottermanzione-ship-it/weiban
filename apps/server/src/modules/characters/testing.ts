@@ -1,4 +1,5 @@
 export { CharacterService } from './application/characters.js';
+export { ScenarioModeService } from './application/scenario-modes.js';
 export { CustomCharacterService } from './application/custom-character.js';
 export { GatewayCharacterEvaluator, type CharacterEvaluator } from './application/evaluator.js';
 export { CHARACTER_EVALUATOR, CHARACTER_CONTACT_ACCESS } from './tokens.js';

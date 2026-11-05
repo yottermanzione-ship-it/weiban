@@ -11,6 +11,7 @@
  */
 
 import type { WebSearchResultItem } from '@weiban/contracts';
+import { NATURAL_SPEECH_INSTRUCTION } from '../domain/speech-text.js';
 import { SystemClock } from '../../../platform/index.js';
 import { jevDecide } from './jev-adapter.js';
 import { isSafetyPolicyBlock } from './text-adapter.js';
@@ -563,7 +564,7 @@ async function mimoSynthesize(
       body: JSON.stringify({
         model: t.model,
         messages: [
-          { role: 'user', content: '用自然、口语化的语气朗读下一条内容，不要添加任何额外说明。' },
+          { role: 'user', content: NATURAL_SPEECH_INSTRUCTION },
           { role: 'assistant', content: input.text },
         ],
         audio: { format: 'wav', voice: input.voice },

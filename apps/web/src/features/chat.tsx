@@ -192,7 +192,9 @@ function systemText(code: string, params: Record<string, string | number | boole
       return '已通过好友申请，现在可以开始聊天了';
     case 'scenario_mode_changed':
       if (params.reason === 'adult_mode_unavailable') return '私密预设已不可用，已回到日常聊天';
-      return `已切换到 ${presetNames[p('mode')] ?? '日常聊天'}`;
+      if (params.reason === 'scenario_mode_unavailable')
+        return '原情景预设已不可用，已回到日常聊天';
+      return `已切换到 ${p('modeName') || presetNames[p('mode')] || '日常聊天'}`;
     case 'scenario_mode_unavailable':
       return '私密模型暂时不可用，请手动切换到其他模式';
     case 'scenario_mode_switched':
@@ -1584,6 +1586,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           name={selecting ? `已选择 ${chosen.length} 条` : <Name conversation={conversation} />}
           characterId={selecting ? undefined : role?.refId}
           mode={selecting ? undefined : preset.mode}
+          modeLabel={selecting ? undefined : preset.presetName}
           active={
             !selecting &&
             !!role &&
@@ -1972,6 +1975,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
         <ScenarioSheet
           target={presetTarget}
           current={preset.mode}
+          currentPresetId={preset.presetId}
           onClose={() => setPresetOpen(false)}
           onChanged={() => {
             preset.refresh();

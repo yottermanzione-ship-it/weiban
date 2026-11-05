@@ -30,7 +30,7 @@ import {
 import { AlertDialog, showSnackbar, showToast } from './toast.js';
 import { FieldPage } from './edit-page.js';
 import { AvatarEditor } from './avatar-editor.js';
-import { MediaImg } from './media.js';
+import { CachedPicture } from './avatar-cache.js';
 
 function groupError(e: unknown): string {
   if (e instanceof ApiFailure && e.status === 422 && e.code === 'limit_reached')
@@ -107,8 +107,19 @@ export function GroupAvatar({
 }) {
   if (mediaId)
     return (
-      <span className="group-avatar custom-group-avatar" style={{ width: size, height: size }}>
-        <MediaImg key={mediaId} mediaId={mediaId} alt="群头像" />
+      <span
+        className="group-avatar custom-group-avatar"
+        style={{ width: size, height: size }}
+        role="img"
+        aria-label="群头像"
+      >
+        <CachedPicture
+          key={mediaId}
+          mediaId={mediaId}
+          width={size}
+          height={size}
+          fallback={<OldIcon name="wechat/chat_pair" size={Math.round(size * 0.52)} />}
+        />
       </span>
     );
   const cell = Math.floor((size - 4) / 2);

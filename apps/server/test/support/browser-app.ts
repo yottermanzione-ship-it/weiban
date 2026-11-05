@@ -2,14 +2,18 @@
 import 'reflect-metadata';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import sharp from 'sharp';
+import { ChatGroupService } from '../../src/modules/chat/testing.js';
 import {
   AdminCharacterWrite,
+  AdminScenarioModeCreate,
   CharacterCard,
   type ChatParticipantPort,
   type ChatReadPort,
 } from '@weiban/contracts';
 import {
   CharacterService,
+  ScenarioModeService,
   CharacterCheckWorker,
   CHARACTER_EVALUATOR,
 } from '../../src/modules/characters/testing.js';
@@ -100,7 +104,16 @@ let chatUser = '';
 let guideUser = '';
 let importUser = '';
 let avatarUser = '';
+let layoutUser = '';
 const admin = await commands.createAdmin('browser_admin', 'correct horse battery');
+await app.get(ScenarioModeService).create(
+  admin,
+  AdminScenarioModeCreate.parse({
+    id: 'browser_gentle_scene',
+    name: '合成倾听情景',
+    presetPrompt: '先回应对方提到的具体事情，再温和地提一个问题。',
+  }),
+);
 // 3.22: sending requires an explicit chat model. This upstream is local and controlled;
 // background workers remain disabled, so browser checks never call a paid provider.
 const localUpstream = new FlowUpstream();
@@ -184,15 +197,17 @@ for (const [name, balance] of [
   ['browser_first', 1_000_000],
   ['browser_guide', 1_000_000],
   ['browser_avatar', 1_000_000],
+  ['browser_layout', 1_000_000],
 ] as const) {
   const user = await commands.createAdmin(name, 'correct horse battery');
   if (name === 'browser_user') chatUser = user;
   if (name === 'browser_guide') guideUser = user;
   if (name === 'browser_other') importUser = user;
   if (name === 'browser_avatar') avatarUser = user;
+  if (name === 'browser_layout') layoutUser = user;
   await commands.setRole(name, 'user');
   await app.get(ScenarioService).updateConfig(user, { chat: { modelKey: chatModel } });
-  if (name === 'browser_other' || name === 'browser_guide' || name === 'browser_avatar')
+  if (['browser_other', 'browser_guide', 'browser_avatar', 'browser_layout'].includes(name))
     await app.get(SettingsService).updateProfile(user, { nickname: '其他用户' });
   await app.get(BillingAdminService).adjust(admin, user, {
     direction: 'grant',
@@ -227,46 +242,51 @@ const sample = JSON.parse(
     'utf8',
   ).match(/```json\s*([\s\S]*?)```/)![1]!,
 ) as { card: unknown };
-const role = await app.get(CharacterService).create(
-  admin,
-  AdminCharacterWrite.parse({
-    name: '测试陪伴角色',
-    tagline: '浏览器可靠聊天',
-    intro: '原创成年角色',
-    categoryId: 'original',
-    avatar: {
-      imageMediaId: null,
-      display: { supportColors: [], avatarText: null, avatarPattern: 'star', themeColor: null },
-    },
-    birthday: '2000-01-02',
-    fanName: null,
-    classification: {
-      basis: 'original',
-      realPersonKind: null,
-      ageSetting: 'adult',
-      childAppearance: false,
-    },
-    fallbackGreetings: ['你好，欢迎来聊聊天'],
-    card: CharacterCard.parse(sample.card),
-  }),
-);
+const roleInput = AdminCharacterWrite.parse({
+  name: '测试陪伴角色',
+  tagline: '浏览器可靠聊天',
+  intro: '原创成年角色',
+  categoryId: 'original',
+  avatar: {
+    imageMediaId: null,
+    display: { supportColors: [], avatarText: null, avatarPattern: 'star', themeColor: null },
+  },
+  birthday: '2000-01-02',
+  fanName: null,
+  classification: {
+    basis: 'original',
+    realPersonKind: null,
+    ageSetting: 'adult',
+    childAppearance: false,
+  },
+  fallbackGreetings: ['你好，欢迎来聊聊天'],
+  card: CharacterCard.parse(sample.card),
+});
+const role = await app.get(CharacterService).create(admin, roleInput);
 await app
   .get(CharacterCheckWorker)
   .runChecks({ characterId: role.characterId, adminId: admin, revision: 1 });
 await app.get(CharacterService).publish(admin, role.characterId);
-async function seedConversation(userId: string, count: number) {
-  await app.get(ContactsCommands).add(userId, { characterId: role.characterId, greeting: '你好' });
-  const contactRow = await new ContactsTestQueries(app.get(DATABASE)).row(userId, role.characterId);
-  if (!contactRow) throw new Error('missing browser contact');
-  clock.advance(Math.max(0, contactRow.accept_after.getTime() - clock.nowMs()));
+async function seedConversation(userId: string, count: number, character = role) {
   await app
     .get(ContactsCommands)
-    .accept({ userId: userId, characterId: role.characterId, requestId: contactRow.request_id });
+    .add(userId, { characterId: character.characterId, greeting: '你好' });
+  const contactRow = await new ContactsTestQueries(app.get(DATABASE)).row(
+    userId,
+    character.characterId,
+  );
+  if (!contactRow) throw new Error('missing browser contact');
+  clock.advance(Math.max(0, contactRow.accept_after.getTime() - clock.nowMs()));
+  await app.get(ContactsCommands).accept({
+    userId: userId,
+    characterId: character.characterId,
+    requestId: contactRow.request_id,
+  });
   const activeRow = await app
     .get<Database>(DATABASE)
     .query<{ conversation_id: string }>(
       'SELECT conversation_id FROM contacts.contacts WHERE user_id=$1 AND character_id=$2',
-      [userId, role.characterId],
+      [userId, character.characterId],
     );
   const conversationId = activeRow.rows[0]!.conversation_id;
   const conversation = await app.get<ChatReadPort>(CHAT_READ_PORT).getConversation(conversationId);
@@ -284,6 +304,38 @@ async function seedConversation(userId: string, count: number) {
 await seedConversation(chatUser, 70);
 await seedConversation(guideUser, 1);
 await seedConversation(avatarUser, 1);
+// Dedicated long address book: real contact/profile APIs, no production records or provider calls.
+const layoutCharacters: string[] = [];
+for (let index = 0; index < 32; index++) {
+  const letter = index < 16 ? String.fromCharCode(65 + index) : 'Z';
+  const character = await app.get(CharacterService).create(admin, {
+    ...roleInput,
+    name: `${letter} 布局测试 ${String(index).padStart(2, '0')}`,
+  });
+  await app
+    .get(CharacterCheckWorker)
+    .runChecks({ characterId: character.characterId, adminId: admin, revision: 1 });
+  await app.get(CharacterService).publish(admin, character.characterId);
+  await seedConversation(layoutUser, 0, character);
+  layoutCharacters.push(character.characterId);
+}
+const group = await app.get(ChatGroupService).createGroupConversation(null, {
+  ownerUserId: layoutUser,
+  characterIds: layoutCharacters.slice(0, 2),
+  title: '头像加载测试群',
+  createdByCharacterId: null,
+  idempotencyKey: 'browser-layout-group',
+});
+if (!group.ok) throw new Error('browser group seed failed');
+const avatar = await app.get(MediaService).upload(layoutUser, 'group_avatar', {
+  buffer: await sharp({ create: { width: 96, height: 96, channels: 4, background: '#07c160' } })
+    .png()
+    .toBuffer(),
+  mimetype: 'image/png',
+});
+await app
+  .get(ChatGroupService)
+  .setAvatarForUser(layoutUser, group.value.conversationId, avatar.mediaId);
 await app.listen(3000, '127.0.0.1');
 for (const signal of ['SIGINT', 'SIGTERM'] as const)
   process.on(

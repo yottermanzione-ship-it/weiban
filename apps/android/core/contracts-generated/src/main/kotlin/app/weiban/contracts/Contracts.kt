@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 7.0. Regenerate: pnpm android:generate
+// Contract 7.1. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "7.0"
+const val CONTRACT_VERSION: String = "7.1"
 
 @Serializable
 data class AccountAlias(
@@ -3176,6 +3176,8 @@ data class CompanionEndpointsGetForCharacterResponse(
     @SerialName("proactiveCalls") val `proactiveCalls`: Boolean? = null,
     @SerialName("dailyLife") val `dailyLife`: Boolean? = null,
     @SerialName("voiceId") val `voiceId`: Id? = null,
+    @SerialName("scenarioPresetId") val `scenarioPresetId`: ScenarioPresetId? = null,
+    @SerialName("scenarioPresetName") val `scenarioPresetName`: String? = null,
 )
 
 @Serializable
@@ -3186,6 +3188,7 @@ data class CompanionEndpointsListModesParams(
 @Serializable
 data class CompanionEndpointsListModesResponse(
     @SerialName("items") val `items`: List<ScenarioModeOption>,
+    @SerialName("customItems") val `customItems`: List<ScenarioPresetOption>? = null,
 )
 
 @Serializable
@@ -3205,6 +3208,8 @@ data class CompanionSettings(
     @SerialName("proactiveCalls") val `proactiveCalls`: Boolean? = null,
     @SerialName("dailyLife") val `dailyLife`: Boolean? = null,
     @SerialName("voiceId") val `voiceId`: Id? = null,
+    @SerialName("scenarioPresetId") val `scenarioPresetId`: ScenarioPresetId? = null,
+    @SerialName("scenarioPresetName") val `scenarioPresetName`: String? = null,
 )
 
 typealias ComplaintReason = String
@@ -6166,6 +6171,7 @@ data class GroupCompanionEndpointsGetSettingsParams(
 @Serializable
 data class GroupCompanionEndpointsListModesResponse(
     @SerialName("items") val `items`: List<ScenarioModeOption>,
+    @SerialName("customItems") val `customItems`: List<ScenarioPresetOption>? = null,
 )
 
 @Serializable
@@ -6173,6 +6179,7 @@ data class GroupCompanionEndpointsUpdateSettingsBody(
     @SerialName("instantReply") val `instantReply`: Boolean? = null,
     @SerialName("selfChatEnabled") val `selfChatEnabled`: Boolean? = null,
     @SerialName("scenarioMode") val `scenarioMode`: ScenarioMode? = null,
+    @SerialName("scenarioPresetId") val `scenarioPresetId`: ScenarioPresetId? = null,
 )
 
 @Serializable
@@ -6182,6 +6189,8 @@ data class GroupCompanionSettings(
     @SerialName("selfChatEnabled") val `selfChatEnabled`: Boolean,
     @SerialName("scenarioMode") val `scenarioMode`: String,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
+    @SerialName("scenarioPresetId") val `scenarioPresetId`: ScenarioPresetId? = null,
+    @SerialName("scenarioPresetName") val `scenarioPresetName`: String? = null,
 )
 
 @Serializable
@@ -10082,6 +10091,19 @@ data class ScenarioModeOption(
     @SerialName("aiReady") val `aiReady`: Boolean? = null,
 )
 
+typealias ScenarioPresetId = String
+
+@Serializable
+data class ScenarioPresetOption(
+    @SerialName("id") val `id`: ScenarioMode,
+    @SerialName("name") val `name`: String,
+    @SerialName("description") val `description`: String? = null,
+    @SerialName("section") val `section`: String? = null,
+    @SerialName("recommended") val `recommended`: Boolean? = null,
+    @SerialName("aiReady") val `aiReady`: Boolean? = null,
+    @SerialName("presetId") val `presetId`: ScenarioPresetId,
+)
+
 @Serializable
 data class ScenarioRefs(
     @SerialName("chat") val `chat`: ModelRef? = null,
@@ -11129,6 +11151,7 @@ data class UpdateCompanionSettingsRequest(
     @SerialName("proactiveCalls") val `proactiveCalls`: Boolean? = null,
     @SerialName("dailyLife") val `dailyLife`: Boolean? = null,
     @SerialName("voiceId") val `voiceId`: Id? = null,
+    @SerialName("scenarioPresetId") val `scenarioPresetId`: ScenarioPresetId? = null,
 )
 
 @Serializable
@@ -11142,6 +11165,7 @@ data class UpdateCompanionSettingsRequestInput(
     @SerialName("proactiveCalls") val `proactiveCalls`: Boolean? = null,
     @SerialName("dailyLife") val `dailyLife`: Boolean? = null,
     @SerialName("voiceId") val `voiceId`: Id? = null,
+    @SerialName("scenarioPresetId") val `scenarioPresetId`: ScenarioPresetId? = null,
 )
 
 @Serializable

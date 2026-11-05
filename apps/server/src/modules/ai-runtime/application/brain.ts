@@ -43,7 +43,7 @@ export class BrainContextService {
     characterId: string,
     scope: 'normal' | 'adult',
     query: string,
-    opts: { compact?: boolean; excludeHealth?: boolean } = {},
+    opts: { compact?: boolean; excludeHealth?: boolean; conversationStyle?: boolean } = {},
   ): Promise<PersonalBrain | null> {
     const role = await this.characters.getForRuntime(userId, characterId);
     const policy = await this.policy.getCharacterPolicy(userId, characterId);
@@ -127,6 +127,9 @@ export class BrainContextService {
       selfReports: visible(selfReports) ? selfReports : '',
       stableMemory: opts.compact ? stableMemory.slice(0, 1600) : stableMemory,
       episodes: visible(episodes.stable) ? episodes.stable : '',
+      scenarioPrompt: opts.conversationStyle
+        ? ((await this.settings.scenarioPrompt(settings, scope)) ?? undefined)
+        : undefined,
       compact: opts.compact,
     });
     const recalled = takeWithin(

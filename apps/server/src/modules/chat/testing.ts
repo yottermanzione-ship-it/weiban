@@ -2,6 +2,7 @@ import type { Database } from '../../platform/index.js';
 export { ChatAdminService } from './application/admin.js';
 export { ChatLifecycle } from './application/lifecycle.js';
 export { ChatStore } from './application/store.js';
+export { ChatGroupService } from './application/groups.js';
 export class ChatTestQueries {
   constructor(private readonly db: Database) {}
   async messages(conversationId: string) {

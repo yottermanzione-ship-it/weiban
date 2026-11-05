@@ -150,7 +150,9 @@ test('重复点当前普通模式不保存；开关持久化并驱动头部徽�
   expect(badgeBox!.x + badgeBox!.width).toBeLessThanOrEqual(moreBox!.x);
 
   await page.getByTestId('toggle-typing').click();
-  await expect(page.locator('.wx-chat-title h1')).toHaveText('对方正在输入...');
+  await expect(page.locator('.wx-chat-title h1')).toHaveText('对方正在输入');
+  await expect(page.locator('.wx-chat-title .typing-dots')).toHaveAttribute('aria-hidden', 'true');
+  await expect(page.locator('.wx-chat-title .typing-dots i')).toHaveCount(3);
   await expect(badge).toHaveCount(0);
   await page.getByTestId('toggle-typing').click();
   await expect(badge).toHaveText('日常');

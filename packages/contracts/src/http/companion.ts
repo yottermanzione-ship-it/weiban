@@ -43,6 +43,13 @@ export const ScenarioModeOption = z.object({
   aiReady: z.boolean().optional(),
 });
 export type ScenarioModeOption = z.infer<typeof ScenarioModeOption>;
+/** 7.1：管理员预设使用独立编号，基础模式仍保持旧客户端认识的枚举。 */
+export const ScenarioPresetId = z
+  .string()
+  .regex(/^[a-z][a-z0-9_]*$/)
+  .max(32);
+export const ScenarioPresetOption = ScenarioModeOption.extend({ presetId: ScenarioPresetId });
+export type ScenarioPresetOption = z.infer<typeof ScenarioPresetOption>;
 export const ProactiveFrequency = z.enum(['low', 'medium', 'high']);
 export const CompanionSettings = z.object({
   /** 默认关闭秒回（CHAT-04 第 1 条）。 */
@@ -59,10 +66,15 @@ export const CompanionSettings = z.object({
   dailyLife: z.boolean().optional(),
   /** 3.0：该角色发语音、通话用的音色（MED-03 第 1 条，音色库见 GET /voices）；null = 用预设角色默认音色或平台默认。 */
   voiceId: Id.nullable().optional(),
+  scenarioPresetId: ScenarioPresetId.nullable().optional(),
+  scenarioPresetName: z.string().optional(),
 });
 export type CompanionSettings = z.infer<typeof CompanionSettings>;
 
-export const UpdateCompanionSettingsRequest = CompanionSettings.omit({ updatedAt: true }).partial();
+export const UpdateCompanionSettingsRequest = CompanionSettings.omit({
+  updatedAt: true,
+  scenarioPresetName: true,
+}).partial();
 
 // 保留原生生成类既有必填参数顺序，新增可选参数追加到末尾。
 const CharacterSettingsResponse = CompanionSettings.pick({
@@ -81,7 +93,10 @@ export const CompanionEndpoints = {
     path: `${API_PREFIX}/characters/:characterId/scenario-modes`,
     auth: 'user',
     params: z.object({ characterId: Id }),
-    response: z.object({ items: z.array(ScenarioModeOption) }),
+    response: z.object({
+      items: z.array(ScenarioModeOption),
+      customItems: z.array(ScenarioPresetOption).optional(),
+    }),
     summary: '仅返回该角色有资格显示的情景模式（情景预设），按弹层顺序',
   }),
   getDefaults: defineEndpoint({
