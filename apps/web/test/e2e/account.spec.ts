@@ -158,106 +158,135 @@ test('服务器失效会话后刷新，不能重新恢复旧令牌或显示资�
   await expect(page.getByRole('navigation', { name: '主导航' })).toHaveCount(0);
 });
 
-test('真实Service Worker升级不打断使用，明确刷新后接续新版且保持登录', async ({ page }) => {
-  // Exercise the safe idle-refresh branch; live WS close/drain behavior has separate coverage.
-  await page.routeWebSocket('**/api/v1/ws', (socket) =>
-    socket.close({ code: 1000, reason: 'idle upgrade fixture' }),
-  );
-  await page.addInitScript(() => {
-    const events: string[] = [];
-    Object.assign(window, { weibanSwEvents: events });
-    for (const name of ['weiban:before-update', 'weiban:update-failed'])
-      window.addEventListener(name, () => events.push(`${name}:${Math.round(performance.now())}`));
-    navigator.serviceWorker.addEventListener('controllerchange', () =>
-      events.push('controllerchange'),
+for (const manualButton of [false, true]) {
+  test(`真实Service Worker升级不打断使用，${manualButton ? '用户更新按钮' : '明确刷新'}后接续新版且保持登录`, async ({
+    page,
+    context,
+  }) => {
+    // Exercise the safe idle-refresh branch; live WS close/drain behavior has separate coverage.
+    await page.routeWebSocket('**/api/v1/ws', (socket) =>
+      socket.close({ code: 1000, reason: 'idle upgrade fixture' }),
     );
-  });
-  await login(page, 'browser_guide');
-  await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
-  await page.reload();
-  await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
-  const file = new URL('../../dist/sw.js', import.meta.url);
-  const original = await readFile(file, 'utf8');
-  try {
-    // 从当前页面的 controller 询问版本；不要在等待中的 worker 内执行调试代码。
-    // 那既不能证明它已接管页面，也可能改变浏览器的 worker 生命周期。
-    await writeFile(
-      file,
-      original +
-        `\nself.addEventListener('message', (event) => {
+    await page.addInitScript(() => {
+      const events: string[] = [];
+      Object.assign(window, { weibanSwEvents: events });
+      for (const name of ['weiban:before-update', 'weiban:update-failed'])
+        window.addEventListener(name, () =>
+          events.push(`${name}:${Math.round(performance.now())}`),
+        );
+      navigator.serviceWorker.addEventListener('controllerchange', () =>
+        events.push('controllerchange'),
+      );
+    });
+    await login(page, 'browser_guide');
+    await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
+    await page.reload();
+    await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
+    if (manualButton) {
+      await page.goto('/settings/about');
+      await page.getByRole('button', { name: '检查更新', exact: true }).click();
+      await expect(page.getByText('当前网页已是最新版本', { exact: true })).toBeVisible();
+      await context.setOffline(true);
+      await page.getByRole('button', { name: '检查更新', exact: true }).click();
+      await expect(page.getByText('检查更新失败，请联网后重试', { exact: true })).toBeVisible();
+      await context.setOffline(false);
+    }
+    const file = new URL('../../dist/sw.js', import.meta.url);
+    const original = await readFile(file, 'utf8');
+    try {
+      // 从当前页面的 controller 询问版本；不要在等待中的 worker 内执行调试代码。
+      // 那既不能证明它已接管页面，也可能改变浏览器的 worker 生命周期。
+      await writeFile(
+        file,
+        original +
+          `\nself.addEventListener('message', (event) => {
           if (event.data?.type === 'WEIBAN_TEST_VERSION')
             event.ports[0]?.postMessage('browser-upgrade-fixture');
         });\n`,
-    );
-    await page.evaluate(async () => {
-      await (await navigator.serviceWorker.ready).update();
-    });
-    await expect
-      .poll(() => page.evaluate(async () => Boolean((await navigator.serviceWorker.ready).waiting)))
-      .toBe(true);
-    await expect(page.getByText('新版本已准备好')).toHaveCount(0);
-    await page.reload();
-    await expect
-      .poll(
-        () =>
-          page
-            .evaluate(async () =>
-              JSON.stringify({
-                waiting: Boolean((await navigator.serviceWorker.ready).waiting),
-                visibility: document.visibilityState,
-                navigation: (
-                  performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming
-                ).type,
-                events: (window as unknown as { weibanSwEvents: string[] }).weibanSwEvents,
-              }),
-            )
-            .catch((error: unknown) => {
-              // Accept only the expected execution-context replacement during the automatic reload.
-              if (
-                error instanceof Error &&
-                error.message.includes('Execution context was destroyed')
-              )
-                return 'reloading';
-              throw error;
-            }),
-        { timeout: 15_000 },
-      )
-      .toContain('"waiting":false');
-    // waiting 清空后，自动重载仍可能尚未结束。每次都向当前页面的 controller 询问，
-    // 只允许重载销毁执行上下文时重新读取；其他错误及错误版本仍必须失败。
-    await expect
-      .poll(
-        () =>
-          page
-            .evaluate(
-              () =>
-                new Promise<unknown>((resolve) => {
-                  const channel = new MessageChannel();
-                  const finish = (value: unknown) => {
-                    window.clearTimeout(timer);
-                    channel.port1.close();
-                    resolve(value);
-                  };
-                  const timer = window.setTimeout(() => finish(null), 2000);
-                  channel.port1.onmessage = (event) => finish(event.data);
-                  navigator.serviceWorker.controller?.postMessage({ type: 'WEIBAN_TEST_VERSION' }, [
-                    channel.port2,
-                  ]);
+      );
+      await page.evaluate(async () => {
+        await (await navigator.serviceWorker.ready).update();
+      });
+      await expect
+        .poll(() =>
+          page.evaluate(async () => Boolean((await navigator.serviceWorker.ready).waiting)),
+        )
+        .toBe(true);
+      await expect(page.getByText('新版本已准备好')).toHaveCount(0);
+      if (manualButton) {
+        await page.getByRole('button', { name: '强制刷新网页', exact: true }).click();
+        await page
+          .getByRole('dialog', { name: '刷新到最新版' })
+          .getByRole('button', { name: '刷新到最新版', exact: true })
+          .click();
+      } else await page.reload();
+      await expect
+        .poll(
+          () =>
+            page
+              .evaluate(async () =>
+                JSON.stringify({
+                  waiting: Boolean((await navigator.serviceWorker.ready).waiting),
+                  visibility: document.visibilityState,
+                  navigation: (
+                    performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming
+                  ).type,
+                  events: (window as unknown as { weibanSwEvents: string[] }).weibanSwEvents,
                 }),
-            )
-            .catch((error: unknown) => {
-              if (
-                error instanceof Error &&
-                error.message.includes('Execution context was destroyed')
               )
-                return 'reloading';
-              throw error;
-            }),
-        { timeout: 15_000 },
-      )
-      .toBe('browser-upgrade-fixture');
-    await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
-  } finally {
-    await writeFile(file, original);
-  }
-});
+              .catch((error: unknown) => {
+                // Accept only the expected execution-context replacement during the automatic reload.
+                if (
+                  error instanceof Error &&
+                  error.message.includes('Execution context was destroyed')
+                )
+                  return 'reloading';
+                throw error;
+              }),
+          { timeout: 15_000 },
+        )
+        .toContain('"waiting":false');
+      // waiting 清空后，自动重载仍可能尚未结束。每次都向当前页面的 controller 询问，
+      // 只允许重载销毁执行上下文时重新读取；其他错误及错误版本仍必须失败。
+      await expect
+        .poll(
+          () =>
+            page
+              .evaluate(
+                () =>
+                  new Promise<unknown>((resolve) => {
+                    const channel = new MessageChannel();
+                    const finish = (value: unknown) => {
+                      window.clearTimeout(timer);
+                      channel.port1.close();
+                      resolve(value);
+                    };
+                    const timer = window.setTimeout(() => finish(null), 2000);
+                    channel.port1.onmessage = (event) => finish(event.data);
+                    navigator.serviceWorker.controller?.postMessage(
+                      { type: 'WEIBAN_TEST_VERSION' },
+                      [channel.port2],
+                    );
+                  }),
+              )
+              .catch((error: unknown) => {
+                if (
+                  error instanceof Error &&
+                  error.message.includes('Execution context was destroyed')
+                )
+                  return 'reloading';
+                throw error;
+              }),
+          { timeout: 15_000 },
+        )
+        .toBe('browser-upgrade-fixture');
+      if (manualButton) {
+        await expect(page.getByText('已刷新到刚才检查到的网页版本', { exact: true })).toBeVisible();
+        await page.goto('/chat');
+      }
+      await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
+    } finally {
+      await writeFile(file, original);
+    }
+  });
+}

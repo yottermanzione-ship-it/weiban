@@ -8,6 +8,7 @@
  * 不设置 navigator.mediaSession，不抢媒体会话。开关和音色都是本机设置（同深色模式、字体大小）。
  */
 
+import { registerPlaybackStop, releaseAudioPlayback } from './audio-playback.js';
 const ENABLED_KEY = 'weiban:message-sound';
 export const NOTICE_SOUND_KEY = 'weiban:notice-sound';
 export const noticeSounds = [
@@ -64,6 +65,10 @@ function mixWithOthers(): void {
 }
 
 const players = new Map<string, HTMLAudioElement>();
+registerPlaybackStop(() => {
+  for (const audio of players.values()) releaseAudioPlayback(audio);
+  players.clear();
+});
 function player(file: string): HTMLAudioElement {
   let audio = players.get(file);
   if (!audio) {
