@@ -249,6 +249,7 @@ test('语音自然结束及再次播放后录音，均释放播放器资源且�
     const capture = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
     const playing = (window as unknown as { capturedPlayback: HTMLAudioElement[] })
       .capturedPlayback[1];
+    if (!playing) throw new Error('Second playback was not created');
     playing.loop = true;
     Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
       configurable: true,
