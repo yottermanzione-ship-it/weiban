@@ -250,17 +250,20 @@ test('语音自然结束及再次播放后录音，均释放播放器资源且�
     const playing = (window as unknown as { capturedPlayback: HTMLAudioElement[] })
       .capturedPlayback[1];
     playing.loop = true;
-    navigator.mediaDevices.getUserMedia = (constraints) => {
-      const audios = (window as unknown as { capturedPlayback: HTMLAudioElement[] })
-        .capturedPlayback;
-      Object.assign(window, {
-        playbackAtCapture: audios.map((audio) => ({
-          src: audio.getAttribute('src'),
-          paused: audio.paused,
-        })),
-      });
-      return capture(constraints);
-    };
+    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+      configurable: true,
+      value: (constraints?: MediaStreamConstraints) => {
+        const audios = (window as unknown as { capturedPlayback: HTMLAudioElement[] })
+          .capturedPlayback;
+        Object.assign(window, {
+          playbackAtCapture: audios.map((audio) => ({
+            src: audio.getAttribute('src'),
+            paused: audio.paused,
+          })),
+        });
+        return capture(constraints);
+      },
+    });
   });
   await recordAndSend(page);
   expect(
