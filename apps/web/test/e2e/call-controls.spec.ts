@@ -7,8 +7,16 @@ test('通话独立控制收听、麦克风和安卓输出，收起位于右上�
       tracks: [] as MediaStreamTrack[],
       messages: [] as Record<string, unknown>[],
       route: 'earpiece',
+      audioOrder: [] as string[],
     };
     Object.assign(window, { callControlsTest: state });
+    const OriginalAudioContext = AudioContext;
+    window.AudioContext = new Proxy(OriginalAudioContext, {
+      construct(target, args) {
+        state.audioOrder.push('output');
+        return Reflect.construct(target, args);
+      },
+    });
     const createGain = AudioContext.prototype.createGain;
     AudioContext.prototype.createGain = function () {
       const gain = createGain.call(this);
@@ -18,7 +26,7 @@ test('通话独立控制收听、麦克风和安卓输出，收起位于右上�
     Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
       configurable: true,
       value: async () => {
-        const ctx = new AudioContext();
+        const ctx = new OriginalAudioContext();
         const destination = ctx.createMediaStreamDestination();
         const oscillator = ctx.createOscillator();
         oscillator.connect(destination);
@@ -32,6 +40,7 @@ test('通话独立控制收听、麦克风和安卓输出，收起位于右上�
           void ctx.close();
         };
         state.tracks.push(track);
+        state.audioOrder.push('microphone-ready');
         return destination.stream;
       },
     });
@@ -112,10 +121,22 @@ test('通话独立控制收听、麦克风和安卓输出，收起位于右上�
   });
   await page.route('**/calls/*/hangup', (route) => route.fulfill({ json: {} }));
   await page.getByRole('button', { name: '更多功能', exact: true }).click();
+  await page.evaluate(() => {
+    (
+      window as unknown as { callControlsTest: { audioOrder: string[] } }
+    ).callControlsTest.audioOrder = [];
+  });
   await page.getByRole('button', { name: '语音通话', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '语音通话', exact: true });
   await expect.poll(() => frames, { timeout: 8000 }).toContain('hello');
   await expect(dialog.getByRole('button', { name: '挂断', exact: true })).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { callControlsTest: { audioOrder: string[] } }).callControlsTest
+          .audioOrder,
+    ),
+  ).toEqual(['microphone-ready', 'output']);
   const audio = () =>
     page.evaluate(() => {
       const state = (

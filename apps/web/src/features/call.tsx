@@ -28,6 +28,7 @@ import { Dialog, showToast } from './toast.js';
 import { formatDuration, isIPhone, voicePlayer } from './media.js';
 import { openMicrophone, microphoneProblem, type MicrophoneProblem } from './microphone.js';
 import { callDevice, hasCallDevice, type CallDeviceState } from './call-device.js';
+import { registerPlaybackStop, releaseAudioPlayback } from './audio-playback.js';
 
 /*
  * 网页语音通话（MED-06、MED-07；call.md、media-l5.md 第 7 节；ADR-0025 音频流协议）。
@@ -441,8 +442,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
         setDialog(support);
         return;
       }
-      // 必须在点击的同一个调用栈里创建 AudioContext（iPhone 要求用户手势）。
-      const ctx = newAudioContext();
+      // iPhone 保留点击内解锁；安卓先打开带回声消除的输入，让内核随后按通信用途创建输出。
+      let ctx = hasCallDevice() ? null : newAudioContext();
       voicePlayer.stop();
       // Ask while the call button's user gesture is still active, before a network round trip.
       const microphone = askMicrophone(setMicProblem);
@@ -456,6 +457,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
             setDialog('mic');
             return;
           }
+          ctx ??= newAudioContext();
           const availability = await api.call(CallEndpoints.getAvailability, {
             query: { characterId },
             networkOnly: true,
@@ -480,7 +482,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
             attached = true;
           }
         } catch (e) {
-          void ctx.close().catch(() => {});
+          void ctx?.close().catch(() => {});
           if (e instanceof ApiFailure && e.code === 'insufficient_balance') setDialog('balance');
           else if (e instanceof ApiFailure && e.code === 'private_mode_unsupported')
             showToast(PRIVATE_MODE_CALL_HINT, 3000, 'info');
@@ -489,7 +491,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
           starting.current = false;
           if (!attached) {
             stream?.getTracks().forEach((track) => track.stop());
-            void ctx.close().catch(() => {});
+            void ctx?.close().catch(() => {});
           }
         }
       })();
@@ -505,14 +507,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
   }, []);
   async function answer() {
     if (!view) return;
-    const ctx = newAudioContext();
+    let ctx = hasCallDevice() ? null : newAudioContext();
     const stream = await askMicrophone(setMicProblem);
     if (!stream) {
-      void ctx.close();
+      void ctx?.close();
       setDialog('mic');
       return;
     }
     try {
+      ctx ??= newAudioContext();
       const call = await api.call(CallEndpoints.answerCall, {
         params: { callId: view.call.callId },
       });
@@ -520,7 +523,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       if (call.stream) await attach(call, call.stream, ctx, stream);
     } catch (e) {
       stream.getTracks().forEach((t) => t.stop());
-      void ctx.close();
+      void ctx?.close();
       showToast(e instanceof ApiFailure && e.code === 'conflict' ? '通话已结束' : friendlyError(e));
       setView(null);
     }
@@ -540,14 +543,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
   /** 刷新页面后恢复的通话：在点击里重新接上音频。 */
   async function reattach() {
     if (!view) return;
-    const ctx = newAudioContext();
+    let ctx = hasCallDevice() ? null : newAudioContext();
     const stream = await askMicrophone(setMicProblem);
     if (!stream) {
-      void ctx.close();
+      void ctx?.close();
       setDialog('mic');
       return;
     }
     try {
+      ctx ??= newAudioContext();
       const ticket = await api.call(CallEndpoints.renewStreamTicket, {
         params: { callId: view.call.callId },
       });
@@ -555,7 +559,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       await attach(view.call, ticket, ctx, stream);
     } catch {
       stream.getTracks().forEach((t) => t.stop());
-      void ctx.close();
+      void ctx?.close();
       finish('failed');
     }
   }
@@ -729,10 +733,11 @@ function useRingback(on: boolean) {
     if (!on) return;
     const audio = new Audio('/assets/old-ui/audio/realtime_call_ringback.mp3');
     audio.loop = true;
+    const unregister = registerPlaybackStop(() => releaseAudioPlayback(audio));
     void audio.play().catch(() => {});
     return () => {
-      audio.pause();
-      audio.src = '';
+      unregister();
+      releaseAudioPlayback(audio);
     };
   }, [on]);
 }
