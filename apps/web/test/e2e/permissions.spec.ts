@@ -86,6 +86,20 @@ test('逐步顺序：第一步只申请通知，点第二个说明框才申请�
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
+test('安卓网页体验版跳过不支持的后台通知，只按需申请麦克风', async ({ page }) => {
+  await mockPermissions(page, { notification: 'default', answer: 'granted', microphone: 'prompt' });
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'userAgent', { value: 'Android WeibanShell/1' });
+  });
+  await loginAndTap(page);
+  await expect(page.getByRole('dialog', { name: '开启消息通知' })).toHaveCount(0);
+  const microphone = page.getByRole('dialog', { name: '开启麦克风' });
+  await expect(microphone).toBeVisible();
+  expect(await calls(page)).toEqual([]);
+  await microphone.getByRole('button', { name: '开启麦克风', exact: true }).click();
+  await expect.poll(() => calls(page)).toEqual(['microphone']);
+});
+
 test('第一步被拒绝后仍能进入第二步', async ({ page }) => {
   await mockPermissions(page, { notification: 'default', answer: 'denied', microphone: 'prompt' });
   await loginAndTap(page);
