@@ -215,6 +215,70 @@ test('第二次录音编码器启动失败时换用可用格式，不重复请�
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
+test('语音自然结束及再次播放后录音，均释放播放器资源且新录音正常发送', async ({ page }) => {
+  await microphone(page);
+  await page.addInitScript(() => {
+    const Native = window.Audio;
+    const audios: HTMLAudioElement[] = [];
+    Object.assign(window, { capturedPlayback: audios });
+    window.Audio = class extends Native {
+      constructor(src?: string) {
+        super(src);
+        // Message notification sounds are separately cached until capture, not voice bubbles.
+        if (!src?.startsWith('/assets/old-ui/audio/')) audios.push(this);
+      }
+    };
+  });
+  await openChat(page);
+  await page.getByRole('button', { name: '切换到按住说话' }).click();
+  await recordAndSend(page);
+  const voice = page.getByRole('button', { name: /^语音 \d+ 秒，播放$/ }).last();
+  await voice.click();
+  const playback = () =>
+    page.evaluate(() =>
+      (window as unknown as { capturedPlayback: HTMLAudioElement[] }).capturedPlayback.map(
+        (audio) => ({ src: audio.getAttribute('src'), paused: audio.paused }),
+      ),
+    );
+  await expect.poll(playback).toEqual([{ src: null, paused: true }]);
+  await voice.click();
+  await expect(page.getByRole('button', { name: /^语音 \d+ 秒，暂停$/ })).toBeVisible();
+  await expect.poll(async () => (await playback()).length).toBe(2);
+  // Check the real player's state at the exact capture boundary, not only after recording finishes.
+  await page.evaluate(() => {
+    const capture = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    const playing = (window as unknown as { capturedPlayback: HTMLAudioElement[] })
+      .capturedPlayback[1];
+    if (!playing) throw new Error('Second playback was not created');
+    playing.loop = true;
+    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+      configurable: true,
+      value: (constraints?: MediaStreamConstraints) => {
+        const audios = (window as unknown as { capturedPlayback: HTMLAudioElement[] })
+          .capturedPlayback;
+        Object.assign(window, {
+          playbackAtCapture: audios.map((audio) => ({
+            src: audio.getAttribute('src'),
+            paused: audio.paused,
+          })),
+        });
+        return capture(constraints);
+      },
+    });
+  });
+  await recordAndSend(page);
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { playbackAtCapture: unknown }).playbackAtCapture,
+    ),
+  ).toEqual([
+    { src: null, paused: true },
+    { src: null, paused: true },
+  ]);
+  await expect.poll(() => counts(page)).toEqual({ calls: 3, stopped: 3 });
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
 test('切到后台取消正在录制的内容并释放设备，返回后能够再录', async ({ page }) => {
   await microphone(page);
   await openChat(page);

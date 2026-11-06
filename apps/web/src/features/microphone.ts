@@ -1,3 +1,4 @@
+import { stopPlaybackForMicrophone } from './audio-playback.js';
 /** Permission requests stay in the explicit click/pointer call stack; never gate on onboarding. */
 export interface MicrophoneProblem {
   title: string;
@@ -65,6 +66,7 @@ export async function openMicrophone(
 ): Promise<MediaStream> {
   if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia)
     throw new DOMException('Microphone unavailable', 'NotSupportedError');
+  stopPlaybackForMicrophone();
   return navigator.mediaDevices.getUserMedia({ audio });
 }
 

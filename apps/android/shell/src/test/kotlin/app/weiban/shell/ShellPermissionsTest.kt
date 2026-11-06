@@ -1,6 +1,7 @@
 package app.weiban.shell
 
 import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.webkit.PermissionRequest
 import androidx.activity.ComponentActivity
@@ -11,12 +12,24 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
 class ShellPermissionsTest {
+    @Test
+    fun packagedAppDeclaresBothPermissionsRequiredForCommunicationAudio() {
+        val application = RuntimeEnvironment.getApplication()
+        val declared =
+            checkNotNull(
+                application.packageManager.getPackageInfo(application.packageName, PackageManager.GET_PERMISSIONS).requestedPermissions,
+            )
+        assertTrue(declared.contains(Manifest.permission.RECORD_AUDIO))
+        assertTrue(declared.contains(Manifest.permission.MODIFY_AUDIO_SETTINGS))
+    }
+
     private class Request(
         private val source: String = ShellPolicy.ORIGIN,
         private val requested: Array<String> = arrayOf(RESOURCE_AUDIO_CAPTURE),

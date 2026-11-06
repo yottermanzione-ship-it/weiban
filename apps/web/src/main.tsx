@@ -41,7 +41,7 @@ void adoptWaitingWorker()
     ),
   );
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
-  void navigator.serviceWorker.register('/sw.js').catch(() => {});
+  void navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).catch(() => {});
 }
 import './app/common-fixes.css';
 import './app/edit-pages.css';

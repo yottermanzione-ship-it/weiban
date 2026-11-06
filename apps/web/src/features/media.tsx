@@ -1,8 +1,10 @@
 import { memo, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { openMicrophone } from './microphone.js';
+import { registerPlaybackStop, releaseAudioPlayback } from './audio-playback.js';
 import { releaseVoiceRecorder, startVoiceRecorder } from './voice-recorder.js';
 import { runtimeLogs } from '../data/runtime-logs.js';
 import { saveImageFile } from '../data/shell-files.js';
+import { addRefreshGuard } from '../app/manual-update.js';
 import { ImageBroken, LinkSimple, MusicNotes, VideoCamera, OldIcon } from './old-icons.js';
 import { Lightbox } from './lightbox.js';
 import { Dialog } from './toast.js';
@@ -439,6 +441,7 @@ class VoicePlayer {
   failed = new Set<string>();
   played = readPlayed();
   private audio: HTMLAudioElement | null = null;
+  private playbackAttempt = 0;
   private listeners = new Set<() => void>();
   private version = 0;
   subscribe = (listener: () => void) => {
@@ -459,7 +462,8 @@ class VoicePlayer {
     }
   }
   stop() {
-    this.audio?.pause();
+    this.playbackAttempt++;
+    releaseAudioPlayback(this.audio);
     this.audio = null;
     if (this.playing) {
       this.playing = null;
@@ -473,6 +477,7 @@ class VoicePlayer {
       return;
     }
     this.stop();
+    const attempt = this.playbackAttempt;
     const id = message.messageId;
     this.playing = id;
     this.failed.delete(id);
@@ -483,11 +488,12 @@ class VoicePlayer {
         params: { mediaId: message.content.mediaId },
         networkOnly: true,
       });
-      if (this.playing !== id) return;
+      if (this.playing !== id || this.playbackAttempt !== attempt) return;
       const audio = new Audio(media.url);
       this.audio = audio;
       audio.onended = () => {
-        if (this.playing !== id) return;
+        if (this.playing !== id || this.audio !== audio) return;
+        releaseAudioPlayback(audio);
         this.playing = null;
         this.audio = null;
         this.emit();
@@ -500,14 +506,15 @@ class VoicePlayer {
         )
           void this.play(following, next);
       };
-      audio.onerror = () => this.fail(id);
+      audio.onerror = () => this.fail(id, attempt);
       await audio.play();
     } catch {
-      this.fail(id);
+      this.fail(id, attempt);
     }
   }
-  private fail(id: string) {
-    if (this.playing !== id) return;
+  private fail(id: string, attempt: number) {
+    if (this.playing !== id || this.playbackAttempt !== attempt) return;
+    releaseAudioPlayback(this.audio);
     this.playing = null;
     this.audio = null;
     this.failed.add(id);
@@ -516,6 +523,7 @@ class VoicePlayer {
   }
 }
 export const voicePlayer = new VoicePlayer();
+registerPlaybackStop(() => voicePlayer.stop());
 
 function useVoicePlayer() {
   useSyncExternalStore(voicePlayer.subscribe, voicePlayer.snapshot);
@@ -675,6 +683,13 @@ export function HoldToTalk({
   const held = useRef(false);
   const pending = useRef(false);
   const mounted = useRef(true);
+  useEffect(
+    () =>
+      addRefreshGuard(() =>
+        held.current || pending.current || recorder.current ? '请先结束录音，再刷新网页' : null,
+      ),
+    [],
+  );
   useEffect(() => {
     mounted.current = true;
     const suspend = () => {

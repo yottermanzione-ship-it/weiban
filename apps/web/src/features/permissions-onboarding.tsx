@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { HomeScreenGuide, iosDeviceInfo } from './home-screen-guide.js';
 import { subscribeWebPush } from '../notifications/client.js';
+import { openMicrophone } from './microphone.js';
 import { isAndroidShell } from '../data/shell-files.js';
 import { Dialog } from './toast.js';
 import {
@@ -126,7 +127,7 @@ function requestNotification(): Promise<StepOutcome> {
 /** 只发麦克风这一项的系统申请：拿到流后立即 stop，不录音。 */
 async function requestMicrophone(): Promise<StepOutcome> {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await openMicrophone();
     stream.getTracks().forEach((track) => track.stop());
     clearMarker(DENIED_MICROPHONE_KEY);
     return 'granted';

@@ -22,6 +22,7 @@ import { api } from '../data/client.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
 import { useUpdates } from '../data/updates.js';
 import { useChat } from '../app/chat.js';
+import { addRefreshGuard } from '../app/manual-update.js';
 import { CharacterAvatar } from './character-avatar.js';
 import { Dialog, showToast } from './toast.js';
 import { formatDuration, isIPhone, voicePlayer } from './media.js';
@@ -345,6 +346,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const engine = useRef<CallEngine | null>(null);
   const viewRef = useRef<CallView | null>(null);
   viewRef.current = view;
+  useEffect(
+    () =>
+      addRefreshGuard(() =>
+        starting.current || (viewRef.current && viewRef.current.phase !== 'ended')
+          ? '请先结束通话，再刷新网页'
+          : null,
+      ),
+    [],
+  );
   const patch = useCallback((next: Partial<CallView>) => {
     setView((v) => (v ? { ...v, ...next } : v));
   }, []);
