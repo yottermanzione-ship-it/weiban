@@ -185,7 +185,7 @@ jobs:
       - name: 保存安卓网页体验版安装包
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: weiban-webshell-preview
+          name: weiban-android-shell-build-check
           if-no-files-found: error
           retention-days: 14
           path: apps/android/shell/build/outputs/apk/debug/*.apk

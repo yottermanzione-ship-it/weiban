@@ -14,6 +14,7 @@ import {
   type GenerateTextInput,
   type ModelGatewayPort,
   type ChatUserPort,
+  type ChatReadPort,
 } from '@weiban/contracts';
 import { AppModule } from '../src/app.module.js';
 import {
@@ -33,7 +34,12 @@ import {
   CHARACTER_EVALUATOR,
 } from '../src/modules/characters/testing.js';
 import { ContactsCommands, ContactsTestQueries } from '../src/modules/contacts/testing.js';
-import { CHAT_ADMIN_PORT, CHAT_READ_PORT, CHAT_USER_PORT } from '../src/modules/chat/index.js';
+import {
+  CHAT_ADMIN_PORT,
+  CHAT_PARTICIPANT_PORT,
+  CHAT_READ_PORT,
+  CHAT_USER_PORT,
+} from '../src/modules/chat/index.js';
 import { MODEL_GATEWAY_PORT } from '../src/modules/model-access/index.js';
 import {
   EcologySettingsService,
@@ -210,6 +216,31 @@ describeDb('ai-runtime 真实PG：设置/加密计划/合并/幂等/关怀/删�
     await dispatch();
     return (await plans()).at(-1)!;
   }
+  it('用户侧通话记录保留在聊天中，但结束、取消和未接通均不排普通回复', async () => {
+    await dispatch();
+    const beforePlans = (await plans()).map((row) => row.id);
+    const beforeCalls = calls.length;
+    const participants = await app.get<ChatReadPort>(CHAT_READ_PORT).getParticipants(cid);
+    const sender = participants.find((p) => p.kind === 'user' && p.refId === userId)!;
+    for (const outcome of ['completed', 'cancelled', 'missed'] as const) {
+      const record = await app.get(CHAT_PARTICIPANT_PORT).postMessage({
+        conversationId: cid,
+        senderParticipantId: sender.participantId,
+        content: {
+          type: 'call_record',
+          callId: newId(),
+          direction: 'outgoing',
+          outcome,
+          durationSec: outcome === 'completed' ? 47 : 0,
+        },
+        idempotencyKey: newId(),
+      });
+      expect(record).toBeDefined();
+      await dispatch();
+      expect((await plans()).map((row) => row.id)).toEqual(beforePlans);
+      expect(calls).toHaveLength(beforeCalls);
+    }
+  });
   it('时间线真实HTTP校验身份/会话归属/查询；缺席12小时按后台预算生成', async () => {
     const path = `/api/v1/conversations/${cid}/timeline-summary`;
     const lastActiveAt = new Date(clock.nowMs() - 12 * 3600_000).toISOString();

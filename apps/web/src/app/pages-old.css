@@ -1372,8 +1372,8 @@ label.profile-field.multiline {
   flex-direction: column;
   align-items: center;
   overflow: hidden;
-  padding: calc(env(safe-area-inset-top) + 48px) 28px calc(env(safe-area-inset-bottom) + 48px);
-  background: var(--wb-color-call-bg-top);
+  padding: calc(env(safe-area-inset-top) + 54px) 28px calc(env(safe-area-inset-bottom) + 24px);
+  background: #252a30;
   color: var(--ui-text-on-color);
 }
 .wx-call-backdrop {
@@ -1399,7 +1399,12 @@ label.profile-field.multiline {
 .call-minimize {
   position: absolute;
   top: calc(env(safe-area-inset-top) + 12px);
-  left: 12px;
+  left: auto;
+  right: 12px;
+  width: 40px;
+  height: 40px;
+  min-height: 0;
+  padding: 8px;
   border: 0;
   background: none;
   color: var(--ui-text-on-color);
@@ -1427,6 +1432,13 @@ label.profile-field.multiline {
 }
 .wx-call-avatar {
   margin: auto 0;
+  padding: 16px 0;
+  flex-shrink: 1;
+  min-height: 0;
+}
+.wx-call-avatar > * {
+  width: clamp(72px, 18dvh, 144px) !important;
+  height: clamp(72px, 18dvh, 144px) !important;
 }
 .wx-call-avatar.ringing {
   animation: call-breathe var(--wb-motion-duration-ring-cycle) var(--ui-ease-in-out) infinite;
@@ -1438,9 +1450,29 @@ label.profile-field.multiline {
 }
 .wx-call-controls {
   display: flex;
+  flex-wrap: wrap;
+  row-gap: 24px;
+  flex-shrink: 0;
   justify-content: space-between;
   width: 100%;
   max-width: 400px;
+}
+.wx-call-hangup {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+@media (max-height: 560px) {
+  .wx-call-screen {
+    padding-top: calc(env(safe-area-inset-top) + 44px);
+    padding-bottom: calc(env(safe-area-inset-bottom) + 12px);
+  }
+  .wx-call-controls {
+    row-gap: 12px;
+  }
+  .wx-call-avatar {
+    padding: 8px 0;
+  }
 }
 .wx-call-controls.incoming {
   justify-content: space-around;

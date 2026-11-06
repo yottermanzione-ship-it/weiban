@@ -614,6 +614,10 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
           ))
         )
           return;
+        // 通话记录由 calls 写入，虽然显示在用户一侧，却不是一条新的聊天请求。
+        // 保持咨询锁 / 联系人锁在前，消息读取在后，避免反转事务锁顺序。
+        const trigger = await this.chat.getMessage(p.messageId, ['normal', 'adult'], tx);
+        if (!trigger?.content || trigger.content.type === 'call_record') return;
         await this.store.enqueue(tx, {
           userId: p.senderRefId,
           characterId: role.refId,

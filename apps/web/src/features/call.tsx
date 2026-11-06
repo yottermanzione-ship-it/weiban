@@ -27,6 +27,7 @@ import { CharacterAvatar } from './character-avatar.js';
 import { Dialog, showToast } from './toast.js';
 import { formatDuration, isIPhone, voicePlayer } from './media.js';
 import { openMicrophone, microphoneProblem, type MicrophoneProblem } from './microphone.js';
+import { callDevice, hasCallDevice, type CallDeviceState } from './call-device.js';
 
 /*
  * 网页语音通话（MED-06、MED-07；call.md、media-l5.md 第 7 节；ADR-0025 音频流协议）。
@@ -85,6 +86,7 @@ class CallEngine {
   private agentSpeaking = false;
   private loud = 0;
   private muted = false;
+  private readonly output: GainNode;
   private closed = false;
   private ready = false;
   private pinger = 0;
@@ -93,9 +95,17 @@ class CallEngine {
     private readonly callId: string,
     private readonly ctx: AudioContext,
     private readonly events: EngineEvents,
-  ) {}
+  ) {
+    this.output = this.ctx.createGain();
+    this.output.connect(this.ctx.destination);
+  }
   async start(stream: MediaStream, ticket: { path: string; token: string }) {
     this.stream = stream;
+    await callDevice('begin-call', { callId: this.callId });
+    if (this.closed) {
+      await callDevice('end-call', { callId: this.callId });
+      return;
+    }
     this.connect(ticket);
   }
   private connect(ticket: { path: string; token: string }) {
@@ -221,7 +231,7 @@ class CallEngine {
     for (let i = 0; i < pcm.length; i += 1) channel[i] = pcm[i]! / 0x8000;
     const node = this.ctx.createBufferSource();
     node.buffer = buffer;
-    node.connect(this.ctx.destination);
+    node.connect(this.output);
     const at = Math.max(this.nextTime, this.ctx.currentTime + 0.05);
     node.start(at);
     this.nextTime = at + buffer.duration;
@@ -243,7 +253,13 @@ class CallEngine {
   }
   setMuted(value: boolean) {
     this.muted = value;
+    this.stream?.getAudioTracks().forEach((track) => {
+      track.enabled = !value;
+    });
     this.send({ type: 'mute', data: { muted: value } });
+  }
+  setRemoteMuted(value: boolean) {
+    this.output.gain.value = value ? 0 : 1;
   }
   close() {
     this.closed = true;
@@ -251,9 +267,11 @@ class CallEngine {
     this.flush();
     this.processor?.disconnect();
     this.sink?.disconnect();
+    this.output.disconnect();
     this.stream?.getTracks().forEach((t) => t.stop());
     this.ws?.close();
     void this.ctx.close().catch(() => {});
+    void callDevice('end-call', { callId: this.callId });
   }
 }
 
@@ -268,6 +286,8 @@ interface CallView {
   reconnecting: boolean;
   speaking: boolean;
   muted: boolean;
+  remoteMuted: boolean;
+  device: CallDeviceState | null;
   endText: string | null;
   /** 页面刷新后恢复的通话：要用户点一下才能重新接上声音（浏览器要求手势）。 */
   detached: boolean;
@@ -402,6 +422,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
     reconnecting: false,
     speaking: false,
     muted: false,
+    remoteMuted: false,
+    device: null,
     endText: null,
     detached: false,
   });
@@ -583,6 +605,29 @@ export function CallProvider({ children }: { children: ReactNode }) {
     return () => window.clearTimeout(timer);
   }, [view?.phase]);
   useEffect(() => () => engine.current?.close(), []);
+  const visibleCall = !!view && !view.minimized;
+  useEffect(() => {
+    void callDevice('theme', { dark: visibleCall });
+    return () => {
+      void callDevice('theme', { dark: false });
+    };
+  }, [visibleCall]);
+  const ongoingId = view && view.phase !== 'ended' ? view.call.callId : null;
+  useEffect(() => {
+    if (!ongoingId || !hasCallDevice()) return;
+    let live = true;
+    const update = () => {
+      void callDevice('status').then((device) => {
+        if (live) patch({ device });
+      });
+    };
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, [ongoingId, patch]);
 
   const contact = view
     ? state.contacts.find((c) => c.characterId === view.call.characterId)
@@ -612,9 +657,25 @@ export function CallProvider({ children }: { children: ReactNode }) {
             engine.current?.setMuted(muted);
             patch({ muted });
           }}
-          onOpenChat={() => {
-            patch({ minimized: true });
-            navigate(`/chat/${view.call.conversationId}`);
+          onRemoteMute={() => {
+            const remoteMuted = !view.remoteMuted;
+            engine.current?.setRemoteMuted(remoteMuted);
+            patch({ remoteMuted });
+          }}
+          onSpeaker={() => {
+            if (!hasCallDevice()) {
+              showToast('当前浏览器无法保证切换听筒，请使用系统声音设置或耳机', 3500, 'info');
+              return;
+            }
+            const callId = view.call.callId;
+            void callDevice('speaker', { callId, enabled: view.device?.route !== 'speaker' }).then(
+              (device) => {
+                if (viewRef.current?.call.callId !== callId) return;
+                patch({ device });
+                if (!device?.accepted)
+                  showToast('当前设备未能切换声音输出，请检查耳机或系统声音设置', 3500, 'info');
+              },
+            );
           }}
         />
       )}
@@ -676,7 +737,7 @@ function useRingback(on: boolean) {
   }, [on]);
 }
 
-/** 通话页（4.13）：头像放大模糊铺底 + 压暗；名字 28 / 600；状态行；168 大头像；三键控制区。 */
+/** 经理确认的三项独立声音控制、单独挂断，以及右上角收起入口。 */
 function CallScreen({
   view,
   remark,
@@ -686,7 +747,8 @@ function CallScreen({
   onHangUp,
   onMute,
   onReattach,
-  onOpenChat,
+  onRemoteMute,
+  onSpeaker,
 }: {
   view: CallView;
   remark: string | null;
@@ -696,13 +758,14 @@ function CallScreen({
   onHangUp(): void;
   onMute(): void;
   onReattach(): void;
-  onOpenChat(): void;
+  onRemoteMute(): void;
+  onSpeaker(): void;
 }) {
   const profile = useRemote(CharacterEndpoints.getProfile, {
     params: { characterId: view.call.characterId },
   });
   const name = remark || profile.data?.name || '角色';
-  useRingback(view.phase === 'outgoing' || view.phase === 'incoming');
+  useRingback(!view.remoteMuted && (view.phase === 'outgoing' || view.phase === 'incoming'));
   const status =
     view.phase === 'ended'
       ? view.endText
@@ -721,12 +784,8 @@ function CallScreen({
       role="dialog"
       aria-label="语音通话"
     >
-      <div className="wx-call-backdrop" aria-hidden>
-        <CharacterAvatar id={view.call.characterId} size={168} radius={0} />
-      </div>
-      <i className="wx-call-shade" aria-hidden />
-      {view.phase === 'active' && (
-        <button className="call-minimize" aria-label="缩小" onClick={onMinimize}>
+      {(view.phase === 'active' || view.phase === 'outgoing') && (
+        <button className="call-minimize" aria-label="收起通话" onClick={onMinimize}>
           <CaretDown size={24} />
         </button>
       )}
@@ -734,7 +793,7 @@ function CallScreen({
         <strong className="wx-call-name">{name}</strong>
         <span className="wx-call-status numeric">{status}</span>
         {view.phase !== 'ended' && view.phase !== 'incoming' && (
-          <span className="wx-call-note">离开此页即挂断</span>
+          <span className="wx-call-note">收起后可继续聊天，请保持微伴在前台</span>
         )}
         {view.phase === 'active' && view.speaking && (
           <span className="voice-wave call-wave" aria-label="对方正在说话">
@@ -754,17 +813,6 @@ function CallScreen({
               <CallButton label="拒绝" kind="decline" onClick={onDecline} icon="drawn/hangup" />
               <CallButton label="接听" kind="accept" onClick={onAnswer} icon="drawn/phone" />
             </>
-          ) : view.phase === 'outgoing' ? (
-            <>
-              <CallButton
-                label={view.muted ? '麦克风已关' : '麦克风已开'}
-                kind={view.muted ? 'off' : 'on'}
-                onClick={onMute}
-                icon={view.muted ? 'drawn/mic_off' : 'drawn/mic'}
-              />
-              <CallButton label="取消" kind="decline" onClick={onHangUp} icon="drawn/hangup" />
-              <CallButton label="收起" kind="off" onClick={onOpenChat} icon="wechat/chevron_down" />
-            </>
           ) : view.detached ? (
             <>
               <CallButton label="挂断" kind="decline" onClick={onHangUp} icon="drawn/hangup" />
@@ -773,13 +821,42 @@ function CallScreen({
           ) : (
             <>
               <CallButton
+                label={view.remoteMuted ? '对方声音已关' : '对方声音已开'}
+                kind={view.remoteMuted ? 'off' : 'on'}
+                onClick={onRemoteMute}
+                icon={view.remoteMuted ? 'drawn/speaker_off' : 'drawn/speaker'}
+                pressed={view.remoteMuted}
+              />
+              <CallButton
+                label={
+                  view.device?.route === 'speaker'
+                    ? '扬声器'
+                    : view.device?.route === 'earpiece'
+                      ? '听筒'
+                      : view.device?.route === 'headset'
+                        ? '耳机'
+                        : '声音输出'
+                }
+                kind={view.device?.route === 'speaker' ? 'on' : 'off'}
+                onClick={onSpeaker}
+                icon="drawn/speaker"
+                pressed={view.device?.route === 'speaker'}
+              />
+              <CallButton
                 label={view.muted ? '麦克风已关' : '麦克风已开'}
                 kind={view.muted ? 'off' : 'on'}
                 onClick={onMute}
                 icon={view.muted ? 'drawn/mic_off' : 'drawn/mic'}
+                pressed={view.muted}
               />
-              <CallButton label="挂断" kind="decline" onClick={onHangUp} icon="drawn/hangup" />
-              <CallButton label="收起" kind="off" onClick={onOpenChat} icon="wechat/chevron_down" />
+              <div className="wx-call-hangup">
+                <CallButton
+                  label={view.phase === 'outgoing' ? '取消' : '挂断'}
+                  kind="decline"
+                  onClick={onHangUp}
+                  icon="drawn/hangup"
+                />
+              </div>
             </>
           )}
         </div>
@@ -793,15 +870,22 @@ function CallButton({
   kind,
   icon,
   onClick,
+  pressed,
 }: {
   label: string;
   kind: 'accept' | 'decline' | 'on' | 'off';
   icon: string;
   onClick(): void;
+  pressed?: boolean;
 }) {
   return (
     <span className="wx-call-key">
-      <button className={`wx-call-round ${kind}`} aria-label={label} onClick={onClick}>
+      <button
+        className={`wx-call-round ${kind}`}
+        aria-label={label}
+        aria-pressed={pressed}
+        onClick={onClick}
+      >
         <OldIcon name={icon} size={28} />
       </button>
       <small>{label}</small>
