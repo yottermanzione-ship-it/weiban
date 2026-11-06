@@ -83,11 +83,13 @@ async function prepareWorker() {
 /** Called only after the user's refresh confirmation. Never unregister workers or erase app data. */
 export async function refreshToLatestWeb(): Promise<void> {
   assertCanRefresh();
+  let savingStarted = false;
   try {
     const latest = await readDeployedWebBuild();
     await prepareWorker();
     assertCanRefresh();
     const pending: Promise<void>[] = [];
+    savingStarted = true;
     window.dispatchEvent(
       new CustomEvent('weiban:before-update', {
         detail: { waitUntil: (work: Promise<void>) => pending.push(work) },
@@ -107,7 +109,7 @@ export async function refreshToLatestWeb(): Promise<void> {
     // At reload bootstrap, adoptWaitingWorker activates the prepared worker before app requests restart.
     window.location.reload();
   } catch (error) {
-    window.dispatchEvent(new Event('weiban:update-failed'));
+    if (savingStarted) window.dispatchEvent(new Event('weiban:update-failed'));
     throw error;
   }
 }

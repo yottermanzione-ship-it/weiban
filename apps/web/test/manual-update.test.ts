@@ -57,6 +57,18 @@ it('a live call or recording blocks before a network request and can be released
     remove();
   }
 });
+it('a failed update download leaves the current chat connection alone', async () => {
+  const { fetcher, events, reload } = setup();
+  const paused = vi.fn();
+  const resumed = vi.fn();
+  events.addEventListener('weiban:before-update', paused);
+  events.addEventListener('weiban:update-failed', resumed);
+  fetcher.mockRejectedValueOnce(new TypeError('offline'));
+  await expect(refreshToLatestWeb()).rejects.toThrow('检查更新失败');
+  expect(paused).not.toHaveBeenCalled();
+  expect(resumed).not.toHaveBeenCalled();
+  expect(reload).not.toHaveBeenCalled();
+});
 it('waits for pending local writes; failed writes resume chat instead of reloading', async () => {
   const { events, reload } = setup();
   let release!: () => void;
