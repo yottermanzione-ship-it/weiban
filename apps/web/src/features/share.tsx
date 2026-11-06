@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { saveImageFile } from '../data/shell-files.js';
 import { useLocation, useNavigate, type NavigateFunction } from 'react-router-dom';
 import { Lock } from './old-icons.js';
 import type { z } from 'zod';
@@ -437,7 +438,7 @@ export function ShareEditorPage() {
     const ext = preview?.blob.type === 'image/jpeg' ? 'jpg' : 'png';
     return `weiban-${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')}.${ext}`;
   }
-  function save() {
+  async function save() {
     if (!preview) return;
     report();
     // iPhone 网页（含主屏幕 App）不能直接存相册：全屏展示 + 长按保存（交接说明有写）。
@@ -445,11 +446,12 @@ export function ShareEditorPage() {
       setIosImage(preview.url);
       return;
     }
-    const link = document.createElement('a');
-    link.href = preview.url;
-    link.download = fileName();
-    link.click();
-    showToast('已保存');
+    try {
+      const result = await saveImageFile(preview.blob, fileName());
+      if (result !== 'cancelled') showToast(result === 'saved' ? '已保存' : '已发起保存');
+    } catch {
+      showToast('保存失败，请稍后重试');
+    }
   }
   const canShare =
     typeof navigator.share === 'function' && typeof navigator.canShare === 'function';

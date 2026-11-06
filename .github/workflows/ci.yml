@@ -169,7 +169,7 @@ jobs:
           git diff --exit-code
       - name: 安卓静态检查、真实 Room 与共享协议 JUnit、APK
         working-directory: apps/android
-        run: ./gradlew --no-daemon ktlintCheck detekt testDebugUnitTest :core:contracts-generated:test assembleDebug
+        run: ./gradlew --no-daemon ktlintCheck detekt :shell:lintDebug testDebugUnitTest :core:contracts-generated:test assembleDebug
       - name: 验证安卓测试实际执行且没有跳过
         run: node .github/scripts/check-android-test-report.mjs
       - name: 保存可安装的调试 APK 与测试报告
@@ -182,3 +182,10 @@ jobs:
           path: |
             apps/android/app/build/outputs/apk/debug/*.apk
             apps/android/**/build/test-results/**/*.xml
+      - name: 保存安卓网页体验版安装包
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: weiban-webshell-preview
+          if-no-files-found: error
+          retention-days: 14
+          path: apps/android/shell/build/outputs/apk/debug/*.apk

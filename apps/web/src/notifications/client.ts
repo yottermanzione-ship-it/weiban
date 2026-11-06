@@ -1,6 +1,7 @@
 import { AuthResponse, PushEndpoints, PushDevice } from '@weiban/contracts';
 import { api, localStore } from '../data/client.js';
 import { PushOwner } from './owner.js';
+import { isAndroidShell } from '../data/shell-files.js';
 export async function pausePush(owner: { userId: string; sessionId: string }): Promise<void> {
   await localStore.setOwned(owner, 'push-owner', { ...owner, enabled: false });
   if (!('serviceWorker' in navigator)) return;
@@ -82,6 +83,10 @@ export async function enableWebPush(): Promise<void> {
 }
 
 function assertPushSupport(): void {
+  if (isAndroidShell())
+    throw new Error(
+      '安卓网页体验版暂不支持后台通知；可以使用支持通知的浏览器打开微伴并添加到主屏幕',
+    );
   const ios =
     /iPhone|iPad|iPod/.test(navigator.userAgent) ||
     (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
