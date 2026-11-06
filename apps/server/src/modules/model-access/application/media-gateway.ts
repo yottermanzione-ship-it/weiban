@@ -85,6 +85,7 @@ import { publicCandidateHit } from '../domain/web-candidates.js';
 import { decisionQuestions } from '../infra/jev-adapter.js';
 import type { RealtimeConnection } from '../infra/dashscope-realtime.js';
 import { realtimeResponseEstimate, realtimeVoiceCloneCostYuan } from './realtime-call.js';
+import { contextBudget, contextTokens } from '../domain/context-budget.js';
 import { RealtimeVoice } from './realtime-voice-session.js';
 import { RealtimeVoiceStore } from './realtime-voices.js';
 import {
@@ -731,9 +732,10 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
   async openRealtimeVoice(
     input: OpenRealtimeVoiceInput,
   ): Promise<PortResult<RealtimeVoiceSession, GenerateError>> {
-    const instructions = input.instructions.trim().slice(0, 20_000);
+    const instructions = input.instructions.trim();
     if (
       !instructions ||
+      instructions.length > 250000 ||
       input.sampleRate !== 16000 ||
       !Id.safeParse(input.characterId).success ||
       !(await this.precheck(input))
@@ -746,6 +748,11 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     const model = await this.resolveRealtime(plan.facts);
     if (!model.ok) return model;
     const bounds = model.value.billingBounds.realtime!;
+    const budget = contextBudget(model.value.modelKey, [
+      { contextTokens: bounds.contextTokens, maxOutputTokens: bounds.maxResponseOutputTokens },
+    ]);
+    if (!budget || contextTokens([{ content: instructions }]) > budget.inputTokens)
+      return { ok: false, error: 'bad_request' };
     if (!model.value.fake) {
       const upstream = await this.upstreams.get(model.value.upstreamId);
       if (upstream.kind !== 'dashscope') return { ok: false, error: 'model_unavailable' };

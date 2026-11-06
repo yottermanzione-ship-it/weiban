@@ -5,6 +5,39 @@ import { ModelGateway } from '../application/gateway.js';
 import type { VerifiedRoute } from '../application/billing-bounds.js';
 
 describe('模型容量与切换保护', () => {
+  it('实时电话按实时线路容量和输出预留计算，不能误用同模型的文字额度', async () => {
+    const service = Object.create(ModelGateway.prototype) as ModelGateway;
+    const entry = {
+      tags: ['pipeline:rt'],
+      scenarios: ['voice_call'],
+      capabilities: ['voice_input', 'voice_output'],
+    };
+    Object.assign(service, {
+      resolver: { pick: vi.fn(async () => ({ facts: { modelKey: 'realtime', entry } })) },
+      bounds: {
+        profiles: vi.fn(async () => [
+          {
+            text: { contextTokens: 128000, maxOutputTokens: 200 },
+            realtime: { contextTokens: 32000, maxResponseOutputTokens: 4000 },
+          },
+        ]),
+      },
+    });
+    const input = {
+      userId: 'user',
+      modelRole: 'chat' as const,
+      purpose: 'chat_reply' as const,
+      scenario: 'voice_call' as const,
+      maxOutputTokens: 200,
+    };
+    expect(await service.getContextBudget(input)).toEqual(
+      contextBudget('realtime', [{ contextTokens: 32000, maxOutputTokens: 4000 }]),
+    );
+    entry.tags = [];
+    expect(await service.getContextBudget(input)).toEqual(
+      contextBudget('realtime', [{ contextTokens: 128000, maxOutputTokens: 200 }], 200),
+    );
+  });
   it('容量按模型缩放，取线路下界并扣掉输出和安全余量', () => {
     const small = contextBudget('small', [{ contextTokens: 32000, maxOutputTokens: 4000 }])!;
     const large = contextBudget('large', [{ contextTokens: 128000, maxOutputTokens: 4000 }])!;

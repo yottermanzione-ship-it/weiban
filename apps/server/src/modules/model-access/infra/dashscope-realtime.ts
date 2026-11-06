@@ -101,6 +101,8 @@ export function realtimeSessionUpdate(model: string, config: RealtimeSessionConf
     };
   return {
     ...common,
+    // 直接使用 WebSocket 时必须显式要求输入转写，才能留存用户说过的内容。
+    input_audio_transcription: { model: 'qwen3-asr-flash-realtime' },
     turn_detection: { type: 'server_vad', silence_duration_ms: 700 },
     audio: {
       input: { format: { type: 'pcm', sample_rate: 16000 } },
@@ -222,7 +224,11 @@ export function translateRealtimeEvent(
       return { type: 'speech_started' };
     case 'conversation.item.input_audio_transcription.completed': {
       const transcript = typeof event.transcript === 'string' ? event.transcript.trim() : '';
-      return transcript ? { type: 'user_transcript', text: transcript.slice(0, 2000) } : null;
+      return transcript.length > 200000
+        ? { type: 'error', category: 'provider_error', fatal: true }
+        : transcript
+          ? { type: 'user_transcript', text: transcript }
+          : null;
     }
     case 'response.created':
       return { type: 'response_started', responseId: responseIdOf() };
@@ -236,7 +242,8 @@ export function translateRealtimeEvent(
     case 'response.text.delta': {
       if (typeof event.delta !== 'string') return null;
       const id = responseIdOf();
-      const next = ((text.get(id) ?? '') + event.delta).slice(0, 4000);
+      const next = (text.get(id) ?? '') + event.delta;
+      if (next.length > 200000) return { type: 'error', category: 'provider_error', fatal: true };
       text.set(id, next);
       return { type: 'assistant_text', responseId: id, text: next, final: false };
     }
@@ -250,7 +257,9 @@ export function translateRealtimeEvent(
             ? event.text
             : (text.get(id) ?? '');
       text.delete(id);
-      return { type: 'assistant_text', responseId: id, text: done.slice(0, 4000), final: true };
+      return done.length > 200000
+        ? { type: 'error', category: 'provider_error', fatal: true }
+        : { type: 'assistant_text', responseId: id, text: done, final: true };
     }
     case 'response.done': {
       const response = (event.response ?? {}) as Record<string, unknown>;

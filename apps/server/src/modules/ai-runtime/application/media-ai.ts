@@ -20,7 +20,12 @@
  *   群聊发言也能带表情包（同一套标记，群聊另有防刷屏规则）；同一轮最多一种媒体附加（语音除外）。
  */
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { forwardedRecordText, nudgeText, snapshotText } from './content-text.js';
+import {
+  forwardedRecordText,
+  nudgeText,
+  snapshotText,
+  callTranscriptText,
+} from './content-text.js';
 import type { CaptionMap } from './image-captions.js';
 import {
   BLIND_IMAGE_LINE,
@@ -331,6 +336,8 @@ export class MediaAiService {
       }
       case 'text':
         return { text: c.text };
+      case 'call_record':
+        return { text: callTranscriptText(c.transcript ?? []) };
       case 'voice': {
         if (mine) return { text: `[你发了一条语音] ${c.transcript ?? ''}`.trim() };
         // Forwarded character audio already has its authoritative spoken text; reuse it.

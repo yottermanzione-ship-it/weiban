@@ -108,6 +108,15 @@ function setup(options: Parameters<typeof fakeOps>[0] = {}) {
   return { session, push, calls, ops, reserve, first, events };
 }
 
+it('共享上下文超过两万字仍完整发给供应商，不偷偷丢弃末尾规则', async () => {
+  const t = setup();
+  const instructions = 'x'.repeat(25000) + '尾部规则';
+  t.session.updateInstructions(instructions);
+  expect(t.calls.instructions).toEqual([instructions]);
+  expect(t.calls.creates).toBe(0);
+  await t.session.close();
+});
+
 const tick = () => new Promise<void>((r) => setTimeout(r, 5));
 
 function loud(ms: number): Uint8Array {

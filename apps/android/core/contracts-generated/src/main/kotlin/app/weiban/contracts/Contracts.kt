@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 7.1. Regenerate: pnpm android:generate
+// Contract 7.2. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "7.1"
+const val CONTRACT_VERSION: String = "7.2"
 
 @Serializable
 data class AccountAlias(
@@ -1668,6 +1668,7 @@ data class CallRecordContent(
     @SerialName("direction") val `direction`: CallDirection,
     @SerialName("outcome") val `outcome`: String,
     @SerialName("durationSec") val `durationSec`: Long,
+    @SerialName("transcript") val `transcript`: CallTranscript? = null,
 )
 
 @Serializable
@@ -1828,6 +1829,14 @@ data class CallStreamTicket(
     @SerialName("path") val `path`: String,
     @SerialName("token") val `token`: String,
     @SerialName("expiresAt") val `expiresAt`: Timestamp,
+)
+
+typealias CallTranscript = List<CallTranscriptTurn>
+
+@Serializable
+data class CallTranscriptTurn(
+    @SerialName("role") val `role`: String,
+    @SerialName("content") val `content`: String,
 )
 
 typealias CallUnavailableReason = String
@@ -7214,6 +7223,7 @@ data class MessageContentCallRecord(
     @SerialName("direction") val `direction`: CallDirection,
     @SerialName("outcome") val `outcome`: String,
     @SerialName("durationSec") val `durationSec`: Long,
+    @SerialName("transcript") val `transcript`: CallTranscript? = null,
 ) : MessageContent
 
 @Serializable
@@ -9326,6 +9336,7 @@ data class ReceivedMessageContentCallRecord(
     @SerialName("direction") val `direction`: CallDirection,
     @SerialName("outcome") val `outcome`: String,
     @SerialName("durationSec") val `durationSec`: Long,
+    @SerialName("transcript") val `transcript`: CallTranscript? = null,
 ) : ReceivedMessageContent
 
 @Serializable

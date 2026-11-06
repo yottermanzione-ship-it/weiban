@@ -8,6 +8,7 @@ import type {
   ModelGatewayPort,
   PolicyPort,
   Message,
+  MediaTranscriptPort,
 } from '@weiban/contracts';
 import {
   CLOCK,
@@ -34,7 +35,8 @@ import {
   type ChatSummaryItem,
 } from '../domain/chat-summary.js';
 import { healthPrivate } from '../domain/memory.js';
-import { readableMessageText } from './content-text.js';
+import { readableMessageText, withVoiceTranscripts } from './content-text.js';
+import { MEDIA_TRANSCRIPT_PORT } from '../../media/index.js';
 import { ReplyPlanStore } from './plan-store.js';
 import { blockedSeqs } from './model-blocked-messages.js';
 import { ImageCaptionStore, NO_CAPTIONS } from './image-captions.js';
@@ -81,6 +83,7 @@ export class ChatSummaryService {
     @Inject(JOB_QUEUE) readonly jobs: JobQueue,
     @Inject(ReplyPlanStore) readonly plans: ReplyPlanStore,
     @Optional() @Inject(ImageCaptionStore) readonly captions?: ImageCaptionStore,
+    @Optional() @Inject(MEDIA_TRANSCRIPT_PORT) readonly transcripts?: MediaTranscriptPort,
   ) {}
 
   private async open<T>(
@@ -285,6 +288,10 @@ export class ChatSummaryService {
           (await this.captions?.forMessages(row.p.userId, history, [scope]).catch(() => null)) ??
           NO_CAPTIONS;
         const captions = new Map([...loaded].filter(([, value]) => captionForMemory(value)));
+        const voiced = await withVoiceTranscripts(history, this.transcripts);
+        const textById = new Map(
+          voiced.map((m) => [m.messageId, readableMessageText(m, captions)]),
+        );
         // T-20261103j：被上游安全策略拦过的消息不交给模型（与敏感消息一样跳过、序号照常推进）。
         const blocked = await blockedSeqs(this.db, row.p.conversationId);
         const messages: z.infer<typeof Prepared>['messages'] = [];
@@ -295,7 +302,7 @@ export class ChatSummaryService {
           offset = 0,
           partialMessageId: string | null = null;
         for (const m of history) {
-          const text = readableMessageText(m, captions);
+          const text = textById.get(m.messageId) ?? '';
           if (
             m.status !== 'normal' ||
             m.senderKind === 'system' ||

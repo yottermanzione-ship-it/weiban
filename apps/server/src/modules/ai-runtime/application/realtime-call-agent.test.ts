@@ -15,7 +15,7 @@ import { IDENTITY_READ_PORT } from '../../identity/index.js';
 import { MODEL_GATEWAY_MEDIA_PORT, MODEL_GATEWAY_PORT } from '../../model-access/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
 import { AdultBoundaryService } from './adult-boundary.js';
-import { BrainContextService } from './brain.js';
+import { ReplyContext } from './reply-context.js';
 import { CallAgentService } from './call-agent.js';
 import { MediaAiService } from './media-ai.js';
 import { MemoryService } from './memory.js';
@@ -84,7 +84,12 @@ function fakeRealtime() {
 }
 
 function setup(
-  opts: { direction?: 'outgoing' | 'incoming'; depleted?: boolean; reason?: string } = {},
+  opts: {
+    direction?: 'outgoing' | 'incoming';
+    depleted?: boolean;
+    reason?: string;
+    context?: ReplyContext;
+  } = {},
 ) {
   const fake = fakeRealtime();
   const enqueueCallExtraction = vi.fn(async (_input: { transcript: string; scope: string }) => {
@@ -100,6 +105,7 @@ function setup(
       billing: { getSpendStatus } as never,
       memory: { enqueueCallExtraction } as never,
       clock: new TestClock('2026-10-26T10:00:00Z'),
+      context: opts.context,
     },
     {
       epoch: 'e1',
@@ -142,10 +148,62 @@ describe('实时语音通话：角色一侧', () => {
     vi.useFakeTimers();
     const out = setup();
     expect(out.calls.respond[0]).toContain('你刚接起');
+    expect(out.calls.respond[0]).toContain('基础指令');
     await out.session.close({ durationSec: 0, outcome: 'ended' });
     const inc = setup({ direction: 'incoming', reason: '想分享今天的晚霞' });
     expect(inc.calls.respond[0]).toContain('想分享今天的晚霞');
     await inc.session.close({ durationSec: 0, outcome: 'ended' });
+  });
+
+  it('实时通话回合间刷新完整共享材料、不额外生成回应，长转写完整入档', async () => {
+    vi.useFakeTimers();
+    const buildCall = vi.fn(async () => ({
+      epoch: 'e1',
+      policy: POLICY,
+      messages: [{ role: 'system', content: '共享动态记忆：新约定' }],
+    }));
+    const t = setup({ context: { buildCall } as unknown as ReplyContext });
+    const user = '用户长句'.repeat(1400) + '用户结尾';
+    const assistant = '角色长句'.repeat(1400) + '角色结尾';
+    t.push({ kind: 'response_started' });
+    t.push({ kind: 'user_transcript', text: user });
+    await flush();
+    expect(t.calls.instructions).toHaveLength(0);
+    t.push({ kind: 'audio', chunk: new Uint8Array([1, 2]) });
+    t.push({ kind: 'assistant_text', text: assistant, final: true });
+    t.push({ kind: 'response_done', interrupted: false });
+    await flush();
+    expect(t.calls.instructions.at(-1)).toContain('共享动态记忆：新约定');
+    expect(t.calls.respond).toHaveLength(1);
+    expect(buildCall).toHaveBeenCalledWith(
+      expect.objectContaining({
+        includeLiveHistory: false,
+        turns: expect.arrayContaining([{ role: 'user', content: user }]),
+      }),
+    );
+    await t.session.close({ durationSec: 60, outcome: 'completed' });
+    expect(t.enqueueCallExtraction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        turns: [
+          { role: 'user', content: user },
+          { role: 'assistant', content: assistant },
+        ],
+      }),
+    );
+  });
+
+  it('供应商标记打断时不把角色完整台词当作用户听完的内容', async () => {
+    vi.useFakeTimers();
+    const t = setup();
+    t.push({ kind: 'user_transcript', text: '开始测试' });
+    t.push({ kind: 'response_started' });
+    t.push({ kind: 'audio', chunk: new Uint8Array([1, 2]) });
+    t.push({ kind: 'assistant_text', text: 'UNSPOKEN_DETAIL：尚未说完的安排', final: true });
+    t.push({ kind: 'response_done', interrupted: true });
+    await flush();
+    await t.session.close({ durationSec: 20, outcome: 'completed' });
+    expect(t.enqueueCallExtraction.mock.calls[0]?.[0].transcript).toContain('被打断');
+    expect(t.enqueueCallExtraction.mock.calls[0]?.[0].transcript).not.toContain('UNSPOKEN_DETAIL');
   });
 
   it('角色说话：发 speaking 信号并转发声音；用户开口打断时清空未播放的声音', async () => {
@@ -262,27 +320,17 @@ describe('实时语音通话：角色一侧', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('会话指令：人设前缀 + 通话规则 + 最近聊天 + 记忆，限 2 万字', () => {
-    const text = realtimeCallInstructions({
-      brain: { scope: 'normal', prefix: '人设前缀', recall: '记忆：下周面试' },
-      policy: POLICY,
-      history: [
-        { role: 'user', content: '今天好累' },
-        { role: 'assistant', content: '抱抱你' },
-      ],
-    });
+  it('实时会话保留共用组装器的完整材料、发言人和两万字之后的尾部要求', () => {
+    const text = realtimeCallInstructions([
+      { role: 'system', content: '人设前缀' + 'x'.repeat(30000) },
+      { role: 'user', content: '今天好累' },
+      { role: 'assistant', content: '抱抱你' },
+      { role: 'system', content: '本轮记忆：下周面试；实时语音通话要求' },
+    ]);
     expect(text.startsWith('人设前缀')).toBe(true);
-    expect(text).toContain('实时语音通话');
-    expect(text).toContain('用户：今天好累');
-    expect(text).toContain('你：抱抱你');
-    expect(text).toContain('记忆：下周面试');
-    expect(
-      realtimeCallInstructions({
-        brain: { scope: 'normal', prefix: 'x'.repeat(30_000), recall: '' },
-        policy: POLICY,
-        history: [],
-      }).length,
-    ).toBe(20_000);
+    expect(text).toContain('"role":"user","text":"今天好累"');
+    expect(text).toContain('"role":"assistant","text":"抱抱你"');
+    expect(text).toContain('本轮记忆：下周面试；实时语音通话要求');
   });
 });
 
@@ -298,9 +346,17 @@ describe('通话入口按场景路由到实时模型', () => {
       providers: [
         CallAgentService,
         {
-          provide: BrainContextService,
+          provide: ReplyContext,
           useValue: {
-            build: async () => ({ scope: 'normal', prefix: '共享角色前缀', recall: '本轮记忆' }),
+            buildCall: async () => ({
+              scope: 'normal',
+              epoch: 'contact-epoch',
+              policy: POLICY,
+              messages: [
+                { role: 'system', content: '共享角色前缀；本轮记忆' },
+                { role: 'user', content: '晚上好' },
+              ],
+            }),
           },
         },
         { provide: AdultBoundaryService, useValue: { generate: vi.fn() } },
@@ -402,7 +458,7 @@ describe('通话入口按场景路由到实时模型', () => {
       expect(input.characterId).toBe('role');
       expect(input.sampleRate).toBe(16000);
       expect(input.instructions).toContain('共享角色前缀');
-      expect(input.instructions).toContain('用户：晚上好');
+      expect(input.instructions).toContain('"role":"user","text":"晚上好"');
       expect(input.idempotencyKey).toMatch(/^call:call:rt:/);
       if (s.opened.ok) await s.opened.value.close({ durationSec: 0, outcome: 'ended' });
     } finally {
