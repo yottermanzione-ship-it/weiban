@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { HomeScreenGuide, iosDeviceInfo } from './home-screen-guide.js';
 import { subscribeWebPush } from '../notifications/client.js';
+import { isAndroidShell } from '../data/shell-files.js';
 import { Dialog } from './toast.js';
 import {
   PermissionFlow,
@@ -92,7 +93,7 @@ async function microphoneStatus(): Promise<PermissionStatus> {
 async function readPlan(): Promise<Plan> {
   const { phone, supported, installed } = iosDeviceInfo();
   let notification: NotificationPlan = 'prompt';
-  if (!('Notification' in window)) notification = 'unsupported';
+  if (isAndroidShell() || !('Notification' in window)) notification = 'unsupported';
   else if (phone && !supported) notification = 'skip-old-ios';
   else if (phone && supported && !installed) notification = 'skip-uninstalled';
   return {

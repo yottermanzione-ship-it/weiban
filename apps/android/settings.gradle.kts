@@ -15,6 +15,7 @@ dependencyResolutionManagement {
 rootProject.name = "Weiban"
 include(
     ":app",
+    ":shell",
     ":core:contracts-generated",
     ":core:network",
     ":core:data",

@@ -1,5 +1,7 @@
 # 微伴安卓原生客户端
 
+2026-11-06 起另有独立 `:shell` 网页体验版，按总经理最新安排先交付；原生 `:app` 保留。用 `gradlew.bat :shell:assembleDebug` 生成独立安装包，云端附件为 `weiban-webshell-preview`。安装与能力边界见[套壳说明](../../docs/android/web-shell.md)。
+
 独立 Kotlin + Jetpack Compose 工程，SDK36/min24、构建JDK21、Gradle8.13。用 Android Studio 打开本目录；零基础安装/USB调试/APK说明见 [Windows 开发说明](../../docs/ops/android-development.md)，模块、数据与限制见 [安卓底座](../../docs/android/foundation.md)。
 
 在仓库根安装 pnpm 依赖，然后运行 `pnpm android:generate:check`；改契约或令牌后运行 `pnpm android:generate`。生成源码进仓库，不手改。本目录不属于 pnpm 工作区，Kotlin 使用 ktlint/detekt：

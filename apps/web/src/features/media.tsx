@@ -2,6 +2,7 @@ import { memo, useEffect, useRef, useState, useSyncExternalStore, type ReactNode
 import { openMicrophone } from './microphone.js';
 import { releaseVoiceRecorder, startVoiceRecorder } from './voice-recorder.js';
 import { runtimeLogs } from '../data/runtime-logs.js';
+import { saveImageFile } from '../data/shell-files.js';
 import { ImageBroken, LinkSimple, MusicNotes, VideoCamera, OldIcon } from './old-icons.js';
 import { Lightbox } from './lightbox.js';
 import { Dialog } from './toast.js';
@@ -180,13 +181,11 @@ export async function saveImage(mediaId: string) {
     const media = await api.call(MediaEndpoints.getMedia, { params: { mediaId } });
     const response = await fetch(media.url, { credentials: 'omit' });
     const blob = await response.blob();
-    const href = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = href;
-    a.download = `weiban-${mediaId.slice(0, 8)}.${media.mimeType.split('/')[1] ?? 'jpg'}`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(href), 10_000);
-    showToast('已保存');
+    const result = await saveImageFile(
+      blob,
+      `weiban-${mediaId.slice(0, 8)}.${media.mimeType.split('/')[1] ?? 'jpg'}`,
+    );
+    if (result !== 'cancelled') showToast(result === 'saved' ? '已保存' : '已发起保存');
   } catch {
     showToast('保存失败，请稍后重试');
   }

@@ -56,6 +56,8 @@ for (const name of [
   'app.weiban.platform.NotificationEntryTest',
   'app.weiban.platform.NotificationPermissionTest',
   'app.weiban.platform.NotificationStateTest',
+  'app.weiban.shell.ShellPolicyTest',
+  'app.weiban.shell.ShellPermissionsTest',
 ]) {
   if (!classes.has(name)) throw new Error(`Required Android suite did not execute: ${name}`);
 }
