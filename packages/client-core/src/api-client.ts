@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ApiError, AuthResponse, CurrentUser, type EndpointDef } from '@weiban/contracts';
 import type { LocalStore } from './local-store.js';
+import { linkedAbort } from './abort-signals.js';
 type Input<S> = S extends z.ZodType ? z.input<S> : never;
 export interface RequestOptions<E extends EndpointDef> {
   params?: Input<E['params']>;
@@ -298,6 +299,8 @@ export class ApiClient {
     }
     const startedAt = Date.now();
     let response: Response;
+    let raw: unknown;
+    const cancellation = linkedAbort([options.signal], 20_000);
     try {
       response = await this.fetcher.call(globalThis, url, {
         method: endpoint.method,
@@ -306,11 +309,11 @@ export class ApiClient {
         redirect: 'error',
         cache: 'no-store',
         ...(options.keepalive ? { keepalive: true } : {}),
-        signal: options.signal
-          ? AbortSignal.any([options.signal, AbortSignal.timeout(20_000)])
-          : AbortSignal.timeout(20_000),
+        signal: cancellation.signal,
         ...(payload !== undefined ? { body: payload } : {}),
       });
+      if (options.signal?.aborted) throw new ApiFailure('request_cancelled', '请求已取消', 0);
+      raw = response.status === 204 ? null : await response.json().catch(() => null);
     } catch (error) {
       if (endpoint.auth !== 'none' && this.auth !== auth)
         throw new ApiFailure('session_changed', '登录状态已改变，请重新打开页面', 0);
@@ -327,9 +330,9 @@ export class ApiClient {
         if (local !== undefined) return local;
       }
       throw new ApiFailure('network_error', '网络暂不可用，请稍后重试', 0);
+    } finally {
+      cancellation.dispose();
     }
-    if (options.signal?.aborted) throw new ApiFailure('request_cancelled', '请求已取消', 0);
-    const raw: unknown = response.status === 204 ? null : await response.json().catch(() => null);
     if (options.signal?.aborted) throw new ApiFailure('request_cancelled', '请求已取消', 0);
     if (!response.ok) {
       if (endpoint.auth === 'none' || this.auth === auth)

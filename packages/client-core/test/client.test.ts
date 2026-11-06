@@ -27,6 +27,25 @@ function session(username = 'test_user') {
   });
 }
 const store = () => new IndexedLocalStore('weiban-test', new IDBFactory());
+it('较旧网页组件没有组合取消接口时，带取消信号的请求仍然发出', async () => {
+  const auth = session();
+  const fetcher = vi.fn(async () => Response.json(auth.user));
+  const client = new ApiClient(store(), fetcher);
+  await client.authenticate(auth);
+  const descriptor = Object.getOwnPropertyDescriptor(AbortSignal, 'any')!;
+  Object.defineProperty(AbortSignal, 'any', { value: undefined, configurable: true });
+  try {
+    await expect(
+      client.call(IdentityEndpoints.me, {
+        networkOnly: true,
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toEqual(auth.user);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  } finally {
+    Object.defineProperty(AbortSignal, 'any', descriptor);
+  }
+});
 it('运行记录观察器仅收到技术模板；不传正文、令牌，且遥测失败不递归', async () => {
   const observer = vi.fn();
   const client = new ApiClient(store(), async () =>

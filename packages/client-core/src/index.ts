@@ -1,4 +1,5 @@
 export { ApiClient, ApiFailure, type RequestOptions } from './api-client.js';
+export { linkedAbort } from './abort-signals.js';
 export { IndexedLocalStore, type LocalStore, type StoreOwner } from './local-store.js';
 export { formatMoney, yuanToMicros } from './money.js';
 

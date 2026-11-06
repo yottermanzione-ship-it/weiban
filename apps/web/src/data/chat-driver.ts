@@ -14,6 +14,7 @@ import {
   LocalSyncState,
   SyncRunner,
   freshSyncState,
+  linkedAbort,
   type ApiClient,
   type IndexedLocalStore,
 } from '@weiban/client-core';
@@ -516,7 +517,7 @@ export class ChatDriver {
       return;
     if (this.polling) {
       if (Date.now() - this.lastPoll < 20_000) return;
-      // 浏览器挂起时原生请求超时也会暂停。按墙上时间放弃过期轮次，恢复后立即再试。
+      // 浏览器挂起时请求定时器也可能暂停。按墙上时间放弃过期轮次，恢复后立即再试。
       this.polling.abort();
     }
     const polling = new AbortController();
@@ -529,10 +530,11 @@ export class ChatDriver {
       this.api.owns(this.owner);
     this.lastPoll = Date.now();
     const since = this.runner?.lastUpdateSeq ?? 0;
+    const cancellation = linkedAbort([this.lifetime.signal, polling.signal]);
     try {
       const state = await this.api.call(SyncEndpoints.getState, {
         networkOnly: true,
-        signal: AbortSignal.any([this.lifetime.signal, polling.signal]),
+        signal: cancellation.signal,
       });
       if (!current()) return;
       /*
@@ -566,6 +568,7 @@ export class ChatDriver {
         await this.runner?.dispatch({ type: 'offline' }).catch(() => {});
       }
     } finally {
+      cancellation.dispose();
       if (this.polling === polling) this.polling = null;
     }
   }

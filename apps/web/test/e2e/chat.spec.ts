@@ -20,6 +20,26 @@ async function openChat(page: Page) {
   await expect(page.getByRole('heading', { name: '测试陪伴角色' })).toBeVisible();
   await expect(page.getByLabel('消息', { exact: true })).toBeVisible();
 }
+test('较旧网页组件缺少取消组合和超时接口时，断开实时连接仍能登录发消息并刷新保留', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(AbortSignal, 'any', { value: undefined, configurable: true });
+    Object.defineProperty(AbortSignal, 'timeout', { value: undefined, configurable: true });
+  });
+  await page.routeWebSocket('**/*', (socket) => socket.close());
+  await openChat(page);
+  const text = '较旧网页组件聊天兼容测试';
+  await page.getByLabel('消息', { exact: true }).fill(text);
+  await page.getByRole('button', { name: '发送', exact: true }).click();
+  const sent = page.locator('.wx-msg-row.mine').filter({ hasText: text });
+  await expect(sent.getByText('已送达', { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel('消息', { exact: true })).toBeVisible();
+  await expect(sent).toHaveCount(1);
+  await expect(page.getByText('网络异常', { exact: false })).toHaveCount(0);
+});
+
 for (const sameText of [false, true]) {
   test(`本机发送保存尚未完成时，新输入的${sameText ? '同文' : '不同'}草稿保留`, async ({
     page,
