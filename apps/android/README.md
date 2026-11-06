@@ -1,5 +1,7 @@
 # 微伴安卓原生客户端
 
+2026-11-07：正式交付改为 `:shell:assembleRelease` 的“微伴”3.0.0，接续旧应用身份及受保护签名，内部继续加载正式网页；`:app` 原生工程保留后置。同样必须提供下文仓库外签名配置和原签名库，不回退调试签名。构建号 125 高于已存旧包 124；覆盖安装与本机数据迁移是不同检查，不能自动继承旧 Flutter 登录。通话适配及证据见[本轮报告](../../docs/quality/2026-11-07-call-android-3.md)。下文此前独立体验包说明保留为历史，云端调试产物仅用于工程检查。
+
 2026-11-06 起另有独立 `:shell` 网页体验版，按总经理最新安排先交付；原生 `:app` 保留。用 `gradlew.bat :shell:assembleDebug` 生成独立安装包，云端附件为 `weiban-webshell-preview`。安装与能力边界见[套壳说明](../../docs/android/web-shell.md)。
 
 独立 Kotlin + Jetpack Compose 工程，SDK36/min24、构建JDK21、Gradle8.13。用 Android Studio 打开本目录；零基础安装/USB调试/APK说明见 [Windows 开发说明](../../docs/ops/android-development.md)，模块、数据与限制见 [安卓底座](../../docs/android/foundation.md)。

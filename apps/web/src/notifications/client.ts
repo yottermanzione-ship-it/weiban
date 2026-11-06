@@ -84,9 +84,7 @@ export async function enableWebPush(): Promise<void> {
 
 function assertPushSupport(): void {
   if (isAndroidShell())
-    throw new Error(
-      '安卓网页体验版暂不支持后台通知；可以使用支持通知的浏览器打开微伴并添加到主屏幕',
-    );
+    throw new Error('安卓应用暂不支持后台通知；可以使用支持通知的浏览器打开微伴并添加到主屏幕');
   const ios =
     /iPhone|iPad|iPod/.test(navigator.userAgent) ||
     (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);

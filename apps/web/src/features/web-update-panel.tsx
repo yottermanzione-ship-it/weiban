@@ -52,7 +52,7 @@ export function WebUpdatePanel() {
         <MenuRow label="检查更新" disabled={busy} onClick={() => void check()} />
         <MenuRow label="强制刷新网页" disabled={busy} onClick={() => setConfirm(true)} />
       </MenuGroup>
-      <p className="hint">网页内容更新无需重装安卓体验版。安装包自身功能改动仍需安装新包。</p>
+      <p className="hint">网页内容更新无需重装安卓应用。安装包自身功能改动仍需安装新包。</p>
       {status && <p role="status">{status}</p>}
       {confirm && (
         <Dialog

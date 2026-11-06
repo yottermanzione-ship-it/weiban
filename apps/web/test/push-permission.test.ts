@@ -56,7 +56,7 @@ it('a fresh denial immediately explains recovery and does not attempt a subscrip
 it('explains the preview shell limitation without faking a notification permission request', async () => {
   const request = browser('default');
   vi.stubGlobal('navigator', { userAgent: 'Android WeibanShell/1', serviceWorker: {} });
-  await expect(enableWebPush()).rejects.toThrow('体验版暂不支持后台通知');
+  await expect(enableWebPush()).rejects.toThrow('安卓应用暂不支持后台通知');
   expect(request).not.toHaveBeenCalled();
   expect(mocks.get).not.toHaveBeenCalled();
   expect(mocks.call).not.toHaveBeenCalled();

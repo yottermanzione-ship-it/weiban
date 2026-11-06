@@ -7,7 +7,7 @@ const candidate = { applicationId: identity.applicationId, versionCode: identity
 const previous = { ...candidate, versionCode: identity.previousVersionCode };
 test('public identity continues the verified legacy app and never contains signing credentials', () => {
   assert.equal(identity.applicationId, 'com.weiban.weiban');
-  assert.equal(identity.previousVersionCode, 123);
+  assert.equal(identity.previousVersionCode, 124);
   assert.equal(identity.minimumSdk, 24);
   assert.equal('storePassword' in identity, false);
   assert.equal('keyPassword' in identity, false);
@@ -22,7 +22,7 @@ for (const [label, change] of [
   ['debug certificate', { certificateSha256: 'a'.repeat(64) }],
   ['debuggable release', { debuggable: true }],
   ['version downgrade', { versionCode: 1 }],
-  ['same version', { versionCode: 123 }],
+  ['same version', { versionCode: identity.previousVersionCode }],
   ['old Android excluded', { minimumSdk: 26 }],
 ]) test(`rejects ${label}`, () => assert.throws(() => assertUpgrade({ ...candidate, ...change }, identity, previous)));
 test('a later previously distributed APK cannot be overwritten by an older candidate', () => {
@@ -41,5 +41,5 @@ test('badging and public certificate parsers require a single verified signer', 
 test('duplicate fields and non-advancing public defaults are refused', () => {
   const content = readFileSync(new URL('../legacy-upgrade.properties', import.meta.url), 'utf8');
   assert.throws(() => readIdentity(content + '\nversionCode=999\n'));
-  assert.throws(() => readIdentity(content.replace('versionCode=124', 'versionCode=123')));
+  assert.throws(() => readIdentity(content.replace(`versionCode=${identity.versionCode}`, `versionCode=${identity.previousVersionCode}`)));
 });

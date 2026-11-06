@@ -120,7 +120,12 @@ export async function prepareCloneSample(
       const timer = setTimeout(() => finish(null), TIMEOUT_MS);
       timer.unref();
       child.on('error', () => finish(null));
-      child.stdin.on('error', () => finish(null));
+      child.stdin.on('error', (error: NodeJS.ErrnoException) => {
+        // -t stops after 15 seconds, so ffmpeg may close stdin before a longer sample
+        // has finished writing. EPIPE alone is not a failed conversion: still require
+        // successful process exit and the bounded, nonempty MP3 output below.
+        if (error.code !== 'EPIPE') finish(null);
+      });
       child.stdout.on('error', () => finish(null));
       child.stderr.on('error', () => finish(null));
       child.stdout.on('data', (chunk: Buffer) => {

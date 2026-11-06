@@ -5,8 +5,10 @@ import android.app.AlertDialog
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.net.Uri
 import android.net.http.SslError
+import android.os.Build
 import android.os.Bundle
 import android.os.Message
 import android.view.Gravity
@@ -42,14 +44,17 @@ class ShellActivity : ComponentActivity() {
     private val microphone = ShellPermissions(this) { currentUrl() }
     private val files = ShellFilePicker(this) { currentUrl() }
     private val downloads = ShellDownloads(this) { currentUrl() }
+    private lateinit var root: FrameLayout
+    private val device by lazy { ShellDeviceBridge(this, { currentUrl() }, { dark -> applySystemTheme(dark) }) }
     private var lastPage = ShellPolicy.START_URL
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         webView = WebView(this)
-        val root = createLayout()
+        root = createLayout()
         setContentView(root)
+        applySystemTheme(false)
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             val keyboard = insets.getInsets(WindowInsetsCompat.Type.ime())
@@ -106,14 +111,15 @@ class ShellActivity : ComponentActivity() {
             javaScriptCanOpenWindowsAutomatically = false
             setSupportMultipleWindows(true)
             mediaPlaybackRequiresUserGesture = true
-            userAgentString += " WeibanShell/1"
+            userAgentString += " WeibanShell/${BuildConfig.VERSION_NAME}"
         }
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false)
         downloads.attach(webView)
+        device.attach(webView)
         webView.webViewClient = navigationClient()
         webView.webChromeClient = chromeClient()
         webView.setDownloadListener { _, _, _, _, _ ->
-            Toast.makeText(this, "请使用页面里的保存图片按钮；本体验版暂不支持此类下载。", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "请使用页面里的保存图片按钮，暂不支持此类下载。", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -136,6 +142,7 @@ class ShellActivity : ComponentActivity() {
                 microphone.cancel()
                 files.cancel()
                 downloads.cancel()
+                device.reset()
                 if (!ShellPolicy.trusted(url)) {
                     view.stopLoading()
                     return
@@ -245,6 +252,22 @@ class ShellActivity : ComponentActivity() {
 
     private fun currentUrl(): String? = if (::webView.isInitialized) webView.url else null
 
+    @Suppress("DEPRECATION") // Before enforced edge-to-edge, clear the default system scrim too.
+    private fun applySystemTheme(dark: Boolean) {
+        if (!::root.isInitialized) return
+        root.setBackgroundColor(if (dark) 0xff252a30.toInt() else 0xffededed.toInt())
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
+        if (Build.VERSION.SDK_INT >= 29) {
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+        }
+        WindowCompat.getInsetsController(window, root).apply {
+            isAppearanceLightStatusBars = !dark
+            isAppearanceLightNavigationBars = !dark
+        }
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         webView.saveState(outState)
         super.onSaveInstanceState(outState)
@@ -265,6 +288,7 @@ class ShellActivity : ComponentActivity() {
         microphone.cancel()
         files.cancel()
         downloads.close()
+        device.reset()
         (webView.parent as? FrameLayout)?.removeView(webView)
         webView.destroy()
         super.onDestroy()
