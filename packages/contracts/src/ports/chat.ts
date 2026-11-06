@@ -9,6 +9,7 @@ import type {
   Participant,
   SendMessageRequest,
   MessageAck,
+  CallTranscriptTurn,
 } from '../http/chat.js';
 import type { PortResult, Tx } from './common.js';
 
@@ -112,6 +113,20 @@ export type PostMessageError =
 /** 以参与者身份说话：AI 运行时用它让角色发言、已读、正在输入、撤回（人设小巧思）。 */
 export interface ChatParticipantPort {
   postMessage(input: PostMessageInput, tx?: Tx): Promise<PortResult<Message, PostMessageError>>;
+  /** 7.2：只给服务器通话收尾使用；更新既有记录而不新增消息或触发回复。调用方先锁用户/联系人，再传事务。 */
+  attachCallTranscript(
+    tx: Tx,
+    input: {
+      userId: string;
+      characterId: string;
+      conversationId: string;
+      callId: string;
+      scope: ContentScope;
+      turns: CallTranscriptTurn[];
+      /** 使用过健康私密提示的电话不进入长期整理/共享。 */
+      healthUsed?: boolean;
+    },
+  ): Promise<Message | null>;
   /** 标记某参与者读到第几条（角色已读，CHAT-07）。只前进不后退。 */
   markRead(input: {
     conversationId: string;

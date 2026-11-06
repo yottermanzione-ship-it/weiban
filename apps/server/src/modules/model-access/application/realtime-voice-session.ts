@@ -42,7 +42,7 @@ interface ResponseState<C> {
 }
 
 const CLOSE_GRACE_MS = 3000;
-const MAX_INSTRUCTIONS = 20_000;
+const MAX_INSTRUCTIONS = 250_000;
 const MAX_PUSH_BYTES = 32_000 * 10;
 
 export class RealtimeVoice<
@@ -102,7 +102,11 @@ export class RealtimeVoice<
 
   respond(input?: { instructions?: string }): void {
     if (this.closed || this.ended || this.active) return;
-    this.conn.createResponse(input?.instructions?.slice(0, MAX_INSTRUCTIONS));
+    if (input?.instructions && input.instructions.length > MAX_INSTRUCTIONS) {
+      this.end('failed');
+      return;
+    }
+    this.conn.createResponse(input?.instructions);
   }
 
   interrupt(): void {
@@ -114,7 +118,11 @@ export class RealtimeVoice<
 
   updateInstructions(instructions: string): void {
     if (this.closed) return;
-    const text = instructions.trim().slice(0, MAX_INSTRUCTIONS);
+    const text = instructions.trim();
+    if (text.length > MAX_INSTRUCTIONS) {
+      this.end('failed');
+      return;
+    }
     if (text) this.conn.updateInstructions(text);
   }
 

@@ -51,6 +51,7 @@ describe('百炼实时语音协议（纯函数）', () => {
       voice: 'v',
     });
     expect(omni).toMatchObject({
+      input_audio_transcription: { model: 'qwen3-asr-flash-realtime' },
       audio: {
         input: { format: { type: 'pcm', sample_rate: 16000 } },
         output: { format: { type: 'pcm', sample_rate: 24000 } },
@@ -81,6 +82,31 @@ describe('百炼实时语音协议（纯函数）', () => {
         output_token_details: { audio_tokens: 1 },
       }),
     ).toBeNull();
+  });
+
+  it('较长的用户和角色转写不再被两千或四千字截断，异常超大输入明确失败', () => {
+    const content = '语音内容'.repeat(2200) + '结尾标记';
+    expect(
+      translateRealtimeEvent(
+        { type: 'conversation.item.input_audio_transcription.completed', transcript: content },
+        new Map(),
+      ),
+    ).toMatchObject({ text: content });
+    expect(
+      translateRealtimeEvent(
+        { type: 'response.audio_transcript.done', response_id: 'r', transcript: content },
+        new Map(),
+      ),
+    ).toMatchObject({ text: content, final: true });
+    expect(
+      translateRealtimeEvent(
+        {
+          type: 'conversation.item.input_audio_transcription.completed',
+          transcript: 'x'.repeat(200001),
+        },
+        new Map(),
+      ),
+    ).toMatchObject({ type: 'error', fatal: true });
   });
 
   it('事件翻译：打断、转写、音频、文字累计、结束与错误', () => {

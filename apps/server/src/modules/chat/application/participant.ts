@@ -1,7 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import {
   Id,
+  CallTranscript,
   type ChatParticipantPort,
   type Message,
   type PostMessageInput,
@@ -17,6 +18,8 @@ import {
   CLOCK,
   DATABASE,
   OUTBOX,
+  ENVELOPE_CRYPTO,
+  type EnvelopeCrypto,
   parseContract,
   type Clock,
   type Database,
@@ -36,7 +39,64 @@ export class ChatParticipantService implements ChatParticipantPort {
     @Inject(ChatWriteService) private readonly writer: ChatWriteService,
     @Inject(SYNC_PORT) private readonly sync: SyncPort,
     @Inject(OUTBOX) private readonly outbox: Outbox,
+    @Inject(ENVELOPE_CRYPTO) private readonly crypto: EnvelopeCrypto,
   ) {}
+  async attachCallTranscript(
+    transaction: Tx,
+    input: Parameters<ChatParticipantPort['attachCallTranscript']>[1],
+  ): Promise<Message | null> {
+    const tx = asDbTx(transaction);
+    parseContract(Id, input.callId);
+    parseContract(Id, input.characterId);
+    const turns = parseContract(CallTranscript, input.turns);
+    if (!turns.length || turns.reduce((sum, item) => sum + item.content.length, 0) > 200000)
+      return null;
+    const row = await this.store.load(tx, input.conversationId, input.userId);
+    if (row.type !== 'direct' || row.archivedAt) return null;
+    const [role] = await tx.db
+      .select()
+      .from(participants)
+      .where(
+        and(
+          eq(participants.conversationId, row.id),
+          eq(participants.kind, 'character'),
+          eq(participants.refId, input.characterId),
+        ),
+      );
+    if (!role || role.leftAt) return null;
+    const [stored] = await tx.db
+      .select()
+      .from(messages)
+      .where(
+        and(
+          eq(messages.conversationId, row.id),
+          eq(messages.contentType, 'call_record'),
+          inArray(messages.clientMsgId, [input.callId, `call:${input.callId}`]),
+        ),
+      );
+    if (!stored || stored.status !== 'normal' || stored.scope !== input.scope) return null;
+    const view = await this.store.view(tx, row, input.userId, [input.scope]);
+    if (stored.seq <= view.state.clearedThroughSeq || view.hidden.has(stored.id)) return null;
+    const content = await this.store.content(tx, row, stored);
+    if (content?.type !== 'call_record' || content.callId !== input.callId) return null;
+    if (content.transcript) return this.store.message(tx, row, stored, view);
+    const [updated] = await tx.db
+      .update(messages)
+      .set({
+        ...(input.healthUsed ? { labels: [...new Set([...(stored.labels ?? []), 'health'])] } : {}),
+        contentCiphertext: await this.crypto.seal(
+          input.userId,
+          `chat:message:${stored.id}`,
+          JSON.stringify({ ...content, transcript: turns }),
+          tx,
+        ),
+      })
+      .where(eq(messages.id, stored.id))
+      .returning();
+    const message = await this.store.message(tx, row, updated!, view);
+    await this.sync.appendUpdate(tx, input.userId, { type: 'message.updated', data: { message } });
+    return message;
+  }
   async postMessage(
     input: PostMessageInput,
     transaction?: Tx,

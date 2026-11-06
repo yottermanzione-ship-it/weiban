@@ -53,6 +53,7 @@ import {
   type CachedResult,
 } from './generation-cache.js';
 import { ModelResolver, ModelStatusService, type ResolvedModel } from './resolver.js';
+import { isRealtimeCallEntry } from './realtime-call.js';
 import { FAILOVER_CATEGORIES, UpstreamScheduler } from './scheduler.js';
 import { UpstreamService } from './upstreams.js';
 import { UsageRecorder } from './usage.js';
@@ -274,6 +275,7 @@ export class ModelGateway implements ModelGatewayPort {
     );
     if (!selected?.facts.entry) return null;
     const profiles = (await this.bounds?.profiles(selected.facts.modelKey)) ?? [];
+    const realtime = input.scenario === 'voice_call' && isRealtimeCallEntry(selected.facts.entry);
     const output =
       input.maxOutputTokens === undefined
         ? undefined
@@ -281,8 +283,21 @@ export class ModelGateway implements ModelGatewayPort {
           thinkingBudgetForModel(input.purpose, input.maxOutputTokens, selected.facts.modelKey);
     return contextBudget(
       selected.facts.modelKey,
-      profiles.flatMap((p) => (p.text ? [p.text] : [])),
-      output,
+      profiles.flatMap((p) =>
+        realtime
+          ? p.realtime
+            ? [
+                {
+                  contextTokens: p.realtime.contextTokens,
+                  maxOutputTokens: p.realtime.maxResponseOutputTokens,
+                },
+              ]
+            : []
+          : p.text
+            ? [p.text]
+            : [],
+      ),
+      realtime ? undefined : output,
     );
   }
 

@@ -168,12 +168,20 @@ export const CallOutcome = z.enum([
 export type CallOutcome = z.infer<typeof CallOutcome>;
 
 /** 通话记录（「通话时长 05:23」「未接来电」「XX 给你打过电话」）。 */
+export const CallTranscriptTurn = z.object({
+  role: z.enum(['user', 'assistant']),
+  content: z.string().min(1).max(200000),
+});
+export type CallTranscriptTurn = z.infer<typeof CallTranscriptTurn>;
+/** 7.2：仅服务器保存的电话文字，与消息本体一起加密、删除；不是音频录音。 */
+export const CallTranscript = z.array(CallTranscriptTurn).max(10000);
 export const CallRecordContent = z.object({
   type: z.literal('call_record'),
   callId: Id,
   direction: CallDirection,
   outcome: tolerantEnum(CallOutcome),
   durationSec: z.number().int().nonnegative(),
+  transcript: CallTranscript.optional(),
 });
 
 /** 信件卡片（PLAY-05）：来信（用户写给角色）与回信（角色写给用户）都以此出现在私聊，正文就是信。 */

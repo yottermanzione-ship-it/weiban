@@ -629,8 +629,36 @@ export class ConversationMemoryService implements OnModuleInit {
         job.user_id,
         `ai:call-memory:${id}`,
         job.ciphertext!,
-        z.object({ transcript: z.string().max(12000) }),
+        z.object({
+          transcript: z.string().max(200000),
+          offset: z.number().int().min(0).optional(),
+          sourceMessageId: z.uuid().optional(),
+          spans: z
+            .array(
+              z.object({
+                role: z.enum(['user', 'assistant']),
+                start: z.number().int().nonnegative(),
+                end: z.number().int().nonnegative(),
+              }),
+            )
+            .max(10000)
+            .optional(),
+        }),
       );
+      const offset = input.offset ?? 0;
+      const piece = input.transcript.slice(offset, offset + 12000);
+      const nextOffset = offset + piece.length;
+      const sourceId = input.sourceMessageId ?? id;
+      if (input.sourceMessageId) {
+        const source = await this.chat.getMessage(input.sourceMessageId, [job.scope]);
+        if (
+          !source ||
+          source.conversationId !== job.conversation_id ||
+          source.content?.type !== 'call_record' ||
+          source.content.callId !== id
+        )
+          throw new Error('call_memory_invalid_output');
+      }
       const own = await this.memory.context(
         job.user_id,
         job.character_id,
@@ -658,11 +686,12 @@ export class ConversationMemoryService implements OnModuleInit {
           countAsBackground: true,
           responseFormat: 'json',
           maxOutputTokens: 2000,
-          idempotencyKey: `call-memory:${id}`,
+          idempotencyKey:
+            input.offset === undefined ? `call-memory:${id}` : `call-memory:${id}:${offset}`,
           messages: [
             {
               role: 'system',
-              content: `${INSTRUCTION}输出{operations:[...],episode}，电话内容每条操作的sourceMessageIds只能填电话ID ${id}。`,
+              content: `${INSTRUCTION}输出{operations:[...],episode}，电话内容每条操作的sourceMessageIds只能填来源ID ${sourceId}。`,
             },
             {
               role: 'user',
@@ -673,7 +702,19 @@ export class ConversationMemoryService implements OnModuleInit {
                   category: m.category,
                   createdBy: m.createdBy,
                 })),
-                transcript: input.transcript,
+                ...(input.spans
+                  ? {
+                      turns: input.spans
+                        .filter((span) => span.end > offset && span.start < nextOffset)
+                        .map((span) => ({
+                          role: span.role,
+                          content: input.transcript.slice(
+                            Math.max(offset, span.start),
+                            Math.min(nextOffset, span.end),
+                          ),
+                        })),
+                    }
+                  : { transcript: piece }),
               }),
             },
           ],
@@ -706,7 +747,8 @@ export class ConversationMemoryService implements OnModuleInit {
       }
       if (
         result.operations.some(
-          (op) => op.sourceMessageIds.some((source) => source !== id) || healthPrivate(op.content),
+          (op) =>
+            op.sourceMessageIds.some((source) => source !== sourceId) || healthPrivate(op.content),
         ) ||
         healthPrivate(result.episode)
       )
@@ -720,6 +762,17 @@ export class ConversationMemoryService implements OnModuleInit {
           )
         ).rows[0];
         if (current?.lease_id !== token || current.status !== 'pending') return;
+        if (input.sourceMessageId) {
+          const epoch = await this.contacts.getActiveContactEpoch(
+            job.user_id,
+            job.character_id,
+            tx,
+          );
+          if (epoch?.version !== job.epoch) throw new Error('call_memory_invalid_output');
+          const source = await this.chat.getMessage(input.sourceMessageId, [job.scope], tx);
+          if (!source || source.content?.type !== 'call_record' || source.content.callId !== id)
+            throw new Error('call_memory_invalid_output');
+        }
         const ok =
           !(await this.accounts.isBanned?.(job.user_id, tx)) &&
           (await this.memory.applyExternal(tx, {
@@ -730,8 +783,8 @@ export class ConversationMemoryService implements OnModuleInit {
             revision: job.revision,
             scope: job.scope,
             origin: 'call',
-            batchId: `call:${id}`,
-            sourceIds: [id],
+            batchId: `call:${id}:${offset}`,
+            sourceIds: [sourceId],
             operations: result.operations,
           }));
         if (ok && result.episode)
@@ -740,7 +793,7 @@ export class ConversationMemoryService implements OnModuleInit {
             characterId: job.character_id,
             epoch: job.epoch,
             sourceType: 'call',
-            sourceIds: [id],
+            sourceIds: [sourceId],
             sourceId: id,
             kind: 'call',
             text: result.episode,
@@ -748,10 +801,36 @@ export class ConversationMemoryService implements OnModuleInit {
             importance: 6,
             occurredAt: job.created_at,
           });
-        await tx.query(
-          'UPDATE ai_runtime.call_memory_jobs SET status=$3,ciphertext=NULL,result_ciphertext=NULL,lease_id=NULL,lease_until=NULL WHERE id=$1 AND lease_id=$2',
-          [id, token, ok ? 'done' : 'cancelled'],
+        const more = ok && nextOffset < input.transcript.length;
+        const revision = await this.memory.revision(
+          tx,
+          job.user_id,
+          job.character_id,
+          job.conversation_id,
         );
+        await tx.query(
+          'UPDATE ai_runtime.call_memory_jobs SET status=$3,ciphertext=$4,revision=$5,result_ciphertext=NULL,lease_id=NULL,lease_until=NULL,retry_after=NULL WHERE id=$1 AND lease_id=$2',
+          [
+            id,
+            token,
+            more ? 'pending' : ok ? 'done' : 'cancelled',
+            more
+              ? await this.store.crypto.seal(
+                  job.user_id,
+                  `ai:call-memory:${id}`,
+                  JSON.stringify({ ...input, offset: nextOffset }),
+                  tx,
+                )
+              : null,
+            revision,
+          ],
+        );
+        if (more)
+          await this.jobs.send(
+            'ai.extract_call_memory',
+            { callId: id },
+            { tx, retryLimit: 10, retryBackoff: true },
+          );
       });
     } catch (error) {
       if (

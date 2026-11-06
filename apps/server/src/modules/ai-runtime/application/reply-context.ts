@@ -2,6 +2,7 @@ import { EcologySettingsService } from './ecology-settings.js';
 import { brainPromptParts } from '../domain/brain.js';
 import { SharedEpisodesService } from './shared-episodes.js';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { realtimeCallInstructions } from '../domain/realtime-prompt.js';
 import { readableMessageText } from './content-text.js';
 import { userNickname, userNamingContext } from '../domain/user-naming.js';
 import type { PetReadPort, UserStatusReadPort } from '@weiban/contracts';
@@ -117,14 +118,28 @@ const MAX_MESSAGE_CHARS = 3000;
 /** 翻聊天记录：每次最多扫描多少条更早的消息（在服务器内存里解密匹配的上限保护，ADR-0027 补记）。 */
 const RECALL_MAX_SCAN = 2000;
 /** 可以翻的内容类型（与聊天记录搜索一致：文字、链接标题、信件、每日一问、角色语音原文）。 */
-const RECALL_TYPES = ['text', 'link', 'letter', 'daily_question', 'voice', 'image', 'sticker'];
+const RECALL_TYPES = [
+  'text',
+  'link',
+  'letter',
+  'daily_question',
+  'voice',
+  'image',
+  'sticker',
+  'call_record',
+];
 /** 窗口内的用户轮：每段连续用户消息算一轮，记录起始序号与本轮（含角色回复）字数。 */
 function windowTurns(history: Message[], floor: number): WindowTurn[] {
   const turns: WindowTurn[] = [];
   let prevUser = false;
   for (const m of history) {
     if (m.senderKind === 'system' || m.seq <= floor) continue;
-    const size = m.content?.type === 'text' ? m.content.text.length : 20;
+    const size =
+      m.content?.type === 'call_record'
+        ? readableMessageText(m).length
+        : m.content?.type === 'text'
+          ? m.content.text.length
+          : 20;
     if (m.senderKind === 'user' && !prevUser) turns.push({ startSeq: m.seq, chars: 0 });
     prevUser = m.senderKind === 'user';
     const last = turns.at(-1);
@@ -215,6 +230,30 @@ export const ReplySnapshot = z.object({
   turnUserSeqs: z.array(z.number().int().positive()).max(MAX_BLOCKED_PER_REPLY).default([]),
 });
 export type ReplySnapshot = z.infer<typeof ReplySnapshot>;
+type ContextRequest = Omit<
+  Pick<
+    ReplyPlan,
+    | 'userId'
+    | 'characterId'
+    | 'conversationId'
+    | 'triggerId'
+    | 'triggerSeq'
+    | 'createdAt'
+    | 'retryEpoch'
+    | 'kind'
+  >,
+  'kind'
+> & { kind: ReplyPlan['kind'] | 'call' };
+export interface CallContextInput {
+  userId: string;
+  characterId: string;
+  conversationId: string;
+  callId: string;
+  startedAt: Date;
+  turns: Array<{ role: 'user' | 'assistant'; content: string }>;
+  /** 实时供应商已在会话中保留本通电话的声音；动态材料仍用 turns 计算，不重复塞入声音历史。 */
+  includeLiveHistory?: boolean;
+}
 @Injectable()
 export class ReplyContext {
   constructor(
@@ -245,9 +284,28 @@ export class ReplyContext {
     /** H3：图片描述存档。 */
     @Optional() @Inject(ImageCaptionStore) readonly captions?: ImageCaptionStore,
   ) {}
-  async build(row: ReplyPlan): Promise<ReplySnapshot | null> {
+  async buildCall(input: CallContextInput): Promise<ReplySnapshot | null> {
+    return this.build(
+      {
+        ...input,
+        kind: 'call',
+        createdAt: input.startedAt,
+        triggerId: input.callId,
+        triggerSeq: 0,
+        retryEpoch: 0,
+      },
+      input.turns,
+      input.includeLiveHistory ?? true,
+    );
+  }
+  async build(
+    row: ContextRequest,
+    callTurns: CallContextInput['turns'] = [],
+    includeLiveHistory = true,
+  ): Promise<ReplySnapshot | null> {
+    const voiceCall = row.kind === 'call';
     const contact = await this.contacts.getActiveContact(row.userId, row.characterId);
-    if (!contact) return this.buildTrial(row);
+    if (!contact) return voiceCall ? null : this.buildTrial(row);
     if (contact.conversationId !== row.conversationId) return null;
     const epochInfo = await this.contacts.getActiveContactEpoch(row.userId, row.characterId);
     if (!epochInfo || row.createdAt < new Date(epochInfo.acceptAfter)) return null;
@@ -259,6 +317,8 @@ export class ReplyContext {
     const profile = await this.identity.getProfile(row.userId);
     if (!conversation || conversation.type !== 'direct' || !role || !policy || !profile)
       return null;
+    // 通话没有私密线路；切换范围后不得把成人上下文交给普通实时供应商。
+    if (voiceCall && conversation.contentScope !== 'normal') return null;
     // 旧卡角色：世界书 / 示例对话来自旧库附属表；新卡角色保持现有逻辑。
     const legacyContext = role.legacyCard
       ? await this.characters.getLegacyContext?.(row.characterId).catch(() => null)
@@ -378,7 +438,9 @@ export class ReplyContext {
       .map((m) => (m.content?.type === 'text' ? m.content.text : (rendered.get(m.messageId) ?? '')))
       .filter(Boolean)
       .join('\n');
-    const userText = freshPlain + (greeting ?? '');
+    const userText = voiceCall
+      ? (callTurns.filter((turn) => turn.role === 'user').at(-1)?.content ?? freshPlain)
+      : freshPlain + (greeting ?? '');
     const risk = highRisk(userText);
     const priorCare = await this.store.db.query<{ n: string }>(
       "SELECT count(*) n FROM ai_runtime.reply_plans WHERE conversation_id=$1 AND care_until IS NOT NULL AND status IN ('done','sending')",
@@ -396,7 +458,7 @@ export class ReplyContext {
     // v5 批 B：翻聊天记录（照旧版 recall.js）——本轮有回忆意图才翻「原文窗口之前」的旧聊天，取最相关几条原话。
     const recallTopK = remembered.tier?.config.recallTopK ?? 0;
     const recalled =
-      row.kind === 'message' && recallTopK > 0 && hasRecallIntent(userText)
+      (row.kind === 'message' || voiceCall) && recallTopK > 0 && hasRecallIntent(userText)
         ? await this.recall({
             conversationId: row.conversationId,
             scopes: historyScopes,
@@ -428,7 +490,7 @@ export class ReplyContext {
           turn = [];
         }
       }
-      if (row.kind === 'message') userTurns.push(userText);
+      if (row.kind === 'message' || voiceCall) userTurns.push(userText);
       else if (turn.length) userTurns.push(turn.join('\n'));
       autoResult = autoScenarioStyle({
         userTurns,
@@ -468,7 +530,7 @@ export class ReplyContext {
     if (card) {
       const lore = lorebook(
         card.knowledge.entries,
-        `${recentForScan}\n${userText}`,
+        `${recentForScan}\n${callTurns.map((turn) => turn.content).join('\n')}\n${userText}`,
         localDate,
         policy.isRealPerson,
         {
@@ -484,7 +546,7 @@ export class ReplyContext {
       // 旧卡：世界书来自旧库 character_lorebook_entries，原样触发，不按卡片 confidence 过滤。
       const lore = legacyLorebook(
         view.lorebook,
-        `${recentForScan}\n${userText}`,
+        `${recentForScan}\n${callTurns.map((turn) => turn.content).join('\n')}\n${userText}`,
         LEGACY_LOREBOOK_OPTIONS,
       );
       constantKnowledge = legacyLorebookText(lore.constant);
@@ -559,7 +621,12 @@ export class ReplyContext {
               .catch(() => null)
           )?.text ?? null;
       if (!text) continue;
-      const limit = m.content.type === 'forwarded_record' ? 32_000 : MAX_MESSAGE_CHARS;
+      const limit =
+        m.content.type === 'call_record'
+          ? 200000
+          : m.content.type === 'forwarded_record'
+            ? 32_000
+            : MAX_MESSAGE_CHARS;
       chat.push({
         role: m.senderKind === 'user' ? 'user' : 'assistant',
         content: text.slice(0, limit),
@@ -581,6 +648,9 @@ export class ReplyContext {
           : '我们成为好友了，请自然地打个招呼。',
       });
 
+    // 当前通话尚未结束，双方轮次以原发言角色追加，不伪造聊天序号或推进持久摘要游标。
+    if (voiceCall && includeLiveHistory) chat.push(...callTurns);
+
     // ③ 动态结尾：每轮重建，放在最后一条用户消息之后
     const resident = new Set(remembered.residentIds);
     const retrieved = takeWithin(
@@ -596,7 +666,7 @@ export class ReplyContext {
     );
     // T-060 私聊中自然体现：现取经期摘要（不缓存），只在私聊回复中使用。
     const healthHint =
-      row.kind === 'message'
+      row.kind === 'message' || voiceCall
         ? await this.healthCare.chatHint({
             userId: row.userId,
             characterId: row.characterId,
@@ -615,9 +685,11 @@ export class ReplyContext {
       })
       .catch(() => [] as string[]);
     // SOC-06 第 3 条：用户退出了该角色拉的群 → 私聊里最多提一次，按人设，不做情感操纵。
-    const exitReason = await this.store.db.transaction((tx) =>
-      this.groupChat.consumeExitMention(tx, row.userId, row.characterId),
-    );
+    const exitReason = voiceCall
+      ? null
+      : await this.store.db.transaction((tx) =>
+          this.groupChat.consumeExitMention(tx, row.userId, row.characterId),
+        );
     const firstFreshSeq = fresh[0]?.seq ?? Number.POSITIVE_INFINITY;
     const previous = history
       .filter((m) => m.senderKind !== 'system' && m.seq < firstFreshSeq)
@@ -729,11 +801,13 @@ export class ReplyContext {
         title: '私聊场景',
         // T-20261103h（总经理 2026-11-03）：文字气泡上限 4 → 6。开着拆条时告诉模型每行发一条、最多几条，
         // 并强调短话照样一两条（拆几条由内容决定，不为凑条数硬拆）；关着拆条时整段只发一条，不提条数。
-        text: `现在以角色口吻与用户私聊。只输出聊天纯文本，短句换行，不输出JSON或括号动作。${
-          settings.splitBubbles
-            ? `正文每一行会单独发成一条消息，一次最多 ${P02_SPLIT_BUBBLES.maxTextBubbles} 条；话短就一两条，不要为了凑条数硬拆。`
-            : ''
-        }回答前可以先想，想完先单独写一行【正文】，然后只写正文聊天内容；【正文】这行本身不发给用户，正文不能为空。`,
+        text: voiceCall
+          ? '现在以角色口吻和用户语音通话，沿用上面的人设、关系、情景、历史、记忆与安全边界。输出会直接念给用户听：只写自然口语，一次一到三句；不写正文标记、表情、括号动作、列表或网址。电话中听到的内容与文字聊天同属这段对话。'
+          : `现在以角色口吻与用户私聊。只输出聊天纯文本，短句换行，不输出JSON或括号动作。${
+              settings.splitBubbles
+                ? `正文每一行会单独发成一条消息，一次最多 ${P02_SPLIT_BUBBLES.maxTextBubbles} 条；话短就一两条，不要为了凑条数硬拆。`
+                : ''
+            }回答前可以先想，想完先单独写一行【正文】，然后只写正文聊天内容；【正文】这行本身不发给用户，正文不能为空。`,
       },
       { title: '表情包', text: stickerHint },
       { title: '本轮语音能力', text: voiceHint },
@@ -843,13 +917,18 @@ export class ReplyContext {
       characterId: row.characterId,
       modelRole: privateScope ? 'adult' : 'chat',
       purpose: 'chat_reply',
+      ...(voiceCall ? { scenario: 'voice_call' as const, maxOutputTokens: 200 } : {}),
     });
+    const promptTokens = (messages: ReplySnapshot['messages']) =>
+      voiceCall && !includeLiveHistory
+        ? contextTokens([{ content: realtimeCallInstructions(messages) }])
+        : contextTokens(messages);
     if (this.memory.chatSummaries) {
       for (let pass = 0; pass < 2; pass++) {
         const historyGap = uncoveredHistoryEnd(history, remembered.rawFromSeq);
         const chars = assembled.messages.reduce((n, m) => n + m.content.length, 0);
         if (
-          (!modelBudget || contextTokens(assembled.messages) < modelBudget.triggerTokens) &&
+          (!modelBudget || promptTokens(assembled.messages) < modelBudget.triggerTokens) &&
           historyGap === null &&
           assembled.messages.length < 420 &&
           chars < 160000
@@ -916,7 +995,7 @@ export class ReplyContext {
     const tooLarge = () =>
       assembled.messages.length > 500 ||
       assembled.messages.reduce((n, m) => n + m.content.length, 0) > 200000 ||
-      (!!modelBudget && contextTokens(assembled.messages) > modelBudget.inputTokens);
+      (!!modelBudget && promptTokens(assembled.messages) > modelBudget.inputTokens);
     const historyGap = uncoveredHistoryEnd(history, remembered.rawFromSeq);
     if (tooLarge() || historyGap !== null) {
       tail.unshift({
@@ -1113,7 +1192,7 @@ export class ReplyContext {
       : (await this.contacts.getActiveContactEpoch(row.userId, row.characterId, tx))?.version;
   }
 
-  private async buildTrial(row: ReplyPlan): Promise<ReplySnapshot | null> {
+  private async buildTrial(row: ContextRequest): Promise<ReplySnapshot | null> {
     if (row.kind !== 'message') return null;
     const session = await this.trials.getTrial(row);
     if (!session) return null;

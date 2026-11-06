@@ -1,7 +1,7 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { SharedEpisodesService } from './shared-episodes.js';
-import { readableMessageText } from './content-text.js';
+import { readableMessageText, withVoiceTranscripts } from './content-text.js';
 import { ChatSummaryService } from './chat-summary.js';
 import { importantMemoryIntent, type ChatSummaryItem } from '../domain/chat-summary.js';
 import { chatSummaryStates, privateDigests } from '../infra/db/schema.js';
@@ -21,6 +21,9 @@ import {
   Id,
   type ContactsReadPort,
   type ChatReadPort,
+  type ChatParticipantPort,
+  type CallTranscriptTurn,
+  type MediaTranscriptPort,
   type ModelGatewayPort,
   type SyncPort,
   type Message,
@@ -41,10 +44,11 @@ import {
   type JobQueue,
 } from '../../../platform/index.js';
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
-import { CHAT_READ_PORT } from '../../chat/index.js';
+import { CHAT_READ_PORT, CHAT_PARTICIPANT_PORT } from '../../chat/index.js';
 import { MODEL_GATEWAY_PORT } from '../../model-access/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
 import { SYNC_PORT } from '../../realtime/index.js';
+import { MEDIA_TRANSCRIPT_PORT } from '../../media/index.js';
 import { memories, memoryStates, replyPlans } from '../infra/db/schema.js';
 import {
   MemoryPayload,
@@ -157,9 +161,11 @@ export class MemoryService {
     @Inject(ReplyPlanStore) readonly plans: ReplyPlanStore,
     @Inject(MemoryTierService) readonly tiers: MemoryTierService,
     @Inject(SharedEpisodesService) readonly episodes: SharedEpisodesService,
+    @Inject(CHAT_PARTICIPANT_PORT) readonly callRecords: ChatParticipantPort,
     /** H3：图片描述存档（图片内容进记忆，健康类除外）。 */
     @Optional() @Inject(ImageCaptionStore) readonly captions?: ImageCaptionStore,
     @Optional() @Inject(ChatSummaryService) readonly chatSummaries?: ChatSummaryService,
+    @Optional() @Inject(MEDIA_TRANSCRIPT_PORT) readonly transcripts?: MediaTranscriptPort,
   ) {}
   /** T-066：记忆页「谁知道」（MEM-07 第 5 条）。由 SocialService 注入，避免循环依赖。 */
   private knownByResolver:
@@ -1209,6 +1215,8 @@ export class MemoryService {
     callId: string;
     scope: 'normal' | 'adult';
     transcript: string;
+    turns?: CallTranscriptTurn[];
+    healthUsed?: boolean;
     epoch?: string;
     startedAt?: Date;
   }) {
@@ -1224,11 +1232,37 @@ export class MemoryService {
       const epoch = await this.contacts.getActiveContactEpoch(input.userId, input.characterId, tx);
       if (!epoch || (input.startedAt && input.startedAt < new Date(epoch.acceptAfter))) return;
       const state = await this.state(tx, job);
-      const text = input.transcript
-        .split('\n')
-        .filter((line) => !healthPrivate(line))
-        .join('\n')
-        .slice(-12000);
+      const record = input.turns?.length
+        ? await this.callRecords.attachCallTranscript(tx, {
+            ...input,
+            turns: input.turns,
+          })
+        : null;
+      // 新版必须先留存原文；删掉/清空的通话记录不得被迟到收尾重新写回。
+      if (input.turns?.length && !record) return;
+      if (
+        input.healthUsed ||
+        record?.labels?.includes('health') ||
+        (input.turns && !input.turns.some((turn) => turn.role === 'user'))
+      )
+        return;
+      let position = 0;
+      const spans: Array<{ role: 'user' | 'assistant'; start: number; end: number }> = [];
+      const safeTurns = input.turns?.filter((turn) => !healthPrivate(turn.content));
+      const text = safeTurns
+        ? safeTurns
+            .map((turn, index) => {
+              const part = `${index ? '\n' : ''}${turn.role === 'user' ? '用户' : '我'}：${turn.content}`;
+              spans.push({ role: turn.role, start: position, end: position + part.length });
+              position += part.length;
+              return part;
+            })
+            .join('')
+        : input.transcript
+            .split('\n')
+            .filter((line) => !healthPrivate(line))
+            .join('\n');
+      if (text.length > 200000) throw new Error('call_transcript_exceeds_limit');
       if (!text.trim()) return;
       await tx.query(
         `INSERT INTO ai_runtime.call_memory_jobs(id,user_id,character_id,conversation_id,epoch,scope,revision,ciphertext,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(id) DO NOTHING`,
@@ -1243,7 +1277,12 @@ export class MemoryService {
           await this.crypto.seal(
             input.userId,
             `ai:call-memory:${input.callId}`,
-            JSON.stringify({ transcript: text }),
+            JSON.stringify({
+              transcript: text,
+              offset: 0,
+              ...(safeTurns ? { spans } : {}),
+              ...(record ? { sourceMessageId: record.messageId } : {}),
+            }),
             tx,
           ),
           this.clock.now(),
@@ -1542,7 +1581,10 @@ export class MemoryService {
     const captions: CaptionMap = new Map(
       [...loadedCaptions].filter(([, caption]) => captionForMemory(caption)),
     );
-    const textOf = (message: Message) => messageText(message, captions);
+    const voiceHistory = await withVoiceTranscripts(sameScope, this.transcripts);
+    const voiceById = new Map(voiceHistory.map((m) => [m.messageId, m]));
+    const textOf = (message: Message) =>
+      messageText(voiceById.get(message.messageId) ?? message, captions);
     // Keep whole source messages and process a bounded prefix; remaining seqs go to the next job.
     const shrink = memoryShrink(job.shrink);
     const maxMessages = Math.max(MIN_MEMORY_BATCH, 100 >> shrink);
@@ -1565,6 +1607,9 @@ export class MemoryService {
       (m) =>
         m.status === 'normal' &&
         (m.content?.type === 'text' ||
+          (m.content?.type === 'voice' &&
+            !!(voiceById.get(m.messageId)?.content as { transcript?: string } | null)
+              ?.transcript) ||
           m.content?.type === 'forwarded_record' ||
           (m.content?.type === 'image' &&
             m.senderKind === 'user' &&

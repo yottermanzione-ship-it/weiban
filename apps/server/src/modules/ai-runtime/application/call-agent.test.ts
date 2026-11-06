@@ -24,7 +24,7 @@ import { AI_CHARACTER_READ } from './supplemented-character-read.js';
 import { MemoryService } from './memory.js';
 import { MediaAiService } from './media-ai.js';
 import { CompanionSettingsService } from './settings.js';
-import { BrainContextService } from './brain.js';
+import { ReplyContext } from './reply-context.js';
 
 afterEach(() => vi.useRealTimers());
 
@@ -121,12 +121,25 @@ async function openControlledSession(
     providers: [
       CallAgentService,
       {
-        provide: BrainContextService,
+        provide: ReplyContext,
         useValue: {
-          build: async () => ({
+          buildCall: async (input: { turns: Array<{ role: string; content: string }> }) => ({
             scope: opts.adult ? 'adult' : 'normal',
-            prefix: '共享角色前缀：用户周末喜欢爬山',
-            recall: '本轮记忆：下周三面试',
+            epoch: 'contact-epoch',
+            messages: [
+              { role: 'system', content: '共享角色前缀：用户周末喜欢爬山' },
+              ...input.turns,
+              { role: 'system', content: '本轮记忆：下周三面试；语音电话直接说话' },
+            ],
+            stablePrefixChars: '共享角色前缀：用户周末喜欢爬山'.length,
+            policy: {
+              isRealPerson: false,
+              isMinor: false,
+              romanceAllowed: true,
+              adultModeEligible: !!opts.adult,
+            },
+            promptTemplateVersion: 'fixture-shared',
+            scenarioMode: opts.adult ? 'adult' : 'daily',
           }),
         },
       },
