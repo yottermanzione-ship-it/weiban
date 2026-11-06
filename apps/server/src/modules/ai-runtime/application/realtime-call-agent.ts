@@ -183,6 +183,8 @@ export class RealtimeAgentSession implements CallAgentSession {
   }
 
   private markInterrupted(): void {
+    // 完整回应结束后的下一次正常开口，不是对上一轮的打断。
+    if (!this.responseActive && !this.speaking) return;
     this.interrupted = true;
     if (this.responseTurn)
       this.responseTurn.content =

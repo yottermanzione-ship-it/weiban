@@ -206,6 +206,25 @@ describe('实时语音通话：角色一侧', () => {
     expect(t.enqueueCallExtraction.mock.calls[0]?.[0].transcript).not.toContain('UNSPOKEN_DETAIL');
   });
 
+  it('正常进入下一轮不会把上一轮完整回应改成被打断', async () => {
+    vi.useFakeTimers();
+    const t = setup();
+    t.push({ kind: 'user_transcript', text: '几点见面' });
+    t.push({ kind: 'response_started' });
+    t.push({ kind: 'audio', chunk: new Uint8Array([1, 2]) });
+    t.push({ kind: 'assistant_text', text: '明天下午三点见面', final: true });
+    t.push({ kind: 'response_done', interrupted: false });
+    await flush();
+    t.push({ kind: 'user_speech_started' });
+    t.push({ kind: 'user_transcript', text: '好的，明天见' });
+    await flush();
+    await t.session.close({ durationSec: 20, outcome: 'completed' });
+    const transcript = t.enqueueCallExtraction.mock.calls[0]?.[0].transcript;
+    expect(transcript).toContain('明天下午三点见面');
+    expect(transcript).toContain('好的，明天见');
+    expect(transcript).not.toContain('被打断');
+  });
+
   it('角色说话：发 speaking 信号并转发声音；用户开口打断时清空未播放的声音', async () => {
     vi.useFakeTimers();
     const t = setup();
