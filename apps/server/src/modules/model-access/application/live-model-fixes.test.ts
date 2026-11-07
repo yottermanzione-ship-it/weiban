@@ -8,6 +8,7 @@ import { DEFAULT_GATEWAY_LIMITS } from './limits.js';
 import { thinkingControlFor, thinkingOffFields } from '../infra/text-adapter.js';
 import { supportsThinkingDisabled } from '../infra/anthropic-adapter.js';
 import { CatalogService } from './catalog.js';
+import { requestHash } from './generation-cache.js';
 
 it('备用模型按现价筛选，排除私密、无价格、无可用线路和任一单价更高的模型，再取三个', async () => {
   const rows = [
@@ -85,6 +86,13 @@ function gateway(firstError = 'provider_unavailable', primary = 'primary/model')
   const recommendedModel = vi.fn(async () => null);
   Object.assign(service, {
     generateOnce,
+    cache: {
+      claim: vi.fn(async (input: GenerateTextInput) => ({
+        created: true,
+        row: { requestHash: requestHash(input) },
+      })),
+      save: vi.fn(async () => {}),
+    },
     catalog: {
       recommendedModel,
       cheaperTextFallbacks: vi.fn(async () => [

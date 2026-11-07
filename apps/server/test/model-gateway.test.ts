@@ -743,8 +743,12 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
     const chargesBefore = await db.query<{ n: number }>(
       "SELECT count(*)::int AS n FROM billing.ledger_entries WHERE type='charge'",
     );
-    const first = await gateway.generateText(request);
+    const [first, concurrent] = await Promise.all([
+      gateway.generateText(request),
+      gateway.generateText(request),
+    ]);
     expect(first).toMatchObject({ ok: true, value: { modelKey: cheap, chargedMicros: 165 } });
+    expect(concurrent).toEqual(first);
     expect(requests.at(-1)).toMatchObject({
       model: 'cheap-working',
       response_format: { type: 'json_object' },
@@ -752,6 +756,16 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
     expect(requests.at(-1)?.messages).toEqual(requests[0]?.messages);
     expect((await app.get(UpstreamService).get(upstreamId)).status).toBe('active');
     const sent = calls;
+    clock.advance(1_000);
+    expect(await gateway.generateText(request)).toEqual(first);
+    expect(calls).toBe(sent);
+    await catalog.upsert(admin, cheap, {
+      ...original,
+      modelKey: cheap,
+      upstreamModelId: 'cheap-working',
+      enabled: false,
+    });
+    // 价格/可用性改变后仍重放同一次逻辑调用，不重新选择并收费。
     expect(await gateway.generateText(request)).toEqual(first);
     expect(calls).toBe(sent);
     const chargesAfter = await db.query<{ n: number }>(

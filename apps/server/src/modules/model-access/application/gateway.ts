@@ -220,6 +220,20 @@ export class ModelGateway implements ModelGatewayPort {
       return first;
     if (internal?.chatFallbackModelKey || internal?.fallbackModelKey) return first;
     if (!['provider_unavailable', 'model_unavailable'].includes(first.error)) return first;
+    // 整条备用链也是同一次逻辑请求。持久占位避免并发重试、时钟前进或价目/可用性
+    // 改变后重新选型并收费；进程中断后的在途链也不盲目重发。
+    const chainInput = {
+      ...input,
+      idempotencyKey: `fallback-chain:${boundsEvidence(input.idempotencyKey)}`,
+    };
+    const claim = await this.cache.claim(chainInput);
+    if (claim.row.requestHash !== requestHash(chainInput))
+      return { ok: false, error: 'bad_request' };
+    if (!claim.created) return this.authorizeCachedResult(input, await this.replay(claim.row));
+    const complete = async (result: CachedResult) => {
+      await this.cache.save(claim.row, result, 'complete');
+      return result;
+    };
     const primary = await this.resolver
       .pick(input.userId, input.modelRole, input.characterId ?? null, {
         purpose: input.purpose,
@@ -227,7 +241,8 @@ export class ModelGateway implements ModelGatewayPort {
       })
       .catch(() => null);
     const primaryKey = primary?.facts?.modelKey;
-    if (!primaryKey || primary?.facts?.entry?.capabilities.includes('adult_content')) return first;
+    if (!primaryKey || primary?.facts?.entry?.capabilities.includes('adult_content'))
+      return complete(first);
     const chain = await this.catalog.cheaperTextFallbacks(primaryKey).catch(() => []);
     for (const candidate of chain) {
       if (this.clock.nowMs() >= Date.parse(deadlineAt)) break;
@@ -249,11 +264,11 @@ export class ModelGateway implements ModelGatewayPort {
       );
       if (result.ok) {
         this.logger.log(`model fallback (${input.purpose}): ${primaryKey} -> ${candidate}`);
-        return result;
+        return complete(result);
       }
       if (!['provider_unavailable', 'model_unavailable'].includes(result.error)) break;
     }
-    return first;
+    return complete(first);
   }
   /**
    * internal 只供网关自己的降级使用（不属于契约）：fallbackModelKey = 普通后台任务备用模型。
@@ -444,22 +459,7 @@ export class ModelGateway implements ModelGatewayPort {
     const claim = await this.cache.claim(input);
     if (claim.row.requestHash !== requestHash(input)) return { ok: false, error: 'bad_request' };
     if (!claim.created) {
-      const result = await this.replay(claim.row);
-      if (result.ok) {
-        // 财务结算可以重放，但不能因缓存而绕过后来收紧的角色或模型分类。
-        const facts = await this.catalog.fact(result.value.modelKey);
-        if (!facts.entry) return { ok: false, error: 'model_unavailable' };
-        if (facts.entry.capabilities.includes('adult_content')) {
-          if (!input.characterId) return { ok: false, error: 'model_not_allowed' };
-          const decision = await this.modelPolicy.checkModelForCharacter({
-            userId: input.userId,
-            characterId: input.characterId,
-            modelHasAdultContent: true,
-          });
-          if (!decision.allowed) return { ok: false, error: 'model_not_allowed' };
-        }
-      }
-      return result;
+      return this.authorizeCachedResult(input, await this.replay(claim.row));
     }
     const row = claim.row;
     // T-20261104a：同一用户近期多次被私密模型服务商拦截时，限制期内他的私密回复不请求服务商（保护共用账号），
@@ -957,6 +957,26 @@ export class ModelGateway implements ModelGatewayPort {
     };
     await this.cache.save(row, complete, 'complete');
     return complete;
+  }
+  private async authorizeCachedResult(
+    input: GenerateTextInput,
+    result: CachedResult,
+  ): Promise<CachedResult> {
+    if (result.ok) {
+      // 财务结算可以重放，但不能因缓存而绕过后来收紧的角色或模型分类。
+      const facts = await this.catalog.fact(result.value.modelKey);
+      if (!facts.entry) return { ok: false, error: 'model_unavailable' };
+      if (facts.entry.capabilities.includes('adult_content')) {
+        if (!input.characterId) return { ok: false, error: 'model_not_allowed' };
+        const decision = await this.modelPolicy.checkModelForCharacter({
+          userId: input.userId,
+          characterId: input.characterId,
+          modelHasAdultContent: true,
+        });
+        if (!decision.allowed) return { ok: false, error: 'model_not_allowed' };
+      }
+    }
+    return result;
   }
   private async replay(first: GenerationRow): Promise<CachedResult> {
     let row = first;
