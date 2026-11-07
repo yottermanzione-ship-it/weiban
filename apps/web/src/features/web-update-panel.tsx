@@ -53,7 +53,15 @@ export function WebUpdatePanel() {
         <MenuRow label="更新版本" disabled={busy} onClick={() => setConfirm(true)} />
       </MenuGroup>
       <p className="hint">更新页面内容后保留登录与聊天。安卓系统功能升级仍需安装新版应用。</p>
-      {status && <p role="status">{status}</p>}
+      {status && !confirm && (
+        <Dialog
+          title={busy ? '正在处理更新' : '更新提示'}
+          actions={[{ label: '知道了', tone: 'primary', onClick: () => setStatus('') }]}
+          onDismiss={() => setStatus('')}
+        >
+          <p role="status">{status}</p>
+        </Dialog>
+      )}
       {confirm && (
         <Dialog
           title="更新版本"

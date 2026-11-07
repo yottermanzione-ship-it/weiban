@@ -16,7 +16,7 @@ export const REALTIME_CALL_TAG = 'pipeline:rt';
 export const REALTIME_CALL_VOICES_SETTING_KEY = 'realtime_call_voices';
 /**
  * 按需复刻一个 Omni 实时音色的供应商成本（元）：官方 0.01 元 / 个、失败不计费
- * （https://help.aliyun.com/zh/model-studio/qwen-omni-voice-cloning）。V3（契约 4.6）起由用户按售价 0.013 元承担，
+ * （https://help.aliyun.com/zh/model-studio/qwen-omni-voice-cloning）。2026-11-07 售价恢复官方 0.01 元，
  * 售价登记在模型的 voice_clone 服务单价里（voice-catalog 写入）；这里的成本只用于审计与 --show 对账。
  */
 export const REALTIME_VOICE_CLONE_COST_YUAN = 0.01;
@@ -48,7 +48,8 @@ export function isRealtimeCallEntry(entry: RealtimeCatalogEntry | null | undefin
 
 /**
  * 每分钟用量假设（只用于「约每分钟积分」展示）：沿用级联通话的旧站实测口径（约 5 轮 / 分钟、角色约 54 字 ≈ 14 秒语音），
- * 用户约 20 秒语音；百炼音频约 25 token / 秒。每轮回应的文字输入（人设 + 记忆 + 通话转写）按约 3000 token，
+ * 用户约 20 秒语音；未知型号暂用 25 token / 秒，Omni 3.5/3.8 在展示报价时改用官方输入7/输出12.5。
+ * 每轮回应的文字输入（人设 + 记忆 + 通话转写）按约 3000 token，
  * 音频上下文随通话累积，按新增语音的 3 倍粗估。真实扣费只按供应商每次回应报告的数字。
  */
 export const REALTIME_MINUTE_USAGE: UsageQuantities = {
@@ -67,6 +68,17 @@ export function realtimeUsageQuantities(u: RealtimeUsage): UsageQuantities {
     outputTokens: u.textOutputTokens,
     audioOutputTokens: u.audioOutputTokens,
   };
+}
+
+/** 官方规则：3.5 Omni / Audio 3.x 有音频输出时不另收伴随文本；3.8 Omni 两者分别计费。 */
+export function billableRealtimeUsage(model: string, actual: UsageQuantities): UsageQuantities {
+  if (
+    (actual.audioOutputTokens ?? 0) > 0 &&
+    (/^qwen3\.5-omni-.*-realtime(?:-|$)/u.test(model) ||
+      /^qwen-audio-3\.[01]-realtime-(?:plus|flash)(?:-|$)/u.test(model))
+  )
+    return { ...actual, outputTokens: 0 };
+  return actual;
 }
 
 /** 一次回应的冻结估算：整段上下文按文字输入、一分钟用户语音、输出上限同时算文字和音频（宁多勿少，只用于拦截与日上限）。 */

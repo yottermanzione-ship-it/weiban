@@ -13,6 +13,38 @@ import {
 } from './dashscope-realtime.js';
 
 describe('百炼实时语音协议（纯函数）', () => {
+  it('官方 response.done 的复数模态字段可计量，缺失详情仍为未知', () => {
+    const event = translateRealtimeEvent(
+      {
+        type: 'response.done',
+        response: {
+          id: 'official-example',
+          status: 'completed',
+          usage: {
+            total_tokens: 2937,
+            input_tokens: 2554,
+            output_tokens: 383,
+            input_tokens_details: { text_tokens: 2512, audio_tokens: 42 },
+            output_tokens_details: { text_tokens: 90, audio_tokens: 293 },
+          },
+        },
+      },
+      new Map(),
+    );
+    expect(event).toEqual({
+      type: 'response_done',
+      responseId: 'official-example',
+      status: 'completed',
+      usage: {
+        textInputTokens: 2512,
+        audioInputTokens: 42,
+        cachedTextInputTokens: 0,
+        textOutputTokens: 90,
+        audioOutputTokens: 293,
+      },
+    });
+    expect(parseRealtimeUsage({ input_tokens: 2554, output_tokens: 383 })).toBeNull();
+  });
   it('只认带 realtime 的 Qwen Audio / Omni 型号', () => {
     expect(isDashscopeRealtimeModel('qwen-audio-3.0-realtime-plus')).toBe(true);
     expect(isDashscopeRealtimeModel('qwen3.1-omni-flash-realtime')).toBe(true);

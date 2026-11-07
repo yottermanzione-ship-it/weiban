@@ -19,6 +19,12 @@ import { useFormFeedback } from '../data/form-feedback.js';
 export function SettingsPage() {
   return (
     <Page title="系统设置" desc="影响全站的参数。改完立即生效，请确认后再保存。">
+      <SectionCard
+        title="情景模式与提示词"
+        desc="修改日常、树洞、打气等模式的预设提示词，保存后后续回复生效，无需发布新版本。"
+      >
+        <Link to="/scenario-modes">管理情景模式与提示词</Link>
+      </SectionCard>
       <LimitsCard />
       <FamiliarityStagesCard />
       <SectionCard title="其它设置" desc="分散在各自页面，避免重复维护">

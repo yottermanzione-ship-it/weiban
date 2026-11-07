@@ -2,7 +2,7 @@
  * 批 V 语音目录补齐（voice-catalog.ts）与旧站实时音色迁入（import-legacy-realtime-voices.ts）的纯逻辑：
  * 参数解析、要登记的目录条目与价格、旧绑定过滤。不读库、不联网，便于单测。
  *
- * 价格口径（与 2026-10-23 语音内部价相同）：售价 = 参考成本 × 1.3；1 积分 = 0.01 元。金额单位：元。
+ * 价格口径：实时通话与复刻按核实的官方价；免费识别/字符合成的参考成本口径保留。1 积分 = 0.01 元。
  * - ASR：0.008333 元/分钟（MiMo 公开价 0.5 元/小时；硅基 TeleSpeech 当前免费，按同一可比付费参考成本）→ 售 0.010833。
  * - 千问 3.1 TTS Flash：官方按输入 / 输出 token 计费（1.5 / 12 元/百万），平台 TTS 仍按字符结算；
  *   默认按 3.0 TTS Plus 的 1.4 元/万字符作等价参考成本（偏保守），可用 --tts-flash-cost 改，首月按账单校准。
@@ -65,7 +65,7 @@ export const REALTIME_30_VOICES: ReadonlySet<string> = new Set([
   'longanxiaoxin',
   'longanlufeng',
 ]);
-/** Omni 声音复刻成本（元/个，官方 0.01、失败不计费）；售价 = × 1.3。 */
+/** Omni 声音复刻成本（元/个，官方 0.01、失败不计费）；售价按官方价。 */
 export const OMNI_CLONE_COST_YUAN = 0.01;
 /** V3：旧服「DashScope Beijing Workspace」的主机名（迁入的上游必须是它，复刻音色只在这个 workspace 有效）。 */
 export const BEIJING_WORKSPACE_HOST = 'ws-qsp3p9ofolmfyu6g.cn-beijing.maas.aliyuncs.com';
@@ -342,19 +342,19 @@ function realtimeWrite(input: {
     defaultFor: [],
     scenarios: ['voice_call'],
     billingBounds: realtimeBounds(),
-    rates: { input: sell(textIn), output: sell(textOut), cache: sell(textIn) },
+    rates: { input: textIn, output: textOut, cache: textIn },
     costRates: { input: textIn, output: textOut, cache: textIn },
     serviceRates: [
-      { unit: 'audio_input_tokens_per_million', price: sell(audioIn), cost: audioIn },
-      { unit: 'audio_output_tokens_per_million', price: sell(audioOut), cost: audioOut },
+      { unit: 'audio_input_tokens_per_million', price: audioIn, cost: audioIn },
+      { unit: 'audio_output_tokens_per_million', price: audioOut, cost: audioOut },
       ...(input.cloneCost !== undefined ? [cloneRate(input.cloneCost)] : []),
     ],
   };
 }
 
-/** 契约 4.6：复刻费服务单价（元/个），售价 = 成本 × 1.3。 */
+/** 契约 4.6：复刻费服务单价（元/个），售价按官方价。 */
 export function cloneRate(cost: number) {
-  return { unit: 'voice_clone' as const, price: sell(cost), cost };
+  return { unit: 'voice_clone' as const, price: cost, cost };
 }
 
 function asrWrite(
@@ -520,7 +520,7 @@ export function planVoiceCatalog(command: VoiceCatalogCommand): {
         defaultVoice: command.omni.voice,
         notes: [
           '价格来自 --omni-cost（运维核实）',
-          '复刻费 0.01 元/个 × 1.3 = 0.013 元由打电话的用户承担（契约 4.6）',
+          '复刻费按官方 0.01 元/个由打电话的用户承担（契约 4.6）',
           command.omni.voice ? '' : '没有给 --omni-voice：只有带专属音色的角色能接通',
         ].filter(Boolean),
       });
@@ -558,7 +558,7 @@ export function planOmniFix(
 }
 
 /**
- * V3 --omni-clone-price：现有 Omni 实时条目（未删除）里还没有复刻价（或复刻价与 0.013 / 0.01 不同）的，
+ * V3 --omni-clone-price：现有 Omni 实时条目（未删除）里还没有复刻价（或复刻价与 0.01 / 0.01 不同）的，
  * 补登记 voice_clone 服务单价。只传这一项服务单价（其他单位与 token 价完整保留）。
  */
 export function planOmniClonePrice(

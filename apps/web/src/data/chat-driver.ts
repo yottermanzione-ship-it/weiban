@@ -519,6 +519,12 @@ export class ChatDriver {
       if (Date.now() - this.lastPoll < 20_000) return;
       // 浏览器挂起时请求定时器也可能暂停。按墙上时间放弃过期轮次，恢复后立即再试。
       this.polling.abort();
+      // 轮次先被取消后，其 catch 会按过期回调忽略；必须在这里登记断网，
+      // 否则每20秒替换一次挂起请求，界面与发件队列会永远沿用上一次“在线”。
+      this.upToDate = false;
+      this.canSync = false;
+      this.observer.connection(false);
+      void this.runner?.dispatch({ type: 'offline' }).catch(() => {});
     }
     const polling = new AbortController();
     this.polling = polling;

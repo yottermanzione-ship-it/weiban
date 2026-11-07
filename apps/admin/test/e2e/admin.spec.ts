@@ -91,7 +91,9 @@ async function authorization(page: Page) {
 
 test('新增情景模式生成有效标识，保存和编辑后刷新仍保留', async ({ page }) => {
   await login(page);
-  await page.goto('/scenario-modes');
+  await page.goto('/settings');
+  await page.getByRole('link', { name: '管理情景模式与提示词', exact: true }).click();
+  await expect(page).toHaveURL(/\/scenario-modes$/);
   await page.getByRole('button', { name: /新增情景模式$/ }).click();
   await page.getByLabel('名称', { exact: true }).fill('合成收尾情景');
   await page.getByLabel('说明', { exact: true }).fill('仅本地合成数据');

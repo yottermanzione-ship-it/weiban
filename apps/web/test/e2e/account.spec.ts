@@ -158,15 +158,13 @@ test('服务器失效会话后刷新，不能重新恢复旧令牌或显示资�
   await expect(page.getByRole('navigation', { name: '主导航' })).toHaveCount(0);
 });
 
-for (const manualButton of [false, true]) {
-  test(`真实Service Worker升级不打断使用，${manualButton ? '用户更新按钮' : '明确刷新'}后接续新版且保持登录`, async ({
+for (const method of ['reload', 'button', 'legacy'] as const) {
+  const manualButton = method === 'button';
+  test(`真实Service Worker升级不打断使用，${manualButton ? '用户更新按钮' : method === 'legacy' ? '旧客户端更新请求' : '明确刷新'}后接续新版且保持登录`, async ({
     page,
     context,
   }) => {
-    // Exercise the safe idle-refresh branch; live WS close/drain behavior has separate coverage.
-    await page.routeWebSocket('**/api/v1/ws', (socket) =>
-      socket.close({ code: 1000, reason: 'idle upgrade fixture' }),
-    );
+    // 保留真实聊天连接：更新必须能关闭旧连接，并在失败时恢复。
     await page.addInitScript(() => {
       const events: string[] = [];
       Object.assign(window, { weibanSwEvents: events });
@@ -183,22 +181,38 @@ for (const manualButton of [false, true]) {
     await page.reload();
     await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
     if (manualButton) {
-      await page.goto('/settings/about');
+      await page.goto('/settings');
       await page.getByRole('button', { name: '检查更新', exact: true }).click();
       await expect(page.getByText('当前网页已是最新版本', { exact: true })).toBeVisible();
+      await page.getByRole('dialog').getByRole('button', { name: '知道了' }).click();
       await context.setOffline(true);
       await page.getByRole('button', { name: '检查更新', exact: true }).click();
       await expect(page.getByText('检查更新失败，请联网后重试', { exact: true })).toBeVisible();
+      await page.getByRole('dialog').getByRole('button', { name: '知道了' }).click();
       await context.setOffline(false);
     }
     const file = new URL('../../dist/sw.js', import.meta.url);
     const original = await readFile(file, 'utf8');
+    const htmlFile = new URL('../../dist/index.html', import.meta.url);
+    const originalHtml = await readFile(htmlFile, 'utf8');
     try {
       // 从当前页面的 controller 询问版本；不要在等待中的 worker 内执行调试代码。
       // 那既不能证明它已接管页面，也可能改变浏览器的 worker 生命周期。
       await writeFile(
+        htmlFile,
+        originalHtml.replace(
+          '</head>',
+          '<meta name="weiban-upgrade-fixture" content="next-html"></head>',
+        ),
+      );
+      const updated = original.replace(
+        /"revision":"[^"]+","url":"index.html"/,
+        '"revision":"next-html-fixture","url":"index.html"',
+      );
+      expect(updated).not.toBe(original);
+      await writeFile(
         file,
-        original +
+        updated +
           `\nself.addEventListener('message', (event) => {
           if (event.data?.type === 'WEIBAN_TEST_VERSION')
             event.ports[0]?.postMessage('browser-upgrade-fixture');
@@ -219,6 +233,11 @@ for (const manualButton of [false, true]) {
           .getByRole('dialog', { name: '更新版本' })
           .getByRole('button', { name: '立即更新', exact: true })
           .click();
+      } else if (method === 'legacy') {
+        // 已安装旧网页只发消息，未等待真正激活后重新加载。新版SW补做仅该页面的导航。
+        await page.evaluate(async () => {
+          (await navigator.serviceWorker.ready).waiting?.postMessage({ type: 'SKIP_WAITING' });
+        });
       } else await page.reload();
       await expect
         .poll(
@@ -282,11 +301,17 @@ for (const manualButton of [false, true]) {
         .toBe('browser-upgrade-fixture');
       if (manualButton) {
         await expect(page.getByText('已更新到刚才检查到的版本', { exact: true })).toBeVisible();
+        await page.getByRole('dialog').getByRole('button', { name: '知道了' }).click();
         await page.goto('/chat');
       }
       await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
+      await expect(page.locator('meta[name="weiban-upgrade-fixture"]')).toHaveAttribute(
+        'content',
+        'next-html',
+      );
     } finally {
       await writeFile(file, original);
+      await writeFile(htmlFile, originalHtml);
     }
   });
 }

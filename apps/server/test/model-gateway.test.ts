@@ -97,6 +97,10 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
       for await (const part of req) body += part.toString();
       requests.push(JSON.parse(body));
       expect(req.headers.authorization).toBe(`Bearer ${key}`);
+      if (mode === 'one-model-down' && requests.at(-1)?.model !== 'cheap-working') {
+        res.writeHead(503).end('{"error":{"code":"model_unavailable"}}');
+        return;
+      }
       if (mode === '429' && calls <= 3) {
         res.writeHead(429).end(JSON.stringify({ error: { message: key } }));
         return;
@@ -701,5 +705,58 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
 
     expect(summary.totals.chargedMicros).toBeGreaterThan(0);
     expect(summary.totals.chargedMicros).toBe(Number(rows[0]?.total ?? 0));
+  });
+
+  it('同一中转的记忆模型失败后选择更便宜模型，真实结算和重试不重复扣款', async () => {
+    const catalog = app.get(CatalogService);
+    const original = (await catalog.adminList()).find((entry) => entry.modelKey === modelKey)!;
+    const cheap = 'gateway/cheap';
+    const draft = await app.get(PriceService).createDraft(admin, {
+      versionLabel: 'cheaper-fallback',
+      note: null,
+      items: [modelKey, cheap, 'gateway/more-expensive'].flatMap((key, index) =>
+        (
+          [
+            'input_tokens_per_million',
+            'cached_input_tokens_per_million',
+            'output_tokens_per_million',
+          ] as const
+        ).map((unit, at) => ({
+          modelKey: key,
+          unit,
+          priceMicros: [2000000, 1000000, 8000000][at]! * [1, 0.5, 2][index]!,
+          costMicros: 0,
+          band: null,
+        })),
+      ),
+    });
+    await app.get(PriceService).activate(admin, draft.priceVersionId, null);
+    for (const key of [cheap, 'gateway/more-expensive'])
+      await catalog.upsert(admin, key, {
+        ...original,
+        modelKey: key,
+        upstreamModelId: key === cheap ? 'cheap-working' : 'expensive',
+      });
+    expect(await catalog.cheaperTextFallbacks(modelKey)).toEqual([cheap]);
+    mode = 'one-model-down';
+    const request = input({ purpose: 'memory', modelRole: 'background', responseFormat: 'json' });
+    const chargesBefore = await db.query<{ n: number }>(
+      "SELECT count(*)::int AS n FROM billing.ledger_entries WHERE type='charge'",
+    );
+    const first = await gateway.generateText(request);
+    expect(first).toMatchObject({ ok: true, value: { modelKey: cheap, chargedMicros: 165 } });
+    expect(requests.at(-1)).toMatchObject({
+      model: 'cheap-working',
+      response_format: { type: 'json_object' },
+    });
+    expect(requests.at(-1)?.messages).toEqual(requests[0]?.messages);
+    expect((await app.get(UpstreamService).get(upstreamId)).status).toBe('active');
+    const sent = calls;
+    expect(await gateway.generateText(request)).toEqual(first);
+    expect(calls).toBe(sent);
+    const chargesAfter = await db.query<{ n: number }>(
+      "SELECT count(*)::int AS n FROM billing.ledger_entries WHERE type='charge'",
+    );
+    expect(chargesAfter.rows[0]!.n - chargesBefore.rows[0]!.n).toBe(1);
   });
 });

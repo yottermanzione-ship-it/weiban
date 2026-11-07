@@ -1561,6 +1561,9 @@ export type AdminUsageSummary = z.infer<typeof AdminUsageSummary>;
 
 /** 一次调用的明细（ADM-08 第 5 条）。没有任何内容字段。 */
 export const AdminUsageRecord = z.object({
+  /** 7.3：实时通话供应商分模态用量；历史未报告时缺省，不伪造为零。 */
+  audioInputTokens: z.number().int().nonnegative().optional(),
+  audioOutputTokens: z.number().int().nonnegative().optional(),
   costKnown: z.boolean().optional(),
   uncertainCostMicros: z.number().int().nonnegative().optional(),
   usageRecordId: Id,

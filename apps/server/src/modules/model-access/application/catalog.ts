@@ -905,7 +905,8 @@ export class CatalogService {
       if (isRealtimeCallEntry(entry))
         realtimeMinute.set(
           entry.modelKey,
-          (await this.display?.realtimePointsPerMinute(entry.modelKey)) ?? null,
+          (await this.display?.realtimePointsPerMinute(entry.modelKey, entry.upstreamModelId)) ??
+            null,
         );
     return visible.map(({ entry, upstreamStatus }) => {
       const composite = isVoiceCallComposite(entry);
@@ -1302,6 +1303,49 @@ export class CatalogService {
   async fact(modelKey: string): Promise<ModelFacts> {
     const map = await this.facts([modelKey]);
     return map.get(modelKey) ?? { modelKey, entry: null, upstreamStatus: null };
+  }
+
+  /** 失败兜底仅选上架的普通文本模型，输入/输出单价都不高于原模型且至少一项更低。 */
+  async cheaperTextFallbacks(currentModelKey: string): Promise<string[]> {
+    const rows = await this.database.db
+      .select({ entry: modelCatalog })
+      .from(modelCatalog)
+      .where(and(eq(modelCatalog.enabled, true), isNull(modelCatalog.deletedAt)));
+    const candidates = rows
+      .map((r) => r.entry)
+      .filter(
+        (entry) =>
+          entry.modelKey !== currentModelKey &&
+          entry.scenarios.includes('chat') &&
+          !entry.capabilities.includes('adult_content') &&
+          !isRealtimeCallEntry(entry),
+      );
+    const prices = await this.prices.textPrices([
+      currentModelKey,
+      ...candidates.map((e) => e.modelKey),
+    ]);
+    const current = prices.get(currentModelKey);
+    if (!current) return [];
+    const available = await this.availabilityDetails(candidates.map((entry) => entry.modelKey));
+    return candidates
+      .filter((entry) => {
+        const price = prices.get(entry.modelKey);
+        return (
+          available.get(entry.modelKey) === null &&
+          price &&
+          price.inputPerMillionMicros <= current.inputPerMillionMicros &&
+          price.outputPerMillionMicros <= current.outputPerMillionMicros &&
+          (price.inputPerMillionMicros < current.inputPerMillionMicros ||
+            price.outputPerMillionMicros < current.outputPerMillionMicros)
+        );
+      })
+      .sort(
+        (a, b) =>
+          standardReplyMicros(prices.get(a.modelKey)!) -
+            standardReplyMicros(prices.get(b.modelKey)!) || a.modelKey.localeCompare(b.modelKey),
+      )
+      .map((entry) => entry.modelKey)
+      .slice(0, 3);
   }
 
   /**

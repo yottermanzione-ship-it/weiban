@@ -207,34 +207,30 @@ export class ModelGateway implements ModelGatewayPort {
       { trustedPlatform: true },
     );
   }
-  /**
-   * 2026-10-30 用户定：日常聊天失败后不给用户弹错误，静默换模型继续，直到成功为止。
-   * 链路：先 DeepSeek，再按典型聊天成本从低到高——MiMo、Qwen、MiniMax，最后是场景推荐模型；
-   * 价目见现行价版：MiMo 输入 1.008/输出 2.016、Qwen 1.152/3.384、MiniMax 1.08/4.32、DeepSeek 2.16/8.64（元/百万 token）。
-   * 只用于 purpose=chat_reply 且 modelRole=chat（日常范围）；私密（adult）绝不走这条，私密内容不出私密模型。
-   * 失败那次不扣费（0 token），成功那次按备用模型的价格正常扣积分，用户只看到一次正常回复。
-   * 全部备用都失败时才返回原错误，由调用方按原逻辑处理。
-   */
+  /** 日常聊天与普通后台整理失败后，最多尝试三个更便宜的上架模型；安全拒绝、私密与额度限制不切换。 */
   async generateText(input: GenerateTextInput, internal?: GatewayInternal): Promise<CachedResult> {
+    // 主模型自身最多60秒；未指定整体时限时再留一分钟给备用，否则超时失败永远走不到备用。
+    const deadlineAt = input.deadlineAt ?? new Date(this.clock.nowMs() + 120_000).toISOString();
     const first = await this.generateOnce(input, internal);
     if (first.ok) return first;
-    if (input.purpose !== 'chat_reply' || input.modelRole !== 'chat') return first;
+    const chat = input.purpose === 'chat_reply' && input.modelRole === 'chat';
+    const background =
+      FALLBACK_PURPOSES.includes(input.purpose) && input.modelRole === 'background';
+    if ((!chat && !background) || input.meta?.scenarioMode === 'adult' || internal?.trustedPlatform)
+      return first;
     if (internal?.chatFallbackModelKey || internal?.fallbackModelKey) return first;
     if (!['provider_unavailable', 'model_unavailable'].includes(first.error)) return first;
-    const chain = [
-      'deepseek/deepseek-v4.1-flash',
-      'xiaomi/mimo-v2.6-flash',
-      'qwen/Qwen3.8-Flash',
-      'minimax/minimax-m3.1-flash',
-    ];
-    const recommended = await this.catalog.recommendedModel('chat').catch(() => null);
-    const recommendedKey = recommended?.entry?.modelKey;
-    if (recommendedKey && !chain.includes(recommendedKey)) chain.push(recommendedKey);
     const primary = await this.resolver
-      .pick(input.userId, 'chat', input.characterId ?? null, { purpose: 'chat_reply' })
+      .pick(input.userId, input.modelRole, input.characterId ?? null, {
+        purpose: input.purpose,
+        scenario: input.scenario,
+      })
       .catch(() => null);
     const primaryKey = primary?.facts?.modelKey;
+    if (!primaryKey || primary?.facts?.entry?.capabilities.includes('adult_content')) return first;
+    const chain = await this.catalog.cheaperTextFallbacks(primaryKey).catch(() => []);
     for (const candidate of chain) {
+      if (this.clock.nowMs() >= Date.parse(deadlineAt)) break;
       if (primaryKey && candidate === primaryKey) continue;
       // 幂等键要新（否则会重放原失败结果），且尾巴仍保持 :reply 等后缀，
       // 否则回复引擎的扣费统计记不到这次成功调用的用量记录 ID。
@@ -245,22 +241,23 @@ export class ModelGateway implements ModelGatewayPort {
           )
         : `chatfallback:${input.idempotencyKey}:${candidate}`;
       const result = await this.generateOnce(
-        { ...input, idempotencyKey: fallbackKey },
-        { ...internal, chatFallbackModelKey: candidate },
+        { ...input, deadlineAt, idempotencyKey: fallbackKey },
+        {
+          ...internal,
+          ...(chat ? { chatFallbackModelKey: candidate } : { fallbackModelKey: candidate }),
+        },
       );
       if (result.ok) {
-        this.logger.log(
-          `chat silent fallback: ${primaryKey ?? 'unknown'} -> ${candidate} for user ${input.userId}`,
-        );
+        this.logger.log(`model fallback (${input.purpose}): ${primaryKey} -> ${candidate}`);
         return result;
       }
-      if (['bad_request', 'policy_denied'].includes(result.error)) break;
+      if (!['provider_unavailable', 'model_unavailable'].includes(result.error)) break;
     }
     return first;
   }
   /**
-   * internal 只供网关自己的降级使用（不属于契约）：fallbackModelKey = 空输出后改用的备用模型。
-   * generateOnce = 原 generateText 的全部流程；generateText 是在其外包一层日常聊天静默换模型。
+   * internal 只供网关自己的降级使用（不属于契约）：fallbackModelKey = 普通后台任务备用模型。
+   * 每个备用仍完整执行鉴权、上下文容量、预算、幂等、预留与结算流程。
    */
   /** 容量只读查询：使用核准线路的下界，不拿财务 ceiling 的上界作输入许可。 */
   async getContextBudget(input: Parameters<NonNullable<ModelGatewayPort['getContextBudget']>>[0]) {
@@ -542,7 +539,7 @@ export class ModelGateway implements ModelGatewayPort {
       await this.cache.save(row, result, 'complete');
       return result;
     }
-    let ceiling: TextCeiling = internal?.billingPlan ?? {
+    const ceiling: TextCeiling = internal?.billingPlan ?? {
       ...verified.ceiling,
       pricingModels: [model.modelKey],
     };
@@ -556,45 +553,6 @@ export class ModelGateway implements ModelGatewayPort {
       const result: CachedResult = { ok: false, error: 'model_unavailable' };
       await this.cache.save(row, result, 'complete');
       return result;
-    }
-    if (
-      !internal?.billingPlan &&
-      FALLBACK_PURPOSES.includes(input.purpose) &&
-      input.modelRole === 'background' &&
-      input.meta?.scenarioMode !== 'adult'
-    ) {
-      // 3.22：备用模型 = 后台给「文本聊天」场景指定的推荐模型（没有平台默认模型了）。
-      const alternatives = [await this.catalog.recommendedModel('chat')];
-      const fallback = alternatives.find(
-        (entry) =>
-          entry?.entry &&
-          entry.entry.modelKey !== model.modelKey &&
-          !entry.entry.capabilities.includes('adult_content'),
-      );
-      if (fallback?.entry) {
-        const routes = await this.scheduler.plan(fallback.entry.modelKey, affinity);
-        const proof = await this.bounds!.text(
-          fallback.entry.modelKey,
-          routes,
-          imageCount,
-          requested,
-        );
-        if (proof)
-          ceiling = {
-            usage: {
-              inputTokens: Math.max(
-                ceiling.usage.inputTokens ?? 0,
-                proof.ceiling.usage.inputTokens ?? 0,
-              ),
-              outputTokens: Math.max(
-                ceiling.usage.outputTokens ?? 0,
-                proof.ceiling.usage.outputTokens ?? 0,
-              ),
-            },
-            pricingModels: [model.modelKey, fallback.entry.modelKey].sort(),
-            evidence: boundsEvidence([ceiling.evidence, proof.ceiling.evidence]),
-          };
-      }
     }
     const fitted = await this.fitContext(input, model.modelKey, verified.routes);
     if (!fitted) {
@@ -644,7 +602,7 @@ export class ModelGateway implements ModelGatewayPort {
       emptyRetried = false,
       index = 0;
     let priceVersionId = internal?.priceVersionId;
-    let answer: TextResult = { ok: false, category: 'network_error', retryable: false };
+    let answer: TextResult;
     const maximumAttempts = 3 + candidates.length;
     const completeFailure = async (
       error:
@@ -948,18 +906,6 @@ export class ModelGateway implements ModelGatewayPort {
         this.scheduler.releaseAccount(route.upstreamId);
       }
     }
-    if (!answer.ok && (answer.category === 'empty_output' || answer.category === 'truncated')) {
-      const fallback = await this.emptyOutputFallback({ ...input, deadlineAt }, model.modelKey, {
-        ...internal,
-        billingPlan: ceiling,
-        priceVersionId,
-        retry: true,
-      });
-      if (fallback) {
-        await this.cache.save(row, fallback, 'complete');
-        return fallback;
-      }
-    }
     return completeFailure('provider_unavailable');
   }
   /**
@@ -1011,33 +957,6 @@ export class ModelGateway implements ModelGatewayPort {
     };
     await this.cache.save(row, complete, 'complete');
     return complete;
-  }
-  /**
-   * 三步降级第 3 步（docs/refactor/03 第 1.4 B）：只对后台整理类用途、且不是成人范围时，
-   * 改用平台默认后台模型（与当前不同时；否则平台默认聊天模型）再调用一次；聊天类用途永不换模型（MDL-04）。
-   * 备用调用是独立的一次网关调用（独立幂等键、冻结、用量记录），失败就返回 null 由调用方按原失败处理。
-   */
-  private async emptyOutputFallback(
-    input: GenerateTextInput,
-    currentModelKey: string,
-    internal?: GatewayInternal,
-  ): Promise<CachedResult | null> {
-    if (internal?.fallbackModelKey) return null;
-    if (!FALLBACK_PURPOSES.includes(input.purpose) || input.modelRole !== 'background') return null;
-    if (input.meta?.scenarioMode === 'adult') return null;
-    const candidates = [await this.catalog.recommendedModel('chat')];
-    const target = candidates.find(
-      (f) =>
-        f?.entry &&
-        f.entry.modelKey !== currentModelKey &&
-        !f.entry.capabilities.includes('adult_content'),
-    );
-    if (!target?.entry) return null;
-    const result = await this.generateText(
-      { ...input, idempotencyKey: `fallback:${boundsEvidence(input.idempotencyKey)}` },
-      { ...internal, fallbackModelKey: target.entry.modelKey },
-    );
-    return result.ok ? result : null;
   }
   private async replay(first: GenerationRow): Promise<CachedResult> {
     let row = first;

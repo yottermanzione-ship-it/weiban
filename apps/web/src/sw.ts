@@ -20,6 +20,23 @@ declare const self: ServiceWorkerGlobalScope & {
 precacheAndRoute(self.__WB_MANIFEST);
 cleanupOutdatedCaches();
 clientsClaim();
+// 兼容已经安装的旧网页：旧启动器只等4秒，超时后不会再加载新版。
+// 仅为明确发送 SKIP_WAITING 的那个页面补做导航；其他正在聊天的页面不刷新。
+const legacyUpdateClients = new Set<string>();
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    (async () => {
+      await self.clients.claim();
+      for (const id of legacyUpdateClients) {
+        const client = await self.clients.get(id);
+        // 不把导航完成加入 activate 的 waitUntil：导航取资源也要等 activate 完成。
+        if (client?.type === 'window')
+          void (client as WindowClient).navigate(client.url).catch(() => null);
+      }
+      legacyUpdateClients.clear();
+    })(),
+  );
+});
 registerRoute(
   new NavigationRoute(createHandlerBoundToURL('/index.html'), {
     denylist: [/^\/api\//, /^\/admin(?:\/|$)/],
@@ -87,7 +104,9 @@ self.addEventListener('push', (event) => {
 });
 self.addEventListener('message', (event) => {
   if (event.data?.type === 'SKIP_WAITING') {
-    void self.skipWaiting();
+    if (event.data.reloadClient !== false && event.source && 'id' in event.source)
+      legacyUpdateClients.add(event.source.id);
+    event.waitUntil(self.skipWaiting());
     return;
   }
   const control = PushControl.safeParse(event.data);

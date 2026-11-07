@@ -121,8 +121,11 @@ const nonNegativeInt = (v: unknown): number | null =>
 export function parseRealtimeUsage(raw: unknown): RealtimeUsage | null {
   if (!raw || typeof raw !== 'object') return null;
   const usage = raw as Record<string, unknown>;
-  const input = usage.input_token_details as Record<string, unknown> | undefined;
-  const output = usage.output_token_details as Record<string, unknown> | undefined;
+  // 百炼官方字段是 tokens（复数）；兼容旧网关的单数拼写，不丢弃已报告的用量。
+  const input = (usage.input_tokens_details ?? usage.input_token_details) as
+    Record<string, unknown> | undefined;
+  const output = (usage.output_tokens_details ?? usage.output_token_details) as
+    Record<string, unknown> | undefined;
   if (!input || typeof input !== 'object' || !output || typeof output !== 'object') return null;
   const textIn = nonNegativeInt(input.text_tokens ?? 0);
   const audioIn = nonNegativeInt(input.audio_tokens ?? 0);

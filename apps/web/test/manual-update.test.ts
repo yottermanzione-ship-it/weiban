@@ -151,3 +151,39 @@ it('a call that starts while local writes drain prevents the final reload and re
     remove();
   }
 });
+
+function waitingWorker() {
+  const worker = Object.assign(new EventTarget(), { state: 'installed', postMessage: vi.fn() });
+  const registration = { installing: null, waiting: worker, update: vi.fn(async () => {}) };
+  vi.stubGlobal('navigator', { serviceWorker: { register: vi.fn(async () => registration) } });
+  return worker;
+}
+it('does not reload until the downloaded worker is activated, even beyond the old four-second wait', async () => {
+  vi.useFakeTimers();
+  const { reload, events } = setup();
+  const worker = waitingWorker();
+  const saved = vi.fn();
+  events.addEventListener('weiban:before-update', saved);
+  const updating = refreshToLatestWeb();
+  await vi.advanceTimersByTimeAsync(5_000);
+  expect(saved).toHaveBeenCalledOnce();
+  expect(worker.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING', reloadClient: false });
+  expect(reload).not.toHaveBeenCalled();
+  worker.state = 'activated';
+  worker.dispatchEvent(new Event('statechange'));
+  await updating;
+  expect(reload).toHaveBeenCalledOnce();
+});
+it('activation timeout restores chat and never reports a successful update', async () => {
+  vi.useFakeTimers();
+  const { reload, events } = setup();
+  waitingWorker();
+  const resumed = vi.fn();
+  events.addEventListener('weiban:update-failed', resumed);
+  const updating = expect(refreshToLatestWeb()).rejects.toThrow('新版尚未接管');
+  await vi.advanceTimersByTimeAsync(15_001);
+  await updating;
+  expect(reload).not.toHaveBeenCalled();
+  expect(resumed).toHaveBeenCalledOnce();
+  expect(consumeWebRefreshResult(101)).toBeNull();
+});
