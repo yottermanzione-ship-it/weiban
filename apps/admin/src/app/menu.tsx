@@ -88,7 +88,7 @@ export const MENU: MenuDataItem[] = [
     name: '系统',
     icon: <SettingOutlined />,
     children: [
-      { path: '/scenario-modes', name: '情景模式' },
+      { path: '/scenario-modes', name: '情景模式与提示词' },
       { path: '/memory-tiers', name: '记忆分档' },
       { path: '/version-policies', name: '版本策略' },
       { path: '/settings', name: '系统设置' },

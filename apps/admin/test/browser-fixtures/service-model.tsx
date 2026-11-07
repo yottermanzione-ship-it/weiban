@@ -37,7 +37,7 @@ const upstream = {
 const legacy = new URLSearchParams(window.location.search).has('legacy')
   ? ({
       modelKey: 'deepseek/legacy-search',
-      displayName: '旧搜索服务',
+      displayName: 'Legacy Search',
       vendorName: 'DeepSeek',
       upstreamId: upstream.upstreamId,
       upstreamModelId: 'deepseek-search',

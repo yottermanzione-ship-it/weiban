@@ -178,7 +178,15 @@ export class ModelResolver implements AdultModelReadPort {
       picked = platform ? { facts: platform } : null;
     } else if (input.fallbackModelKey) {
       if (input.modelRole !== 'background') return { ok: false, error: 'bad_request' };
-      picked = { facts: await this.catalog.fact(input.fallbackModelKey) };
+      const facts = await this.catalog.fact(input.fallbackModelKey);
+      if (
+        !facts.entry?.enabled ||
+        facts.entry.deletedAt ||
+        !facts.entry.scenarios.includes('chat') ||
+        facts.entry.capabilities.includes('adult_content')
+      )
+        return { ok: false, error: 'model_unavailable' };
+      picked = { facts };
     } else if (input.chatFallbackModelKey) {
       if (input.modelRole !== 'chat' || input.purpose !== 'chat_reply')
         return { ok: false, error: 'bad_request' };

@@ -84,7 +84,11 @@ import { privateSearchText, publicWebUrl } from '../domain/web-search.js';
 import { publicCandidateHit } from '../domain/web-candidates.js';
 import { decisionQuestions } from '../infra/jev-adapter.js';
 import type { RealtimeConnection } from '../infra/dashscope-realtime.js';
-import { realtimeResponseEstimate, realtimeVoiceCloneCostYuan } from './realtime-call.js';
+import {
+  billableRealtimeUsage,
+  realtimeResponseEstimate,
+  realtimeVoiceCloneCostYuan,
+} from './realtime-call.js';
 import { contextBudget, contextTokens } from '../domain/context-budget.js';
 import { RealtimeVoice } from './realtime-voice-session.js';
 import { RealtimeVoiceStore } from './realtime-voices.js';
@@ -1353,7 +1357,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     const settled = await this.billing.settle({
       holdId: charge.holdId,
       usageRecordId: charge.usageRecordId,
-      actual,
+      actual: billableRealtimeUsage(charge.model.upstreamModelId, actual),
       actualKnown: actualKnown || estimated,
       ...(estimated ? { actualEstimated: true } : {}),
       startedAt: charge.startedAt.toISOString(),
@@ -1361,9 +1365,9 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     });
     await this.recorder.finish(charge.usageRecordId, {
       status: 'succeeded',
-      inputTokens: 0,
-      cachedInputTokens: 0,
-      outputTokens: 0,
+      inputTokens: actual.inputTokens ?? 0,
+      cachedInputTokens: actual.cachedInputTokens ?? 0,
+      outputTokens: actual.outputTokens ?? 0,
       estimated: !actualKnown,
       latencyMs,
       retryCount: 0,

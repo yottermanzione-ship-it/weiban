@@ -1,5 +1,64 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ModelGatewayMedia } from './media-gateway.js';
+import { parseRealtimeUsage } from '../infra/dashscope-realtime.js';
+import { realtimeUsageQuantities } from './realtime-call.js';
+
+it('官方完成事件的分项用量进入结算，后台保留原始文本与音频，不把未知记为免费', async () => {
+  const raw = parseRealtimeUsage({
+    input_tokens_details: { text_tokens: 228, audio_tokens: 108 },
+    output_tokens_details: { text_tokens: 9, audio_tokens: 32 },
+  })!;
+  const gateway = Object.create(ModelGatewayMedia.prototype) as ModelGatewayMedia;
+  const settle = vi.fn(async () => ({ amountMicros: 10 }));
+  const finish = vi.fn(async () => {});
+  const finishAttempt = vi.fn(async () => {});
+  Object.assign(gateway, {
+    billing: { settle },
+    recorder: { finish, finishAttempt, writeSettleSnapshot: vi.fn(async () => {}) },
+  });
+  const charge = {
+    holdId: 'h',
+    usageRecordId: 'u',
+    attemptId: 'a',
+    wallStart: performance.now(),
+    startedAt: new Date(),
+    model: { modelKey: 'rt', upstreamModelId: 'qwen-audio-3.1-realtime-plus', upstreamId: 'up' },
+  } as Parameters<ModelGatewayMedia['succeed']>[0];
+  await gateway.succeed(charge, realtimeUsageQuantities(raw), true);
+  expect(settle).toHaveBeenCalledWith(
+    expect.objectContaining({
+      actualKnown: true,
+      actual: {
+        inputTokens: 228,
+        cachedInputTokens: 0,
+        audioInputTokens: 108,
+        outputTokens: 0,
+        audioOutputTokens: 32,
+      },
+    }),
+  );
+  expect(finish).toHaveBeenCalledWith(
+    'u',
+    expect.objectContaining({
+      inputTokens: 228,
+      outputTokens: 9,
+      estimated: false,
+      mediaUnits: expect.objectContaining({ audioInputTokens: 108, audioOutputTokens: 32 }),
+    }),
+  );
+  expect(finishAttempt).toHaveBeenCalledWith(
+    'a',
+    realtimeUsageQuantities(raw),
+    true,
+    null,
+    'reported',
+  );
+  await gateway.succeed(charge, {}, false);
+  expect(settle).toHaveBeenLastCalledWith(
+    expect.objectContaining({ actualKnown: false, actual: {} }),
+  );
+  expect(finishAttempt).toHaveBeenLastCalledWith('a', {}, false, null, 'unknown');
+});
 
 const USER = '00000000-0000-4000-8000-000000000001';
 const ROLE = '00000000-0000-4000-8000-000000000002';

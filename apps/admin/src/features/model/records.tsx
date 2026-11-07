@@ -118,6 +118,8 @@ export function RecordsTab({
         '缓存写入5分钟token',
         '缓存写入1小时token',
         '输出token',
+        '音频输入token',
+        '音频输出token',
         '耗时ms',
         '上游成本(元)',
         '用户扣除(积分)',
@@ -139,6 +141,8 @@ export function RecordsTab({
           x.cacheWrite5mTokens ?? 0,
           x.cacheWrite1hTokens ?? 0,
           x.outputTokens,
+          x.audioInputTokens ?? '',
+          x.audioOutputTokens ?? '',
           x.latencyMs,
           (x.costMicros / 1_000_000).toFixed(4),
           pointsOf(x.chargedMicros).toFixed(2),
@@ -436,9 +440,25 @@ export function RecordsTab({
                     }`
                   : ''}
                 ）· 输出 {formatInt(detail.outputTokens)}
-                {detail.estimated ? '（估算）' : ''}
+                {detail.estimated ? (detail.costKnown ? '（估算）' : '（用量待核）') : ''}
               </span>
             </div>
+            {(detail.audioInputTokens !== undefined || detail.audioOutputTokens !== undefined) && (
+              <div>
+                <span className="detail-label">音频用量</span>
+                <span>
+                  输入{' '}
+                  {detail.audioInputTokens === undefined
+                    ? '未报告'
+                    : formatInt(detail.audioInputTokens)}{' '}
+                  · 输出{' '}
+                  {detail.audioOutputTokens === undefined
+                    ? '未报告'
+                    : formatInt(detail.audioOutputTokens)}{' '}
+                  token（供应商报告）
+                </span>
+              </div>
+            )}
             <div>
               <span className="detail-label">耗时</span>
               <span>

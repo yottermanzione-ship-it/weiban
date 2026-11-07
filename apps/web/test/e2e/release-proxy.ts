@@ -5,7 +5,7 @@ import { SendMessageRequest } from '@weiban/contracts';
 
 /** 本机测试入口直接中断实际连接；不依赖浏览器对 Service Worker 请求的拦截支持。 */
 export async function releaseProxy(messageText: string) {
-  let mode: 'up' | 'http' | 'down' = 'up';
+  let mode: 'up' | 'http' | 'down' | 'stalled' = 'up';
   let stateReads = 0;
   const sentIds: string[] = [];
   const sockets = new Set<Duplex>();
@@ -30,6 +30,11 @@ export async function releaseProxy(messageText: string) {
           /* Only fixture message IDs are observed. */
         }
       });
+    }
+    if (mode === 'stalled' && incoming.url?.startsWith('/api/')) {
+      incoming.resume();
+      // 连接保持但没有响应：覆盖手机网络超时，而不只是立即返回503。
+      return;
     }
     if (mode === 'down' && incoming.url?.startsWith('/api/')) {
       incoming.resume();

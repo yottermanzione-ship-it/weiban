@@ -292,7 +292,7 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
           .set('Authorization', `Bearer ${adminToken}`)
           .send({
             modelKey,
-            displayName: 'DeepSeek 搜索测试',
+            displayName: 'DeepSeek Search Test',
             vendorName: 'DeepSeek',
             upstreamId,
             upstreamModelId: 'deepseek-search',

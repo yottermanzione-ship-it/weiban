@@ -55,15 +55,15 @@ describe('voice-catalog 参数', () => {
     ).entries.find((e) => e.item === 'omni');
     expect(omni?.modelKey).toBe('qwen/qwen3.5-omni-plus-realtime');
     expect(omni?.write.serviceRates).toEqual([
-      { unit: 'audio_input_tokens_per_million', price: 39, cost: 30 },
-      { unit: 'audio_output_tokens_per_million', price: 156, cost: 120 },
-      // V3：复刻费 0.01 元/个 × 1.3
-      { unit: 'voice_clone', price: 0.013, cost: 0.01 },
+      { unit: 'audio_input_tokens_per_million', price: 30, cost: 30 },
+      { unit: 'audio_output_tokens_per_million', price: 120, cost: 120 },
+      // V3：复刻费按官方 0.01 元/个
+      { unit: 'voice_clone', price: 0.01, cost: 0.01 },
     ]);
   });
 });
 
-describe('voice-catalog 条目与价格（售价 = 成本 × 1.3）', () => {
+describe('voice-catalog 条目与价格（实时通话按官方价，参考成本服务保留原口径）', () => {
   const { entries } = planVoiceCatalog(command([]));
   const byItem = new Map(entries.map((e) => [e.item, e]));
 
@@ -90,11 +90,11 @@ describe('voice-catalog 条目与价格（售价 = 成本 × 1.3）', () => {
     const e = byItem.get('qwen-realtime')!;
     expect(e.modelKey).toBe(REALTIME_PLUS_MODEL_KEY);
     expect(e.write.tags).toEqual(['pipeline:rt']);
-    expect(e.write.rates).toEqual({ input: 6.5, output: 52, cache: 6.5 });
+    expect(e.write.rates).toEqual({ input: 5, output: 40, cache: 5 });
     expect(e.write.costRates).toEqual({ input: 5, output: 40, cache: 5 });
     expect(e.write.serviceRates).toEqual([
-      { unit: 'audio_input_tokens_per_million', price: 52, cost: 40 },
-      { unit: 'audio_output_tokens_per_million', price: 195, cost: 150 },
+      { unit: 'audio_input_tokens_per_million', price: 40, cost: 40 },
+      { unit: 'audio_output_tokens_per_million', price: 150, cost: 150 },
     ]);
     expect(e.write.billingBounds).toMatchObject({ realtime: { maxSessionSeconds: 3600 } });
     expect(e.enable).toBe(false);
@@ -118,13 +118,13 @@ describe('voice-catalog 条目与价格（售价 = 成本 × 1.3）', () => {
 
 describe('V2：Omni 显示名带版本、默认音色、--fix-omni', () => {
   it('登记 Omni 时显示名带版本，已核实默认音色 Tina；实时 / Omni 默认用公共百炼账号', () => {
-    expect(omniDisplayName('qwen3.5-omni-plus-realtime')).toBe('千问 Omni 3.5 Plus 实时通话');
-    expect(omniDisplayName('qwen3.8-omni-flash-realtime')).toBe('千问 Omni 3.8 Flash 实时通话');
+    expect(omniDisplayName('qwen3.5-omni-plus-realtime')).toBe('Qwen Omni 3.5 Plus Realtime');
+    expect(omniDisplayName('qwen3.8-omni-flash-realtime')).toBe('Qwen Omni 3.8 Flash Realtime');
     const { entries } = planVoiceCatalog(
       command(['--omni-model', 'qwen3.8-omni-flash-realtime', '--omni-cost', '1,2,3,4']),
     );
     const omni = entries.find((e) => e.item === 'omni')!;
-    expect(omni.write.displayName).toBe('千问 Omni 3.8 Flash 实时通话');
+    expect(omni.write.displayName).toBe('Qwen Omni 3.8 Flash Realtime');
     expect(omni.defaultVoice).toBe('Tina');
     expect(omni.upstream.reference).toBe(UPSTREAM_REFERENCE['qwen-tts-flash']);
     const rt = entries.find((e) => e.item === 'qwen-realtime')!;
@@ -144,7 +144,7 @@ describe('V2：Omni 显示名带版本、默认音色、--fix-omni', () => {
     ).toBe('Cindy');
   });
 
-  it('--fix-omni 只改不带版本的 Omni 显示名、只补没有的默认音色', () => {
+  it('--fix-omni 统一英文版本名称、只补没有的默认音色', () => {
     expect(command(['--fix-omni']).fixOmni).toBe(true);
     const fixes = planOmniFix(
       [
@@ -166,12 +166,17 @@ describe('V2：Omni 显示名带版本、默认音色、--fix-omni', () => {
     expect(fixes).toEqual([
       {
         modelKey: 'qwen/qwen3.5-omni-plus-realtime',
-        rename: { from: '千问 Omni 实时通话', to: '千问 Omni 3.5 Plus 实时通话' },
+        rename: { from: '千问 Omni 实时通话', to: 'Qwen Omni 3.5 Plus Realtime' },
         defaultVoice: 'Tina',
       },
       {
         modelKey: 'qwen/qwen3.8-omni-flash-realtime',
-        rename: { from: '千问 Omni 实时通话', to: '千问 Omni 3.8 Flash 实时通话' },
+        rename: { from: '千问 Omni 实时通话', to: 'Qwen Omni 3.8 Flash Realtime' },
+        defaultVoice: null,
+      },
+      {
+        modelKey: 'qwen/qwen3.5-omni-flash-realtime',
+        rename: { from: '千问 Omni 3.5 Flash 实时通话', to: 'Qwen Omni 3.5 Flash Realtime' },
         defaultVoice: null,
       },
     ]);
@@ -290,15 +295,15 @@ describe('旧站实时音色绑定（V2 公共 Omni；V3 北京 workspace，156�
 });
 
 describe('V3：Realtime 3.1 Plus、Omni 复刻价', () => {
-  it('3.1 Plus：官方北京价 5/40/40/150 × 1.3、默认音色 longanqian_v3.1、默认停用、公共百炼账号、无复刻价', () => {
+  it('3.1 Plus：官方北京价 5/40/40/150、默认音色 longanqian_v3.1、默认停用、公共百炼账号、无复刻价', () => {
     const e = planVoiceCatalog(command([])).entries.find((x) => x.item === 'qwen-realtime-3.1')!;
     expect(e.modelKey).toBe(REALTIME_31_MODEL_KEY);
     expect(e.write.upstreamModelId).toBe('qwen-audio-3.1-realtime-plus');
-    expect(e.write.displayName).toBe('千问 Audio 3.1 Plus 实时通话');
-    expect(e.write.rates).toEqual({ input: 6.5, output: 52, cache: 6.5 });
+    expect(e.write.displayName).toBe('Qwen Audio 3.1 Plus Realtime');
+    expect(e.write.rates).toEqual({ input: 5, output: 40, cache: 5 });
     expect(e.write.serviceRates).toEqual([
-      { unit: 'audio_input_tokens_per_million', price: 52, cost: 40 },
-      { unit: 'audio_output_tokens_per_million', price: 195, cost: 150 },
+      { unit: 'audio_input_tokens_per_million', price: 40, cost: 40 },
+      { unit: 'audio_output_tokens_per_million', price: 150, cost: 150 },
     ]);
     expect(e.defaultVoice).toBe('longanqian_v3.1');
     expect(e.enable).toBe(false);
@@ -310,14 +315,14 @@ describe('V3：Realtime 3.1 Plus、Omni 复刻价', () => {
     expect(completeWrite(e, { upstreamId: UP, existing: null }).scenarios).toEqual(['voice_call']);
   });
 
-  it('--omni-clone-price 只给还没有 0.013 复刻价的 Omni 条目补登记', () => {
+  it('--omni-clone-price 只给还没有 0.01 复刻价的 Omni 条目补登记', () => {
     expect(command(['--omni-clone-price']).omniClonePrice).toBe(true);
     expect(
       planOmniClonePrice([
         { modelKey: 'qwen/qwen3.5-omni-plus-realtime', serviceRates: [] },
         {
           modelKey: 'qwen/qwen3.8-omni-flash-realtime',
-          serviceRates: [{ unit: 'voice_clone', price: 0.013, cost: 0.01 }],
+          serviceRates: [{ unit: 'voice_clone', price: 0.01, cost: 0.01 }],
         },
         { modelKey: REALTIME_PLUS_MODEL_KEY, serviceRates: [] },
         { modelKey: 'qwen/qwen3.5-omni-flash-realtime', deletedAt: '2026-10-28T00:00:00Z' },
@@ -326,7 +331,7 @@ describe('V3：Realtime 3.1 Plus、Omni 复刻价', () => {
       {
         modelKey: 'qwen/qwen3.5-omni-plus-realtime',
         from: null,
-        to: { unit: 'voice_clone', price: 0.013, cost: 0.01 },
+        to: { unit: 'voice_clone', price: 0.01, cost: 0.01 },
       },
     ]);
   });

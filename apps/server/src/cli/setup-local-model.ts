@@ -106,7 +106,7 @@ async function main(): Promise<void> {
     await catalog.upsert(adminId, MODEL_KEY, {
       modelKey: MODEL_KEY,
       displayName: 'MiMo V2.6 Flash',
-      vendorName: '小米',
+      vendorName: 'Xiaomi',
       upstreamId: upstream.upstreamId,
       upstreamModelId: UPSTREAM_MODEL_ID,
       capabilities: ['vision'],

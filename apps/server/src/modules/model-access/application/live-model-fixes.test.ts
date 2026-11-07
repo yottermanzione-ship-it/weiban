@@ -7,6 +7,61 @@ import { UpstreamScheduler } from './scheduler.js';
 import { DEFAULT_GATEWAY_LIMITS } from './limits.js';
 import { thinkingControlFor, thinkingOffFields } from '../infra/text-adapter.js';
 import { supportsThinkingDisabled } from '../infra/anthropic-adapter.js';
+import { CatalogService } from './catalog.js';
+import { requestHash } from './generation-cache.js';
+
+it('备用模型按现价筛选，排除私密、无价格、无可用线路和任一单价更高的模型，再取三个', async () => {
+  const rows = [
+    'offline1',
+    'offline2',
+    'offline3',
+    'cheap',
+    'higher-output',
+    'same',
+    'private',
+    'unpriced',
+  ].map((modelKey) => ({
+    entry: {
+      modelKey,
+      scenarios: ['chat'],
+      tags: [],
+      capabilities: modelKey === 'private' ? ['adult_content'] : [],
+    },
+  }));
+  const service = Object.create(CatalogService.prototype) as CatalogService;
+  const query = { from: vi.fn(), where: vi.fn(async () => rows) };
+  query.from.mockReturnValue(query);
+  Object.assign(service, {
+    database: { db: { select: () => query } },
+    prices: {
+      textPrices: async () =>
+        new Map([
+          ['primary', { inputPerMillionMicros: 10, outputPerMillionMicros: 20 }],
+          ...rows
+            .filter(({ entry }) => entry.modelKey !== 'unpriced')
+            .map(
+              ({ entry }) =>
+                [
+                  entry.modelKey,
+                  {
+                    inputPerMillionMicros: entry.modelKey === 'same' ? 10 : 1,
+                    outputPerMillionMicros:
+                      entry.modelKey === 'higher-output' ? 21 : entry.modelKey === 'same' ? 20 : 2,
+                  },
+                ] as const,
+            ),
+        ]),
+    },
+    availabilityDetails: async () =>
+      new Map(
+        rows.map(({ entry }) => [
+          entry.modelKey,
+          entry.modelKey.startsWith('offline') ? 'upstream_disabled' : null,
+        ]),
+      ),
+  });
+  expect(await service.cheaperTextFallbacks('primary')).toEqual(['cheap']);
+});
 
 const request = (overrides: Partial<GenerateTextInput> = {}) =>
   ({
@@ -31,7 +86,21 @@ function gateway(firstError = 'provider_unavailable', primary = 'primary/model')
   const recommendedModel = vi.fn(async () => null);
   Object.assign(service, {
     generateOnce,
-    catalog: { recommendedModel },
+    cache: {
+      claim: vi.fn(async (input: GenerateTextInput) => ({
+        created: true,
+        row: { requestHash: requestHash(input) },
+      })),
+      save: vi.fn(async () => {}),
+    },
+    catalog: {
+      recommendedModel,
+      cheaperTextFallbacks: vi.fn(async () => [
+        'deepseek/deepseek-v4.1-flash',
+        'xiaomi/mimo-v2.6-flash',
+      ]),
+    },
+    clock: { nowMs: () => Date.now() },
     resolver: { pick: vi.fn(async () => ({ facts: { modelKey: primary } })) },
     logger: { log: vi.fn() },
   });
@@ -55,17 +124,49 @@ describe('保留线上日常备用链：私密与其他任务不越界', () => {
       chatFallbackModelKey: 'xiaomi/mimo-v2.6-flash',
     });
   });
-  it('私密回复、私密记忆和后台任务均不进入日常备用链', async () => {
+  it('主模型超时仍有备用窗口，但调用方明确的整体截止时间不能越过', async () => {
+    for (const explicitDeadline of [false, true]) {
+      const t = gateway();
+      const start = Date.now();
+      let now = start;
+      Object.assign(t.service, { clock: { nowMs: () => now } });
+      t.generateOnce
+        .mockReset()
+        .mockResolvedValue(t.success)
+        .mockImplementationOnce(async () => {
+          now += 60_001;
+          return t.failure;
+        });
+      const result = await t.service.generateText(
+        request(explicitDeadline ? { deadlineAt: new Date(start + 60_000).toISOString() } : {}),
+      );
+      expect(result).toBe(explicitDeadline ? t.failure : t.success);
+      expect(t.generateOnce).toHaveBeenCalledTimes(explicitDeadline ? 1 : 2);
+    }
+  });
+  it('私密回复与私密记忆不进入普通备用链', async () => {
     for (const input of [
       request({ modelRole: 'adult' }),
       request({ modelRole: 'adult', purpose: 'memory' }),
-      request({ modelRole: 'background', purpose: 'memory' }),
     ]) {
       const t = gateway();
       expect(await t.service.generateText(input)).toBe(t.failure);
       expect(t.generateOnce).toHaveBeenCalledOnce();
       expect(t.recommendedModel).not.toHaveBeenCalled();
     }
+  });
+  it('记忆供应商失败改用更便宜模型，保留全部消息和范围，返回格式不改变', async () => {
+    const t = gateway();
+    const input = request({ modelRole: 'background', purpose: 'memory', responseFormat: 'json' });
+    expect(await t.service.generateText(input)).toBe(t.success);
+    expect(t.generateOnce.mock.calls[1]?.[0]).toMatchObject({
+      messages: input.messages,
+      purpose: 'memory',
+      responseFormat: 'json',
+    });
+    expect(t.generateOnce.mock.calls[1]?.[1]).toMatchObject({
+      fallbackModelKey: 'deepseek/deepseek-v4.1-flash',
+    });
   });
   it('预算或权限拒绝不通过备用模型绕过；备用模型必须仍已上架', async () => {
     for (const error of ['policy_denied', 'bad_request', 'budget_exceeded']) {

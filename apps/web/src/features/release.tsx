@@ -9,7 +9,6 @@ import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
 import { MenuGroup, MenuRow, NavBar } from './shell-kit.js';
 import { Dialog } from './toast.js';
-import { WebUpdatePanel } from './web-update-panel.js';
 
 export const WEB_BUILD = __WEB_BUILD__;
 export const WEB_VERSION = __WEB_VERSION__;
@@ -134,7 +133,6 @@ export function AboutPage() {
         <MenuRow to="/settings/announcements" label="公告" dot={unreadCount > 0} />
         <MenuRow to="/settings/release-notes" label="更新日志" />
       </MenuGroup>
-      <WebUpdatePanel />
     </main>
   );
 }

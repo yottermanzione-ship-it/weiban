@@ -6,7 +6,20 @@ import type {
   RealtimeUsage,
 } from '../infra/dashscope-realtime.js';
 import { RealtimeVoice, type RealtimeBillingOps } from './realtime-voice-session.js';
-import { SpeechGate, realtimeUsageQuantities } from './realtime-call.js';
+import { SpeechGate, realtimeUsageQuantities, billableRealtimeUsage } from './realtime-call.js';
+
+it('按官方型号区分伴随文本免计费，报告原始用量不被改写', () => {
+  const raw = { inputTokens: 2512, audioInputTokens: 42, outputTokens: 90, audioOutputTokens: 293 };
+  expect(billableRealtimeUsage('qwen3.8-omni-flash-realtime', raw)).toEqual(raw);
+  for (const model of ['qwen3.5-omni-plus-realtime', 'qwen-audio-3.1-realtime-plus']) {
+    expect(billableRealtimeUsage(model, raw)).toEqual({ ...raw, outputTokens: 0 });
+    expect(billableRealtimeUsage(model, { outputTokens: 90, audioOutputTokens: 0 })).toEqual({
+      outputTokens: 90,
+      audioOutputTokens: 0,
+    });
+  }
+  expect(raw.outputTokens).toBe(90);
+});
 
 interface FakeCharge {
   id: number;

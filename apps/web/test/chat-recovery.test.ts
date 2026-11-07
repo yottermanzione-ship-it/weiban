@@ -165,6 +165,17 @@ it('真正失效的登录和不兼容版本仍拦截，不借自动恢复绕过�
   expect(error).not.toHaveBeenCalled();
 });
 
+it('连续挂起请求被替换时明确离线，恢复后原页面重新上线', async () => {
+  const { call, connection } = await start();
+  Socket.instances[0]!.closed();
+  call.mockImplementation(() => new Promise(() => {}));
+  await vi.advanceTimersByTimeAsync(26_000);
+  expect(connection).toHaveBeenLastCalledWith(false);
+  call.mockResolvedValue({ latestUpdateSeq: 0 });
+  await vi.advanceTimersByTimeAsync(21_000);
+  expect(connection).toHaveBeenLastCalledWith(true);
+});
+
 it('超时旧轮次的迟到失败不会把已经恢复的页面改回离线', async () => {
   const { call, connection } = await start();
   let rejectPrevious!: (error: Error) => void;

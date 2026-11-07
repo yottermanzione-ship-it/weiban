@@ -66,14 +66,14 @@ function deadline<T>(work: Promise<T>, message: string, ms = 30_000): Promise<T>
   ]).finally(() => clearTimeout(timer));
 }
 async function prepareWorker() {
-  if (!('serviceWorker' in navigator)) return;
+  if (!('serviceWorker' in navigator)) return null;
   const registration = await deadline(
     navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }),
     '新版下载没有完成，请稍后重试',
   );
   await deadline(registration.update(), '新版下载没有完成，请稍后重试');
   const worker = registration.installing;
-  if (!worker) return;
+  if (!worker) return registration;
   await new Promise<void>((resolve, reject) => {
     const finish = (error?: Error) => {
       clearTimeout(timer);
@@ -89,6 +89,31 @@ async function prepareWorker() {
     worker.addEventListener('statechange', changed);
     changed();
   });
+  return registration;
+}
+/** 等实际激活后再导航，不依赖 WebView 将下一次加载标记成 reload。 */
+async function activatePreparedWorker(registration: ServiceWorkerRegistration | null) {
+  const worker = registration?.waiting;
+  if (!worker) return;
+  await new Promise<void>((resolve, reject) => {
+    const finish = (error?: Error) => {
+      clearTimeout(timer);
+      worker.removeEventListener('statechange', changed);
+      if (error) reject(error);
+      else resolve();
+    };
+    const changed = () => {
+      if (worker.state === 'activated') finish();
+      else if (worker.state === 'redundant') finish(new Error('新版接管失败，请重新检查更新'));
+    };
+    const timer = setTimeout(
+      () => finish(new Error('新版尚未接管，请稍后重试；当前聊天已恢复')),
+      15_000,
+    );
+    worker.addEventListener('statechange', changed);
+    worker.postMessage({ type: 'SKIP_WAITING', reloadClient: false });
+    changed();
+  });
 }
 /** Called only after the user's refresh confirmation. Never unregister workers or erase app data. */
 export async function refreshToLatestWeb(): Promise<void> {
@@ -96,7 +121,7 @@ export async function refreshToLatestWeb(): Promise<void> {
   let savingStarted = false;
   try {
     const latest = await readDeployedWebBuild();
-    await prepareWorker();
+    const registration = await prepareWorker();
     assertCanRefresh();
     const pending: Promise<void>[] = [];
     savingStarted = true;
@@ -116,8 +141,9 @@ export async function refreshToLatestWeb(): Promise<void> {
     if (results.some((result) => result.status === 'rejected'))
       throw new Error('本机消息尚未保存完成，请稍后再刷新');
     assertCanRefresh();
+    await activatePreparedWorker(registration);
+    assertCanRefresh();
     sessionStorage.setItem(RECEIPT, JSON.stringify(latest));
-    // At reload bootstrap, adoptWaitingWorker activates the prepared worker before app requests restart.
     window.location.reload();
   } catch (error) {
     if (savingStarted) window.dispatchEvent(new Event('weiban:update-failed'));

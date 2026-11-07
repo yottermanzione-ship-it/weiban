@@ -159,7 +159,7 @@ export function CharacterVoicePanel({ characterId }: { characterId: string }) {
         </div>
       )}
       <FieldHelp>
-        千问使用音色库登记的供应商音色ID；已有参考音频不在这里自动重建。此设置独立保存，角色人设历史恢复不会改动它。
+        Qwen使用音色库登记的供应商音色ID；已有参考音频不在这里自动重建。此设置独立保存，角色人设历史恢复不会改动它。
       </FieldHelp>
       <Space>
         <Button

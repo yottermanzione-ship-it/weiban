@@ -457,6 +457,12 @@ export function toAdminRecord(
     inputTokens: row.inputTokens,
     cachedInputTokens: row.cachedInputTokens,
     cacheWrite5mTokens: row.cacheWrite5mTokens,
+    ...(row.mediaUnits?.audioInputTokens !== undefined
+      ? { audioInputTokens: row.mediaUnits.audioInputTokens }
+      : {}),
+    ...(row.mediaUnits?.audioOutputTokens !== undefined
+      ? { audioOutputTokens: row.mediaUnits.audioOutputTokens }
+      : {}),
     cacheWrite1hTokens: row.cacheWrite1hTokens,
     outputTokens: row.outputTokens,
     estimated: row.estimated,

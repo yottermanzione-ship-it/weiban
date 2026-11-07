@@ -30,8 +30,8 @@ export const INITIAL_MODELS = [
   },
   {
     modelKey: 'qwen/qwen3.7-plus',
-    name: '通义千问 3.7 Plus',
-    vendor: '阿里云',
+    name: 'Qwen 3.7 Plus',
+    vendor: 'Alibaba Cloud',
     provider: 'bailian',
     upstreamModelId: 'qwen3.7-plus',
     capabilities: [],
@@ -42,8 +42,8 @@ export const INITIAL_MODELS = [
   },
   {
     modelKey: 'qwen/qwen3.8-flash',
-    name: '通义千问 3.8 Flash',
-    vendor: '阿里云',
+    name: 'Qwen 3.8 Flash',
+    vendor: 'Alibaba Cloud',
     provider: 'bailian',
     upstreamModelId: 'qwen3.8-flash',
     capabilities: [],
@@ -54,8 +54,8 @@ export const INITIAL_MODELS = [
   },
   {
     modelKey: 'qwen/qwen3.8-max',
-    name: '通义千问 3.8 Max',
-    vendor: '阿里云',
+    name: 'Qwen 3.8 Max',
+    vendor: 'Alibaba Cloud',
     provider: 'bailian',
     upstreamModelId: 'qwen3.8-max',
     capabilities: [],
@@ -66,8 +66,8 @@ export const INITIAL_MODELS = [
   },
   {
     modelKey: 'qwen/qwen-vl-plus',
-    name: '通义千问 VL Plus',
-    vendor: '阿里云',
+    name: 'Qwen VL Plus',
+    vendor: 'Alibaba Cloud',
     provider: 'bailian',
     upstreamModelId: 'qwen-vl-plus',
     capabilities: ['vision'],
