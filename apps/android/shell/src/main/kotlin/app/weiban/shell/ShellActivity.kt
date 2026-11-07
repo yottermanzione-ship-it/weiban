@@ -32,6 +32,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
+import androidx.core.graphics.Insets
 import androidx.core.net.toUri
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -45,7 +46,7 @@ class ShellActivity : ComponentActivity() {
     private val files = ShellFilePicker(this) { currentUrl() }
     private val downloads = ShellDownloads(this) { currentUrl() }
     private lateinit var root: FrameLayout
-    private val device by lazy { ShellDeviceBridge(this, { currentUrl() }, { dark -> applySystemTheme(dark) }) }
+    private val device by lazy { ShellDeviceBridge(this, { currentUrl() }, { dark, surface -> applySystemTheme(dark, surface) }) }
     private var lastPage = ShellPolicy.START_URL
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,7 +60,14 @@ class ShellActivity : ComponentActivity() {
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             val keyboard = insets.getInsets(WindowInsetsCompat.Type.ime())
             view.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, keyboard.bottom))
-            insets
+            // Native padding already protects the WebView; forward zeroes so CSS/IME do not add it again.
+            WindowInsetsCompat
+                .Builder(insets)
+                .setInsets(
+                    WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout() or WindowInsetsCompat.Type.ime(),
+                    Insets.NONE,
+                ).setInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(), Insets.NONE)
+                .build()
         }
         configureWebView()
         onBackPressedDispatcher.addCallback(
@@ -253,9 +261,15 @@ class ShellActivity : ComponentActivity() {
     private fun currentUrl(): String? = if (::webView.isInitialized) webView.url else null
 
     @Suppress("DEPRECATION") // Before enforced edge-to-edge, clear the default system scrim too.
-    private fun applySystemTheme(dark: Boolean) {
+    private fun applySystemTheme(dark: Boolean, surface: String = "page") {
         if (!::root.isInitialized) return
-        root.setBackgroundColor(if (dark) 0xff252a30.toInt() else 0xffededed.toInt())
+        root.setBackgroundColor(
+            when (surface) {
+                "call" -> 0xff252a30.toInt()
+                "white" -> if (dark) 0xff191919.toInt() else Color.WHITE
+                else -> if (dark) 0xff202020.toInt() else 0xffededed.toInt()
+            },
+        )
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
         if (Build.VERSION.SDK_INT >= 29) {

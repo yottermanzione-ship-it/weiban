@@ -19,7 +19,12 @@ export function hasCallDevice(): boolean {
 }
 export function callDevice(
   type: 'begin-call' | 'end-call' | 'speaker' | 'status' | 'theme',
-  data: { callId?: string; enabled?: boolean; dark?: boolean } = {},
+  data: {
+    callId?: string;
+    enabled?: boolean;
+    dark?: boolean;
+    surface?: 'page' | 'white' | 'call';
+  } = {},
 ): Promise<CallDeviceState | null> {
   const native = bridge();
   if (!native) return Promise.resolve(null);

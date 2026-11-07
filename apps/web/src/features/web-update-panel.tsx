@@ -42,7 +42,7 @@ export function WebUpdatePanel() {
     try {
       await refreshToLatestWeb();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : '刷新失败，请稍后重试');
+      setStatus(error instanceof Error ? error.message : '更新失败，请稍后重试');
       setBusy(false);
     }
   }
@@ -50,16 +50,16 @@ export function WebUpdatePanel() {
     <>
       <MenuGroup>
         <MenuRow label="检查更新" disabled={busy} onClick={() => void check()} />
-        <MenuRow label="强制刷新网页" disabled={busy} onClick={() => setConfirm(true)} />
+        <MenuRow label="更新版本" disabled={busy} onClick={() => setConfirm(true)} />
       </MenuGroup>
-      <p className="hint">网页内容更新无需重装安卓应用。安装包自身功能改动仍需安装新包。</p>
+      <p className="hint">更新页面内容后保留登录与聊天。安卓系统功能升级仍需安装新版应用。</p>
       {status && <p role="status">{status}</p>}
       {confirm && (
         <Dialog
-          title="刷新到最新版"
+          title="更新版本"
           actions={[
             { label: '取消', onClick: () => setConfirm(false) },
-            { label: '刷新到最新版', tone: 'primary', onClick: () => void refresh() },
+            { label: '立即更新', tone: 'primary', onClick: () => void refresh() },
           ]}
         >
           <p>

@@ -19,15 +19,24 @@ function assertCanRefresh() {
   }
 }
 export async function readDeployedWebBuild(): Promise<WebBuild> {
-  const cancellation = linkedAbort([], 15_000);
+  const request = new AbortController();
+  const cancellation = linkedAbort([request.signal], 15_000);
   try {
-    const response = await fetch(`/build-info.json?check=${Date.now()}`, {
-      cache: 'no-store',
-      redirect: 'error',
-      signal: cancellation.signal,
-    });
-    if (!response.ok) throw new Error('检查更新失败，请联网后重试');
-    const value: unknown = await response.json();
+    const response = await deadline(
+      fetch(`/build-info.json?check=${Date.now()}`, {
+        cache: 'no-store',
+        redirect: 'error',
+        signal: cancellation.signal,
+      }),
+      '检查更新超时，请检查网络后重试',
+      15_000,
+    );
+    if (!response.ok) throw new Error(`版本服务暂时不可用（${response.status}），请稍后重试`);
+    const value: unknown = await deadline(
+      response.json(),
+      '版本信息读取超时，请检查网络后重试',
+      10_000,
+    );
     if (
       !value ||
       typeof value !== 'object' ||
@@ -40,9 +49,10 @@ export async function readDeployedWebBuild(): Promise<WebBuild> {
       throw new Error('版本信息不完整，请稍后重试');
     return { version: value.version, versionCode: Number(value.versionCode) };
   } catch (error) {
-    if (error instanceof Error && error.message.startsWith('版本信息')) throw error;
+    if (error instanceof Error && /^(版本|检查更新超时)/.test(error.message)) throw error;
     throw new Error('检查更新失败，请联网后重试', { cause: error });
   } finally {
+    request.abort();
     cancellation.dispose();
   }
 }
@@ -105,6 +115,7 @@ export async function refreshToLatestWeb(): Promise<void> {
     }
     if (results.some((result) => result.status === 'rejected'))
       throw new Error('本机消息尚未保存完成，请稍后再刷新');
+    assertCanRefresh();
     sessionStorage.setItem(RECEIPT, JSON.stringify(latest));
     // At reload bootstrap, adoptWaitingWorker activates the prepared worker before app requests restart.
     window.location.reload();
@@ -120,9 +131,9 @@ export function consumeWebRefreshResult(currentBuild: number): string | null {
   try {
     const value = JSON.parse(raw) as Partial<WebBuild>;
     return value.versionCode === currentBuild
-      ? '已刷新到刚才检查到的网页版本'
-      : '本次刷新尚未切换到目标版本，请再次检查更新并刷新';
+      ? '已更新到刚才检查到的版本'
+      : '尚未切换到目标版本，请再次点击更新版本';
   } catch {
-    return '无法确认刷新结果，请再次检查更新';
+    return '无法确认更新结果，请再次检查更新';
   }
 }
