@@ -308,21 +308,23 @@ export function useCall() {
 }
 
 /**
- * 私聊「+」/ 资料页的语音通话入口状态：visible = 平台开通了语音服务（未开通时不显示，MED-06 第 11 条）；
+ * 私聊「+」/ 资料页的语音通话入口状态：只有服务器明确关闭服务才隐藏（MED-06 第 11 条）；
+ * 加载中或读取失败表示未知，保留入口供用户点击后重新检查，不能当作未开通。
  * privateMode = 3.28（H2）该角色正处于私密模式，私密模式只开放文字和图片，入口置灰并说明。
  */
 export function useCallAccess(characterId: string | undefined): {
   visible: boolean;
   privateMode: boolean;
 } {
-  const remote = useRemote(CallEndpoints.getAvailability, {
-    query: { characterId: characterId ?? '' },
-    networkOnly: true,
-  });
-  if (!characterId || !remote.data) return { visible: false, privateMode: false };
+  const remote = useRemote(
+    CallEndpoints.getAvailability,
+    { query: { characterId: characterId ?? '' }, networkOnly: true },
+    !!characterId,
+  );
+  if (!characterId) return { visible: false, privateMode: false };
   return {
-    visible: remote.data.reason !== 'service_disabled',
-    privateMode: remote.data.reason === 'private_mode',
+    visible: remote.data?.reason !== 'service_disabled',
+    privateMode: remote.data?.reason === 'private_mode',
   };
 }
 
@@ -462,6 +464,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
           const availability = await api.call(CallEndpoints.getAvailability, {
             query: { characterId },
             networkOnly: true,
+            // A deliberate dial starts a fresh read instead of sharing a stalled menu prefetch.
+            signal: new AbortController().signal,
           });
           if (!availability.available) {
             void ctx.close();
@@ -471,7 +475,12 @@ export function CallProvider({ children }: { children: ReactNode }) {
             else if (availability.reason === 'busy') {
               const active = await api.call(CallEndpoints.getActiveCall, { networkOnly: true });
               if (active.call) setView({ ...base(active.call, 'active'), detached: true });
-            } else showToast('暂时无法通话');
+            } else
+              showToast(
+                availability.reason === 'service_disabled'
+                  ? '语音通话服务暂不可用，请稍后再试'
+                  : '暂时无法通话',
+              );
             return;
           }
           const call = await api.call(CallEndpoints.startCall, {
@@ -662,14 +671,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
             engine.current?.setMuted(muted);
             patch({ muted });
           }}
-          onRemoteMute={() => {
-            const remoteMuted = !view.remoteMuted;
-            engine.current?.setRemoteMuted(remoteMuted);
-            patch({ remoteMuted });
-          }}
           onSpeaker={() => {
             if (!hasCallDevice()) {
-              showToast('当前浏览器无法保证切换听筒，请使用系统声音设置或耳机', 3500, 'info');
+              const remoteMuted = !view.remoteMuted;
+              engine.current?.setRemoteMuted(remoteMuted);
+              patch({ remoteMuted });
               return;
             }
             const callId = view.call.callId;
@@ -743,7 +749,7 @@ function useRingback(on: boolean) {
   }, [on]);
 }
 
-/** 经理确认的三项独立声音控制、单独挂断，以及右上角收起入口。 */
+/** 经理最新确认：左麦克风、中取消/挂断、右扬声器；收起位于右上。 */
 function CallScreen({
   view,
   remark,
@@ -753,7 +759,6 @@ function CallScreen({
   onHangUp,
   onMute,
   onReattach,
-  onRemoteMute,
   onSpeaker,
 }: {
   view: CallView;
@@ -764,7 +769,6 @@ function CallScreen({
   onHangUp(): void;
   onMute(): void;
   onReattach(): void;
-  onRemoteMute(): void;
   onSpeaker(): void;
 }) {
   const profile = useRemote(CharacterEndpoints.getProfile, {
@@ -772,6 +776,10 @@ function CallScreen({
   });
   const name = remark || profile.data?.name || '角色';
   useRingback(!view.remoteMuted && (view.phase === 'outgoing' || view.phase === 'incoming'));
+  const nativeOutput = hasCallDevice();
+  const knownRoute = !nativeOutput || (view.device && view.device.route !== 'system');
+  const speakerOn = nativeOutput ? view.device?.route === 'speaker' : !view.remoteMuted;
+  const speakerLabel = knownRoute ? (speakerOn ? '扬声器已开' : '扬声器已关') : '扬声器';
   const status =
     view.phase === 'ended'
       ? view.endText
@@ -801,13 +809,15 @@ function CallScreen({
         {view.phase !== 'ended' && view.phase !== 'incoming' && (
           <span className="wx-call-note">收起后可继续聊天，请保持微伴在前台</span>
         )}
-        {view.phase === 'active' && view.speaking && (
-          <span className="voice-wave call-wave" aria-label="对方正在说话">
-            <i />
-            <i />
-            <i />
-          </span>
-        )}
+        <span className="wx-call-speaking">
+          {view.phase === 'active' && view.speaking && (
+            <span className="voice-wave call-wave" aria-label="对方正在说话">
+              <i />
+              <i />
+              <i />
+            </span>
+          )}
+        </span>
       </div>
       <span className={`wx-call-avatar ${view.phase === 'incoming' ? 'ringing' : ''}`}>
         <CharacterAvatar id={view.call.characterId} size={168} radius={18} />
@@ -827,42 +837,26 @@ function CallScreen({
           ) : (
             <>
               <CallButton
-                label={view.remoteMuted ? '对方声音已关' : '对方声音已开'}
-                kind={view.remoteMuted ? 'off' : 'on'}
-                onClick={onRemoteMute}
-                icon={view.remoteMuted ? 'drawn/speaker_off' : 'drawn/speaker'}
-                pressed={view.remoteMuted}
-              />
-              <CallButton
-                label={
-                  view.device?.route === 'speaker'
-                    ? '扬声器'
-                    : view.device?.route === 'earpiece'
-                      ? '听筒'
-                      : view.device?.route === 'headset'
-                        ? '耳机'
-                        : '声音输出'
-                }
-                kind={view.device?.route === 'speaker' ? 'on' : 'off'}
-                onClick={onSpeaker}
-                icon="drawn/speaker"
-                pressed={view.device?.route === 'speaker'}
-              />
-              <CallButton
                 label={view.muted ? '麦克风已关' : '麦克风已开'}
                 kind={view.muted ? 'off' : 'on'}
                 onClick={onMute}
                 icon={view.muted ? 'drawn/mic_off' : 'drawn/mic'}
-                pressed={view.muted}
+                pressed={!view.muted}
               />
-              <div className="wx-call-hangup">
-                <CallButton
-                  label={view.phase === 'outgoing' ? '取消' : '挂断'}
-                  kind="decline"
-                  onClick={onHangUp}
-                  icon="drawn/hangup"
-                />
-              </div>
+              <CallButton
+                label={view.phase === 'outgoing' ? '取消' : '挂断'}
+                kind="decline"
+                onClick={onHangUp}
+                icon="drawn/hangup"
+              />
+              <CallButton
+                label={speakerLabel}
+                note={knownRoute ? undefined : '系统控制'}
+                kind={speakerOn ? 'on' : 'off'}
+                onClick={onSpeaker}
+                icon="drawn/speaker"
+                pressed={knownRoute ? speakerOn : undefined}
+              />
             </>
           )}
         </div>
@@ -877,24 +871,29 @@ function CallButton({
   icon,
   onClick,
   pressed,
+  note,
 }: {
   label: string;
   kind: 'accept' | 'decline' | 'on' | 'off';
   icon: string;
   onClick(): void;
   pressed?: boolean;
+  note?: string;
 }) {
   return (
     <span className="wx-call-key">
       <button
         className={`wx-call-round ${kind}`}
-        aria-label={label}
+        aria-label={note ? `${label}，${note}` : label}
         aria-pressed={pressed}
         onClick={onClick}
       >
         <OldIcon name={icon} size={28} />
       </button>
-      <small>{label}</small>
+      <small>
+        {label}
+        {note && <span className="wx-call-key-note">{note}</span>}
+      </small>
     </span>
   );
 }

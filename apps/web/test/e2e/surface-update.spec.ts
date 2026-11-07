@@ -28,14 +28,16 @@ test('四个主页顶部对齐且我页同步白色系统栏', async ({ page }) 
   }
   await page.goto('/chat');
   await expect(page.locator('.chat-list-head')).toBeVisible();
-  const box = await page.locator('.chat-list-head').boundingBox();
-  expect(box?.y).toBe(0);
+  await expect.poll(async () => (await page.locator('.chat-list-head').boundingBox())?.y).toBe(0);
   await page.getByRole('link', { name: '通讯录', exact: true }).click();
-  await expect(page.locator('.nav-bar')).toBeVisible();
-  expect((await page.locator('.nav-bar').boundingBox())?.y).toBe(0);
+  await expect(page).toHaveURL(/\/contacts$/);
+  await expect(page.getByRole('heading', { name: '通讯录', exact: true })).toBeVisible();
+  await expect.poll(async () => (await page.locator('.nav-bar').boundingBox())?.y).toBe(0);
   await page.getByRole('link', { name: '发现', exact: true }).click();
-  await expect(page.locator('.nav-bar')).toBeVisible();
-  expect((await page.locator('.nav-bar').boundingBox())?.y).toBe(0);
+  // Both pages have .nav-bar: wait for the destination before measuring, not the old header.
+  await expect(page).toHaveURL(/\/discover$/);
+  await expect(page.getByRole('heading', { name: '发现', exact: true })).toBeVisible();
+  await expect.poll(async () => (await page.locator('.nav-bar').boundingBox())?.y).toBe(0);
   await page.getByRole('link', { name: '我', exact: true }).click();
   await expect(page.locator('html')).toHaveAttribute('data-backdrop', 'me');
   await expect

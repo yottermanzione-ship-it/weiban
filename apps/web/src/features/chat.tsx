@@ -1580,18 +1580,22 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
               },
             ]
           : []),
-        {
-          label: '语音通话',
-          icon: 'wechat/voice_call',
-          muted: privateMode,
-          onClick: () => {
-            if (privateMode) showToast(PRIVATE_MODE_CALL_HINT, 3000, 'info');
-            else if (role && callEntry) {
-              setPanel('none');
-              startCall(role.refId);
-            } else showToast('语音通话需先开通语音服务并配置域名，暂未开放', 3000, 'info');
-          },
-        },
+        ...(callEntry
+          ? [
+              {
+                label: '语音通话',
+                icon: 'wechat/voice_call',
+                muted: privateMode,
+                onClick: () => {
+                  if (privateMode) showToast(PRIVATE_MODE_CALL_HINT, 3000, 'info');
+                  else if (role) {
+                    setPanel('none');
+                    startCall(role.refId);
+                  }
+                },
+              },
+            ]
+          : []),
         { label: '位置', icon: 'wechat/location', onClick: showComingSoon },
         { label: '红包', icon: 'wechat/red_packet', onClick: showComingSoon },
         { label: '转账', icon: 'wechat/transfer', onClick: showComingSoon },
