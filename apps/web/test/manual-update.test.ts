@@ -113,6 +113,7 @@ it('a transport that ignores abort cannot leave the update button waiting foreve
   await vi.advanceTimersByTimeAsync(15_001);
   await checking;
   expect(reload).not.toHaveBeenCalled();
+  expect((fetcher.mock.calls[0] as unknown as [string, RequestInit])[1].signal?.aborted).toBe(true);
 });
 
 it('a response body that stalls and an unavailable version service give actionable failures', async () => {
@@ -124,6 +125,29 @@ it('a response body that stalls and an unavailable version service give actionab
   const checking = expect(readDeployedWebBuild()).rejects.toThrow('版本信息读取超时');
   await vi.advanceTimersByTimeAsync(10_001);
   await checking;
+  expect((fetcher.mock.calls[0] as unknown as [string, RequestInit])[1].signal?.aborted).toBe(true);
   fetcher.mockResolvedValueOnce(new Response('', { status: 503 }));
   await expect(readDeployedWebBuild()).rejects.toThrow('版本服务暂时不可用（503）');
+});
+
+it('a call that starts while local writes drain prevents the final reload and resumes chat', async () => {
+  const { events, reload } = setup();
+  let talking = false;
+  const remove = addRefreshGuard(() => (talking ? '请先结束通话' : null));
+  const resumed = vi.fn();
+  events.addEventListener('weiban:update-failed', resumed);
+  events.addEventListener('weiban:before-update', (event) => {
+    (event as CustomEvent<{ waitUntil(work: Promise<void>): void }>).detail.waitUntil(
+      Promise.resolve().then(() => {
+        talking = true;
+      }),
+    );
+  });
+  try {
+    await expect(refreshToLatestWeb()).rejects.toThrow('请先结束通话');
+    expect(reload).not.toHaveBeenCalled();
+    expect(resumed).toHaveBeenCalledOnce();
+  } finally {
+    remove();
+  }
 });

@@ -19,7 +19,8 @@ function assertCanRefresh() {
   }
 }
 export async function readDeployedWebBuild(): Promise<WebBuild> {
-  const cancellation = linkedAbort([], 15_000);
+  const request = new AbortController();
+  const cancellation = linkedAbort([request.signal], 15_000);
   try {
     const response = await deadline(
       fetch(`/build-info.json?check=${Date.now()}`, {
@@ -51,6 +52,7 @@ export async function readDeployedWebBuild(): Promise<WebBuild> {
     if (error instanceof Error && /^(版本|检查更新超时)/.test(error.message)) throw error;
     throw new Error('检查更新失败，请联网后重试', { cause: error });
   } finally {
+    request.abort();
     cancellation.dispose();
   }
 }
@@ -113,6 +115,7 @@ export async function refreshToLatestWeb(): Promise<void> {
     }
     if (results.some((result) => result.status === 'rejected'))
       throw new Error('本机消息尚未保存完成，请稍后再刷新');
+    assertCanRefresh();
     sessionStorage.setItem(RECEIPT, JSON.stringify(latest));
     // At reload bootstrap, adoptWaitingWorker activates the prepared worker before app requests restart.
     window.location.reload();
