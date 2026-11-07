@@ -308,21 +308,23 @@ export function useCall() {
 }
 
 /**
- * 私聊「+」/ 资料页的语音通话入口状态：visible = 平台开通了语音服务（未开通时不显示，MED-06 第 11 条）；
+ * 私聊「+」/ 资料页的语音通话入口状态：只有服务器明确关闭服务才隐藏（MED-06 第 11 条）；
+ * 加载中或读取失败表示未知，保留入口供用户点击后重新检查，不能当作未开通。
  * privateMode = 3.28（H2）该角色正处于私密模式，私密模式只开放文字和图片，入口置灰并说明。
  */
 export function useCallAccess(characterId: string | undefined): {
   visible: boolean;
   privateMode: boolean;
 } {
-  const remote = useRemote(CallEndpoints.getAvailability, {
-    query: { characterId: characterId ?? '' },
-    networkOnly: true,
-  });
-  if (!characterId || !remote.data) return { visible: false, privateMode: false };
+  const remote = useRemote(
+    CallEndpoints.getAvailability,
+    { query: { characterId: characterId ?? '' }, networkOnly: true },
+    !!characterId,
+  );
+  if (!characterId) return { visible: false, privateMode: false };
   return {
-    visible: remote.data.reason !== 'service_disabled',
-    privateMode: remote.data.reason === 'private_mode',
+    visible: remote.data?.reason !== 'service_disabled',
+    privateMode: remote.data?.reason === 'private_mode',
   };
 }
 
@@ -462,6 +464,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
           const availability = await api.call(CallEndpoints.getAvailability, {
             query: { characterId },
             networkOnly: true,
+            // A deliberate dial starts a fresh read instead of sharing a stalled menu prefetch.
+            signal: new AbortController().signal,
           });
           if (!availability.available) {
             void ctx.close();
@@ -471,7 +475,12 @@ export function CallProvider({ children }: { children: ReactNode }) {
             else if (availability.reason === 'busy') {
               const active = await api.call(CallEndpoints.getActiveCall, { networkOnly: true });
               if (active.call) setView({ ...base(active.call, 'active'), detached: true });
-            } else showToast('暂时无法通话');
+            } else
+              showToast(
+                availability.reason === 'service_disabled'
+                  ? '语音通话服务暂不可用，请稍后再试'
+                  : '暂时无法通话',
+              );
             return;
           }
           const call = await api.call(CallEndpoints.startCall, {
