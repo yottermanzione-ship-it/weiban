@@ -425,8 +425,8 @@ describe('v1.1（T-020）', () => {
   it('默认识图模型可以在目录中标记', () => {
     const entry = {
       modelKey: 'qwen/qwen-vl-plus',
-      displayName: '通义千问 VL',
-      vendorName: '阿里云',
+      displayName: 'Qwen VL',
+      vendorName: 'Alibaba Cloud',
       upstreamId: ID,
       upstreamModelId: 'qwen-vl-plus',
       capabilities: ['vision'],
@@ -437,6 +437,12 @@ describe('v1.1（T-020）', () => {
       enabled: true,
     };
     expect(AdminCatalogEntryWrite.safeParse(entry).success).toBe(true);
+    expect(AdminCatalogEntryWrite.safeParse({ ...entry, displayName: '中文模型' }).success).toBe(
+      false,
+    );
+    expect(AdminCatalogEntryWrite.safeParse({ ...entry, vendorName: '中文厂商' }).success).toBe(
+      false,
+    );
   });
 });
 

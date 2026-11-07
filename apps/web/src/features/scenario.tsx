@@ -94,7 +94,7 @@ export function PrivateModeConfirmDialog({
       ]}
     >
       <p className="hint">
-        {`将切换到平台统一的私密模型「${model.displayName || '私密模型'}」`}
+        {`将切换到平台统一的私密模型「${model.displayName || 'Private Model'}」`}
         {multiplier
           ? `，当前实际倍率 ${multiplier}${discount ? `（${discount}）` : ''}，可能增加积分消耗。`
           : '，当前倍率暂时读不到，实际按所选模型用量扣费。'}

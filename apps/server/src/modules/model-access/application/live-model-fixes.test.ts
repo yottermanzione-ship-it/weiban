@@ -122,10 +122,13 @@ describe('保留线上日常备用链：私密与其他任务不越界', () => {
       const start = Date.now();
       let now = start;
       Object.assign(t.service, { clock: { nowMs: () => now } });
-      t.generateOnce.mockImplementationOnce(async () => {
-        now += 60_001;
-        return t.failure;
-      });
+      t.generateOnce
+        .mockReset()
+        .mockResolvedValue(t.success)
+        .mockImplementationOnce(async () => {
+          now += 60_001;
+          return t.failure;
+        });
       const result = await t.service.generateText(
         request(explicitDeadline ? { deadlineAt: new Date(start + 60_000).toISOString() } : {}),
       );

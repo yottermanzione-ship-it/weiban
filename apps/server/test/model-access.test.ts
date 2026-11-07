@@ -309,7 +309,7 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
     return {
       modelKey,
       displayName: modelKey.split('/')[1],
-      vendorName: '测试厂商',
+      vendorName: 'Test Vendor',
       upstreamId,
       upstreamModelId: modelKey.split('/')[1],
       capabilities: [],

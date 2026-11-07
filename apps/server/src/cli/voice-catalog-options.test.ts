@@ -118,13 +118,13 @@ describe('voice-catalog 条目与价格（实时通话按官方价，参考成�
 
 describe('V2：Omni 显示名带版本、默认音色、--fix-omni', () => {
   it('登记 Omni 时显示名带版本，已核实默认音色 Tina；实时 / Omni 默认用公共百炼账号', () => {
-    expect(omniDisplayName('qwen3.5-omni-plus-realtime')).toBe('千问 Omni 3.5 Plus 实时通话');
-    expect(omniDisplayName('qwen3.8-omni-flash-realtime')).toBe('千问 Omni 3.8 Flash 实时通话');
+    expect(omniDisplayName('qwen3.5-omni-plus-realtime')).toBe('Qwen Omni 3.5 Plus Realtime');
+    expect(omniDisplayName('qwen3.8-omni-flash-realtime')).toBe('Qwen Omni 3.8 Flash Realtime');
     const { entries } = planVoiceCatalog(
       command(['--omni-model', 'qwen3.8-omni-flash-realtime', '--omni-cost', '1,2,3,4']),
     );
     const omni = entries.find((e) => e.item === 'omni')!;
-    expect(omni.write.displayName).toBe('千问 Omni 3.8 Flash 实时通话');
+    expect(omni.write.displayName).toBe('Qwen Omni 3.8 Flash Realtime');
     expect(omni.defaultVoice).toBe('Tina');
     expect(omni.upstream.reference).toBe(UPSTREAM_REFERENCE['qwen-tts-flash']);
     const rt = entries.find((e) => e.item === 'qwen-realtime')!;
@@ -144,7 +144,7 @@ describe('V2：Omni 显示名带版本、默认音色、--fix-omni', () => {
     ).toBe('Cindy');
   });
 
-  it('--fix-omni 只改不带版本的 Omni 显示名、只补没有的默认音色', () => {
+  it('--fix-omni 统一英文版本名称、只补没有的默认音色', () => {
     expect(command(['--fix-omni']).fixOmni).toBe(true);
     const fixes = planOmniFix(
       [
@@ -166,12 +166,17 @@ describe('V2：Omni 显示名带版本、默认音色、--fix-omni', () => {
     expect(fixes).toEqual([
       {
         modelKey: 'qwen/qwen3.5-omni-plus-realtime',
-        rename: { from: '千问 Omni 实时通话', to: '千问 Omni 3.5 Plus 实时通话' },
+        rename: { from: '千问 Omni 实时通话', to: 'Qwen Omni 3.5 Plus Realtime' },
         defaultVoice: 'Tina',
       },
       {
         modelKey: 'qwen/qwen3.8-omni-flash-realtime',
-        rename: { from: '千问 Omni 实时通话', to: '千问 Omni 3.8 Flash 实时通话' },
+        rename: { from: '千问 Omni 实时通话', to: 'Qwen Omni 3.8 Flash Realtime' },
+        defaultVoice: null,
+      },
+      {
+        modelKey: 'qwen/qwen3.5-omni-flash-realtime',
+        rename: { from: '千问 Omni 3.5 Flash 实时通话', to: 'Qwen Omni 3.5 Flash Realtime' },
         defaultVoice: null,
       },
     ]);
@@ -294,7 +299,7 @@ describe('V3：Realtime 3.1 Plus、Omni 复刻价', () => {
     const e = planVoiceCatalog(command([])).entries.find((x) => x.item === 'qwen-realtime-3.1')!;
     expect(e.modelKey).toBe(REALTIME_31_MODEL_KEY);
     expect(e.write.upstreamModelId).toBe('qwen-audio-3.1-realtime-plus');
-    expect(e.write.displayName).toBe('千问 Audio 3.1 Plus 实时通话');
+    expect(e.write.displayName).toBe('Qwen Audio 3.1 Plus Realtime');
     expect(e.write.rates).toEqual({ input: 5, output: 40, cache: 5 });
     expect(e.write.serviceRates).toEqual([
       { unit: 'audio_input_tokens_per_million', price: 40, cost: 40 },

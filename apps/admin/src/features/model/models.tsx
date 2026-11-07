@@ -1107,7 +1107,7 @@ export function ModelWizard({
               kind === 'deepseek_search' ? 'deepseek-search' : 'bocha-search',
             );
           if (!form.getFieldValue('vendorName'))
-            form.setFieldValue('vendorName', kind === 'deepseek_search' ? 'DeepSeek' : '博查');
+            form.setFieldValue('vendorName', kind === 'deepseek_search' ? 'DeepSeek' : 'Bocha');
         }
       }
     }
@@ -1251,14 +1251,14 @@ export function ModelWizard({
         layout="vertical"
         initialValues={{
           modelKey: model?.modelKey ?? '',
-          displayName: model?.displayName ?? (initialSearch ? '联网搜索' : ''),
+          displayName: model?.displayName ?? (initialSearch ? 'Web Search' : ''),
           vendorName:
             model?.vendorName ??
             (initialSearch
               ? upstreams.find((u) => u.upstreamId === initialRoutes[0]?.upstreamId)?.kind ===
                 'deepseek_search'
                 ? 'DeepSeek'
-                : '博查'
+                : 'Bocha'
               : ''),
           tags: model?.tags.join('，') ?? '',
           sortOrder: model?.sortOrder ?? 0,
@@ -1443,8 +1443,9 @@ export function ModelWizard({
             rules={[
               { required: true, whitespace: true, message: '填写显示名' },
               { max: 60, message: '显示名最多 60 个字' },
+              { pattern: /^[\x20-\x7e]+$/u, message: '模型名称请使用英文' },
             ]}
-            extra={<FieldHelp>用户看到的模型名字。</FieldHelp>}
+            extra={<FieldHelp>用户看到的模型名字，使用官方英文名称。</FieldHelp>}
           >
             <Input maxLength={60} placeholder="例：Gemini 3.8 Flash" />
           </Form.Item>
@@ -1454,8 +1455,9 @@ export function ModelWizard({
             rules={[
               { required: true, whitespace: true, message: '填写出品方' },
               { max: 40, message: '出品方最多 40 个字' },
+              { pattern: /^[\x20-\x7e]+$/u, message: '厂商名称请使用英文' },
             ]}
-            extra={<FieldHelp>例：Google、深度求索。用来自动生成模型键。</FieldHelp>}
+            extra={<FieldHelp>例：Google、DeepSeek。使用英文名称，用来自动生成模型键。</FieldHelp>}
           >
             <Input maxLength={40} placeholder="例：Google" />
           </Form.Item>

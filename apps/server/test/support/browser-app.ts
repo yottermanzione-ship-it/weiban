@@ -140,8 +140,8 @@ const price = await prices.createDraft(admin, {
 await prices.activate(admin, price.priceVersionId, null);
 await app.get(CatalogService).upsert(admin, chatModel, {
   modelKey: chatModel,
-  displayName: '浏览器受控聊天模型',
-  vendorName: '本机测试',
+  displayName: 'Browser Fixture Chat',
+  vendorName: 'Local Fixture',
   upstreamId: upstream.upstreamId,
   upstreamModelId: 'browser-chat',
   capabilities: ['vision'],

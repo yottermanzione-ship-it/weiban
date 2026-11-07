@@ -247,8 +247,10 @@ function rowErrors(
   if (existing) return errors;
   const name = row.displayName.trim();
   if (!name || name.length > 60) errors.displayName = '显示名要填 1 到 60 个字';
+  else if (!/^[\x20-\x7e]+$/u.test(name)) errors.displayName = '模型名称请使用英文';
   const vendor = row.vendorName.trim();
   if (!vendor || vendor.length > 40) errors.vendorName = '厂商要填 1 到 40 个字';
+  else if (!/^[\x20-\x7e]+$/u.test(vendor)) errors.vendorName = '厂商名称请使用英文';
   const model = row.upstreamModelId.trim();
   if (!model || model.length > 128) errors.upstreamModelId = '上游模型名要填 1 到 128 个字符';
   if (!isInt(row.contextTokens, 1, 10_000_000)) errors.contextTokens = '填 1 到 10000000 的整数';

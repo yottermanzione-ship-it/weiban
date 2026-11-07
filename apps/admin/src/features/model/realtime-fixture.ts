@@ -30,7 +30,7 @@ function row(input: {
   return {
     modelKey: input.modelKey,
     displayName: input.displayName,
-    vendorName: '阿里云百炼',
+    vendorName: 'Alibaba Cloud',
     upstreamId: input.upstreamId,
     upstreamModelId: input.upstreamModelId,
     capabilities: ['voice_input', 'voice_output'],
@@ -104,7 +104,7 @@ const CLONE = { unit: 'voice_clone', price: 0.013, cost: 0.01 };
 export const REALTIME_ROWS = [
   row({
     modelKey: 'qwen/qwen-audio-3.0-realtime-plus',
-    displayName: '千问 Audio 3.0 Plus 实时通话',
+    displayName: 'Qwen Audio 3.0 Plus Realtime',
     upstreamId: WORKSPACE_UPSTREAM,
     upstreamModelId: 'qwen-audio-3.0-realtime-plus',
     enabled: false,
@@ -113,7 +113,7 @@ export const REALTIME_ROWS = [
   }),
   row({
     modelKey: 'qwen/qwen-audio-3.1-realtime-plus',
-    displayName: '千问 Audio 3.1 Plus 实时通话',
+    displayName: 'Qwen Audio 3.1 Plus Realtime',
     upstreamId: PUBLIC_UPSTREAM,
     upstreamModelId: 'qwen-audio-3.1-realtime-plus',
     enabled: false,
@@ -122,7 +122,7 @@ export const REALTIME_ROWS = [
   }),
   row({
     modelKey: 'qwen/qwen3.5-omni-plus-realtime',
-    displayName: '千问 Omni 3.5 Plus 实时通话',
+    displayName: 'Qwen Omni 3.5 Plus Realtime',
     upstreamId: PUBLIC_UPSTREAM,
     upstreamModelId: 'qwen3.5-omni-plus-realtime',
     enabled: true,
@@ -132,7 +132,7 @@ export const REALTIME_ROWS = [
   }),
   row({
     modelKey: 'qwen/qwen3.8-omni-flash-realtime',
-    displayName: '千问 Omni 3.8 Flash 实时通话',
+    displayName: 'Qwen Omni 3.8 Flash Realtime',
     upstreamId: PUBLIC_UPSTREAM,
     upstreamModelId: 'qwen3.8-omni-flash-realtime',
     enabled: true,
@@ -145,7 +145,7 @@ export const REALTIME_ROWS = [
 /** 服务器比页面更新：多了一个页面还不认识的计价单位（模拟下一次契约新增单位、标签页没刷新）。 */
 export const ROW_WITH_FUTURE_UNIT = row({
   modelKey: 'qwen/qwen3.5-omni-plus-realtime',
-  displayName: '千问 Omni 3.5 Plus 实时通话',
+  displayName: 'Qwen Omni 3.5 Plus Realtime',
   upstreamId: PUBLIC_UPSTREAM,
   upstreamModelId: 'qwen3.5-omni-plus-realtime',
   enabled: false,

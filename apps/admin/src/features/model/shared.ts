@@ -36,13 +36,13 @@ export const ERROR_LABELS: Record<string, string> = {
 
 /** 供应商下拉：接口地址由后台自己维护，前端不预填域名（工程规范 R4）。 */
 export const PROVIDERS: Array<{ id: string; name: string }> = [
-  { id: 'xiaomi_mimo', name: '小米 MiMo' },
-  { id: 'dashscope', name: '阿里云百炼' },
+  { id: 'xiaomi_mimo', name: 'Xiaomi' },
+  { id: 'dashscope', name: 'Alibaba Cloud' },
   { id: 'deepseek', name: 'DeepSeek' },
-  { id: 'moonshot', name: '月之暗面' },
-  { id: 'zhipu', name: '智谱' },
+  { id: 'moonshot', name: 'Moonshot AI' },
+  { id: 'zhipu', name: 'Zhipu AI' },
   { id: 'openrouter', name: 'OpenRouter' },
-  { id: 'openai_compatible', name: 'OpenAI 兼容（自定义）' },
+  { id: 'openai_compatible', name: 'OpenAI Compatible (Custom)' },
 ];
 
 export function providerName(id: string | undefined): string {
@@ -144,8 +144,8 @@ export const UPSTREAM_STATE_LABELS: Record<UpstreamState, string> = {
 export const KIND_LABELS: Record<string, string> = {
   openai_compatible: 'OpenAI 兼容',
   anthropic: 'Anthropic（Claude 原生）',
-  dashscope: '阿里云百炼原生',
-  bocha_search: '博查搜索',
+  dashscope: 'DashScope Native',
+  bocha_search: 'Bocha Search',
   deepseek_search: 'DeepSeek 搜索',
   jev: 'Jev',
 };

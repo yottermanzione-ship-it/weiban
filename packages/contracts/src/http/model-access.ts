@@ -220,7 +220,7 @@ export const ModelUnavailableDetail = tolerantEnum(ModelUnavailableDetailValue);
 export const ModelInfo = z.object({
   modelKey: ModelKey,
   displayName: z.string(),
-  /** 模型出品方展示名，例「深度求索」。用户看不到上游（走哪个接口）。 */
+  /** 模型出品方英文展示名，例「DeepSeek」。用户看不到上游（走哪个接口）。 */
   vendorName: z.string(),
   /** 价格档位，由价目表推算，用于列表上的「便宜 / 中等 / 较贵」标签；具体价格见 billing 价目表。 */
   priceTier: PriceTier,
@@ -821,7 +821,22 @@ export type AdminCatalogEntry = z.infer<typeof AdminCatalogEntry>;
 export const AdminCatalogEntryWrite = AdminCatalogEntry.omit({
   updatedAt: true,
   deletedAt: true,
-}).extend({ modelKey: CanonicalModelKey });
+}).extend({
+  modelKey: CanonicalModelKey,
+  // 7.3：模型/厂商显示名采用英文；读取仍兼容历史记录，生产名称独立核对后更名。
+  displayName: z
+    .string()
+    .trim()
+    .min(1)
+    .max(60)
+    .regex(/^[\x20-\x7e]+$/u, '模型名称请使用英文'),
+  vendorName: z
+    .string()
+    .trim()
+    .min(1)
+    .max(40)
+    .regex(/^[\x20-\x7e]+$/u, '厂商名称请使用英文'),
+});
 
 /**
  * v3.4：模型路由——这个模型可以走哪些上游账号（按优先级、权重调度，失败自动切换到下一个）。
@@ -1165,7 +1180,7 @@ export const ModelsDevLookupRequest = z.object({
       z.object({
         /** 上游模型名（例 claude-opus-4-6、anthropic/claude-opus-4.6）。 */
         name: z.string().trim().min(1).max(200),
-        /** 出品方（例 Anthropic、深度求索），用来在多个服务商里优先选官方那条。 */
+        /** 出品方（例 Anthropic、DeepSeek），用来在多个服务商里优先选官方那条。 */
         vendor: z.string().max(60).optional(),
       }),
     )

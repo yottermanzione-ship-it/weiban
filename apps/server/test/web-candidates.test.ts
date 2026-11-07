@@ -333,7 +333,7 @@ describeDb('联网查找候选结构化与后台修正 T-20261104e 真实PG', ()
     await app.get(PriceService).activate(adminId, draft.priceVersionId, null);
     await app.get(CatalogService).upsert(adminId, SEARCH_MODEL, {
       modelKey: SEARCH_MODEL,
-      displayName: '假联网搜索',
+      displayName: 'Fixture Web Search',
       vendorName: 'Fake',
       upstreamId: upstream.upstreamId,
       upstreamModelId: 'fake-search',

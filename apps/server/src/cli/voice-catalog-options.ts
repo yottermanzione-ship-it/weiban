@@ -4,7 +4,7 @@
  *
  * 价格口径：实时通话与复刻按核实的官方价；免费识别/字符合成的参考成本口径保留。1 积分 = 0.01 元。
  * - ASR：0.008333 元/分钟（MiMo 公开价 0.5 元/小时；硅基 TeleSpeech 当前免费，按同一可比付费参考成本）→ 售 0.010833。
- * - 千问 3.1 TTS Flash：官方按输入 / 输出 token 计费（1.5 / 12 元/百万），平台 TTS 仍按字符结算；
+ * - Qwen Audio 3.1 TTS Flash：官方按输入 / 输出 token 计费（1.5 / 12 元/百万），平台 TTS 仍按字符结算；
  *   默认按 3.0 TTS Plus 的 1.4 元/万字符作等价参考成本（偏保守），可用 --tts-flash-cost 改，首月按账单校准。
  * - 千问 Audio 3.0 Realtime Plus：官方分模态 token 成本 文字入 5 / 音频入 40 / 文字出 40 / 音频出 150 元/百万；
  *   缓存命中价未核实，按文字输入价计（不打折）。
@@ -101,9 +101,9 @@ export const OMNI_VERIFIED_DEFAULT_VOICES: Readonly<Record<string, string>> = {
 /** Omni 实时显示名带版本与档位，例 qwen3.5-omni-plus-realtime → 「千问 Omni 3.5 Plus 实时通话」。 */
 export function omniDisplayName(model: string): string {
   const m = /^qwen(\d+(?:\.\d+)?)-omni-([a-z]+)-realtime/u.exec(model.trim().toLowerCase());
-  if (!m) return `千问 Omni 实时通话（${model}）`.slice(0, 60);
+  if (!m) return `Qwen Omni Realtime (${model})`.slice(0, 60);
   const tier = m[2]!.charAt(0).toUpperCase() + m[2]!.slice(1);
-  return `千问 Omni ${m[1]} ${tier} 实时通话`;
+  return `Qwen Omni ${m[1]} ${tier} Realtime`;
 }
 
 /** 目录里的 Omni 实时条目键（qwen/<百炼型号>）→ 百炼型号；不是返回 null。 */
@@ -335,7 +335,7 @@ function realtimeWrite(input: {
   return {
     modelKey: input.modelKey,
     displayName: input.displayName,
-    vendorName: '阿里云百炼',
+    vendorName: 'Alibaba Cloud',
     upstreamModelId: input.upstreamModelId,
     capabilities: ['voice_input', 'voice_output'],
     tags: ['pipeline:rt'],
@@ -398,8 +398,8 @@ export function planVoiceCatalog(command: VoiceCatalogCommand): {
       write: asrWrite(
         'siliconflow/telespeech-asr',
         'TeleAI/TeleSpeechASR',
-        'TeleSpeech 语音识别',
-        '硅基流动',
+        'TeleSpeech ASR',
+        'SiliconFlow',
       ),
       enable: true,
       upstream: { flag: 'siliconflow', reference: UPSTREAM_REFERENCE.telespeech! },
@@ -410,7 +410,7 @@ export function planVoiceCatalog(command: VoiceCatalogCommand): {
     entries.push({
       item: 'mimo-asr',
       modelKey: 'xiaomi/mimo-v2.5-asr',
-      write: asrWrite('xiaomi/mimo-v2.5-asr', 'mimo-v2.5-asr', 'MiMo 语音识别', '小米 MiMo'),
+      write: asrWrite('xiaomi/mimo-v2.5-asr', 'mimo-v2.5-asr', 'MiMo V2.5 ASR', 'Xiaomi'),
       enable: command.enableUnverified,
       upstream: { flag: 'mimo', reference: UPSTREAM_REFERENCE['mimo-asr']! },
       defaultVoice: null,
@@ -426,8 +426,8 @@ export function planVoiceCatalog(command: VoiceCatalogCommand): {
       modelKey: 'qwen/qwen-audio-3.1-tts-flash',
       write: {
         modelKey: 'qwen/qwen-audio-3.1-tts-flash',
-        displayName: '千问 3.1 TTS Flash',
-        vendorName: '阿里云百炼',
+        displayName: 'Qwen Audio 3.1 TTS Flash',
+        vendorName: 'Alibaba Cloud',
         upstreamModelId: 'qwen-audio-3.1-tts-flash',
         capabilities: ['voice_output'],
         tags: [],
@@ -460,7 +460,7 @@ export function planVoiceCatalog(command: VoiceCatalogCommand): {
       write: realtimeWrite({
         modelKey: REALTIME_PLUS_MODEL_KEY,
         upstreamModelId: REALTIME_PLUS_UPSTREAM_MODEL,
-        displayName: '千问 Audio 3.0 Plus 实时通话',
+        displayName: 'Qwen Audio 3.0 Plus Realtime',
         cost: [5, 40, 40, 150],
       }),
       enable: command.enableRealtime,
@@ -482,7 +482,7 @@ export function planVoiceCatalog(command: VoiceCatalogCommand): {
       write: realtimeWrite({
         modelKey: REALTIME_31_MODEL_KEY,
         upstreamModelId: REALTIME_31_UPSTREAM_MODEL,
-        displayName: '千问 Audio 3.1 Plus 实时通话',
+        displayName: 'Qwen Audio 3.1 Plus Realtime',
         // 官方北京价 文字入 5 / 音频入 40 / 文字出 40 / 音频出 150 元/百万（qwen-audio-3-1-realtime-plus 页）
         cost: [5, 40, 40, 150],
       }),
