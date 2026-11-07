@@ -2,7 +2,17 @@ import { AuthResponse, PushEndpoints, PushDevice } from '@weiban/contracts';
 import { api, localStore } from '../data/client.js';
 import { PushOwner } from './owner.js';
 import { isAndroidShell } from '../data/shell-files.js';
+import {
+  activateNativeNotifications,
+  nativeNoticeRequest,
+  nativeNotificationStatus,
+} from './native.js';
 export async function pausePush(owner: { userId: string; sessionId: string }): Promise<void> {
+  if (isAndroidShell() && window.weibanNotifications) {
+    await nativeNoticeRequest('disable', owner);
+    await localStore.setOwned(owner, 'push-owner', { ...owner, enabled: false });
+    return;
+  }
   await localStore.setOwned(owner, 'push-owner', { ...owner, enabled: false });
   if (!('serviceWorker' in navigator)) return;
   const registration = await navigator.serviceWorker.getRegistration();
@@ -38,6 +48,7 @@ async function bind(auth: AuthResponse, subscription: PushSubscription): Promise
     throw new Error('登录状态已改变，请重新开启此设备通知');
 }
 export async function webPushEnabled(): Promise<boolean> {
+  if (isAndroidShell()) return nativeNotificationStatus();
   if (
     !('serviceWorker' in navigator) ||
     !('Notification' in window) ||
@@ -58,6 +69,10 @@ export async function webPushEnabled(): Promise<boolean> {
   return !!(await registration?.pushManager?.getSubscription());
 }
 export async function resumeExistingPush(auth: AuthResponse): Promise<void> {
+  if (isAndroidShell()) {
+    if (window.weibanNotifications) await activateNativeNotifications(auth, true);
+    return;
+  }
   if (
     !('serviceWorker' in navigator) ||
     !('PushManager' in window) ||
@@ -70,6 +85,12 @@ export async function resumeExistingPush(auth: AuthResponse): Promise<void> {
   if (subscription) await bind(auth, subscription);
 }
 export async function enableWebPush(): Promise<void> {
+  if (isAndroidShell()) {
+    if (!window.weibanNotifications)
+      throw new Error('请先覆盖安装新版微伴安卓应用，再开启系统通知；仅更新网页无法补齐此功能');
+    await activateNativeNotifications(AuthResponse.parse(await localStore.get('session')), false);
+    return;
+  }
   assertPushSupport();
   if (Notification.permission === 'denied')
     throw new Error('通知已被浏览器拒绝，请先在网站或系统设置中允许微伴通知，再回来重试');
@@ -83,8 +104,7 @@ export async function enableWebPush(): Promise<void> {
 }
 
 function assertPushSupport(): void {
-  if (isAndroidShell())
-    throw new Error('安卓应用暂不支持后台通知；可以使用支持通知的浏览器打开微伴并添加到主屏幕');
+  if (isAndroidShell()) throw new Error('请在“设置→新消息通知”开启安卓系统通知');
   const ios =
     /iPhone|iPad|iPod/.test(navigator.userAgent) ||
     (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
@@ -127,6 +147,7 @@ export async function disableWebPush(): Promise<void> {
   const auth = AuthResponse.safeParse(await localStore.get('session'));
   if (auth.success)
     await pausePush({ userId: auth.data.user.userId, sessionId: auth.data.session.sessionId });
+  if (isAndroidShell()) return;
   const parsed = PushDevice.safeParse(await localStore.get('push-device'));
   const registration =
     'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : undefined;

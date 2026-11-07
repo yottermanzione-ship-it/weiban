@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, gt, isNotNull } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, isNotNull } from 'drizzle-orm';
 import {
   Id,
   NotificationPayload,
@@ -7,7 +7,7 @@ import {
   type IdentityReadPort,
   type SyncPort,
 } from '@weiban/contracts';
-import { CLOCK, type Clock } from '../../../platform/index.js';
+import { AppError, CLOCK, type Clock } from '../../../platform/index.js';
 import { IDENTITY_READ_PORT } from '../../identity/index.js';
 import { SYNC_PORT } from '../../realtime/index.js';
 import { PUSH_CHANNELS, type PushChannelPort, type PushEnvelope } from '../infra/channels.js';
@@ -88,6 +88,89 @@ export class PushDeliveryEngine {
     });
   }
   async run(id: string): Promise<void> {
+    await this.deliver(id);
+  }
+
+  async pollLocal(
+    userId: string,
+    sessionId: string,
+    deviceId: string,
+  ): Promise<NotificationEnvelope[]> {
+    const [device] = await this.store.db.db
+      .select()
+      .from(pushDevices)
+      .where(
+        and(
+          eq(pushDevices.id, deviceId),
+          eq(pushDevices.userId, userId),
+          eq(pushDevices.sessionId, sessionId),
+          eq(pushDevices.provider, 'local_poll'),
+        ),
+      );
+    if (!device) throw new AppError('not_found', '通知设备不存在或已关闭');
+    const rows = await this.store.db.db
+      .select({ id: pushDeliveries.id })
+      .from(pushDeliveries)
+      .where(
+        and(
+          eq(pushDeliveries.deviceId, deviceId),
+          eq(pushDeliveries.userId, userId),
+          eq(pushDeliveries.sessionId, sessionId),
+          eq(pushDeliveries.status, 'queued'),
+        ),
+      )
+      .orderBy(asc(pushDeliveries.createdAt), asc(pushDeliveries.id))
+      .limit(32);
+    const items: NotificationEnvelope[] = [];
+    for (const row of rows) {
+      const item = await this.deliver(row.id, { userId, sessionId, deviceId });
+      if (item) items.push(item);
+    }
+    return items;
+  }
+
+  async acknowledgeLocal(
+    userId: string,
+    sessionId: string,
+    deviceId: string,
+    ids: string[],
+  ): Promise<void> {
+    for (const id of new Set(ids))
+      await this.store.db.transaction(async (tx) => {
+        await this.devices.lockUser(tx, userId);
+        const [row] = await tx.db
+          .select()
+          .from(pushDeliveries)
+          .where(
+            and(
+              eq(pushDeliveries.id, id),
+              eq(pushDeliveries.userId, userId),
+              eq(pushDeliveries.sessionId, sessionId),
+              eq(pushDeliveries.deviceId, deviceId),
+            ),
+          )
+          .for('update');
+        if (!row || row.status !== 'queued') return;
+        if (!(await this.devices.sessions.isActiveAppSession(userId, sessionId, tx))) return;
+        const [device] = await tx.db
+          .select()
+          .from(pushDevices)
+          .where(eq(pushDevices.id, deviceId))
+          .for('update');
+        if (
+          device?.provider !== 'local_poll' ||
+          device.userId !== userId ||
+          device.sessionId !== sessionId
+        )
+          return;
+        await this.store.finish(tx, row, 'delivered', null);
+      });
+  }
+
+  private async deliver(
+    id: string,
+    local?: { userId: string; sessionId: string; deviceId: string },
+  ): Promise<NotificationEnvelope | void> {
     Id.parse(id);
     const [first] = await this.store.db.db
       .select()
@@ -95,6 +178,18 @@ export class PushDeliveryEngine {
       .where(eq(pushDeliveries.id, id));
     if (!first || !['queued', 'sending'].includes(first.status) || first.dueAt > this.clock.now())
       return;
+    if (
+      local &&
+      (first.userId !== local.userId ||
+        first.sessionId !== local.sessionId ||
+        first.deviceId !== local.deviceId)
+    )
+      return;
+    const [firstDevice] = await this.store.db.db
+      .select({ provider: pushDevices.provider })
+      .from(pushDevices)
+      .where(eq(pushDevices.id, first.deviceId));
+    if ((firstDevice?.provider === 'local_poll') !== !!local) return;
     let payload: NotificationPayload | null;
     try {
       payload = await this.prepare(first);
@@ -103,7 +198,9 @@ export class PushDeliveryEngine {
       if ((await this.store.accounts.getAccountStatus(first.userId)) !== 'active') payload = null;
       else throw error;
     }
-    await this.store.db.transaction(async (tx) => {
+    return this.store.db.transaction(async (tx) => {
+      // Local polling and unregister/rebind serialize before taking delivery/device row locks.
+      if (local) await this.devices.lockUser(tx, local.userId);
       const [row] = await tx.db
         .select()
         .from(pushDeliveries)
@@ -133,6 +230,15 @@ export class PushDeliveryEngine {
       if (!device || device.userId !== row.userId || device.sessionId !== row.sessionId) {
         await this.store.finish(tx, row, 'cancelled', 'device_removed_or_rebound');
         return;
+      }
+      if (local) {
+        if (device.provider !== 'local_poll') return;
+        return NotificationEnvelope.parse({
+          ...payload,
+          recipientUserId: row.userId,
+          recipientSessionId: row.sessionId,
+          notificationId: row.id,
+        });
       }
       if (row.attempts >= 4) {
         await this.store.finish(tx, row, 'failed', 'retry_exhausted');

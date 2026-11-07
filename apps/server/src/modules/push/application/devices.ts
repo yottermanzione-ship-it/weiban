@@ -103,7 +103,13 @@ export class PushDeviceService {
         throw new AppError('unauthenticated', '登录已失效');
       const deleted = await tx.db
         .delete(pushDevices)
-        .where(and(eq(pushDevices.id, deviceId), eq(pushDevices.userId, userId)))
+        .where(
+          and(
+            eq(pushDevices.id, deviceId),
+            eq(pushDevices.userId, userId),
+            eq(pushDevices.sessionId, sessionId),
+          ),
+        )
         .returning({ id: pushDevices.id });
       if (deleted.length) await this.cancelDevice(tx, deviceId);
     });

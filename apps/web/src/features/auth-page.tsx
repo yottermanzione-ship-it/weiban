@@ -9,6 +9,7 @@ import { useRef, useState, type FormEvent } from 'react';
 import { IdentityEndpoints } from '@weiban/contracts';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../data/client.js';
+import { currentDevice } from '../data/device-info.js';
 import { useWhiteSurface } from '../data/display-prefs.js';
 import { useAuth } from '../app/auth.js';
 import { friendlyError } from '../data/use-remote.js';
@@ -39,19 +40,14 @@ export function AuthPage() {
     const body = {
       username: String(data.get('username') ?? ''),
       password: String(data.get('password') ?? ''),
-      device: {
-        platform: 'web' as const,
-        name: '网页版',
-        appVersion: '0.1.0',
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      },
     };
     try {
+      const loginBody = { ...body, device: await currentDevice() };
       const result = register
         ? await api.call(IdentityEndpoints.register, {
-            body,
+            body: loginBody,
           })
-        : await api.call(IdentityEndpoints.login, { body: { ...body, kind: 'app' } });
+        : await api.call(IdentityEndpoints.login, { body: { ...loginBody, kind: 'app' } });
       await auth.accept(result);
       navigate(result.user.profileCompleted ? '/chat' : '/profile', { replace: true });
     } catch (e) {

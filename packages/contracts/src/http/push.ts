@@ -23,6 +23,7 @@ export const WebPushSubscription = z.object({
 });
 
 export const AndroidPushProvider = z.enum([
+  'local_poll',
   'fcm',
   'jpush',
   'getui',
@@ -111,6 +112,23 @@ export const NotificationEnvelope = NotificationPayload.required({
 export type NotificationEnvelope = z.infer<typeof NotificationEnvelope>;
 
 export const PushEndpoints = {
+  pollLocal: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/push/local/:pushDeviceId`,
+    auth: 'user',
+    params: z.object({ pushDeviceId: Id }),
+    response: z.object({ items: z.array(NotificationEnvelope).max(32) }),
+    summary: '安卓原生后台任务补收本会话通知；返回不等于已展示，需逐条确认',
+  }),
+  acknowledgeLocal: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/push/local/:pushDeviceId/ack`,
+    auth: 'user',
+    params: z.object({ pushDeviceId: Id }),
+    body: z.object({ notificationIds: z.array(Id).max(32) }),
+    response: NoContent,
+    summary: '确认本会话本设备已经展示的通知，重复确认幂等',
+  }),
   getVapidPublicKey: defineEndpoint({
     method: 'GET',
     path: `${API_PREFIX}/push/vapid-public-key`,

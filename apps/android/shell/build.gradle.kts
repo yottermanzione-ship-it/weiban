@@ -127,6 +127,13 @@ kotlin {
     compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }
 }
 dependencies {
+    implementation(project(":core:contracts-generated"))
+    implementation(project(":core:network"))
+    implementation(libs.serialization.json)
+    implementation(libs.work.runtime)
+    implementation(libs.okhttp)
+    testImplementation(libs.mockwebserver)
+    testImplementation(libs.work.testing)
     implementation(libs.activity.ktx)
     implementation(libs.core.ktx)
     implementation(libs.webkit)

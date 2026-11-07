@@ -69,6 +69,7 @@ export class PushChannels implements PushChannelPort {
     return this.credentials.webpush?.publicKey ?? null;
   }
   validate(device: RegisterPushDeviceRequest): void {
+    if (device.kind === 'android' && device.provider === 'local_poll') return;
     if (device.kind === 'webpush') {
       validateWebPushEndpoint(device.subscription.endpoint);
       const { p256dh, auth } = device.subscription.keys;

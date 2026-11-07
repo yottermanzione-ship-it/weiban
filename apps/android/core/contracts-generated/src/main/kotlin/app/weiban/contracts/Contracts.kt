@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 7.3. Regenerate: pnpm android:generate
+// Contract 7.4. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "7.3"
+const val CONTRACT_VERSION: String = "7.4"
 
 @Serializable
 data class AccountAlias(
@@ -3764,6 +3764,7 @@ data class DeviceInfo(
     @SerialName("name") val `name`: String,
     @SerialName("appVersion") val `appVersion`: String,
     @SerialName("timeZone") val `timeZone`: TimeZone,
+    @SerialName("installationId") val `installationId`: Id? = null,
 )
 
 @Serializable
@@ -3772,6 +3773,7 @@ data class DeviceInfoInput(
     @SerialName("name") val `name`: String,
     @SerialName("appVersion") val `appVersion`: String,
     @SerialName("timeZone") val `timeZone`: TimeZone,
+    @SerialName("installationId") val `installationId`: Id? = null,
 )
 
 @Serializable
@@ -9170,8 +9172,28 @@ data class PushDevice(
 )
 
 @Serializable
+data class PushEndpointsAcknowledgeLocalBody(
+    @SerialName("notificationIds") val `notificationIds`: List<Id>,
+)
+
+@Serializable
+data class PushEndpointsAcknowledgeLocalParams(
+    @SerialName("pushDeviceId") val `pushDeviceId`: Id,
+)
+
+@Serializable
 data class PushEndpointsGetVapidPublicKeyResponse(
     @SerialName("publicKey") val `publicKey`: String,
+)
+
+@Serializable
+data class PushEndpointsPollLocalParams(
+    @SerialName("pushDeviceId") val `pushDeviceId`: Id,
+)
+
+@Serializable
+data class PushEndpointsPollLocalResponse(
+    @SerialName("items") val `items`: List<NotificationEnvelope>,
 )
 
 @Serializable

@@ -27,6 +27,8 @@ import {
   type Scheme,
 } from '../data/display-prefs.js';
 import { enableWebPush, disableWebPush, webPushEnabled } from '../notifications/client.js';
+import { nativeNoticeRequest } from '../notifications/native.js';
+import { isAndroidShell } from '../data/shell-files.js';
 import { OldIcon } from './old-icons.js';
 import {
   getMessageSoundEnabled,
@@ -156,9 +158,13 @@ export function SettingsPage() {
   const [choice, setChoice] = useState<'scheme' | 'font' | 'sound' | null>(null);
   const [logout, setLogout] = useState(false);
   useEffect(() => {
-    void webPushEnabled()
-      .then(setPush)
-      .catch(() => {});
+    const refresh = () =>
+      void webPushEnabled()
+        .then(setPush)
+        .catch(() => {});
+    refresh();
+    window.addEventListener('focus', refresh);
+    return () => window.removeEventListener('focus', refresh);
   }, []);
   async function togglePush(enable: boolean) {
     setPending(true);
@@ -206,6 +212,17 @@ export function SettingsPage() {
           disabled={pending}
           onChange={(value) => void togglePush(value)}
         />
+        {isAndroidShell() && (
+          <MenuRow
+            label="系统通知设置"
+            subtitle="后台补收受系统省电影响，通知可能延迟"
+            onClick={() =>
+              void nativeNoticeRequest('settings').catch((e: unknown) =>
+                setPushProblem(friendlyError(e)),
+              )
+            }
+          />
+        )}
         {notification.data && (
           <SwitchRow
             label="通知显示消息内容"

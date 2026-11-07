@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, gt, inArray, isNotNull, lt, lte, or } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNotNull, lt, lte, or, ne } from 'drizzle-orm';
 import {
   Id,
   NotificationPayload,
@@ -123,7 +123,11 @@ export class PushRequestStore {
       messageId: input.messageId ?? null,
       payloadCiphertext: await seal(`push:request:${requestId}`, notification),
       createdAt,
-      expiresAt: new Date(createdAt.getTime() + 10 * 60 * 1000),
+      // 系统后台任务可能被延迟；只为已登记本地补收设备保留一天，其余通道维持十分钟。
+      expiresAt: new Date(
+        createdAt.getTime() +
+          (valid.some((d) => d.provider === 'local_poll') ? 24 * 60 : 10) * 60 * 1000,
+      ),
     });
     const ids = [];
     for (const device of valid) {
@@ -180,11 +184,12 @@ export class PushRequestStore {
         dueAt: now,
         createdAt,
       });
-      await this.jobs.send(
-        DELIVER_PUSH_JOB,
-        { deliveryId: id },
-        { tx, retryLimit: 3, retryBackoff: true },
-      );
+      if (device.provider !== 'local_poll')
+        await this.jobs.send(
+          DELIVER_PUSH_JOB,
+          { deliveryId: id },
+          { tx, retryLimit: 3, retryBackoff: true },
+        );
       ids.push(id);
     }
     return { ids };
@@ -245,10 +250,14 @@ export class PushRequestStore {
     const rows = await this.db.db
       .select({ id: pushDeliveries.id })
       .from(pushDeliveries)
+      .innerJoin(pushDevices, eq(pushDevices.id, pushDeliveries.deviceId))
       .where(
-        or(
-          and(eq(pushDeliveries.status, 'queued'), lte(pushDeliveries.dueAt, now)),
-          and(eq(pushDeliveries.status, 'sending'), lte(pushDeliveries.leaseUntil, now)),
+        and(
+          ne(pushDevices.provider, 'local_poll'),
+          or(
+            and(eq(pushDeliveries.status, 'queued'), lte(pushDeliveries.dueAt, now)),
+            and(eq(pushDeliveries.status, 'sending'), lte(pushDeliveries.leaseUntil, now)),
+          ),
         ),
       )
       .limit(200);

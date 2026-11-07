@@ -20,6 +20,7 @@ import {
 } from '@weiban/client-core';
 import { syncHttp } from './sync-http.js';
 import { announceUpdate } from './updates.js';
+import { describeDevice } from './device-info.js';
 export interface ChatDriverObserver {
   state(state: LocalSyncState): void;
   connection(online: boolean): void;
@@ -378,12 +379,7 @@ export class ChatDriver {
             data: {
               token: this.session.session.token,
               contractVersion: CONTRACT_VERSION,
-              device: {
-                platform: 'web',
-                name: '微伴网页',
-                appVersion: '0.1.0',
-                timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-              },
+              device: describeDevice(),
               lastUpdateSeq: since,
             },
           }),

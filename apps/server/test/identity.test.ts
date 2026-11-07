@@ -448,6 +448,58 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
   // ---------- 当前用户、退出、登录设备 ----------
 
   describe('会话：/me、退出、登录设备', () => {
+    it('同实例重新登录替换旧令牌，错误密码和其他实例/平台不合并', async () => {
+      const device = { ...DEVICE, installationId: '019b0000-0000-7000-8000-000000000001' };
+      const first = await register(undefined, { device });
+      await login(first.user.username, { device, password: 'wrong-password' }).expect(401);
+      await http().get('/api/v1/me', first.session.token).expect(200);
+      const next = AuthResponse.parse(
+        (await login(first.user.username, { device }).expect(200)).body,
+      );
+      await http().get('/api/v1/me', first.session.token).expect(401);
+      expect(await q.sessionsOf(first.user.userId)).toHaveLength(1);
+      await login(first.user.username, { device: { ...device, platform: 'android' } }).expect(200);
+      await login(first.user.username, {
+        device: { ...device, installationId: '019b0000-0000-7000-8000-000000000002' },
+      }).expect(200);
+      expect(await q.sessionsOf(first.user.userId)).toHaveLength(3);
+      const other = await register(undefined, { device });
+      await http().get('/api/v1/me', next.session.token).expect(200);
+      await http().get('/api/v1/me', other.session.token).expect(200);
+    });
+
+    it('同实例并发登录只有一个有效会话；设备信息更新仅改当前会话且不创建记录', async () => {
+      const device = { ...DEVICE, installationId: '019b0000-0000-7000-8000-000000000003' };
+      const first = await register(undefined, { device });
+      const replies = await Promise.all([
+        login(first.user.username, { device }).expect(200),
+        login(first.user.username, { device }).expect(200),
+      ]);
+      const auths = replies.map((r) => AuthResponse.parse(r.body));
+      const active = await q.sessionsOf(first.user.userId);
+      expect(active).toHaveLength(1);
+      const current = auths.find((a) => a.session.sessionId === active[0]!.id)!;
+      const old = auths.find((a) => a !== current)!;
+      const renamed = { ...device, name: '微伴安卓应用', platform: 'android' };
+      await http()
+        .patch('/api/v1/me/session/device', current.session.token)
+        .send(renamed)
+        .expect(204);
+      await http().patch('/api/v1/me/session/device', old.session.token).send(renamed).expect(401);
+      await http().patch('/api/v1/me/session/device').send(renamed).expect(401);
+      const rows = await q.sessionsOf(first.user.userId);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.device).toMatchObject(renamed);
+      await http()
+        .patch('/api/v1/me/session/device', current.session.token)
+        .send({ ...renamed, installationId: 'not-valid' })
+        .expect(400);
+      await http()
+        .patch('/api/v1/me/session/device', current.session.token)
+        .send({ ...renamed, timeZone: 'Mars/Test' })
+        .expect(400);
+    });
+
     it('未登录 / 乱写令牌 → 401', async () => {
       for (const path of [
         '/api/v1/me',

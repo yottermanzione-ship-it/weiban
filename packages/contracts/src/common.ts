@@ -49,6 +49,8 @@ export const DeviceInfo = z.object({
   name: z.string().min(1).max(64),
   appVersion: z.string().max(32),
   timeZone: TimeZone,
+  /** 单个应用/浏览器存储实例的随机标识；非硬件标识，也不是认证凭据。旧客户端可缺省。 */
+  installationId: Id.optional(),
 });
 export type DeviceInfo = z.infer<typeof DeviceInfo>;
 

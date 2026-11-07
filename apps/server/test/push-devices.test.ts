@@ -164,6 +164,115 @@ describeDb('push设备真实PG/HTTP：会话、加密、幂等与跨账号重绑
         .open(a.user.userId, `push:device:${current.pushDeviceId}`, row.credential_ciphertext),
     ).rejects.toThrow();
   });
+  it('本地补收无需供应商，未确认可重取，确认幂等且其他账号/会话不能收取或解绑', async () => {
+    await app.get(IdentityCommands).createAdmin('push_local_test', password);
+    const a = AuthResponse.parse(
+      (
+        await request(base)
+          .post('/api/v1/auth/login')
+          .send({
+            username: 'push_local_test',
+            password,
+            device: {
+              platform: 'android',
+              name: 'local notification fixture',
+              appVersion: 'test',
+              timeZone: 'UTC',
+            },
+          })
+          .expect(200)
+      ).body,
+    );
+    const local = await app.get(PushDeviceService).register(a.user.userId, a.session.sessionId, {
+      kind: 'android',
+      provider: 'local_poll',
+      token: 'test-local-installation',
+    });
+    const store = app.get(PushRequestStore);
+    const notification = {
+      v: 1 as const,
+      kind: 'system' as const,
+      collapseKey: 'local:test',
+      title: '微伴',
+      body: '本地通知测试',
+      count: 1,
+      deepLink: '/chat',
+      conversationId: null,
+      sound: true,
+      sentAt: clock.now().toISOString(),
+    };
+    const queued = await db.transaction((tx) =>
+      store.enqueue(tx, {
+        userId: a.user.userId,
+        eventId: newId(),
+        dedupeKey: 'local:test',
+        dedupeWindowHours: 0,
+        notification,
+      }),
+    );
+    const before = pushed.length;
+    await Promise.all(queued.ids.map((id) => app.get(PushDeliveryEngine).run(id)));
+    expect(pushed.length).toBe(before);
+    clock.advance(16 * 60 * 1000);
+    const url = `/api/v1/push/local/${local.pushDeviceId}`;
+    await request(base).get(url).expect(401);
+    await request(base).get(url).auth(b.session.token, { type: 'bearer' }).expect(404);
+    const first = (
+      await request(base).get(url).auth(a.session.token, { type: 'bearer' }).expect(200)
+    ).body.items;
+    expect(first).toHaveLength(1);
+    expect(first[0]).toMatchObject({
+      recipientUserId: a.user.userId,
+      recipientSessionId: a.session.sessionId,
+      body: '本地通知测试',
+    });
+    const again = (
+      await request(base).get(url).auth(a.session.token, { type: 'bearer' }).expect(200)
+    ).body.items;
+    expect(again[0].notificationId).toBe(first[0].notificationId);
+    const second = AuthResponse.parse(
+      (
+        await request(base)
+          .post('/api/v1/auth/login')
+          .send({
+            username: 'push_local_test',
+            password,
+            device: { platform: 'web', name: 'other session', appVersion: 'test', timeZone: 'UTC' },
+          })
+          .expect(200)
+      ).body,
+    );
+    await request(base).get(url).auth(second.session.token, { type: 'bearer' }).expect(404);
+    await request(base)
+      .delete(`/api/v1/push/devices/${local.pushDeviceId}`)
+      .auth(second.session.token, { type: 'bearer' })
+      .expect(204);
+    const ids = { notificationIds: [first[0].notificationId] };
+    await request(base)
+      .post(`${url}/ack`)
+      .auth(b.session.token, { type: 'bearer' })
+      .send(ids)
+      .expect(204);
+    expect(
+      (await request(base).get(url).auth(a.session.token, { type: 'bearer' }).expect(200)).body
+        .items,
+    ).toHaveLength(1);
+    for (let i = 0; i < 2; i++)
+      await request(base)
+        .post(`${url}/ack`)
+        .auth(a.session.token, { type: 'bearer' })
+        .send(ids)
+        .expect(204);
+    expect(
+      (await request(base).get(url).auth(a.session.token, { type: 'bearer' }).expect(200)).body
+        .items,
+    ).toHaveLength(0);
+    await request(base)
+      .delete(`/api/v1/push/devices/${local.pushDeviceId}`)
+      .auth(a.session.token, { type: 'bearer' })
+      .expect(204);
+    await request(base).get(url).auth(a.session.token, { type: 'bearer' }).expect(404);
+  });
   it('注销/过期会话不能登记；普通会话读端口不接受管理会话', async () => {
     const sessions = app.get<IdentitySessionReadPort>(IDENTITY_SESSION_READ_PORT);
     expect(await sessions.isActiveAppSession(a.user.userId, a.session.sessionId)).toBe(true);

@@ -12,6 +12,7 @@ import { freshSyncState, type LocalSyncState } from '@weiban/client-core';
 import { type Message, type SendMessageRequest, type UserSendableContent } from '@weiban/contracts';
 import { useAuth } from './auth.js';
 import { resumeExistingPush } from '../notifications/client.js';
+import { nativeNoticeRequest } from '../notifications/native.js';
 import { ChatDriver } from '../data/chat-driver.js';
 import { api, localStore } from '../data/client.js';
 import { useUpdates } from '../data/updates.js';
@@ -131,6 +132,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     });
     driver.current = instance;
     void resumeExistingPush(session).catch(() => {});
+    const noticeOwner = { userId: session.user.userId, sessionId: session.session.sessionId };
+    const noticeOpened = () => {
+      if (active && api.owns(noticeOwner)) void resumeExistingPush(session).catch(() => {});
+    };
+    const noticeTimer = window.setInterval(() => {
+      if (window.weibanNotifications && active && api.owns(noticeOwner))
+        void nativeNoticeRequest('check', noticeOwner).catch(() => {});
+    }, 20000);
+    window.addEventListener('weiban:native-notice-open', noticeOpened);
     const beforeUpdate = (event: Event) => {
       const request = event as CustomEvent<{ waitUntil(work: Promise<void>): void }>;
       request.detail.waitUntil(instance.pause());
@@ -150,6 +160,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       });
     }, 1000);
     return () => {
+      window.clearInterval(noticeTimer);
+      window.removeEventListener('weiban:native-notice-open', noticeOpened);
       active = false;
       instance.stop();
       window.removeEventListener('weiban:before-update', beforeUpdate);

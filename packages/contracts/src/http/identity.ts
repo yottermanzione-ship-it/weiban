@@ -228,6 +228,14 @@ export const IdentityEndpoints = {
     response: z.object({ items: z.array(SessionSummary) }),
     summary: '登录设备列表',
   }),
+  updateCurrentDevice: defineEndpoint({
+    method: 'PATCH',
+    path: `${API_PREFIX}/me/session/device`,
+    auth: 'user',
+    body: DeviceInfo,
+    response: NoContent,
+    summary: '更新当前登录会话的设备信息，不增加登录记录、不更改其他会话',
+  }),
   revokeSession: defineEndpoint({
     method: 'DELETE',
     path: `${API_PREFIX}/me/sessions/:sessionId`,
