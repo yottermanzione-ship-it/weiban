@@ -7,7 +7,8 @@ const candidate = { applicationId: identity.applicationId, versionCode: identity
 const previous = { ...candidate, versionCode: identity.previousVersionCode };
 test('public identity continues the verified legacy app and never contains signing credentials', () => {
   assert.equal(identity.applicationId, 'com.weiban.weiban');
-  assert.equal(identity.previousVersionCode, 124);
+  // Formal 3.0.0 build 125 was distributed on 2026-11-07 (#100/#101 release receipt).
+  assert.equal(identity.previousVersionCode, 125);
   assert.equal(identity.minimumSdk, 24);
   assert.equal('storePassword' in identity, false);
   assert.equal('keyPassword' in identity, false);
