@@ -20,6 +20,10 @@ test('长通讯录字母跳转、三个主页滑动、缩小视口和返回时�
   await page.getByRole('button', { name: '同意并登录', exact: true }).click();
   const navigation = page.getByRole('navigation', { name: '主导航' });
   await expect(navigation).toBeVisible();
+  // 等32角色夹具的初始目录同步完成；后续字母数量、滚动位置与导航定位断言不变。
+  await expect(page.getByRole('list', { name: '会话列表' }).getByRole('link').first()).toBeVisible({
+    timeout: 15_000,
+  });
   await navigation.getByRole('link', { name: '通讯录', exact: true }).click();
   await expect(page.locator('#letter-Z a')).toHaveCount(16);
   await page

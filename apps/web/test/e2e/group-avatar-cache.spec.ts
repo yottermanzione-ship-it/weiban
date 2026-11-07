@@ -19,10 +19,13 @@ test('自定义群头像启动预载与页面共用同一张图片，切页不�
   await login(page, 'browser_layout');
   const group = page.getByRole('link', { name: /头像加载测试群/ });
   const picture = group.getByRole('img', { name: '群头像', exact: true }).locator('img');
+  // 32角色夹具需冷启动同步；先等目录就绪，再检查图片字节和请求次数，不以5秒断言作性能验收。
+  await expect(group).toBeVisible({ timeout: 15_000 });
   await expect(picture).toHaveJSProperty('naturalWidth', 96);
   await expect(picture).toHaveAttribute('src', /^blob:/);
   expect(transfers).toHaveLength(1);
   await page.reload();
+  await expect(group).toBeVisible({ timeout: 15_000 });
   await expect(picture).toHaveJSProperty('naturalWidth', 96);
   await expect(picture).toHaveAttribute('src', /^blob:/);
   // 私有字节不写磁盘，每次冷启动取一次；启动预载和列表挂载不能各取一遍。

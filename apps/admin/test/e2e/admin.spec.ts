@@ -322,6 +322,9 @@ test('价目草稿精确微元、模型启用与缺价发布确认', async ({ pa
   await page.getByRole('checkbox', { name: '识图', exact: true }).check();
   await page.getByLabel('输入（元）', { exact: true }).fill('1.234567');
   await page.getByLabel('输出（元）', { exact: true }).fill('1.234567');
+  await page.getByRole('button', { name: '保存并上架', exact: true }).click();
+  await expect(page.getByText('模型名称请使用英文', { exact: true })).toBeVisible();
+  await page.getByLabel('显示名', { exact: true }).fill('Browser Test Model');
   const modelSaved = page.waitForResponse(
     (r) => r.request().method() === 'PUT' && /\/admin\/model\/models\//.test(r.url()),
   );
@@ -329,7 +332,7 @@ test('价目草稿精确微元、模型启用与缺价发布确认', async ({ pa
   const response = await modelSaved;
   expect(response.ok()).toBe(true);
   const model = await response.json();
-  await expect(page.getByRole('row').filter({ hasText: '浏览器测试模型' })).toBeVisible();
+  await expect(page.getByRole('row').filter({ hasText: 'Browser Test Model' })).toBeVisible();
   await page.goto('/prices');
   await page.getByRole('button', { name: /新建价格版本$/ }).click();
   await page.getByLabel('版本名称', { exact: true }).fill('浏览器价格');
@@ -353,7 +356,7 @@ test('价目草稿精确微元、模型启用与缺价发布确认', async ({ pa
   await page.getByRole('button', { name: '保存', exact: true }).click();
   const missing = page.getByRole('row').filter({ hasText: '缺模型测试' });
   await missing.getByRole('button', { name: '立即启用', exact: true }).click();
-  await expect(page.getByRole('dialog')).toContainText('浏览器测试模型');
+  await expect(page.getByRole('dialog')).toContainText('Browser Test Model');
   await page.getByRole('dialog').getByRole('button', { name: '取消', exact: true }).click();
   await expect(missing.getByText('草稿', { exact: true })).toBeVisible();
   await missing.getByRole('button', { name: '立即启用', exact: true }).click();
