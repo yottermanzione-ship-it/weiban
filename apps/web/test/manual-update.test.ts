@@ -6,6 +6,7 @@ import {
   consumeWebRefreshResult,
 } from '../src/app/manual-update.js';
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -100,6 +101,29 @@ it('records the expected build and checks the actual loaded build, including rol
   expect(reload).toHaveBeenCalledOnce();
   expect(consumeWebRefreshResult(100)).toContain('尚未切换');
   await refreshToLatestWeb();
-  expect(consumeWebRefreshResult(99)).toContain('已刷新');
+  expect(consumeWebRefreshResult(99)).toContain('已更新');
   expect(consumeWebRefreshResult(99)).toBeNull();
+});
+
+it('a transport that ignores abort cannot leave the update button waiting forever', async () => {
+  vi.useFakeTimers();
+  const { fetcher, reload } = setup();
+  fetcher.mockImplementationOnce(() => new Promise<Response>(() => {}));
+  const checking = expect(readDeployedWebBuild()).rejects.toThrow('检查更新超时');
+  await vi.advanceTimersByTimeAsync(15_001);
+  await checking;
+  expect(reload).not.toHaveBeenCalled();
+});
+
+it('a response body that stalls and an unavailable version service give actionable failures', async () => {
+  vi.useFakeTimers();
+  const { fetcher } = setup();
+  const response = new Response('{}');
+  vi.spyOn(response, 'json').mockImplementationOnce(() => new Promise(() => {}));
+  fetcher.mockResolvedValueOnce(response);
+  const checking = expect(readDeployedWebBuild()).rejects.toThrow('版本信息读取超时');
+  await vi.advanceTimersByTimeAsync(10_001);
+  await checking;
+  fetcher.mockResolvedValueOnce(new Response('', { status: 503 }));
+  await expect(readDeployedWebBuild()).rejects.toThrow('版本服务暂时不可用（503）');
 });

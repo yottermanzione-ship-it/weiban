@@ -1,4 +1,5 @@
 import { SupportRow } from './support.js';
+import { WebUpdatePanel } from './web-update-panel.js';
 import { HistoryRecoveryRow } from './history-recovery.js';
 /*
  * 设置（docs/refactor/06-old-ui-spec.md 4.10）：每组前有分组标题；普通行 MenuRow，带说明的开关用 SwitchRow；
@@ -284,6 +285,7 @@ export function SettingsPage() {
         <MenuRow to="/settings/about" label="关于微伴" dot={announcements > 0} />
       </MenuGroup>
       <HomeScreenGuide manual />
+      <WebUpdatePanel />
       {pushProblem && (
         <Dialog
           title="通知设置未完成"

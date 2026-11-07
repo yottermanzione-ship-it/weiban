@@ -10,7 +10,7 @@ import org.json.JSONObject
 internal class ShellDeviceBridge(
     activity: ComponentActivity,
     private val currentUrl: () -> String?,
-    private val theme: (Boolean) -> Unit,
+    private val theme: (Boolean, String) -> Unit,
 ) {
     private val audio = ShellCallAudio(activity)
 
@@ -41,8 +41,13 @@ internal class ShellDeviceBridge(
         val callId = data.optString("callId")
         return when (data.optString("type")) {
             "theme" -> {
-                theme(data.optBoolean("dark"))
-                true
+                val surface = data.optString("surface", if (data.optBoolean("dark")) "call" else "page")
+                if (data.opt("dark") !is Boolean || surface !in setOf("page", "white", "call")) {
+                    false
+                } else {
+                    theme(data.getBoolean("dark"), surface)
+                    true
+                }
             }
             "begin-call" -> validCall(callId) && audio.begin(callId)
             "speaker" -> validCall(callId) && data.opt("enabled") is Boolean && audio.select(callId, data.getBoolean("enabled"))
@@ -57,7 +62,7 @@ internal class ShellDeviceBridge(
 
     fun reset() {
         audio.end()
-        theme(false)
+        theme(false, "page")
     }
 
     private fun validCall(id: String): Boolean = id.matches(Regex("[a-zA-Z0-9-]{1,64}"))

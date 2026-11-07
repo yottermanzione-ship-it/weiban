@@ -98,7 +98,12 @@ class ShellCallAudioTest {
     fun malformedBridgeRequestsCannotControlAudioAndResetRestoresTheme() {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
         var dark = false
-        val bridge = ShellDeviceBridge(activity, { ShellPolicy.ORIGIN }, { dark = it })
+        var surface = "page"
+        val bridge =
+            ShellDeviceBridge(activity, { ShellPolicy.ORIGIN }, { nextDark, nextSurface ->
+                dark = nextDark
+                surface = nextSurface
+            })
         assertNull(bridge.receive("x".repeat(513)))
         assertNull(bridge.receive("not json"))
         assertNull(bridge.receive("{\"id\":\"bad id\",\"type\":\"begin-call\"}"))
@@ -106,7 +111,13 @@ class ShellCallAudioTest {
         assertFalse(bridge.receive("{\"id\":\"r\",\"type\":\"arbitrary-command\"}")!!.getBoolean("accepted"))
         assertTrue(bridge.receive("{\"id\":\"r\",\"type\":\"theme\",\"dark\":true}")!!.getBoolean("accepted"))
         assertTrue(dark)
+        assertEquals("call", surface)
+        assertTrue(bridge.receive("{\"id\":\"r\",\"type\":\"theme\",\"dark\":false,\"surface\":\"white\"}")!!.getBoolean("accepted"))
+        assertEquals("white", surface)
+        assertFalse(bridge.receive("{\"id\":\"r\",\"type\":\"theme\",\"dark\":false,\"surface\":\"arbitrary\"}")!!.getBoolean("accepted"))
+        assertEquals("white", surface)
         bridge.reset()
         assertFalse(dark)
+        assertEquals("page", surface)
     }
 }

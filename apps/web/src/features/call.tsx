@@ -28,6 +28,7 @@ import { Dialog, showToast } from './toast.js';
 import { formatDuration, isIPhone, voicePlayer } from './media.js';
 import { openMicrophone, microphoneProblem, type MicrophoneProblem } from './microphone.js';
 import { callDevice, hasCallDevice, type CallDeviceState } from './call-device.js';
+import { setCallSurface } from '../data/display-prefs.js';
 import { registerPlaybackStop, releaseAudioPlayback } from './audio-playback.js';
 
 /*
@@ -611,9 +612,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
   useEffect(() => () => engine.current?.close(), []);
   const visibleCall = !!view && !view.minimized;
   useEffect(() => {
-    void callDevice('theme', { dark: visibleCall });
+    setCallSurface(visibleCall);
     return () => {
-      void callDevice('theme', { dark: false });
+      setCallSurface(false);
     };
   }, [visibleCall]);
   const ongoingId = view && view.phase !== 'ended' ? view.call.callId : null;

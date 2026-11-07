@@ -214,10 +214,10 @@ for (const manualButton of [false, true]) {
         .toBe(true);
       await expect(page.getByText('新版本已准备好')).toHaveCount(0);
       if (manualButton) {
-        await page.getByRole('button', { name: '强制刷新网页', exact: true }).click();
+        await page.getByRole('button', { name: '更新版本', exact: true }).click();
         await page
-          .getByRole('dialog', { name: '刷新到最新版' })
-          .getByRole('button', { name: '刷新到最新版', exact: true })
+          .getByRole('dialog', { name: '更新版本' })
+          .getByRole('button', { name: '立即更新', exact: true })
           .click();
       } else await page.reload();
       await expect
@@ -281,7 +281,7 @@ for (const manualButton of [false, true]) {
         )
         .toBe('browser-upgrade-fixture');
       if (manualButton) {
-        await expect(page.getByText('已刷新到刚才检查到的网页版本', { exact: true })).toBeVisible();
+        await expect(page.getByText('已更新到刚才检查到的版本', { exact: true })).toBeVisible();
         await page.goto('/chat');
       }
       await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();

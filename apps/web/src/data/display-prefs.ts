@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { callDevice } from '../features/call-device.js';
 /*
  * 每台设备自己的显示设置（深色模式、字体大小，PRD SVC-01：不跟账号同步），存本机。
  * 深色模式写 <html data-scheme>，字体大小写 --wb-font-scale（docs/design/tokens.css 头注）。
@@ -76,7 +77,7 @@ export function setPageSurface(value: PageSurface) {
 /**
  * U8：「我」页、设个状态页顶部不是灰底，手机宽度下 html / body 底色要跟页面顶部一致（F1-9，iPhone 状态栏取它着色）。
  * 以前用 html:has(main.me-page) 判断；祖先上的 :has() 让任何列表滚动插入新行时都要整页重算样式（U8 实测卡顿根因之一），
- * 改为页面挂载时写 html[data-backdrop]。只管底色，不改 theme-color（与改前一致）。
+ * 页面挂载时写 html[data-backdrop]，同步浏览器及安卓系统栏颜色。
  * 切页动画里新旧两页可能同时挂着：按挂载顺序记一个栈，卸载只摘掉自己那一项。
  */
 export type PageBackdrop = 'me' | 'status';
@@ -85,6 +86,7 @@ function syncBackdrop() {
   const top = backdrops[backdrops.length - 1];
   if (top) document.documentElement.dataset.backdrop = top.kind;
   else delete document.documentElement.dataset.backdrop;
+  syncThemeColor(getScheme());
 }
 export function usePageBackdrop(kind: PageBackdrop) {
   useEffect(() => {
@@ -110,8 +112,13 @@ export function useWhiteSurface() {
  * 白底页跟随卡片白（--wb-color-bg-surface：浅色 #FFFFFF、深色 #191919）。
  * index.html 按系统深浅各放一个；手动选了深色 / 浅色时两个都改成所选的颜色。
  */
+let callSurface = false;
+export function setCallSurface(active: boolean) {
+  callSurface = active;
+  syncThemeColor(getScheme());
+}
 function syncThemeColor(scheme: Scheme) {
-  const white = surface === 'white';
+  const white = surface === 'white' || backdrops.at(-1)?.kind === 'me';
   // U8：启动页（html[data-boot]，index.html 写入、app/boot-splash.ts 移除）期间一律品牌绿，深色模式也一样。
   const booting = document.documentElement.hasAttribute('data-boot');
   document.querySelectorAll('meta[name="theme-color"]').forEach((meta) => {
@@ -123,8 +130,16 @@ function syncThemeColor(scheme: Scheme) {
       scheme === 'dark' ||
       (scheme === 'system' && (meta.getAttribute('media') ?? '').includes('dark'));
     const light = white ? '#FFFFFF' : '#EDEDED';
-    meta.setAttribute('content', dark ? (white ? '#191919' : '#202020') : light);
+    meta.setAttribute(
+      'content',
+      callSurface ? '#252A30' : dark ? (white ? '#191919' : '#202020') : light,
+    );
   });
+  const dark =
+    callSurface ||
+    scheme === 'dark' ||
+    (scheme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  void callDevice('theme', { dark, surface: callSurface ? 'call' : white ? 'white' : 'page' });
 }
 const BOOT_GREEN = '#07C160';
 /** U8：启动页结束（去掉 html[data-boot]）后调用，状态栏 / 地址栏切回当前页面的颜色。 */
