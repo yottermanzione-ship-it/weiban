@@ -7,6 +7,7 @@ import { HistoryRecoveryRow } from './history-recovery.js';
 import { useEffect, useState } from 'react';
 import { IdentityEndpoints, MemorySharingEndpoints } from '@weiban/contracts';
 import { api } from '../data/client.js';
+import { describeDevice, devicePlatformLabel } from '../data/device-info.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
 import {
   fontScales,
@@ -67,8 +68,8 @@ export function AccountSecurityPage() {
         {sessions.data?.items.map((s) => (
           <MenuRow
             key={s.sessionId}
-            label={s.device.name ?? s.device.platform ?? '未知设备'}
-            subtitle={`${s.device.platform} · 最近活跃 ${new Date(s.lastActiveAt).toLocaleDateString('zh-CN')}`}
+            label={s.current ? describeDevice().name : s.device.name}
+            subtitle={`${devicePlatformLabel(s.current ? describeDevice().platform : s.device.platform)}${!s.current && !s.device.installationId && s.device.name === '网页版' ? '（旧版记录，设备未识别）' : ''} · 最近活跃 ${new Date(s.lastActiveAt).toLocaleDateString('zh-CN')}`}
             value={s.current ? '本设备' : undefined}
             chevron={false}
             right={

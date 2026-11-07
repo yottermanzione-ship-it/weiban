@@ -136,6 +136,17 @@ export class IdentityController {
     await this.accounts.revokeSession(me.userId, params.sessionId);
   }
 
+  @Patch('me/session/device')
+  @HttpCode(204)
+  @RequireAuth(E.updateCurrentDevice.auth)
+  async updateCurrentDevice(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Body(new ContractPipe(schema(E.updateCurrentDevice.body)))
+    body: Body<typeof E.updateCurrentDevice>,
+  ): Promise<void> {
+    await this.sessions.updateCurrentDevice(me.userId, me.sessionId, body);
+  }
+
   // ---------- 资料、通知设置、界面偏好 ----------
 
   @Get('me/profile')

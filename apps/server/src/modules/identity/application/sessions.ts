@@ -15,7 +15,7 @@ import {
   type IdentitySessionReadPort,
   type Tx,
 } from '@weiban/contracts';
-import { and, desc, eq, gt, lte } from 'drizzle-orm';
+import { and, desc, eq, gt, lte, sql } from 'drizzle-orm';
 import {
   AppError,
   CLOCK,
@@ -41,6 +41,8 @@ import {
   APP_SESSION_TTL_MS,
 } from '../domain/rules.js';
 import { sessions, users } from '../infra/db/schema.js';
+import { isValidTimeZone } from '../domain/rules.js';
+import { invalidTimeZone } from './settings.js';
 
 export type RevokeReason = 'logout' | 'revoked' | 'expired' | 'account_deleting';
 
@@ -75,12 +77,28 @@ export class SessionService implements SessionVerifier, IdentitySessionReadPort 
     const [state] = await tx.db
       .select({ bannedAt: users.bannedAt })
       .from(users)
-      .where(eq(users.id, userId));
+      .where(eq(users.id, userId))
+      .for('update');
     if (state?.bannedAt) throw new AppError('forbidden', '该账号已被封禁，如有疑问请联系管理员');
     const now = this.clock.now();
     const token = generateSessionToken();
     const id = newId();
     const expiresAt = sessionExpiresAt(kind, now);
+    if (device.installationId) {
+      // 密码验证完成后调用，用户锁使同实例并发登录串行；绝不按 IP 或显示名猜设备。
+      const previous = await tx.db
+        .select({ id: sessions.id })
+        .from(sessions)
+        .where(
+          and(
+            eq(sessions.userId, userId),
+            eq(sessions.kind, kind),
+            sql`${sessions.device}->>'platform' = ${device.platform}`,
+            sql`${sessions.device}->>'installationId' = ${device.installationId}`,
+          ),
+        );
+      for (const row of previous) await this.revoke(tx, userId, row.id, 'revoked');
+    }
     await tx.db.insert(sessions).values({
       id,
       userId,
@@ -138,6 +156,8 @@ export class SessionService implements SessionVerifier, IdentitySessionReadPort 
         ? { lastActiveAt: now, expiresAt: new Date(now.getTime() + APP_SESSION_TTL_MS) }
         : { lastActiveAt: now };
     await this.database.transaction(async (tx) => {
+      // 登录去重先锁用户再撤销会话；续期也保持相同顺序，避免并发登录/续期互等。
+      await tx.db.select({ id: users.id }).from(users).where(eq(users.id, userId)).for('update');
       await tx.db.update(sessions).set(set).where(eq(sessions.id, sessionId));
       await tx.db.update(users).set({ lastActiveAt: now }).where(eq(users.id, userId));
     });
@@ -157,6 +177,26 @@ export class SessionService implements SessionVerifier, IdentitySessionReadPort 
   }
 
   /** 我的登录设备（不含已过期的）。 */
+  async updateCurrentDevice(userId: string, sessionId: string, device: DeviceInfo): Promise<void> {
+    if (!isValidTimeZone(device.timeZone)) throw invalidTimeZone('device.timeZone');
+    await this.database.transaction(async (tx) => {
+      // 与登录一致先锁用户，不能让迟到的旧页面重新创建已撤销会话。
+      await tx.db.select({ id: users.id }).from(users).where(eq(users.id, userId)).for('update');
+      const updated = await tx.db
+        .update(sessions)
+        .set({ device })
+        .where(
+          and(
+            eq(sessions.id, sessionId),
+            eq(sessions.userId, userId),
+            gt(sessions.expiresAt, this.clock.now()),
+          ),
+        )
+        .returning({ id: sessions.id });
+      if (!updated.length) throw new AppError('unauthenticated', '登录已失效，请重新登录');
+    });
+  }
+
   async list(userId: string, currentSessionId: string): Promise<SessionSummary[]> {
     const now = this.clock.now();
     const rows = await this.database.db

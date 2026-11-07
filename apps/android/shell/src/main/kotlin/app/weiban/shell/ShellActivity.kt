@@ -45,6 +45,7 @@ class ShellActivity : ComponentActivity() {
     private val microphone = ShellPermissions(this) { currentUrl() }
     private val files = ShellFilePicker(this) { currentUrl() }
     private val downloads = ShellDownloads(this) { currentUrl() }
+    private val notices = ShellNoticeBridge(this) { currentUrl() }
     private lateinit var root: FrameLayout
     private val device by lazy { ShellDeviceBridge(this, { currentUrl() }, { dark, surface -> applySystemTheme(dark, surface) }) }
     private var lastPage = ShellPolicy.START_URL
@@ -123,6 +124,7 @@ class ShellActivity : ComponentActivity() {
         }
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false)
         downloads.attach(webView)
+        notices.attach(webView)
         device.attach(webView)
         webView.webViewClient = navigationClient()
         webView.webChromeClient = chromeClient()
@@ -299,6 +301,7 @@ class ShellActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        notices.close()
         microphone.cancel()
         files.cancel()
         downloads.close()
@@ -306,5 +309,21 @@ class ShellActivity : ComponentActivity() {
         (webView.parent as? FrameLayout)?.removeView(webView)
         webView.destroy()
         super.onDestroy()
+    }
+
+    override fun onStop() {
+        notices.background()
+        super.onStop()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (ShellPolicy.trusted(
+                currentUrl(),
+            )
+        ) {
+            webView.evaluateJavascript("window.dispatchEvent(new Event('weiban:native-notice-open'))", null)
+        }
     }
 }

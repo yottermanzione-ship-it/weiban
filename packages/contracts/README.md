@@ -2,6 +2,8 @@
 
 所有模块之间、前后端之间（网页、安卓原生客户端、管理后台）的接口，以这里为唯一准绳。
 
+2026-11-08 安卓通知与设备契约 **7.4**：`DeviceInfo.installationId` 可选随机软件实例标识；`PATCH /me/session/device` 只更新当前会话。新增请求侧 `local_poll` 通道及仅当前账号/会话/设备可读的补收、确认接口，复用 `NotificationEnvelope`，不向旧客户端响应新增严格枚举。旧客户端保持兼容、最低版本不变、无数据库迁移；安卓同步生成。申请与接管评估见 [T-20261108a](../../docs/tasks/T-20261108a-android-notifications-devices.md)。
+
 2026-11-07 后台用量契约 **7.3**：`AdminUsageRecord` 新增可选 `audioInputTokens` / `audioOutputTokens`，展示实时通话供应商的分模态数据；旧记录无数据时缺省。只增可选字段，不提高最低客户端版本，不改现有聊天和连接帧；安卓同步生成，无数据库迁移。开发接管授权评估见 [T-20261107g](../../docs/tasks/T-20261107g-update-usage-admin.md)。
 
 2026-11-07 电话上下文契约 **7.2**：通话记录新增可选双方文字，沿用消息加密与来源；新增服务器内事务端口附入既有记录，不产生第二条消息或回复。旧客户端忽略追加字段、最低版本不变；安卓生成代码同步，无数据库迁移。申请与接管评估见[变更评估](../../docs/architecture/2026-11-07-call-context-contract-change.md)。

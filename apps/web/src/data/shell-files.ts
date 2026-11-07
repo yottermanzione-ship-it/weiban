@@ -1,3 +1,4 @@
+import { shellVersion } from './device-info.js';
 type ShellReply = { id: string; status: 'saved' | 'cancelled' | 'failed' };
 type ShellBridge = {
   postMessage(message: string): void;
@@ -13,7 +14,7 @@ const MAX_BYTES = 16 * 1024 * 1024;
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
 let saving = false;
 export function isAndroidShell(): boolean {
-  return /\bWeibanShell\/1\b/.test(navigator.userAgent);
+  return shellVersion() !== undefined;
 }
 
 /** The native shell reports success only after the user chooses a destination and writing completes. */

@@ -10,6 +10,7 @@ import {
 import { IdentityEndpoints, type AuthResponse } from '@weiban/contracts';
 import { pausePush } from '../notifications/client.js';
 import { api, localStore } from '../data/client.js';
+import { currentDevice } from '../data/device-info.js';
 interface AuthState {
   session: AuthResponse | null;
   loading: boolean;
@@ -99,6 +100,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
   const userId = session?.user.userId;
   const sessionId = session?.session.sessionId;
+  useEffect(() => {
+    if (!userId || !sessionId) return;
+    let active = true;
+    const owner = { userId, sessionId };
+    void currentDevice()
+      .then(async (device) => {
+        if (active && api.owns(owner))
+          await api.call(IdentityEndpoints.updateCurrentDevice, { body: device });
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [userId, sessionId]);
   const finishOnboarding = useCallback(async () => {
     if (!userId || !sessionId) return false;
     const owner = { userId, sessionId };
