@@ -1411,9 +1411,15 @@ label.profile-field.multiline {
 }
 .wx-call-top {
   display: grid;
+  flex-shrink: 0;
   justify-items: center;
   gap: 0;
   text-align: center;
+}
+.wx-call-speaking {
+  display: grid;
+  place-items: center;
+  height: 24px;
 }
 .wx-call-name {
   font-size: var(--wb-font-size-title1);
@@ -1450,25 +1456,16 @@ label.profile-field.multiline {
 }
 .wx-call-controls {
   display: flex;
-  flex-wrap: wrap;
-  row-gap: 24px;
+  align-items: flex-start;
   flex-shrink: 0;
   justify-content: space-between;
   width: 100%;
   max-width: 400px;
 }
-.wx-call-hangup {
-  display: flex;
-  justify-content: center;
-  width: 100%;
-}
 @media (max-height: 560px) {
   .wx-call-screen {
     padding-top: calc(env(safe-area-inset-top) + 44px);
     padding-bottom: calc(env(safe-area-inset-bottom) + 12px);
-  }
-  .wx-call-controls {
-    row-gap: 12px;
   }
   .wx-call-avatar {
     padding: 8px 0;
@@ -1482,11 +1479,20 @@ label.profile-field.multiline {
   justify-items: center;
   gap: 8px;
   width: 88px;
+  min-width: 0;
   color: var(--ui-text-on-color);
   font-size: var(--wb-font-size-footnote);
 }
 .wx-call-key small {
   color: var(--ui-text-on-color);
+  text-align: center;
+  line-height: 1.3;
+  min-height: 2.6em;
+}
+.wx-call-key-note {
+  display: block;
+  color: var(--ui-on-dark-text-2);
+  font-size: var(--wb-font-size-caption2);
 }
 .wx-call-round {
   display: grid;
@@ -1507,11 +1513,11 @@ label.profile-field.multiline {
   color: var(--ui-text-on-color);
 }
 .wx-call-round.on {
-  background: var(--wb-color-call-control-active);
-  color: var(--wb-color-call-control-icon-active);
+  background: #fff;
+  color: #000;
 }
 .wx-call-round.off {
-  background: var(--wb-color-call-control);
+  background: #000;
   color: var(--ui-text-on-color);
 }
 
