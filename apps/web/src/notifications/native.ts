@@ -99,7 +99,7 @@ export async function activateNativeNotifications(
   await localStore.setOwned(owner, 'push-owner', { ...owner, enabled: reply.enabled });
   if (
     reply.route &&
-    /^\/(?:chat|wallet|models|services|moments|play\/letters|imports|support\/tickets|calls)(?:\/[a-zA-Z0-9/-]+)?$/.test(
+    /^\/(?:chat|wallet|models|services|moments|play\/letters|imports|support\/tickets|calls|role-requests)(?:\/[a-zA-Z0-9/-]+)?$/.test(
       reply.route,
     )
   )

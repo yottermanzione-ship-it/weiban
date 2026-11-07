@@ -127,6 +127,13 @@ class ShellNoticesTest {
     }
 
     @Test fun displaysNativeNotificationAcknowledgesAndDoesNotRepeatAfterNetworkRetry() {
+        // Server sessions roll forward on use; a stale cached expiry is not a local revocation.
+        val renewedRaw =
+            JSONObject(state.authJson)
+                .apply {
+                    getJSONObject("session").put("expiresAt", "2020-01-01T00:00:00.000Z")
+                }.toString()
+        store.write(state.copy(auth = parseNoticeAuth(renewedRaw), authJson = renewedRaw))
         repeat(2) {
             server.enqueue(reply(payload()))
             server.enqueue(MockResponse().setResponseCode(204))
@@ -140,7 +147,9 @@ class ShellNoticesTest {
         assertEquals("/chat/$conversation", click.getStringExtra("noticeRoute"))
         assertFalse(click.extras.toString().contains(token))
         assertFalse(click.extras.toString().contains("通知测试正文"))
-        assertEquals("GET", server.takeRequest().method)
+        val poll = server.takeRequest()
+        assertEquals("GET", poll.method)
+        assertEquals("Bearer $token", poll.getHeader("Authorization"))
         assertTrue(
             server
                 .takeRequest()
@@ -173,9 +182,23 @@ class ShellNoticesTest {
         assertNull(ShellNotices.route("https://example.com/"))
         assertNull(ShellNotices.route("//example.com"))
         assertNull(ShellNotices.route("/chat/$conversation", device))
+        assertEquals("/role-requests/$conversation", ShellNotices.route("/role-requests/$conversation"))
         shadowOf(context.getSystemService(NotificationManager::class.java)).setNotificationsEnabled(false)
         assertFalse(ShellNotices.permitted(context))
         assertEquals(Result.success(), runDelivery())
         assertEquals(0, server.requestCount)
+    }
+
+    @Test fun unsupportedOwnedNoticeIsConsumedWithoutDisplayingOrBlockingLaterMessages() {
+        server.enqueue(reply(payload().put("kind", "admin_alert").put("deepLink", "/admin/alerts")))
+        server.enqueue(MockResponse().setResponseCode(204))
+        assertEquals(Result.success(), runDelivery())
+        assertEquals(0, context.getSystemService(NotificationManager::class.java).activeNotifications.size)
+        assertEquals("GET", server.takeRequest().method)
+        assertEquals("POST", server.takeRequest().method)
+        server.enqueue(reply(payload()))
+        server.enqueue(MockResponse().setResponseCode(204))
+        assertEquals(Result.success(), runDelivery())
+        assertEquals(1, context.getSystemService(NotificationManager::class.java).activeNotifications.size)
     }
 }

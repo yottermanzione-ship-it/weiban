@@ -80,7 +80,7 @@ internal object ShellNotices {
         runCatching {
             val sent = OffsetDateTime.parse(item.sentAt).toInstant().toEpochMilli()
             state.enabled && item.recipientUserId == state.auth.user.userId && item.recipientSessionId == state.auth.session.sessionId &&
-                OffsetDateTime.parse(state.auth.session.expiresAt).toInstant().toEpochMilli() > now && sent <= now + 60000 &&
+                sent <= now + 60000 &&
                 now - sent <= 600000 &&
                 item.kind != "admin_alert" && route(item.deepLink, item.conversationId) != null
         }.getOrDefault(false)
@@ -90,7 +90,9 @@ internal object ShellNotices {
         conversationId: String? = null,
     ): String? {
         val fixed = path in setOf("/chat", "/wallet", "/models", "/services", "/moments")
-        val match = Regex("^/(chat|moments/posts|play/letters|imports|support/tickets|calls)/([0-9a-fA-F-]{36})$").matchEntire(path)
+        val match =
+            Regex("^/(chat|moments/posts|play/letters|imports|support/tickets|calls|role-requests)/([0-9a-fA-F-]{36})$")
+                .matchEntire(path)
         return when {
             fixed -> path
             match != null -> {
@@ -230,7 +232,9 @@ internal class ShellNoticeDelivery(
                 ShellNotices.show(applicationContext, item, current)
                 store.write(current.copy(seen = (current.seen + item.notificationId).takeLast(128)))
             }
-            allowed
+            // The authenticated server validates the rolling session expiry. A rejected/unsupported
+            // notice for this owner is consumed too, so it cannot block the next batch forever.
+            item.recipientUserId == current.auth.user.userId && item.recipientSessionId == current.auth.session.sessionId
         }
 
     private fun httpFailure(
