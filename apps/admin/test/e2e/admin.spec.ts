@@ -323,7 +323,9 @@ test('价目草稿精确微元、模型启用与缺价发布确认', async ({ pa
   await page.getByLabel('输入（元）', { exact: true }).fill('1.234567');
   await page.getByLabel('输出（元）', { exact: true }).fill('1.234567');
   await page.getByRole('button', { name: '保存并上架', exact: true }).click();
-  await expect(page.getByText('模型名称请使用英文', { exact: true })).toBeVisible();
+  await expect(
+    page.locator('#displayName_help').getByText('模型名称请使用英文', { exact: true }),
+  ).toBeVisible();
   await page.getByLabel('显示名', { exact: true }).fill('Browser Test Model');
   const modelSaved = page.waitForResponse(
     (r) => r.request().method() === 'PUT' && /\/admin\/model\/models\//.test(r.url()),
