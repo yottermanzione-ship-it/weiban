@@ -1,6 +1,9 @@
 import 'reflect-metadata';
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import type {
+  CharacterForRuntime,
+  CharacterReadPort,
+  PolicyPort,
   ContactsReadPort,
   IdentityAccountStatusPort,
   IdentityReadPort,
@@ -41,6 +44,23 @@ describeDb('T-051 推演真实PG：迁移、预算、幂等、活跃与迟到注
     getPendingGreeting: async () => null,
   };
   const generate = vi.fn<ModelGatewayPort['generateText']>();
+  const role = {
+    profile: { characterId, name: '日常测试演员', kind: 'preset' },
+    card: null,
+    legacyCard: { core_persona: '一位热爱舞台的演员，空闲时喜欢画画。', soul_personality: '直爽' },
+    userSupplement: '喜欢在私人世界里练毛笔字',
+    personaVersion: 1,
+  } as unknown as CharacterForRuntime;
+  const getRole = vi.fn<CharacterReadPort['getForRuntime']>();
+  const characters = { getForRuntime: getRole } as unknown as CharacterReadPort;
+  const policy = {
+    getCharacterPolicy: async () => ({
+      characterId,
+      isRealPerson: true,
+      isMinor: false,
+      romanceAllowed: false,
+    }),
+  } as unknown as PolicyPort;
   const gateway: ModelGatewayPort = {
     generateText: generate,
     getModelStatus: async () => {
@@ -49,6 +69,7 @@ describeDb('T-051 推演真实PG：迁移、预算、幂等、活跃与迟到注
   };
   const output = (n = 3) =>
     JSON.stringify({
+      characterId,
       events: Array.from({ length: n }, (_, i) => ({ kind: 'work', summary: `日常事件${i}` })),
       overallMood: 'happy',
     });
@@ -68,7 +89,17 @@ describeDb('T-051 推演真实PG：迁移、预算、幂等、活跃与迟到注
     await resetTestDatabase();
     db = new Database({ url: requireTestDatabaseUrl() });
     const identity = { getLastActiveAt: async () => null } as unknown as IdentityReadPort;
-    service = new SimulationService(db, clock, jobs, gateway, accounts, identity, contacts);
+    service = new SimulationService(
+      db,
+      clock,
+      jobs,
+      gateway,
+      accounts,
+      identity,
+      contacts,
+      characters,
+      policy,
+    );
   });
   afterAll(async () => {
     await db?.close();
@@ -81,6 +112,7 @@ describeDb('T-051 推演真实PG：迁移、预算、幂等、活跃与迟到注
     epoch = 'relationship-1';
     clock.set('2026-10-09T10:00:00Z');
     generate.mockReset().mockResolvedValue(result());
+    getRole.mockReset().mockResolvedValue(role);
     jobs.send = vi.fn().mockResolvedValue(newId());
     await db.transaction((tx) => service.markActive(tx, userId, characterId));
   });
@@ -121,6 +153,80 @@ describeDb('T-051 推演真实PG：迁移、预算、幂等、活跃与迟到注
       (await db.query('SELECT paused_reason FROM ai_runtime.simulation_states')).rows[0],
     ).toEqual({ paused_reason: 'budget_exceeded' });
     await service.simulateCharacter(userId, characterId);
+    expect(await service.getDailyEvents(userId, characterId, '2026-10-09')).toHaveLength(3);
+  });
+
+  it('生成请求实际包含对应用户可见的角色身份与旧卡人设，不让模型猜自己是谁', async () => {
+    await service.simulateCharacter(userId, characterId);
+    expect(getRole).toHaveBeenCalledWith(userId, characterId);
+    const request = generate.mock.calls[0]![0];
+    const text = request.messages.map((message) => message.content).join('\n');
+    expect(text).toContain('日常测试演员');
+    expect(text).toContain('热爱舞台');
+    expect(text).toContain('毛笔字');
+    expect(text).toContain(characterId);
+    expect(request.messages[0]?.role).toBe('system');
+  });
+
+  it('角色资料缺失时不调用模型，也不写入无主语日常', async () => {
+    getRole.mockResolvedValue(null);
+    await service.simulateCharacter(userId, characterId);
+    expect(generate).not.toHaveBeenCalled();
+    expect(await service.getDailyEvents(userId, characterId, '2026-10-09')).toEqual([]);
+  });
+
+  it('角色编号错配、没有人设正文时都不生成', async () => {
+    getRole.mockResolvedValueOnce({ ...role, profile: { ...role.profile, characterId: newId() } });
+    await service.simulateCharacter(userId, characterId);
+    getRole.mockResolvedValueOnce({ ...role, legacyCard: { core_persona: '  ' } });
+    await service.simulateCharacter(userId, characterId);
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it('结果缺少或错配角色编号，不把模型的无归属结果写进该角色', async () => {
+    const wrong = JSON.parse(output());
+    wrong.characterId = newId();
+    generate.mockResolvedValueOnce(result(JSON.stringify(wrong)));
+    await service.simulateCharacter(userId, characterId);
+    delete wrong.characterId;
+    generate.mockResolvedValueOnce(result(JSON.stringify(wrong)));
+    await service.simulateCharacter(userId, characterId);
+    expect(await service.getDailyEvents(userId, characterId, '2026-10-09')).toEqual([]);
+  });
+
+  it('日常生成仍拦不允许的真人恋情，失败不保存部分事件', async () => {
+    const bad = JSON.parse(output());
+    bad.events[1].detail = '我和某人正在交往';
+    generate.mockResolvedValue(result(JSON.stringify(bad)));
+    await service.simulateCharacter(userId, characterId);
+    expect(await service.getDailyEvents(userId, characterId, '2026-10-09')).toEqual([]);
+  });
+
+  it('新卡职业与日常素材进入请求，程序员角色的正常编程活动不会被一刀切禁止', async () => {
+    const developer = {
+      ...role,
+      legacyCard: null,
+      card: {
+        data: {
+          persona: { summary: '一位软件工程师', personality: '耐心' },
+          speech: { tone: '自然' },
+          profileExtra: { occupation: '程序员' },
+          simulation: {
+            dailyActivities: ['维护个人开源项目'],
+            placeTypes: ['图书馆'],
+            hobbies: ['骑车'],
+          },
+        },
+      },
+    } as unknown as CharacterForRuntime;
+    getRole.mockResolvedValue(developer);
+    const coding = JSON.parse(output());
+    coding.events[0].summary = '上午为自己的开源项目调试代码';
+    generate.mockResolvedValue(result(JSON.stringify(coding)));
+    await service.simulateCharacter(userId, characterId);
+    const prompt = generate.mock.calls[0]![0].messages.map((m) => m.content).join('\n');
+    for (const text of ['软件工程师', '程序员', '维护个人开源项目', '图书馆', '骑车'])
+      expect(prompt).toContain(text);
     expect(await service.getDailyEvents(userId, characterId, '2026-10-09')).toHaveLength(3);
   });
 
