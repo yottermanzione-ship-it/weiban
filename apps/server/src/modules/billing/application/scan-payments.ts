@@ -84,10 +84,11 @@ const digest = (value: string) => createHash('sha256').update(value).digest('hex
 /** Versioned, fixed fields, ASCII delimiters. Android signs these exact UTF-8 bytes with SHA256withECDSA (DER). */
 export function monitorSigningText(input: ScanMonitorReport): string {
   const e = input.event;
-  const prefix = `wb-pay-v1|${input.deviceId}|${input.requestTime}|${e.type}`;
+  const version = e.type === 'receipt' && e.reviewReason ? 'wb-pay-v2' : 'wb-pay-v1';
+  const prefix = `${version}|${input.deviceId}|${input.requestTime}|${e.type}`;
   return e.type === 'heartbeat'
     ? `${prefix}|${e.listenerConnected ? 1 : 0}|${e.queued}`
-    : `${prefix}|${e.eventId}|${e.channel}|${e.amountFen}|${e.observedAt}|${e.postedAt}`;
+    : `${prefix}|${e.eventId}|${e.channel}|${e.amountFen}|${e.observedAt}|${e.postedAt}${e.reviewReason ? `|${e.reviewReason}` : ''}`;
 }
 function validSignature(publicKey: string, message: string, signature: string): boolean {
   try {
@@ -512,6 +513,8 @@ export class ScanPaymentService {
         reason = 'monitor_offline';
       const settings = await this.settings(tx);
       if (!settings.enabled || !settings.cutoverConfirmed) reason = 'payments_disabled';
+      // Keep uncertain money-bearing notices visible even when an equal-price order exists.
+      if (e.reviewReason) reason = e.reviewReason;
       const [receipt] = await tx.db
         .insert(scanReceipts)
         .values({

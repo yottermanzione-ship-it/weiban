@@ -24,6 +24,17 @@ class QueueStoreTest {
         assertEquals(1, QueueStore.pending(RuntimeEnvironment.getApplication()).size)
         assertEquals("1970-01-01T00:00:01Z", QueueStore.pending(ctx).first().getString("postedAt"))
     }
+    @Test fun uncertainNoticeRetainsReviewFlagAndOriginalTimeAcrossRetry() {
+        QueueStore.enqueue(ctx, ReceiptCandidate("alipay", 2000, "notice_uncertain"), "synthetic-promo-key", 1000)
+        val first = QueueStore.pending(ctx).single()
+        assertEquals("notice_uncertain", first.getString("reviewReason"))
+        assertEquals("1970-01-01T00:00:01Z", first.getString("postedAt"))
+        QueueStore.enqueue(ctx, ReceiptCandidate("alipay", 2000), "synthetic-promo-key", 1000)
+        assertEquals(first.toString(), QueueStore.pending(ctx).single().toString())
+        val saved = File(ctx.filesDir, "receipts-v1.json").readText()
+        assertFalse(saved.contains("synthetic-promo-key"))
+        assertFalse(saved.contains("notificationText"))
+    }
     @Test fun sameNotificationKeepsOriginalObservationAndNoDoubleQueue() {
         QueueStore.enqueue(ctx, ReceiptCandidate("alipay", 980), "synthetic", 2000)
         val first = QueueStore.pending(ctx).first().toString()

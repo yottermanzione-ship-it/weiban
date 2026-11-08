@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 7.7. Regenerate: pnpm android:generate
+// Contract 7.8. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "7.7"
+const val CONTRACT_VERSION: String = "7.8"
 
 @Serializable
 data class AccountAlias(
@@ -15143,6 +15143,7 @@ data class ScanMonitorReportEventReceipt(
     @SerialName("amountFen") val `amountFen`: Long,
     @SerialName("observedAt") val `observedAt`: Timestamp,
     @SerialName("postedAt") val `postedAt`: Timestamp,
+    @SerialName("reviewReason") val `reviewReason`: String? = null,
 ) : ScanMonitorReportEvent
 
 object ScanMonitorReportEventSerializer : KSerializer<ScanMonitorReportEvent> {

@@ -146,6 +146,38 @@ test('扫码收款：后台配置、手机签名到账、积分和会员页面�
   const manualOrder = ScanOrder.parse(await (await manualCreated).json());
   await page.goto('http://127.0.0.1:5174/scan-payments');
   await page.setViewportSize({ width: 1440, height: 1000 });
+  await expect(page.getByText('监控上报记录', { exact: true })).toBeVisible();
+  // A promotion can contain the exact pending amount. Preserve it for review and
+  // make it visible without refreshing the page, but never credit that order.
+  const uncertainId = createHash('sha256').update(randomBytes(16)).digest('hex');
+  const uncertain = {
+    deviceId: pair.deviceId,
+    requestTime: now,
+    event: {
+      type: 'receipt',
+      eventId: uncertainId,
+      channel: manualOrder.channel,
+      amountFen: manualOrder.amountFen,
+      observedAt: now,
+      postedAt: now,
+      reviewReason: 'notice_uncertain',
+    },
+    signature: proof(
+      `wb-pay-v2|${pair.deviceId}|${now}|receipt|${uncertainId}|${manualOrder.channel}|${manualOrder.amountFen}|${now}|${now}|notice_uncertain`,
+    ),
+  };
+  expect(await (await request.post(monitor + '/report', { data: uncertain })).json()).toMatchObject(
+    {
+      ok: true,
+      status: 'review',
+      purchaseKind: null,
+    },
+  );
+  const uncertainRow = page.getByRole('row').filter({ hasText: '有金额的通知，收款性质待核对' });
+  await expect(uncertainRow).toBeVisible({ timeout: 12_000 });
+  await expect(uncertainRow).toContainText(`¥${(manualOrder.amountFen / 100).toFixed(2)}`);
+  await expect(uncertainRow).toContainText('未关联');
+  await expect(page.getByRole('row').filter({ hasText: manualOrder.id })).toContainText('待付款');
   await page
     .getByRole('row')
     .filter({ hasText: manualOrder.id })

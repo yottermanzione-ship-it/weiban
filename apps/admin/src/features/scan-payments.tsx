@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useEffectEvent, useState } from 'react';
 import { Alert, Button, Checkbox, Input, Modal, Select, Space, Switch, Table, Tag } from 'antd';
 import {
   ScanPaymentAdminEndpoints as A,
@@ -30,6 +30,9 @@ const reasons: Record<string, string> = {
   payments_disabled: '收款未开放',
   account_unavailable: '账号已停用',
   first_price_already_used: '会员首次优惠已使用',
+  notice_uncertain: '有金额的通知，收款性质待核对，不自动入账',
+  notice_multiple_amounts: '通知包含多个金额，不自动入账',
+  notice_summary: '汇总通知，不自动入账',
 };
 const money = (fen: number) => `¥${(fen / 100).toFixed(2)}`;
 const purchase = (kind?: string | null) =>
@@ -45,6 +48,21 @@ export function ScanPaymentsPage() {
   const [rc, setRc] = useState<string | undefined>();
   const orders = useRemote(A.orders, { query: { cursor: oc, limit: 30 } });
   const receipts = useRemote(A.receipts, { query: { cursor: rc, limit: 30 } });
+  const poll = useEffectEvent(() => {
+    if (document.visibilityState !== 'hidden') {
+      receipts.refresh();
+      orders.refresh();
+      devices.refresh();
+    }
+  });
+  useEffect(() => {
+    const timer = window.setInterval(poll, 5000);
+    document.addEventListener('visibilitychange', poll);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', poll);
+    };
+  }, []);
   const [draft, setDraft] = useState<ScanPaymentSettings | null>(null);
   const [busy, setBusy] = useState(false);
   const [manual, setManual] = useState<ScanOrder | null>(null);
@@ -237,16 +255,20 @@ export function ScanPaymentsPage() {
           </Button>
         </Space>
       </SectionCard>
-      <SectionCard title="到账与待核对">
+      <SectionCard title="监控上报记录">
+        <p>
+          手机报来的金额通知都会保留在这里，每五秒更新；明确收款才自动核对订单，促销、汇总和金额冲突仅登记待核对。
+        </p>
         <Table
           rowKey="id"
           loading={receipts.loading}
           dataSource={receipts.data?.items ?? []}
+          locale={{ emptyText: '暂无上报记录；监控连接正常不等于已收到收款通知' }}
           pagination={false}
           scroll={{ x: 900 }}
           columns={[
             { title: '渠道', render: (_, r) => channel(r.channel) },
-            { title: '实收金额', render: (_, r) => money(r.amountFen) },
+            { title: '通知／登记金额', render: (_, r) => money(r.amountFen) },
             { title: '购买类型', render: (_, r) => purchase(r.purchaseKind) },
             { title: '购买内容', render: (_, r) => r.purchaseTitle ?? '尚未匹配订单' },
             {

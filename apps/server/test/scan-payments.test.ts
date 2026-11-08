@@ -265,6 +265,45 @@ describeDb('扫码支付：真实数据库、设备签名、并发与用户隔�
       await expect(service.get(u.id, o.id, true)).resolves.toMatchObject({ status: 'paid' });
     }
   });
+  it('有金额的可疑通知会显示在后台；即使同渠道同金额有订单也不自动入账，签名防止移除核对标记', async () => {
+    for (const reviewReason of [
+      'notice_uncertain',
+      'notice_multiple_amounts',
+      'notice_summary',
+    ] as const) {
+      await heartbeat();
+      const u = await user(),
+        o = await order(u.id, 12345, 'alipay');
+      const input = await receipt(o, { reviewReason });
+      expect(monitorSigningText(input)).toMatch(/^wb-pay-v2\|/);
+      const tampered = structuredClone(input);
+      if (tampered.event.type === 'receipt') delete tampered.event.reviewReason;
+      await http().post(ScanMonitorEndpoints.report.path).send(tampered).expect(401);
+      const first = await http().post(ScanMonitorEndpoints.report.path).send(input).expect(201);
+      expect(first.body).toMatchObject({ ok: true, status: 'review', purchaseKind: null });
+      await http().post(ScanMonitorEndpoints.report.path).send(input).expect(201);
+      expect((await service.get(u.id, o.id)).status).toBe('pending');
+      expect((await q.ledgerOf(u.id)).filter((e) => e.purpose === 'scan_recharge')).toHaveLength(0);
+      const listed = (
+        await http()
+          .get('/api/v1/admin/scan-payments/receipts?limit=100')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .expect(200)
+      ).body;
+      const matches = listed.items.filter(
+        (r: { eventId: string }) => r.eventId === (input.event as { eventId: string }).eventId,
+      );
+      expect(matches).toHaveLength(1);
+      expect(matches[0]).toMatchObject({
+        channel: 'alipay',
+        amountFen: o.amountFen,
+        status: 'review',
+        reason: reviewReason,
+        orderId: null,
+      });
+      expect(JSON.stringify(listed)).not.toContain('notificationText');
+    }
+  });
   it('同一金额并发下单分配不同零头，取消后金额仍隔离，不被新订单复用', async () => {
     const users = await Promise.all([user(), user(), user()]);
     const result = await Promise.all(users.map((u) => order(u.id, 6000)));

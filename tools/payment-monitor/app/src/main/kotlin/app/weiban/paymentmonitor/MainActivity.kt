@@ -120,7 +120,7 @@ class MainActivity : Activity() {
         val readiness = if (!ReceiptListener.connected) "监控尚未就绪：通知监听未连接" else if (connectedAt == 0L || System.currentTimeMillis() - connectedAt > 120_000) "通知监听已连接，等待服务器确认" else "监控已连接"
         status.text = "$readiness\n设置：${if (QueueStore.deviceId(this).isEmpty()) "未设置" else "已保存，无需重复设置"}\n通知监听：${if (ReceiptListener.connected) "已连接" else "未连接"}\n$connection\n待补报：$count\n${QueueStore.lastStatus(this)}$retryWarning"
         val unknown = prefs.getInt("unrecognized",0)
-        if (unknown > 0) status.append("\n未能识别的支付通知：$unknown（请核对账单）")
+        if (unknown > 0) status.append("\n历史未识别通知：$unknown（不是当前漏款数，请查看后台上报记录）")
         history.text = try {
             val data = QueueStore.read(this)
             if (data.length() == 0) "尚无到账记录" else (maxOf(0, data.length() - 10) until data.length()).reversed().joinToString("\n\n") { i ->
