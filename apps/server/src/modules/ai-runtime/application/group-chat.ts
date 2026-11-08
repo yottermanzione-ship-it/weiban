@@ -998,7 +998,9 @@ export class GroupChatService {
       'normal',
     );
     const adult = false;
-    const brain = await this.brain.build(input.userId, speaker.characterId, 'normal', transcript);
+    const brain = await this.brain.build(input.userId, speaker.characterId, 'normal', transcript, {
+      scenarioPrompt: presetPrompt ?? undefined,
+    });
     if (!brain) return null;
     const task =
       input.reason === 'starter'
@@ -1036,10 +1038,9 @@ export class GroupChatService {
       idempotencyKey: `ai:${input.idempotencyKey}`,
       messages: [
         ...brainMessages(brain, 'chat'),
-        ...(presetPrompt ? [{ role: 'system' as const, content: presetPrompt }] : []),
         {
           role: 'system',
-          content: `你在微伴的一个群聊里以角色身份发言。只输出你要发的这一条群消息的纯文本，不加名字前缀，不输出JSON或括号动作，不超过60字；不编造真人公开声明；儿童不得恋爱或性化。真人=${policy.isRealPerson}，儿童=${policy.isMinor}，允许恋爱=${policy.romanceAllowed}。不做情感操纵。群聊当前情景模式：${scenarioText(input.scenarioMode === 'auto' ? 'daily' : input.scenarioMode)}这是日常范围的群聊：不提起、不展开任何私密模式里发生的事。群聊原文是公开现场，私聊资料受下面的群聊隐私边界约束。`,
+          content: `你在微伴的一个群聊里以角色身份发言。只输出你要发的这一条群消息的纯文本，不加名字前缀，不输出JSON或括号动作，不超过60字；不编造真人公开声明；儿童不得恋爱或性化。真人=${policy.isRealPerson}，儿童=${policy.isMinor}，允许恋爱=${policy.romanceAllowed}。不做情感操纵。群聊当前情景模式：${presetPrompt ? '遵循前文当前情景预设。' : scenarioText(input.scenarioMode === 'auto' ? 'daily' : input.scenarioMode)}这是日常范围的群聊：不提起、不展开任何私密模式里发生的事。群聊原文是公开现场，私聊资料受下面的群聊隐私边界约束。`,
         },
         {
           role: 'system',

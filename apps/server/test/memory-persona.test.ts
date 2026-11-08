@@ -354,6 +354,64 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
         );
     }
   });
+  it('内置预设显示实际默认文案，编辑替换旧风格，清空恢复默认', async () => {
+    const catalog = app.get(ScenarioModeService);
+    const path = `/api/v1/characters/${characterId}/companion-settings`;
+    const original = (await http().get(path).set('Authorization', auth()).expect(200)).body;
+    const defaults = await catalog.list();
+    expect(defaults.filter((m) => m.isBuiltin).length).toBeGreaterThanOrEqual(7);
+    expect(defaults.filter((m) => m.isBuiltin).every((m) => !!m.presetPrompt?.trim())).toBe(true);
+    const cheer = defaults.find((m) => m.id === 'cheer')!;
+    expect(cheer.presetPrompt).toContain('打气');
+    try {
+      await catalog.update(adminId, 'cheer', {
+        presetPrompt: 'BUILTIN_REPLACED_CANARY：平静地听完，再回应一件小事。',
+      });
+      expect((await catalog.list()).find((m) => m.id === 'cheer')?.presetPrompt).toContain(
+        'BUILTIN_REPLACED_CANARY',
+      );
+      await http()
+        .patch(path)
+        .set('Authorization', auth())
+        .send({ scenarioMode: 'cheer', scenarioPresetId: null })
+        .expect(200);
+      const pending = await user('今天只是想说说日常');
+      const built = await app.get(ReplyContext).build(pending);
+      const prompt = JSON.stringify(built?.messages);
+      expect(prompt).toContain('BUILTIN_REPLACED_CANARY');
+      expect(prompt).not.toContain('语气有劲、真诚');
+      expect(prompt).toContain('不改变角色身份');
+      await finish(pending.id);
+      await http()
+        .patch(path)
+        .set('Authorization', auth())
+        .send({ scenarioMode: 'auto' })
+        .expect(200);
+      const autoPending = await user('我要准备考试，给我加油');
+      const autoPrompt = JSON.stringify((await app.get(ReplyContext).build(autoPending))?.messages);
+      expect(autoPrompt).toContain('【本轮风格】');
+      expect(autoPrompt).toContain('BUILTIN_REPLACED_CANARY');
+      expect(autoPrompt).not.toContain('语气有劲、真诚');
+      await finish(autoPending.id);
+      const reset = await catalog.update(adminId, 'cheer', { presetPrompt: null });
+      expect(reset.presetPrompt).toBe(cheer.presetPrompt);
+      expect((await catalog.list()).find((m) => m.id === 'cheer')?.presetPrompt).toBe(
+        cheer.presetPrompt,
+      );
+    } finally {
+      await catalog.update(adminId, 'cheer', { presetPrompt: null });
+      await http()
+        .patch(path)
+        .set('Authorization', auth())
+        .send({ ...original, scenarioPresetId: null })
+        .expect(200);
+      if (original.inheritsDefaults)
+        await db.query(
+          'DELETE FROM ai_runtime.companion_settings WHERE user_id=$1 AND character_id=$2',
+          [userId, characterId],
+        );
+    }
+  });
   it('HTTP鉴权、幂等并发写入、分页、加密与跨用户访问拒绝', async () => {
     await http().get(memoryPath()).expect(401);
     const clientMemoryId = newId();

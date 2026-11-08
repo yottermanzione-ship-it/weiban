@@ -23,7 +23,7 @@ export const AdminScenarioMode = z.object({
   id: z.string().min(1).max(32),
   name: z.string().min(1).max(32),
   description: z.string().max(200),
-  /** 预设提示词（系统提示词片段）；修改后需重新通过人设稳定检查（MODE-04）。 */
+  /** 当前生效的预设提示词；内置未配置时返回默认文案。修改后需验证人设稳定（MODE-04）。 */
   presetPrompt: z.string().max(4000).nullable(),
   appliesTo: ScenarioModeAppliesTo,
   hasRomanceContent: z.boolean(),

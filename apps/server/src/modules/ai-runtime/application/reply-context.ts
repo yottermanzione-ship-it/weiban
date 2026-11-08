@@ -499,9 +499,19 @@ export class ReplyContext {
       });
     }
     const style = inCare ? 'daily' : effectiveStyle(mode, autoResult);
+    const autoPreset =
+      mode === 'auto' && autoResult
+        ? await this.settings.scenarioPrompt(
+            { ...settings, scenarioMode: autoResult, scenarioPresetId: null },
+            conversation.contentScope,
+          )
+        : null;
     const autoStyle =
       mode === 'auto' && autoResult
-        ? { style: autoResult, prompt: autoStylePrompt(autoResult) }
+        ? {
+            style: autoResult,
+            prompt: autoPreset ? `【本轮风格】${autoPreset}` : autoStylePrompt(autoResult),
+          }
         : null;
     // ===== 请求组装（docs/refactor/09-chat-pipeline.md 第 4 节）=====
     // ① 稳定开头：两次窗口推进之间一字不变；② 聊天记录；③ 动态结尾（每轮变）。
@@ -578,6 +588,9 @@ export class ReplyContext {
       conversation.contentScope,
       userText,
     );
+    const scenarioPrompt = inCare
+      ? undefined
+      : ((await this.settings.scenarioPrompt(settings, conversation.contentScope)) ?? undefined);
     const { head, context: brainContext } = brainPromptParts({
       name: role.profile.name,
       card,
@@ -595,9 +608,7 @@ export class ReplyContext {
       selfReports,
       stableMemory: remembered.stableBlock,
       episodes: episodes.stable,
-      scenarioPrompt: inCare
-        ? undefined
-        : ((await this.settings.scenarioPrompt(settings, conversation.contentScope)) ?? undefined),
+      scenarioPrompt,
     });
 
     // ② 聊天记录：摘要边界之后的原文，只在尾部追加
@@ -747,9 +758,9 @@ export class ReplyContext {
     const builtInNote = inCare
       ? null
       : card
-        ? scenarioNote(card, mode, autoStyle?.prompt ?? null)
+        ? scenarioNote(card, mode, autoStyle?.prompt ?? null, !!scenarioPrompt)
         : legacy
-          ? legacyScenarioNote(legacy, mode, autoStyle?.prompt ?? null)
+          ? legacyScenarioNote(legacy, mode, autoStyle?.prompt ?? null, !!scenarioPrompt)
           : null;
     const styleNote = builtInNote;
     if (styleNote)

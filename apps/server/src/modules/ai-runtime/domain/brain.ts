@@ -107,7 +107,7 @@ export function brainPrefix(input: BrainInput): PromptSection[] {
     },
     {
       title: '关系与设置',
-      text: `${personaPrompt({ fit: settings.personaFit ?? 3, mode, stageText: relationshipStageText(input.stage) })}\n${userNamingContext(input.nickname)}${card?.modes.modeOverrides?.[mode] ? `\n这个情景下的补充：${card.modes.modeOverrides[mode]}` : ''}`,
+      text: `${personaPrompt({ fit: settings.personaFit ?? 3, mode, configuredScenario: !!input.scenarioPrompt, stageText: relationshipStageText(input.stage) })}\n${userNamingContext(input.nickname)}${card?.modes.modeOverrides?.[mode] ? `\n这个情景下的补充：${card.modes.modeOverrides[mode]}` : ''}`,
     },
     {
       title: '需要关怀或岔开话题时',

@@ -121,6 +121,28 @@ test('新增情景模式生成有效标识，保存和编辑后刷新仍保留',
   await expect(row).toHaveCount(1);
   await expect(row).toContainText('保存后修改的说明');
 });
+test('内置情景默认提示词可见，保存后重开一致，清空恢复默认', async ({ page }) => {
+  await login(page);
+  await page.goto('/settings');
+  await page.getByRole('link', { name: '管理情景模式与提示词', exact: true }).click();
+  const row = page.getByRole('row').filter({ hasText: '加油打气' });
+  await expect(row).toContainText('语气有劲');
+  await row.click();
+  const prompt = page.getByLabel('预设提示词', { exact: true });
+  const original = await prompt.inputValue();
+  expect(original).toContain('语气有劲');
+  await prompt.fill('仅本地合成检查：先听完，再问一个具体问题。');
+  await page.getByRole('button', { name: '保存', exact: true }).click();
+  await expect(row).toContainText('仅本地合成检查');
+  await page.reload();
+  await row.click();
+  await expect(prompt).toHaveValue('仅本地合成检查：先听完，再问一个具体问题。');
+  await prompt.fill('');
+  await page.getByRole('button', { name: '保存', exact: true }).click();
+  await expect(row).toContainText('语气有劲');
+  await row.click();
+  await expect(prompt).toHaveValue(original);
+});
 async function picture(page: Page) {
   return {
     name: 'photo.png',

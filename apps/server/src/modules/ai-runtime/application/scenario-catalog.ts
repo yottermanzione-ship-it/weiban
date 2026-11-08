@@ -87,6 +87,6 @@ export class ScenarioCatalog {
       (m) => m.modeId === (settings.scenarioPresetId ?? settings.scenarioMode ?? 'daily'),
     );
     if (!mode?.prompt || (mode.baseMode === 'adult' && scope !== 'adult')) return null;
-    return `【当前情景补充：${mode.name}】\n只调整本次对话的表达和互动方式，不改变角色身份、记忆、关系阶段或用户意愿；角色和平台边界优先。自然体现新情景，不解释“进入模式”，不延续上一预设的特殊口吻。\n${mode.prompt}`;
+    return `【当前情景预设：${mode.name}】\n只调整本次对话的表达和互动方式，不改变角色身份、记忆、关系阶段或用户意愿；角色和平台边界优先。自然体现新情景，不解释“进入模式”，不延续上一预设的特殊口吻。\n${mode.prompt}`;
   }
 }

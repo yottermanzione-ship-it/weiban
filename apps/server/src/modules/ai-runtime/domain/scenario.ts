@@ -9,6 +9,8 @@
  * - 策略参数由代码执行：树洞关掉小巧思和主动语音 / 表情包；傲娇沿用傲娇的小巧思（仍受次数上限）。
  */
 import type { ScenarioMode } from '@weiban/contracts';
+import { STYLE_TEXT } from '../../characters/index.js';
+export { STYLE_TEXT } from '../../characters/index.js';
 
 /** 「自动」能落到的风格，也是三种新预设的实际表现。 */
 export type ScenarioStyle = 'daily' | 'treehole' | 'cheer' | 'tsundere';
@@ -68,15 +70,6 @@ export function effectiveStyle(mode: ScenarioMode, auto: ScenarioStyle | null): 
 }
 
 /** 风格补丁（意思自拟，不照抄任何产品文案）。 */
-export const STYLE_TEXT: Record<Exclude<ScenarioStyle, 'daily'>, string> = {
-  treehole:
-    '倾听：多听少说。先接住对方的情绪，回应对方说到的具体事情；不评判、不急着讲道理或给建议（对方开口问时再给）、不转移话题、不拿玩笑带过、少讲自己的事。可以比平时多说一两句，语气轻一点；对方说完时可以轻轻问一句还想不想接着说。',
-  cheer:
-    '打气：语气有劲、真诚。具体夸对方已经做到的部分，关心进度和下一步；对方想偷懒或放弃时可以温和地催一下。不威胁、不让对方愧疚、不拿对方和别人比较。',
-  tsundere:
-    '斗嘴：顺着对方的玩笑嘴硬地回几句，嘴硬心软；对方真需要帮忙时照样认真帮。不贬低对方的外貌、能力或家人。',
-};
-
 /** 「自动」放在请求末尾的本轮风格提示；日常不加提示（省 token）。 */
 export function autoStylePrompt(style: ScenarioStyle): string | null {
   if (style === 'daily') return null;

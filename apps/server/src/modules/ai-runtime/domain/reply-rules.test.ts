@@ -186,6 +186,12 @@ it('M1 shared reader isolates scopes and characters, preserves retrieval limits 
   expect(conversation?.prefix).toContain('selected-conversation-scene');
   expect(social?.prefix).not.toContain('selected-conversation-scene');
   expect(normal?.prefix).not.toContain('selected-conversation-scene');
+  const group = await service.build('user', 'role-b', 'normal', 'query', {
+    scenarioPrompt: 'GROUP_PRESET_CANARY：一起讨论下一步。',
+  });
+  expect(group?.prefix).toContain('GROUP_PRESET_CANARY');
+  expect(group?.prefix).not.toContain('selected-conversation-scene');
+  expect(group?.prefix).not.toContain('不套用咨询、打气或斗嘴套路');
 });
 import { ModelPurpose, type GenerateTextInput, type ModelGatewayPort } from '@weiban/contracts';
 import { careFallback, callModelForCare } from '../application/safety-care.js';

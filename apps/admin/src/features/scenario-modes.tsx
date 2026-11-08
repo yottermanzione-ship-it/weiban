@@ -2,12 +2,13 @@
  * 情景模式：给角色一套「当前处境」的预设（例：同居、异地、同事）。
  * 内置模式不能删除，只能改预设提示词和启停；改了提示词要重新做人设稳定检查。
  *
- * 注意：这个接口还没有进 packages/contracts，沿用原有的原生 fetch；
+ * 服务端返回实际生效的预设，未另行配置时显示内置默认文案。
  * token 从本地管理会话里取（data/client.ts 的 adminToken）。
  */
 import { useEffect, useState } from 'react';
 import { Alert, Button, Checkbox, Form, Input, InputNumber, Select, Space, Switch } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
+import type { AdminScenarioMode } from '@weiban/contracts';
 import { adminToken } from '../data/client.js';
 import { errorText } from '../data/hooks.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
@@ -15,18 +16,7 @@ import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
 import { FieldHelp, FormSection, Page, StatusTag, useDangerConfirm, useToast } from '../ui/page.js';
 import { useFormFeedback } from '../data/form-feedback.js';
 
-type ScenarioMode = {
-  id: string;
-  name: string;
-  description: string;
-  presetPrompt: string | null;
-  appliesTo: 'all' | 'non_minor' | 'adult_eligible';
-  hasRomanceContent: boolean;
-  hasAdultContent: boolean;
-  isBuiltin: boolean;
-  enabled: boolean;
-  sortOrder: number;
-};
+type ScenarioMode = AdminScenarioMode;
 
 const APPLIES_LABELS: Record<string, string> = {
   all: '所有角色',
@@ -120,6 +110,17 @@ export function ScenarioModesPage() {
       ),
     },
     {
+      title: '预设提示词',
+      width: 340,
+      render: (_, row) => (
+        <span className="cell-sub">
+          {row.presetPrompt
+            ? `${row.presetPrompt.slice(0, 120)}${row.presetPrompt.length > 120 ? '…（编辑查看全文）' : ''}`
+            : '尚未填写'}
+        </span>
+      ),
+    },
+    {
       title: '适用角色',
       width: 160,
       render: (_, row) => APPLIES_LABELS[row.appliesTo] ?? row.appliesTo,
@@ -180,7 +181,7 @@ export function ScenarioModesPage() {
   return (
     <Page
       title="情景模式"
-      desc="给角色一套「当前处境」的预设。内置模式不能删除，只能改提示词和启停。"
+      desc="查看并编辑当前生效的情景提示词。保存后从下一次回复或新通话起生效，无需发布新版本。"
       extra={
         <Space>
           <Button onClick={() => void load()}>刷新</Button>
@@ -341,11 +342,14 @@ function ModeDrawer({
           ]}
           extra={
             <FieldHelp>
-              写明角色在这个情景中怎么说、怎么回应；从下一次回复起生效，不改变角色身份和关系进展。保存后请试聊确认效果。
+              这里显示当前生效的情景提示词，直接修改并保存即可生效；不改变角色身份、关系进展和适用资格。正在生成的回复与进行中的通话使用开始时的设置。
+              {mode?.isBuiltin && '清空后保存会恢复内置默认文案。'}
+              {mode?.id === 'auto' &&
+                '自动模式还会按对话选用日常、树洞、打气或斗嘴的预设文案；这些文案可分别编辑。'}
             </FieldHelp>
           }
         >
-          <Input.TextArea rows={5} maxLength={4000} showCount />
+          <Input.TextArea rows={9} maxLength={4000} showCount />
         </Form.Item>
         {!mode?.isBuiltin && (
           <>

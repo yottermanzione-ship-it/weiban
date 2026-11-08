@@ -30,6 +30,7 @@ import {
 import { IdentityCommands } from '../src/modules/identity/index.js';
 import {
   CharacterService,
+  ScenarioModeService,
   CharacterCheckWorker,
   CHARACTER_EVALUATOR,
 } from '../src/modules/characters/testing.js';
@@ -258,6 +259,18 @@ describeDb('电话与文字共用上下文：真实数据库及加密存档，�
     const changed = await context();
     expect(changed?.scenarioMode).toBe('treehole');
     expect(JSON.stringify(changed?.messages)).toContain('树洞');
+    const catalog = app.get(ScenarioModeService);
+    try {
+      await catalog.update(userId, 'treehole', {
+        presetPrompt: 'CALL_SCENE_CANARY：先问今天最想分享的一件事。',
+      });
+      const configured = JSON.stringify((await context())?.messages);
+      expect(configured).toContain('CALL_SCENE_CANARY');
+      expect(configured).not.toContain('多听少说');
+      expect(configured).toContain('不改变角色身份');
+    } finally {
+      await catalog.update(userId, 'treehole', { presetPrompt: null });
+    }
     await app.get(CompanionSettingsService).update(userId, characterId, { scenarioMode: 'daily' });
   });
 
