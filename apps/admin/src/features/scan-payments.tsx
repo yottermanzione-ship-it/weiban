@@ -50,9 +50,9 @@ export function ScanPaymentsPage() {
   const receipts = useRemote(A.receipts, { query: { cursor: rc, limit: 30 } });
   const poll = useEffectEvent(() => {
     if (document.visibilityState !== 'hidden') {
-      receipts.refresh();
-      orders.refresh();
-      devices.refresh();
+      if (!receipts.loading) receipts.refresh();
+      if (!orders.loading) orders.refresh();
+      if (!devices.loading) devices.refresh();
     }
   });
   useEffect(() => {

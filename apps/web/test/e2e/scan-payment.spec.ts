@@ -144,6 +144,14 @@ test('扫码收款：后台配置、手机签名到账、积分和会员页面�
   );
   await page.getByRole('button', { name: '微信扫码付款', exact: true }).click();
   const manualOrder = ScanOrder.parse(await (await manualCreated).json());
+  // Every receipt query is slower than the polling interval. Polling must not
+  // invalidate every in-flight result and leave the table permanently empty.
+  let delayedReceiptQueries = 0;
+  await page.route('**/admin/scan-payments/receipts?*', async (route) => {
+    delayedReceiptQueries++;
+    await new Promise((resolve) => setTimeout(resolve, 6000));
+    await route.continue();
+  });
   await page.goto('http://127.0.0.1:5174/scan-payments');
   await page.setViewportSize({ width: 1440, height: 1000 });
   await expect(page.getByText('监控上报记录', { exact: true })).toBeVisible();
@@ -175,9 +183,11 @@ test('扫码收款：后台配置、手机签名到账、积分和会员页面�
   );
   const uncertainRow = page.getByRole('row').filter({ hasText: '有金额的通知，收款性质待核对' });
   await expect(uncertainRow).toBeVisible({ timeout: 12_000 });
+  expect(delayedReceiptQueries).toBeGreaterThan(0);
   await expect(uncertainRow).toContainText(`¥${(manualOrder.amountFen / 100).toFixed(2)}`);
   await expect(uncertainRow).toContainText('未关联');
   await expect(page.getByRole('row').filter({ hasText: manualOrder.id })).toContainText('待付款');
+  await page.unroute('**/admin/scan-payments/receipts?*');
   await page
     .getByRole('row')
     .filter({ hasText: manualOrder.id })
