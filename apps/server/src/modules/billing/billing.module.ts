@@ -1,6 +1,11 @@
 /**
  * billing 模块装配（D-L0-16）。说明见 docs/backend/billing.md。
  */
+import { ScanPaymentService } from './application/scan-payments.js';
+import {
+  ScanPaymentController,
+  ScanPaymentAdminController,
+} from './http/scan-payment.controller.js';
 import { Module } from '@nestjs/common';
 import { IdentityModule } from '../identity/index.js';
 import { BillingAdminService } from './application/admin.js';
@@ -42,12 +47,15 @@ import { BILLING_SHARED_SEARCH_PORT } from './tokens.js';
 @Module({
   imports: [IdentityModule],
   controllers: [
+    ScanPaymentController,
+    ScanPaymentAdminController,
     BillingController,
     BillingAdminController,
     MembershipOfferController,
     MembershipAdminController,
   ],
   providers: [
+    ScanPaymentService,
     SharedSearchBilling,
     { provide: BILLING_SHARED_SEARCH_PORT, useExisting: SharedSearchBilling },
     CostResolutionService,

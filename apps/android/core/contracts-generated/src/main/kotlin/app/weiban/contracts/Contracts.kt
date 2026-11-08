@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 7.5. Regenerate: pnpm android:generate
+// Contract 7.6. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "7.5"
+const val CONTRACT_VERSION: String = "7.6"
 
 @Serializable
 data class AccountAlias(
@@ -10103,6 +10103,176 @@ data class RouteBillingBoundsInput(
     @SerialName("realtime") val `realtime`: RouteBillingBoundsInputRealtime? = null,
 )
 
+typealias ScanChannel = String
+
+@Serializable
+data class ScanCreateOrder(
+    @SerialName("clientOrderId") val `clientOrderId`: Id,
+    @SerialName("channel") val `channel`: ScanChannel,
+    @SerialName("purchase") val `purchase`: ScanPurchase,
+)
+
+@Serializable
+data class ScanDevice(
+    @SerialName("id") val `id`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("paired") val `paired`: Boolean,
+    @SerialName("active") val `active`: Boolean,
+    @SerialName("lastSeenAt") val `lastSeenAt`: Timestamp?,
+    @SerialName("listenerConnected") val `listenerConnected`: Boolean,
+    @SerialName("queued") val `queued`: Long,
+    @SerialName("online") val `online`: Boolean,
+)
+
+@Serializable
+data class ScanMonitorEndpointsPairResponse(
+    @EncodeDefault
+    @SerialName("ok") val `ok`: Boolean = true,
+)
+
+@Serializable
+data class ScanMonitorEndpointsReportResponse(
+    @EncodeDefault
+    @SerialName("ok") val `ok`: Boolean = true,
+    @SerialName("status") val `status`: String,
+)
+
+@Serializable
+data class ScanMonitorPair(
+    @SerialName("deviceId") val `deviceId`: Id,
+    @SerialName("pairCode") val `pairCode`: String,
+    @SerialName("publicKey") val `publicKey`: String,
+    @SerialName("signature") val `signature`: String,
+)
+
+@Serializable
+data class ScanMonitorReport(
+    @SerialName("deviceId") val `deviceId`: Id,
+    @SerialName("requestTime") val `requestTime`: Timestamp,
+    @SerialName("signature") val `signature`: String,
+    @SerialName("event") val `event`: ScanMonitorReportEvent,
+)
+
+@Serializable
+data class ScanOrder(
+    @SerialName("id") val `id`: Id,
+    @SerialName("userId") val `userId`: Id?,
+    @SerialName("channel") val `channel`: ScanChannel,
+    @SerialName("title") val `title`: String,
+    @SerialName("kind") val `kind`: String,
+    @SerialName("amountFen") val `amountFen`: Long,
+    @SerialName("baseFen") val `baseFen`: Long,
+    @SerialName("points") val `points`: Long,
+    @SerialName("status") val `status`: String,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("expiresAt") val `expiresAt`: Timestamp,
+    @SerialName("paidAt") val `paidAt`: Timestamp?,
+    @SerialName("qr") val `qr`: String,
+)
+
+@Serializable
+data class ScanPaymentAdminEndpointsActivateBody(
+    @SerialName("active") val `active`: Boolean,
+)
+
+@Serializable
+data class ScanPaymentAdminEndpointsActivateParams(
+    @SerialName("deviceId") val `deviceId`: Id,
+)
+
+typealias ScanPaymentAdminEndpointsDevicesResponse = List<ScanDevice>
+
+@Serializable
+data class ScanPaymentAdminEndpointsManualReceiptBody(
+    @SerialName("orderId") val `orderId`: Id,
+    @SerialName("amountFen") val `amountFen`: Long,
+    @SerialName("receiptReference") val `receiptReference`: String,
+    @SerialName("reason") val `reason`: String,
+)
+
+@Serializable
+data class ScanPaymentAdminEndpointsOrdersQuery(
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
+@Serializable
+data class ScanPaymentAdminEndpointsOrdersResponse(
+    @SerialName("items") val `items`: List<ScanOrder>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class ScanPaymentAdminEndpointsPairCodeBody(
+    @SerialName("name") val `name`: String,
+)
+
+@Serializable
+data class ScanPaymentAdminEndpointsPairCodeResponse(
+    @SerialName("deviceId") val `deviceId`: Id,
+    @SerialName("pairCode") val `pairCode`: String,
+    @SerialName("expiresAt") val `expiresAt`: Timestamp,
+)
+
+@Serializable
+data class ScanPaymentAdminEndpointsReceiptsResponse(
+    @SerialName("items") val `items`: List<ScanReceipt>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class ScanPaymentAdminEndpointsResolveBody(
+    @SerialName("orderId") val `orderId`: Id?,
+    @SerialName("reason") val `reason`: String,
+)
+
+@Serializable
+data class ScanPaymentAdminEndpointsResolveParams(
+    @SerialName("receiptId") val `receiptId`: Id,
+)
+
+@Serializable
+data class ScanPaymentEndpointsGetParams(
+    @SerialName("orderId") val `orderId`: Id,
+)
+
+@Serializable
+data class ScanPaymentEndpointsListResponse(
+    @SerialName("items") val `items`: List<ScanOrder>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class ScanPaymentEndpointsOptionsResponse(
+    @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("monitorOnline") val `monitorOnline`: Boolean,
+    @SerialName("channels") val `channels`: List<ScanChannel>,
+)
+
+@Serializable
+data class ScanPaymentSettings(
+    @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("cutoverConfirmed") val `cutoverConfirmed`: Boolean,
+    @SerialName("wechatQr") val `wechatQr`: String,
+    @SerialName("alipayQr") val `alipayQr`: String,
+)
+
+typealias ScanPurchase = JsonElement
+
+@Serializable
+data class ScanReceipt(
+    @SerialName("id") val `id`: Id,
+    @SerialName("deviceId") val `deviceId`: Id?,
+    @SerialName("eventId") val `eventId`: String,
+    @SerialName("channel") val `channel`: ScanChannel,
+    @SerialName("amountFen") val `amountFen`: Long,
+    @SerialName("observedAt") val `observedAt`: Timestamp,
+    @SerialName("receivedAt") val `receivedAt`: Timestamp,
+    @SerialName("status") val `status`: String,
+    @SerialName("reason") val `reason`: String,
+    @SerialName("orderId") val `orderId`: Id?,
+)
+
 @Serializable
 data class ScenarioConfig(
     @SerialName("scenarios") val `scenarios`: List<ScenarioSelection>,
@@ -14945,6 +15115,52 @@ data class RouteBillingBoundsInputRealtime(
     @SerialName("maxResponseOutputTokens") val `maxResponseOutputTokens`: Long,
     @SerialName("contextTokens") val `contextTokens`: Long,
 )
+
+@Serializable(with = ScanMonitorReportEventSerializer::class)
+sealed interface ScanMonitorReportEvent {
+    val `type`: String
+}
+
+@Serializable
+data class ScanMonitorReportEventHeartbeat(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "heartbeat",
+    @SerialName("listenerConnected") val `listenerConnected`: Boolean,
+    @SerialName("queued") val `queued`: Long,
+) : ScanMonitorReportEvent
+
+@Serializable
+data class ScanMonitorReportEventReceipt(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "receipt",
+    @SerialName("eventId") val `eventId`: String,
+    @SerialName("channel") val `channel`: ScanChannel,
+    @SerialName("amountFen") val `amountFen`: Long,
+    @SerialName("observedAt") val `observedAt`: Timestamp,
+    @SerialName("postedAt") val `postedAt`: Timestamp,
+) : ScanMonitorReportEvent
+
+object ScanMonitorReportEventSerializer : KSerializer<ScanMonitorReportEvent> {
+    override val descriptor: SerialDescriptor = buildClassSerialDescriptor("ScanMonitorReportEvent")
+    override fun deserialize(decoder: Decoder): ScanMonitorReportEvent {
+        val input = decoder as JsonDecoder
+        var value = input.decodeJsonElement().jsonObject
+        val tag = value["type"]?.jsonPrimitive?.content
+        return when (tag) {
+            "heartbeat" -> input.json.decodeFromJsonElement(ScanMonitorReportEventHeartbeat.serializer(), value)
+            "receipt" -> input.json.decodeFromJsonElement(ScanMonitorReportEventReceipt.serializer(), value)
+            else -> throw SerializationException("Unknown discriminator")
+        }
+    }
+    override fun serialize(encoder: Encoder, value: ScanMonitorReportEvent) {
+        val output = encoder as JsonEncoder
+        val element = when (value) {
+            is ScanMonitorReportEventHeartbeat -> output.json.encodeToJsonElement(ScanMonitorReportEventHeartbeat.serializer(), value)
+            is ScanMonitorReportEventReceipt -> output.json.encodeToJsonElement(ScanMonitorReportEventReceipt.serializer(), value)
+        }
+        output.encodeJsonElement(element)
+    }
+}
 
 @Serializable
 data class ServerAuthOkFrameData(

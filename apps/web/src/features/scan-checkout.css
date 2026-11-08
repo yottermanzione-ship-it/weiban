@@ -1,0 +1,34 @@
+.scan-checkout {
+  max-height: 65dvh;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+.scan-checkout p {
+  margin: 12px 0;
+}
+.scan-checkout .scan-qr {
+  width: 210px;
+  height: 210px;
+  max-width: 100%;
+  object-fit: contain;
+  background: white;
+}
+.scan-checkout .scan-amount {
+  font-size: 28px;
+  font-weight: 600;
+}
+.scan-checkout .full {
+  margin: 10px 0;
+}
+.scan-record {
+  display: block;
+  width: 100%;
+  padding: 12px 0;
+  text-align: left;
+}
+
+.dialog-body .scan-checkout .scan-amount {
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--text-primary, #191919);
+}

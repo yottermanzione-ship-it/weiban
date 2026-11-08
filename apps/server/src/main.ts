@@ -10,6 +10,7 @@ import 'reflect-metadata';
 import { pathToFileURL } from 'node:url';
 import type { INestApplication, INestApplicationContext } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { json, type Request, type Response, type NextFunction } from 'express';
 import { AppModule } from './app.module.js';
 import { loadLocalEnv } from './platform/config/local-env.js';
 import { NestPinoLogger } from './platform/logging/nest-logger.js';
@@ -35,6 +36,17 @@ export async function createApp(options: PlatformOptions): Promise<INestApplicat
 
 /** HTTP 应用的 Express 设置（createApp 与集成测试共用）。 */
 export function configureHttpApp(app: INestApplication, config: AppConfig): void {
+  // Only the authenticated QR settings endpoint accepts two bounded image data URLs.
+  // Other endpoints keep Nest's existing request-body size limit.
+  const qrJson = json({ limit: '850kb' });
+  // Nest detects global parsers by function name: do not register a path-scoped jsonParser
+  // directly, otherwise Nest would skip the ordinary JSON parser for every other route.
+  app.use(
+    '/api/v1/admin/scan-payments/settings',
+    function scanQrJson(req: Request, res: Response, next: NextFunction) {
+      qrJson(req, res, next);
+    },
+  );
   const express = app.getHttpAdapter().getInstance() as {
     disable(name: string): void;
     set(name: string, value: unknown): void;

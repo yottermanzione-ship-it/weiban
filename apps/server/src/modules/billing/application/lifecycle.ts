@@ -107,6 +107,12 @@ export class BillingLifecycle implements OnModuleInit, UserDataOwner {
   /** 物理删除该用户的钱包、流水、冻结、每日汇总（数据库函数 billing.purge_user_account）。可重复调用。 */
   async purgeUser(userId: string): Promise<number> {
     return this.database.transaction(async (tx) => {
+      await tx.query("SELECT pg_advisory_xact_lock(hashtextextended('billing:scan-payments',0))");
+      // Preserve amount quarantine/dedup tombstones without any account linkage after deletion.
+      await tx.query(
+        "UPDATE billing.scan_orders SET user_id=NULL, client_order_id=gen_random_uuid(), qr='', ledger_entry_id=NULL, membership_order_id=NULL, status=CASE WHEN status='paid' THEN 'paid' ELSE 'cancelled' END WHERE user_id=$1",
+        [userId],
+      );
       const { rows: before } = await tx.query<{ balance: string }>(
         `SELECT balance_micros AS balance FROM billing.accounts WHERE user_id = $1`,
         [userId],
@@ -147,6 +153,7 @@ export class BillingLifecycle implements OnModuleInit, UserDataOwner {
             + (SELECT count(*) FROM billing.daily_spend d JOIN billing.accounts a ON a.id = d.account_id
                 WHERE a.user_id = $1)
             + (SELECT count(*) FROM billing.membership_orders o WHERE o.user_id = $1)
+            + (SELECT count(*) FROM billing.scan_orders o WHERE o.user_id = $1)
             + (SELECT count(*) FROM billing.shared_search_members m JOIN billing.accounts a ON a.id=m.account_id WHERE a.user_id=$1)
             + (SELECT count(*) FROM billing.shared_search_carries c JOIN billing.accounts a ON a.id=c.account_id WHERE a.user_id=$1) AS n`,
       [userId],

@@ -30,6 +30,9 @@ const SENSITIVE_KEY_EXACT = new Set([
   'privatekey',
   'credential',
   'credentials',
+  'paircode',
+  'signature',
+  'receiptreference',
 ]);
 const SENSITIVE_KEY_PATTERNS = [/^secret/, /secret$/, /^token/, /token$/, /password/];
 

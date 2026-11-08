@@ -71,3 +71,5 @@ export { PriceService } from './application/prices.js';
 export { BillingAdminService } from './application/admin.js';
 export { MembershipOrderService } from './application/membership-orders.js';
 export { ServiceFeeService } from './application/service-fees.js';
+
+export { ScanPaymentService, monitorSigningText } from './application/scan-payments.js';

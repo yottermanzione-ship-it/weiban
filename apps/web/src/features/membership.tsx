@@ -12,6 +12,7 @@
 import { useState } from 'react';
 import {
   MembershipEndpoints,
+  ScanPaymentEndpoints,
   MembershipOfferEndpoints,
   MemoryTierEndpoints,
   RoleRequestEndpoints,
@@ -20,6 +21,7 @@ import {
 } from '@weiban/contracts';
 import { useRemote } from '../data/use-remote.js';
 import { NavBar } from './shell-kit.js';
+import { ScanCheckout } from './scan-checkout.js';
 import { Dialog } from './toast.js';
 import { formatPoints } from './points.js';
 
@@ -79,6 +81,7 @@ function CellView({ value }: { value: Cell }) {
 }
 
 export function MembershipPage() {
+  const scan = useRemote(ScanPaymentEndpoints.options);
   const offer = useRemote(MembershipOfferEndpoints.getOffer);
   const membership = useRemote(MembershipEndpoints.get);
   const roleConfig = useRemote(RoleRequestEndpoints.getConfig);
@@ -200,7 +203,17 @@ export function MembershipPage() {
           {offer.error ?? roleConfig.error}
         </p>
       )}
-      {picked && data && (
+      {picked && scan.data?.enabled && (
+        <ScanCheckout
+          purchase={{ kind: 'membership', planId: picked.planId }}
+          onClose={() => {
+            setPicked(null);
+            offer.refresh();
+            membership.refresh();
+          }}
+        />
+      )}
+      {picked && data && !scan.data?.enabled && (
         <Dialog
           title={`开通 PRO+ ${picked.name}`}
           actions={[{ label: '知道了', tone: 'primary', onClick: () => setPicked(null) }]}
