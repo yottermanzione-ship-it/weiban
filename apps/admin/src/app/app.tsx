@@ -11,6 +11,7 @@ import { DashboardPage } from '../features/dashboard.js';
 import { UserListPage } from '../features/users/list.js';
 import { MembershipRecordsPage } from '../features/users/records.js';
 import { TopupRecordsPage } from '../features/users/topups.js';
+import { ScanPaymentsPage } from '../features/scan-payments.js';
 import { PlansPage } from '../features/users/plans.js';
 import { SettingsPage } from '../features/settings.js';
 import { ModelManagementPage } from '../features/model-management.js';
@@ -211,6 +212,7 @@ function AdminShell({
         <Route path="/membership-records" element={<MembershipRecordsPage />} />
         <Route path="/recharge-records" element={<TopupRecordsPage />} />
         <Route path="/plans" element={<PlansPage />} />
+        <Route path="/scan-payments" element={<ScanPaymentsPage />} />
         {/* 10-20 批 E2：原「会员与订单」混合页删除，旧地址跳到用户列表；原「充值档位」并入套餐与价格。 */}
         <Route path="/membership" element={<Navigate to="/accounts" replace />} />
         <Route path="/recharge" element={<Navigate to="/plans" replace />} />

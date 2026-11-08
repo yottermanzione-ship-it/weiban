@@ -7,12 +7,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   BillingEndpoints,
+  ScanPaymentEndpoints,
   RECHARGE_MIN_FEN,
   RECHARGE_MAX_FEN,
   ModelAccessEndpoints,
   type LedgerEntry,
   type ModelInfo,
 } from '@weiban/contracts';
+import { ScanCheckout } from './scan-checkout.js';
 import { api } from '../data/client.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
 import { useCharacterNames } from '../data/character-names.js';
@@ -45,6 +47,7 @@ export function localDay(offset = 0) {
 // ---------- 钱包（6.2） ----------
 
 export function WalletPage() {
+  const [paymentHistory, setPaymentHistory] = useState(false);
   const wallet = useRemote(BillingEndpoints.getWallet);
   const today = localDay();
   const usage = useRemote(BillingEndpoints.getUsageSummary, {
@@ -94,6 +97,7 @@ export function WalletPage() {
       </section>
       <MenuGroup>
         <MenuRow to="/ledger" label="积分明细" />
+        <MenuRow label="扫码付款记录" onClick={() => setPaymentHistory(true)} />
         <MenuRow
           to="/usage"
           label="用量"
@@ -107,6 +111,14 @@ export function WalletPage() {
           {wallet.error}
         </p>
       )}
+      {paymentHistory && (
+        <ScanCheckout
+          onClose={() => {
+            setPaymentHistory(false);
+            wallet.refresh();
+          }}
+        />
+      )}
     </main>
   );
 }
@@ -114,6 +126,8 @@ export function WalletPage() {
 // ---------- 充值（6.3） ----------
 
 export function RechargePage() {
+  const scan = useRemote(ScanPaymentEndpoints.options);
+  const [checkout, setCheckout] = useState<number | null>(null);
   const options = useRemote(BillingEndpoints.getRechargeOptions);
   const [selected, setSelected] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
@@ -129,6 +143,10 @@ export function RechargePage() {
   const valid = Number.isSafeInteger(fen) && fen >= RECHARGE_MIN_FEN && fen <= RECHARGE_MAX_FEN;
   async function quote() {
     if (pending || !data || (custom && !valid)) return;
+    if (scan.data?.enabled) {
+      setCheckout(custom ? fen : Math.round((tier?.priceMicros ?? 0) / 10_000));
+      return;
+    }
     setPending(true);
     setError('');
     try {
@@ -208,7 +226,7 @@ export function RechargePage() {
           disabled={!data || pending || (custom ? !valid : !tier)}
           onClick={() => void quote()}
         >
-          {pending ? '正在确认金额…' : '联系管理员充值'}
+          {pending ? '正在确认金额…' : scan.data?.enabled ? '扫码充值' : '联系管理员充值'}
         </button>
         <p className="recharge-note">
           积分仅用于本应用内的 AI 对话、通话等消耗，不可提现、不可转让。1 元 = 100 积分。
@@ -218,6 +236,12 @@ export function RechargePage() {
         <p role="alert" className="notice-bar">
           {error || options.error}
         </p>
+      )}
+      {checkout !== null && (
+        <ScanCheckout
+          purchase={{ kind: 'recharge', amountFen: checkout }}
+          onClose={() => setCheckout(null)}
+        />
       )}
       {contact && (
         <Dialog actions={[{ label: '知道了', tone: 'primary', onClick: () => setContact(null) }]}>

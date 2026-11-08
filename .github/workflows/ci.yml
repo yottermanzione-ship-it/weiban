@@ -155,6 +155,8 @@ jobs:
             apps/android/**/*.gradle.kts
             apps/android/gradle/libs.versions.toml
             apps/android/gradle/wrapper/gradle-wrapper.properties
+            tools/payment-monitor/**/*.gradle.kts
+            tools/payment-monitor/gradle/wrapper/gradle-wrapper.properties
       - name: 安装 Android SDK 36
         run: |
           sdk_manager="${ANDROID_HOME:?}/cmdline-tools/latest/bin/sdkmanager"
@@ -172,6 +174,10 @@ jobs:
         run: ./gradlew --no-daemon ktlintCheck detekt :shell:lintDebug testDebugUnitTest :core:contracts-generated:test assembleDebug
       - name: 验证安卓测试实际执行且没有跳过
         run: node .github/scripts/check-android-test-report.mjs
+      - name: 独立收款监控的解析、协议和安装包构建
+        run: |
+          bash tools/payment-monitor/gradlew -p tools/payment-monitor --no-daemon testDebugUnitTest assembleDebug lintDebug
+          node tools/payment-monitor/check-tests.mjs
       - name: 保存可安装的调试 APK 与测试报告
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -182,6 +188,8 @@ jobs:
           path: |
             apps/android/app/build/outputs/apk/debug/*.apk
             apps/android/**/build/test-results/**/*.xml
+            tools/payment-monitor/app/build/test-results/**/*.xml
+            tools/payment-monitor/app/build/reports/lint-results-debug.*
       - name: 保存安卓网页体验版安装包
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

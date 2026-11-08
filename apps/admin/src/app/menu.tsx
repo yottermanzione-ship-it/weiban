@@ -26,6 +26,7 @@ export const MENU: MenuDataItem[] = [
       { path: '/membership-records', name: '会员订阅记录' },
       { path: '/recharge-records', name: '充值记录' },
       { path: '/plans', name: '套餐与价格' },
+      { path: '/scan-payments', name: '扫码收款' },
     ],
   },
   {
