@@ -464,13 +464,13 @@ describeDb('电话与文字共用上下文：真实数据库及加密存档，�
       .mockRejectedValueOnce(new Error('fixture audit unavailable'));
     try {
       await app.get(ConversationMemoryService).call(saved.input.callId);
-      const pending = await db.query(
+      const pending = await db.query<{ status: string; result_ciphertext: Buffer | null }>(
         'SELECT status,result_ciphertext FROM ai_runtime.call_memory_jobs WHERE id=$1',
         [saved.input.callId],
       );
       expect(pending.rows[0]!.status).toBe('pending');
       expect(pending.rows[0]!.result_ciphertext).toBeInstanceOf(Buffer);
-      expect(pending.rows[0]!.result_ciphertext.toString()).not.toContain('REPAIR_RETRY_CANARY');
+      expect(pending.rows[0]!.result_ciphertext!.toString()).not.toContain('REPAIR_RETRY_CANARY');
       const beforeRetry = await app
         .get(MemoryService)
         .context(userId, characterId, 'normal', '', undefined, { uncapped: true });
