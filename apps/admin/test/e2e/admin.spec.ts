@@ -59,6 +59,18 @@ test('昵称选择保留同名用户编号，完整编号和多用户查询仍�
   });
   await page.locator(`.ant-select-item-option[title="${second}"]`).click();
   expect((await filtered).postDataJSON().filter.userIds).toEqual([first, second]);
+  await page.reload();
+  await multi.click();
+  const bulk = page.waitForRequest((r) => {
+    if (r.method() !== 'POST') return false;
+    try {
+      return r.postDataJSON()?.filter?.userIds?.length === 2;
+    } catch {
+      return false;
+    }
+  });
+  await multi.fill(`${second}，${first},${second}`);
+  expect((await bulk).postDataJSON().filter.userIds).toEqual([second, first]);
 });
 
 async function login(page: Page, username = 'browser_admin') {

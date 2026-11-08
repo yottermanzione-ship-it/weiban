@@ -106,7 +106,16 @@ export function UserPicker(props: UserPickerProps) {
       loading={props.directory.loading}
       value={props.multiple ? (props.value ?? []) : props.value || undefined}
       searchValue={search}
-      onSearch={setSearch}
+      onSearch={(input) => {
+        const ids = input
+          .trim()
+          .split(/[,，\s]+/)
+          .filter(Boolean);
+        if (props.multiple && ids.length > 1 && ids.every((id) => Id.safeParse(id).success)) {
+          props.onChange?.([...new Set([...selected, ...ids])]);
+          setSearch('');
+        } else setSearch(input);
+      }}
       onChange={(value) => {
         if (props.multiple) props.onChange?.(Array.isArray(value) ? value : []);
         else props.onChange?.(typeof value === 'string' ? value : '');
