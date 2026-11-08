@@ -34,7 +34,7 @@ import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
 import { FieldHelp, FormSection, Page, SectionCard, StatusTag, useToast } from '../ui/page.js';
 import { formatDateTime } from '../ui/format.js';
 import { useFormFeedback } from '../data/form-feedback.js';
-import { UserIdentity, userDisplayName, useUserDirectory } from './users/identity.js';
+import { UserIdentity, userDisplayName, UserPicker, useUserDirectory } from './users/identity.js';
 
 type Work = z.infer<typeof AdminPlazaWork>;
 type Report = z.infer<typeof AdminPlazaReport>;
@@ -137,6 +137,7 @@ function SnapshotView({ snapshot }: { snapshot: PlazaSnapshot }) {
 }
 
 function WorksTab() {
+  const directory = useUserDirectory();
   const [authorUserId, setAuthorUserId] = useState('');
   const [status, setStatus] = useState('');
   const [minReports, setMinReports] = useState<number | null>(null);
@@ -249,13 +250,11 @@ function WorksTab() {
         onRowClick={(row) => setDetail(row)}
         filters={
           <>
-            <Input.Search
-              allowClear
-              placeholder="按作者用户 ID"
-              style={{ width: 220 }}
+            <UserPicker
+              directory={directory}
+              placeholder="作者（昵称、账号或编号）"
               value={authorUserId}
-              onChange={(e) => setAuthorUserId(e.target.value)}
-              onSearch={() => void load()}
+              onChange={setAuthorUserId}
             />
             <Select
               allowClear
@@ -1113,11 +1112,11 @@ function BansTab() {
           <FormSection title="停权对象" />
           <Form.Item
             name="userId"
-            label="用户 ID"
-            rules={[{ required: true, message: '填写用户 ID' }]}
-            extra={<FieldHelp>可以在「作品」抽屉里看到作者的用户 ID。</FieldHelp>}
+            label="用户"
+            rules={[{ required: true, message: '请选择用户' }]}
+            extra={<FieldHelp>按昵称、账号或编号选择；同名时请核对账号编号。</FieldHelp>}
           >
-            <Input placeholder="粘贴用户 ID" />
+            <UserPicker directory={directory} style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item name="period" label="期限">
             <Radio.Group>

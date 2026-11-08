@@ -15,7 +15,13 @@ import { DataTable, type ProColumns } from '../../ui/table.js';
 import { RecordDrawer } from '../../ui/drawer.js';
 import { StatusTag, useToast } from '../../ui/page.js';
 import { formatDateTime, formatInt, formatYuan, pointsOf } from '../../ui/format.js';
-import { UserIdentity, shortUserId, userDisplayName } from '../users/identity.js';
+import {
+  UserIdentity,
+  shortUserId,
+  userDisplayName,
+  UserPicker,
+  useUserDirectory,
+} from '../users/identity.js';
 import {
   ERROR_LABELS,
   PURPOSE_LABELS,
@@ -38,12 +44,13 @@ export function RecordsTab({
   initial: { upstreamId: string; modelKey: string; status: '' | 'failed' };
 }) {
   const toast = useToast();
+  const directory = useUserDirectory();
   const start = rangeOf('7d');
   const [range, setRange] = useState<[Dayjs, Dayjs]>([
     dayjs(toLocalInput(start.from)),
     dayjs(toLocalInput(start.to)),
   ]);
-  const [userId, setUserId] = useState('');
+  const [userIds, setUserIds] = useState<string[]>([]);
   const [characterId, setCharacterId] = useState('');
   const [modelKey, setModelKey] = useState(initial.modelKey);
   const [upstreamId, setUpstreamId] = useState(initial.upstreamId);
@@ -59,7 +66,7 @@ export function RecordsTab({
     () => ({
       from: fromLocalInput(range[0].format('YYYY-MM-DDTHH:mm')),
       to: fromLocalInput(range[1].format('YYYY-MM-DDTHH:mm')),
-      ...(userId.trim() ? { userIds: userId.split(/[,，\s]+/).filter(Boolean) } : {}),
+      ...(userIds.length ? { userIds } : {}),
       ...(characterId.trim()
         ? { characterIds: characterId.split(/[,，\s]+/).filter(Boolean) }
         : {}),
@@ -68,7 +75,7 @@ export function RecordsTab({
       ...(purpose ? { purposes: [purpose as never] } : {}),
       ...(status ? { status } : {}),
     }),
-    [range, userId, characterId, modelKey, upstreamId, purpose, status],
+    [range, userIds, characterId, modelKey, upstreamId, purpose, status],
   );
 
   const cursor = cursors.at(-1);
@@ -279,11 +286,15 @@ export function RecordsTab({
           }}
           allowClear={false}
         />
-        <Input
-          style={{ width: 160 }}
-          placeholder="用户 ID（可多个）"
-          value={userId}
-          onChange={(e) => setUserId(e.target.value)}
+        <UserPicker
+          multiple
+          directory={directory}
+          placeholder="用户（可多选昵称、账号或编号）"
+          value={userIds}
+          onChange={(ids) => {
+            setUserIds(ids);
+            setCursors([undefined]);
+          }}
         />
         <Input
           style={{ width: 160 }}

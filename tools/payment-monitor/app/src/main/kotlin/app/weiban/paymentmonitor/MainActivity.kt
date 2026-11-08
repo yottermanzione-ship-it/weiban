@@ -11,17 +11,16 @@ import android.widget.*
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
-    private lateinit var history: TextView
     private lateinit var setupPanel: LinearLayout
     private var startAfterPermission = false
     private val handler = Handler(Looper.getMainLooper())
     private val refresh = object : Runnable { override fun run() { renderStatus(); handler.postDelayed(this, 2000) } }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        QueueStore.retireLegacyDisplay(this)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         val outer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.rgb(245,245,245)); setPadding(24,24,24,24) }
         outer.setOnApplyWindowInsetsListener { v, insets ->
@@ -60,9 +59,7 @@ class MainActivity : Activity() {
             if (QueueStore.deviceId(this).isEmpty()) alert("请先保存连接设置")
             else { ReceiptListener.scan(this); Delivery.start(this); renderStatus(); alert("已请求检查连接并补报，请查看首页的通知监听、服务器连接和待补报状态。") }
         }
-        text("最近到账", 20f)
-        history = text("尚无到账记录")
-        text("到账后自动对应订单，区分积分充值和会员购买。未匹配的记录显示“待核对”，请到后台对照账单。", 14f)
+        text("到账结果请到后台「用户 → 扫码收款 → 监控上报记录」查看。那里显示原通知时间、积分充值或会员购买，以及人工核对后的最新结果。手机只负责监听和补报。", 14f)
         button("通知权限") { openListenerSettings() }
         button("后台运行设置") { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
         text("保持微信、支付宝已登录且收款通知开启。仅处理这两个应用的到账通知，不保存通知原文；软件或系统断开监听时，会暂停新订单。", 14f)
@@ -119,17 +116,6 @@ class MainActivity : Activity() {
         val retryWarning = if (prefs.getBoolean("retryUnavailable", false)) "\n后台补报未能安排，到账记录仍保留；请保持应用打开，点“检查连接并补报”重试。" else ""
         val readiness = if (!ReceiptListener.connected) "监控尚未就绪：通知监听未连接" else if (connectedAt == 0L || System.currentTimeMillis() - connectedAt > 120_000) "通知监听已连接，等待服务器确认" else "监控已连接"
         status.text = "$readiness\n设置：${if (QueueStore.deviceId(this).isEmpty()) "未设置" else "已保存，无需重复设置"}\n通知监听：${if (ReceiptListener.connected) "已连接" else "未连接"}\n$connection\n待补报：$count\n${QueueStore.lastStatus(this)}$retryWarning"
-        val unknown = prefs.getInt("unrecognized",0)
-        if (unknown > 0) status.append("\n历史未识别通知：$unknown（不是当前漏款数，请查看后台上报记录）")
-        history.text = try {
-            val data = QueueStore.read(this)
-            if (data.length() == 0) "尚无到账记录" else (maxOf(0, data.length() - 10) until data.length()).reversed().joinToString("\n\n") { i ->
-                val event = data.getJSONObject(i)
-                val kind = when(event.optString("purchaseKind")) { "recharge" -> "积分充值"; "membership" -> "会员购买"; else -> "待核对" }
-                val result = if (!event.getBoolean("accepted")) "待补报" else when(event.optString("status")) { "matched" -> kind; "ignored" -> "已忽略"; else -> "待核对" }
-                "${time(event.getString("postedAt"))}  ${if (event.getString("channel") == "wechat") "微信" else "支付宝"}  ¥${String.format(Locale.CHINA, "%.2f", event.getInt("amountFen") / 100.0)}\n$result"
-            }
-        } catch (_: Exception) { "到账记录暂时无法读取，原记录已保留，请核对后台" }
     }
     private fun alert(message: String) { AlertDialog.Builder(this).setTitle("提示").setMessage(message).setPositiveButton("知道了", null).show() }
     override fun onResume() {

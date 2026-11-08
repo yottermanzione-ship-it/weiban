@@ -28,11 +28,9 @@ object Delivery {
                     if (event.has("reviewReason")) payload.put("reviewReason", event.getString("reviewReason"))
                     val result = MonitorApi.report(app, payload)
                     QueueStore.accept(app, event.getString("eventId"), result)
-                    if (result.optString("status") == "review") QueueStore.prefs(app).edit().putBoolean("reviewPending", true).commit()
                 }
                 QueueStore.prefs(app).edit().putLong("connectedAt", System.currentTimeMillis()).commit()
                 QueueStore.status(app, if (!ReceiptListener.connected) "服务器连接正常；通知监听未连接，尚不能监控到账"
-                    else if (QueueStore.prefs(app).getBoolean("reviewPending", false)) "监控已连接；有到账需要到后台核对"
                     else "通知监听与服务器均已连接")
             } catch (_: java.io.IOException) { QueueStore.status(app, "网络未连通，到账记录保留待补报") }
             catch (e: IllegalStateException) { QueueStore.status(app, e.message?.takeIf { it.startsWith("后台") || it.startsWith("到账标识") || it.startsWith("服务器") } ?: "本地记录或签名暂不可用，已保留数据，请核对") }

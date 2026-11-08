@@ -13,6 +13,16 @@ object QueueStore {
     fun lastStatus(ctx: Context) = prefs(ctx).getString("status", "尚未连接服务器").orEmpty()
     fun status(ctx: Context, message: String) { prefs(ctx).edit().putString("status", message).putLong("statusAt", System.currentTimeMillis()).commit() }
     fun saveDevice(ctx: Context, id: String) = prefs(ctx).edit().putString("deviceId", id).commit()
+    fun retireLegacyDisplay(ctx: Context) {
+        // These old UI-only counters are not receipts. Keep binding, timestamps and the entire journal.
+        val settings = prefs(ctx)
+        val edit = settings.edit().remove("unrecognized").remove("reviewPending")
+        if (settings.getString("status", "") in setOf(
+            "监控已连接；有到账需要到后台核对",
+            "有通知未提取到有效金额；已识别金额的通知会报到后台，通知原文不保存"
+        )) edit.putString("status", "到账处理结果请到后台查看")
+        edit.commit()
+    }
     private fun file(ctx: Context) = AtomicFile(File(ctx.filesDir, "receipts-v1.json"))
     @Synchronized fun read(ctx: Context): JSONArray {
         val f = file(ctx)

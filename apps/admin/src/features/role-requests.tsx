@@ -31,7 +31,7 @@ import { RecordDrawer } from '../ui/drawer.js';
 import { FieldHelp, FormSection, Page, SectionCard, StatusTag, useToast } from '../ui/page.js';
 import { formatDateTime } from '../ui/format.js';
 import { useFormFeedback } from '../data/form-feedback.js';
-import { UserIdentity, userDisplayName } from './users/identity.js';
+import { UserIdentity, userDisplayName, UserPicker, useUserDirectory } from './users/identity.js';
 
 const STATUS_LABELS: Record<string, string> = {
   pending: '待处理',
@@ -72,6 +72,7 @@ export function RoleRequestsPage() {
 }
 
 function RequestList() {
+  const directory = useUserDirectory();
   const [status, setStatus] = useState<'' | RoleRequestStatus>('pending');
   const [userId, setUserId] = useState('');
   const [applied, setApplied] = useState<{ status: '' | RoleRequestStatus; userId: string }>({
@@ -199,13 +200,13 @@ function RequestList() {
                 { value: 'cancelled', label: '已撤回' },
               ]}
             />
-            <Input.Search
-              allowClear
-              placeholder="按用户 ID 查"
-              style={{ width: 220 }}
+            <UserPicker
+              directory={directory}
               value={userId}
-              onChange={(e) => setUserId(e.target.value)}
-              onSearch={(value) => setApplied({ status, userId: value })}
+              onChange={(value) => {
+                setUserId(value);
+                setApplied({ status, userId: value });
+              }}
             />
           </>
         }

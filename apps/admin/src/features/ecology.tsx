@@ -3,7 +3,7 @@
  * 决策模型未配置时生态不运行（不会改用用户的聊天模型）。运行记录不含碎碎念和消息原文。
  */
 import { useEffect, useState } from 'react';
-import { Alert, Button, Form, Input, InputNumber, Select, Space, Statistic, Tabs } from 'antd';
+import { Alert, Button, Form, InputNumber, Select, Space, Statistic, Tabs } from 'antd';
 import {
   ECOLOGY_ACTION_KEYS,
   EcologyAdminEndpoints,
@@ -19,7 +19,7 @@ import { DataTable, type ProColumns } from '../ui/table.js';
 import { FieldHelp, FormSection, Page, SectionCard, StatusTag, useToast } from '../ui/page.js';
 import { formatDateTime } from '../ui/format.js';
 import { useFormFeedback } from '../data/form-feedback.js';
-import { UserIdentity, useUserDirectory } from './users/identity.js';
+import { UserIdentity, UserPicker, useUserDirectory } from './users/identity.js';
 
 /** 批 EJ：能做原生判定（Jev 类）= 目录或任一启用线路核准了「决策」计费上限（与服务器同一口径）。 */
 function isDecisionModel(m: AdminModel): boolean {
@@ -287,12 +287,7 @@ function EcologyRunsTab() {
       title: '用户',
       width: 150,
       render: (_, r) => (
-        <UserIdentity
-          compact
-          userId={r.userId}
-          label={directory.byId.get(r.userId)}
-          deleted={!directory.loading && !directory.error && !directory.byId.has(r.userId)}
-        />
+        <UserIdentity compact userId={r.userId} label={directory.byId.get(r.userId)} />
       ),
     },
     {
@@ -327,12 +322,7 @@ function EcologyRunsTab() {
   return (
     <div className="tab-body">
       <div className="filter-panel">
-        <Input
-          style={{ width: 280 }}
-          placeholder="用户 ID（完整）"
-          value={userId}
-          onChange={(e) => setUserId(e.target.value)}
-        />
+        <UserPicker directory={directory} value={userId} onChange={setUserId} />
         <Select
           style={{ width: 150 }}
           allowClear
