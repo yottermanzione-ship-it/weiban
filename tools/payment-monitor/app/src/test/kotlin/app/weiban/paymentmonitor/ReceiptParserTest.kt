@@ -16,14 +16,14 @@ class ReceiptParserTest {
         assertEquals("notice_uncertain", parse("朋友：微信支付收款10.00元")?.reviewReason)
     }
     @Test fun rejectsRefundsAggregationAndBadDecimals() {
-        for (text in listOf("退款10元到账", "微信支付付款成功10元", "转账收款10元", "收款10元，累计100元", "[2条]微信支付收款10元", "收款10元\n收款20元")) assertNotNull(text, parse(text)?.reviewReason)
+        for (text in listOf("退款10元到账", "微信支付付款成功10元", "转账收款10元", "收款10元，累计100元", "收款10元\n收款20元")) assertNotNull(text, parse(text)?.reviewReason)
         for (text in listOf("收款10.001元", "收款0元", "收款999999999元")) assertNull(text, parse(text))
         assertEquals(ReceiptCandidate("wechat", 1000), ReceiptParser.parse("com.tencent.mm", "微信支付", "收款10元", true, false))
     }
     @Test fun groupFlagIsNotProofOfAggregationButActualRepeatedMoneyIs() {
         assertEquals(ReceiptCandidate("wechat", 499), ReceiptParser.parse("com.tencent.mm", "微信收款助手", "微信支付收款4.99元（老顾客第四次消费）", true, false))
         assertEquals("notice_summary", ReceiptParser.parse("com.tencent.mm", "微信支付", "收款4.99元，收款4.99元", true, false)?.reviewReason)
-        assertEquals("notice_summary", ReceiptParser.parse("com.tencent.mm", "微信支付", "[2条]微信支付收款4.99元", true, false)?.reviewReason)
+        assertEquals(ReceiptCandidate("wechat", 499), ReceiptParser.parse("com.tencent.mm", "微信支付", "[2条]微信支付收款4.99元", true, false))
         assertEquals("notice_summary", ReceiptParser.parseViews("com.tencent.mm", "微信支付", listOf("微信支付收款4.99元"), multipleItems = true)?.reviewReason)
     }
     @Test fun legacyApk106FormatsAndAlternateViews() {
@@ -54,6 +54,14 @@ class ReceiptParserTest {
         assertEquals(ReceiptCandidate("alipay", 2000, "notice_uncertain"), ReceiptParser.parse("com.eg.android.AlipayGphone", "周末优惠活动", "20元优惠券待领取", false, false))
         assertEquals("notice_uncertain", parse("微信支付首次收款20元获得奖励")?.reviewReason)
         assertNull(ReceiptParser.parse("com.eg.android.AlipayGphone", "普通朋友", "给你20元", false, true))
+    }
+    @Test fun unreadWrapperDoesNotLoosenSenderOrOtherChannelBoundaries() {
+        assertNull(parse("[3条]微信收款助手: 微信支付收款5.00元", "普通朋友"))
+        assertEquals("notice_summary", parse("[3条]普通朋友: 微信支付收款5.00元", "微信收款助手")?.reviewReason)
+        assertEquals("notice_uncertain", parse("[3条]收款5.00元", "微信")?.reviewReason)
+        assertEquals("notice_summary", ReceiptParser.parse("com.eg.android.AlipayGphone", "支付宝", "[3条]你已成功收款5.00元", false, false)?.reviewReason)
+        for (text in listOf("[3条]退款5元到账", "[3条]微信支付付款成功5元", "[3条]微信支付收款5元，优惠返现"))
+            assertNotNull(text, parse(text, "微信收款助手")?.reviewReason)
     }
     @Test fun deterministicEventIdentity() {
         assertEquals(ReceiptParser.eventId("wechat", "key", 100, 1), ReceiptParser.eventId("wechat", "key", 100, 1))

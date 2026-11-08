@@ -42,6 +42,32 @@ class ReceiptNotificationTest {
             assertEquals("notice_summary", ReceiptNotification.read("com.tencent.mm", n)?.reviewReason)
         }
     }
+    @Test fun wechatUnreadCountIsNotAMoneyTotalInCollapsedOrExpandedViews() {
+        val latest = "微信支付收款5.00元(老顾客第6次消费)"
+        for (body in listOf("[3条]微信收款助手: $latest", "[3条]微信收款助手：$latest", "[3条]$latest")) {
+            val n = notification("微信收款助手", body).apply { flags = flags or Notification.FLAG_GROUP_SUMMARY }
+            assertEquals(body, ReceiptCandidate("wechat", 500), ReceiptNotification.read("com.tencent.mm", n))
+            n.extras.putCharSequence(Notification.EXTRA_BIG_TEXT, body)
+            n.extras.putCharSequenceArray(Notification.EXTRA_TEXT_LINES, arrayOf(body))
+            n.tickerText = latest
+            assertEquals("expanded: $body", ReceiptCandidate("wechat", 500), ReceiptNotification.read("com.tencent.mm", n))
+        }
+    }
+    @Test fun unreadCountDoesNotMakeActualTotalsOrMultipleReceiptsSingle() {
+        for (body in listOf(
+            "[3条]微信收款助手: 微信支付收款5.00元，累计收款10.00元",
+            "[3条]微信收款助手: 微信支付收款5.00元，合计5.00元",
+            "[3条]微信收款助手: 微信支付收款5.00元\n微信支付收款5.00元"
+        )) assertEquals("notice_summary", ReceiptNotification.read("com.tencent.mm", notification("微信收款助手", body))?.reviewReason)
+        val inbox = notification("微信收款助手", "[3条]微信收款助手: 微信支付收款5.00元").apply {
+            extras.putCharSequenceArray(Notification.EXTRA_TEXT_LINES, arrayOf("微信支付收款5.00元", "微信支付收款5.00元"))
+        }
+        assertEquals("notice_summary", ReceiptNotification.read("com.tencent.mm", inbox)?.reviewReason)
+        val conflict = notification("微信收款助手", "[3条]微信收款助手: 微信支付收款5.00元").apply {
+            extras.putCharSequence(Notification.EXTRA_BIG_TEXT, "微信支付收款4.99元")
+        }
+        assertEquals("notice_multiple_amounts", ReceiptNotification.read("com.tencent.mm", conflict)?.reviewReason)
+    }
     @Test fun otherAppsAndOrdinaryPrivateMessagesAreNotPaymentReports() {
         assertNull(ReceiptNotification.read("other.app", notification("支付宝", "收款23.45元")))
         assertNull(ReceiptNotification.read("com.tencent.mm", notification("普通朋友", "微信支付收款12.34元")))
