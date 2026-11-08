@@ -50,6 +50,9 @@ export const ScanReceipt = z.object({
   amountFen: z.number().int().positive(),
   observedAt: Timestamp,
   receivedAt: Timestamp,
+  postedAt: Timestamp.optional(),
+  purchaseKind: z.enum(['recharge', 'membership']).nullable().optional(),
+  purchaseTitle: z.string().nullable().optional(),
   status: z.enum(['review', 'matched', 'ignored']),
   reason: z.string(),
   orderId: Id.nullable(),
@@ -250,7 +253,7 @@ export const ScanMonitorEndpoints = {
     path: root + '/monitor/pair',
     auth: 'none',
     body: ScanMonitorPair,
-    response: z.object({ ok: z.literal(true) }),
+    response: z.object({ ok: z.literal(true), active: z.boolean().optional() }),
     summary: '用一次性配对码登记设备公钥，验证持有私钥',
   }),
   report: defineEndpoint({
@@ -258,7 +261,11 @@ export const ScanMonitorEndpoints = {
     path: root + '/monitor/report',
     auth: 'none',
     body: ScanMonitorReport,
-    response: z.object({ ok: z.literal(true), status: z.string() }),
+    response: z.object({
+      ok: z.literal(true),
+      status: z.string(),
+      purchaseKind: z.enum(['recharge', 'membership']).nullable().optional(),
+    }),
     summary: '验证设备签名后持久保存到账；只确认已提交结果',
   }),
 } as const;

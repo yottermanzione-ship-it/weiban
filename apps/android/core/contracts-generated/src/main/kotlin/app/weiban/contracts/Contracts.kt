@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 7.6. Regenerate: pnpm android:generate
+// Contract 7.7. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "7.6"
+const val CONTRACT_VERSION: String = "7.7"
 
 @Serializable
 data class AccountAlias(
@@ -10128,6 +10128,7 @@ data class ScanDevice(
 data class ScanMonitorEndpointsPairResponse(
     @EncodeDefault
     @SerialName("ok") val `ok`: Boolean = true,
+    @SerialName("active") val `active`: Boolean? = null,
 )
 
 @Serializable
@@ -10135,6 +10136,7 @@ data class ScanMonitorEndpointsReportResponse(
     @EncodeDefault
     @SerialName("ok") val `ok`: Boolean = true,
     @SerialName("status") val `status`: String,
+    @SerialName("purchaseKind") val `purchaseKind`: String? = null,
 )
 
 @Serializable
@@ -10268,6 +10270,9 @@ data class ScanReceipt(
     @SerialName("amountFen") val `amountFen`: Long,
     @SerialName("observedAt") val `observedAt`: Timestamp,
     @SerialName("receivedAt") val `receivedAt`: Timestamp,
+    @SerialName("postedAt") val `postedAt`: Timestamp? = null,
+    @SerialName("purchaseKind") val `purchaseKind`: String? = null,
+    @SerialName("purchaseTitle") val `purchaseTitle`: String? = null,
     @SerialName("status") val `status`: String,
     @SerialName("reason") val `reason`: String,
     @SerialName("orderId") val `orderId`: Id?,

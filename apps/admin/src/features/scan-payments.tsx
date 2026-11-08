@@ -32,6 +32,8 @@ const reasons: Record<string, string> = {
   first_price_already_used: '会员首次优惠已使用',
 };
 const money = (fen: number) => `¥${(fen / 100).toFixed(2)}`;
+const purchase = (kind?: string | null) =>
+  kind === 'recharge' ? '积分充值' : kind === 'membership' ? '会员购买' : '待核对';
 const channel = (s: string) => (s === 'wechat' ? '微信' : '支付宝');
 const date = (s: string | null) =>
   s ? new Date(s).toLocaleString('zh-CN', { hour12: false }) : '尚未连接';
@@ -93,6 +95,11 @@ export function ScanPaymentsPage() {
     reader.onerror = () => setMessage('图片读取失败');
     reader.readAsDataURL(file);
   }
+  const pairedDevices = (devices.data ?? []).filter((d) => d.paired);
+  const available =
+    !!settings.data?.enabled &&
+    !!settings.data?.cutoverConfirmed &&
+    pairedDevices.some((d) => d.online);
   return (
     <Page
       title="扫码收款"
@@ -108,8 +115,12 @@ export function ScanPaymentsPage() {
       )}
       <SectionCard title="收款设置">
         <Space wrap>
-          <Tag color={settings.data?.enabled ? 'green' : 'default'}>
-            {settings.data?.enabled ? '已开放' : '未开放'}
+          <Tag color={available ? 'green' : 'default'}>
+            {available
+              ? '已开放'
+              : settings.data?.enabled
+                ? '暂停接单（监控未连接或切换未完成）'
+                : '未开放'}
           </Tag>
           <Button disabled={!settings.data} onClick={() => setDraft(settings.data!)}>
             配置收款码与开关
@@ -136,14 +147,15 @@ export function ScanPaymentsPage() {
               })
             }
           >
-            新增监控配对
+            {pairedDevices.length ? '连接另一台手机' : '设置收款手机'}
           </Button>
         </Space>
         <Table
           rowKey="id"
           size="small"
-          dataSource={devices.data ?? []}
+          dataSource={pairedDevices}
           pagination={{ pageSize: 10 }}
+          locale={{ emptyText: '尚未连接收款手机，首次设置一次即可' }}
           columns={[
             { title: '设备', dataIndex: 'name' },
             {
@@ -167,13 +179,15 @@ export function ScanPaymentsPage() {
                     )
                   }
                 >
-                  {r.active ? '停用' : '设为唯一监控'}
+                  {r.active ? '暂停监控' : '启用监控'}
                 </Button>
               ),
             },
           ]}
         />
-        <p>更换手机前先补报原手机队列。只有这里启用的唯一手机可以报账，配对成功后还需启用。</p>
+        <p>
+          已连接的手机无需重复设置，打开软件点“开始监控”即可。首次连接自动启用；更换手机前先补报原手机记录，再启用新手机。
+        </p>
       </SectionCard>
       <SectionCard title="付款订单">
         <Table
@@ -185,12 +199,14 @@ export function ScanPaymentsPage() {
           columns={[
             { title: '订单编号', dataIndex: 'id', width: 260 },
             { title: '用户编号', render: (_, r) => r.userId ?? '已注销', width: 260 },
+            { title: '购买类型', render: (_, r) => purchase(r.kind) },
             { title: '购买内容', dataIndex: 'title' },
             { title: '渠道', render: (_, r) => channel(r.channel) },
             { title: '应付金额', render: (_, r) => money(r.amountFen) },
             { title: '积分', dataIndex: 'points' },
             { title: '状态', render: (_, r) => statusNames[r.status] },
             { title: '创建时间', render: (_, r) => date(r.createdAt) },
+            { title: '入账时间', render: (_, r) => (r.paidAt ? date(r.paidAt) : '未入账') },
             {
               title: '漏报处理',
               render: (_, r) => (
@@ -231,7 +247,12 @@ export function ScanPaymentsPage() {
           columns={[
             { title: '渠道', render: (_, r) => channel(r.channel) },
             { title: '实收金额', render: (_, r) => money(r.amountFen) },
-            { title: '观察到账时间', render: (_, r) => date(r.observedAt) },
+            { title: '购买类型', render: (_, r) => purchase(r.purchaseKind) },
+            { title: '购买内容', render: (_, r) => r.purchaseTitle ?? '尚未匹配订单' },
+            {
+              title: '到账通知时间',
+              render: (_, r) => (r.deviceId ? date(r.postedAt ?? r.observedAt) : '人工登记'),
+            },
             { title: '服务器收到时间', render: (_, r) => date(r.receivedAt) },
             { title: '状态', render: (_, r) => statusNames[r.status] },
             { title: '来源', render: (_, r) => (r.deviceId ? '手机监控' : '人工登记') },
@@ -266,7 +287,7 @@ export function ScanPaymentsPage() {
           </Button>
         </Space>
         <p>
-          到账依据是手机支付应用通知，不是支付机构交易查询。请对照实际账单处理待核对项；本页不退款。
+          购买类型由对应订单自动确定，通知时间为手机收到该通知的发布时间。未匹配的到账请对照实际账单核对；本页不退款。
         </p>
       </SectionCard>
       <Modal
@@ -324,18 +345,35 @@ export function ScanPaymentsPage() {
       </Modal>
       <Modal
         open={!!pairing}
-        title="配对收款监控"
-        footer={<Button onClick={() => setPairing(null)}>已记下，关闭</Button>}
+        title="设置收款手机"
+        footer={<Button onClick={() => setPairing(null)}>关闭</Button>}
         onCancel={() => setPairing(null)}
       >
-        <p>在收款手机安装“微伴收款监控”，把下面配对信息填入软件。十分钟内有效，请勿转发给他人。</p>
+        <p>
+          首次使用：复制下面的连接码，粘贴到收款手机软件，点“保存设置”。只需设置一次，连接码十分钟有效，请勿转发。
+        </p>
         <Input.TextArea
           aria-label="监控配对信息"
           readOnly
           rows={4}
           value={pairing ? `wbpair1:${pairing.deviceId}:${pairing.pairCode}` : ''}
         />
-        <p>配对成功后，回到这里将手机“设为唯一监控”。</p>
+        <Button
+          onClick={() =>
+            void run(async () => {
+              if (!pairing) return;
+              await navigator.clipboard.writeText(
+                `wbpair1:${pairing.deviceId}:${pairing.pairCode}`,
+              );
+              setMessage('连接码已复制，请在收款手机粘贴并保存。');
+            })
+          }
+        >
+          复制连接码
+        </Button>
+        <p>
+          第一台手机保存后自动启用。已有连接的手机无需生成连接码；换机需先补报旧手机记录，再启用新手机。
+        </p>
       </Modal>
       <Modal
         open={!!resolve}

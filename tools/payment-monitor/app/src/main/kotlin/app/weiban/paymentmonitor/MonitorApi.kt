@@ -33,15 +33,15 @@ object MonitorApi {
         } finally { conn.disconnect() }
     }
     fun pair(ctx: Context, pairing: String) {
-        val match = Regex("^wbpair1:([0-9a-f-]{36}):([a-f0-9]{32})$").matchEntire(pairing.trim()) ?: throw IllegalArgumentException("请粘贴后台提供的完整配对信息")
+        val match = Regex("^wbpair1:([0-9a-f-]{36}):([a-f0-9]{32})$").matchEntire(pairing.trim()) ?: throw IllegalArgumentException("请粘贴后台提供的完整连接码")
         val id = match.groupValues[1]; val code = match.groupValues[2]
         val current = QueueStore.deviceId(ctx)
         if (current.isNotEmpty() && current != id) throw IllegalStateException("此手机已经配对，请在后台启用原设备；更换前先核对待补报记录")
         val key = DeviceKey.publicKey()
         val proof = DeviceKey.sign("wb-pay-pair-v1|$id|$code|$key")
-        post("pair", JSONObject().put("deviceId", id).put("pairCode", code).put("publicKey", key).put("signature", proof))
+        val result = post("pair", JSONObject().put("deviceId", id).put("pairCode", code).put("publicKey", key).put("signature", proof))
         if (!QueueStore.saveDevice(ctx, id)) throw IllegalStateException("设备信息未保存，请重试配对")
-        QueueStore.status(ctx, "配对成功，请在后台设为唯一监控")
+        QueueStore.status(ctx, if (result.optBoolean("active")) "设置已保存，点“开始监控”即可" else "设置已保存；更换手机请在后台启用这台手机")
     }
     fun report(ctx: Context, event: JSONObject): JSONObject {
         val id = QueueStore.deviceId(ctx); check(id.isNotEmpty()) { "请先配对" }

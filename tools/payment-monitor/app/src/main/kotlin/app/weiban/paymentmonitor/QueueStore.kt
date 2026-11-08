@@ -16,13 +16,18 @@ object QueueStore {
     private fun file(ctx: Context) = AtomicFile(File(ctx.filesDir, "receipts-v1.json"))
     @Synchronized fun read(ctx: Context): JSONArray {
         val f = file(ctx)
-        if (!f.baseFile.exists()) return JSONArray()
+        if (!f.baseFile.exists() && !File(f.baseFile.path + ".bak").exists() && !File(f.baseFile.path + ".new").exists()) return JSONArray()
         // Corruption throws: callers show an error and stop; never replace an unreadable queue with an empty one.
         return JSONArray(f.openRead().use { it.readBytes().toString(Charsets.UTF_8) })
     }
     private fun write(ctx: Context, data: JSONArray) {
         val f = file(ctx); val out = f.startWrite()
-        try { out.write(data.toString().toByteArray(Charsets.UTF_8)); f.finishWrite(out) }
+        try {
+            val expected = data.toString().toByteArray(Charsets.UTF_8)
+            out.write(expected); f.finishWrite(out)
+            // AtomicFile logs some rename failures without throwing. Never treat an uncommitted write as persisted.
+            if (!f.baseFile.readBytes().contentEquals(expected)) throw java.io.IOException("Receipt journal commit failed")
+        }
         catch (e: Exception) { f.failWrite(out); throw e }
     }
     @Synchronized fun enqueue(ctx: Context, candidate: ReceiptCandidate, sourceKey: String, postedAt: Long) {
@@ -35,9 +40,15 @@ object QueueStore {
             .put("observedAt", Instant.now().toString()).put("accepted", false)
         queue.put(event); write(ctx, queue)
     }
-    @Synchronized fun accept(ctx: Context, id: String) {
+    @Synchronized fun accept(ctx: Context, id: String, result: JSONObject? = null) {
         val queue = read(ctx)
-        for (i in 0 until queue.length()) { val r = queue.getJSONObject(i); if (r.getString("eventId") == id) r.put("accepted", true) }
+        for (i in 0 until queue.length()) { val r = queue.getJSONObject(i); if (r.getString("eventId") == id) {
+            r.put("accepted", true)
+            if (result != null) {
+                r.put("status", result.optString("status").takeIf { it in setOf("matched", "review", "ignored") } ?: "review")
+                r.put("purchaseKind", result.optString("purchaseKind").takeIf { it in setOf("recharge", "membership") } ?: JSONObject.NULL)
+            }
+        } }
         write(ctx, queue)
     }
     @Synchronized fun pending(ctx: Context): List<JSONObject> {

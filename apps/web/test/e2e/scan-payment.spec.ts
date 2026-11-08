@@ -38,10 +38,10 @@ test('扫码收款：后台配置、手机签名到账、积分和会员页面�
     ).ok(),
   ).toBe(true);
   expect(
-    (
-      await request.put(admin + `/devices/${pair.deviceId}`, { headers, data: { active: true } })
-    ).ok(),
-  ).toBe(true);
+    (await (await request.get(admin + '/devices', { headers })).json()).find(
+      (d: { id: string }) => d.id === pair.deviceId,
+    ),
+  ).toMatchObject({ active: true });
   const now = (
     await (await request.get('http://127.0.0.1:3000/api/v1/me/membership', { headers })).json()
   ).checkedAt as string;
@@ -123,7 +123,11 @@ test('扫码收款：后台配置、手机签名到账、积分和会员页面�
       ),
     };
     const reported = await request.post(monitor + '/report', { data });
-    expect(await reported.json()).toMatchObject({ ok: true, status: 'matched' });
+    expect(await reported.json()).toMatchObject({
+      ok: true,
+      status: 'matched',
+      purchaseKind: purchase,
+    });
     // Also replay the notification after the initial response; the screen still reports one paid order.
     expect((await request.post(monitor + '/report', { data })).ok()).toBe(true);
     await page.getByRole('button', { name: '查询到账' }).click();
@@ -163,6 +167,12 @@ test('扫码收款：后台配置、手机签名到账、积分和会员页面�
       .first()
       .getByText('已到账', { exact: true }),
   ).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: '到账通知时间', exact: true })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: '入账时间', exact: true })).toBeVisible();
+  await expect(page.getByRole('cell', { name: '会员购买', exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('cell', { name: '积分充值', exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: '暂停监控', exact: true })).toBeVisible();
+  await expect(page.getByText('待配对', { exact: true })).toHaveCount(0);
   const settings = await (await request.get(admin + '/settings', { headers })).json();
   await request.put(admin + '/settings', { headers, data: { ...settings, enabled: false } });
   await page.goto('/wallet');

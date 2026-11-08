@@ -1,6 +1,6 @@
 import { createHash, createPublicKey, randomBytes, verify } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, gt, lte, isNull } from 'drizzle-orm';
+import { and, desc, eq, gt, lte, isNull, isNotNull } from 'drizzle-orm';
 import sharp from 'sharp';
 import {
   ScanDevice,
@@ -60,9 +60,12 @@ const orderView = (r: OrderRow) =>
     paidAt: r.paidAt?.toISOString() ?? null,
     qr: r.status === 'pending' ? r.qr : '',
   });
-const receiptView = (r: ReceiptRow) =>
+const receiptView = (r: ReceiptRow, purchase?: { kind: string; title: string } | null) =>
   ScanReceipt.parse({
     ...r,
+    postedAt: r.postedAt.toISOString(),
+    purchaseKind: purchase?.kind ?? null,
+    purchaseTitle: purchase?.title ?? null,
     observedAt: r.observedAt.toISOString(),
     receivedAt: r.receivedAt.toISOString(),
   });
@@ -363,20 +366,34 @@ export class ScanPaymentService {
   }
   async pairCode(actor: string, name: string) {
     const pairCode = randomBytes(16).toString('hex'),
-      deviceId = newId(),
       expiresAt = new Date(this.clock.now().getTime() + 10 * MINUTE);
-    await this.database.transaction(async (tx) => {
-      await tx.db.insert(scanDevices).values({
-        id: deviceId,
-        name,
-        pairHash: digest(pairCode),
-        pairExpiresAt: expiresAt,
-        active: false,
-        listenerConnected: false,
-        queued: 0,
-        createdAt: this.clock.now(),
-      });
-      await this.record(tx, actor, 'scan.device_created', deviceId, {});
+    const deviceId = await this.database.transaction(async (tx) => {
+      await this.lock(tx);
+      const [pending] = await tx.db
+        .select({ id: scanDevices.id })
+        .from(scanDevices)
+        .where(isNull(scanDevices.publicKey))
+        .orderBy(desc(scanDevices.createdAt))
+        .limit(1);
+      const id = pending?.id ?? newId();
+      if (pending)
+        await tx.db
+          .update(scanDevices)
+          .set({ name, pairHash: digest(pairCode), pairExpiresAt: expiresAt })
+          .where(eq(scanDevices.id, id));
+      else
+        await tx.db.insert(scanDevices).values({
+          id,
+          name,
+          pairHash: digest(pairCode),
+          pairExpiresAt: expiresAt,
+          active: false,
+          listenerConnected: false,
+          queued: 0,
+          createdAt: this.clock.now(),
+        });
+      await this.record(tx, actor, 'scan.device_created', id, { reusedPending: !!pending });
+      return id;
     });
     return { deviceId, pairCode, expiresAt: expiresAt.toISOString() };
   }
@@ -384,26 +401,34 @@ export class ScanPaymentService {
     const message = `wb-pay-pair-v1|${input.deviceId}|${input.pairCode}|${input.publicKey}`;
     if (!validSignature(input.publicKey, message, input.signature))
       throw new AppError('unauthenticated', '设备签名无效');
-    await this.database.transaction(async (tx) => {
+    const active = await this.database.transaction(async (tx) => {
       await this.lock(tx);
       const [row] = await tx.db
         .select()
         .from(scanDevices)
         .where(eq(scanDevices.id, input.deviceId));
       if (!row) throw new AppError('unauthenticated', '配对码无效或已过期');
-      if (row.publicKey === input.publicKey) return; // lost response: possession proof suffices for a paired key, never reactivates it
+      if (row.publicKey === input.publicKey) return row.active; // lost response: possession proof suffices for a paired key, never reactivates it
       if (
         row.publicKey ||
         row.pairHash !== digest(input.pairCode) ||
         row.pairExpiresAt < this.clock.now()
       )
         throw new AppError('unauthenticated', '配对码无效或已过期');
+      const [paired] = await tx.db
+        .select({ id: scanDevices.id })
+        .from(scanDevices)
+        .where(isNotNull(scanDevices.publicKey))
+        .limit(1);
+      const first = !paired;
       await tx.db
         .update(scanDevices)
-        .set({ publicKey: input.publicKey, pairHash: null })
+        .set({ publicKey: input.publicKey, pairHash: null, active: first })
         .where(eq(scanDevices.id, row.id));
+      await this.record(tx, null, 'scan.device_paired', row.id, { active: first });
+      return first;
     });
-    return { ok: true as const };
+    return { ok: true as const, active };
   }
   async activate(actor: string, id: string, active: boolean) {
     return this.database.transaction(async (tx) => {
@@ -467,7 +492,7 @@ export class ScanPaymentService {
           });
           return { ok: true as const, status: 'event_conflict' };
         }
-        return { ok: true as const, status: existing.status };
+        return this.reportResult(tx, existing);
       }
       const observed = new Date(e.observedAt),
         posted = new Date(e.postedAt);
@@ -530,11 +555,24 @@ export class ScanPaymentService {
         .select()
         .from(scanReceipts)
         .where(eq(scanReceipts.id, receipt!.id));
-      return { ok: true as const, status: saved!.status };
+      return this.reportResult(tx, saved!);
     });
     if (outcome.status === 'event_conflict')
       throw new AppError('conflict', '到账标识与原记录冲突，请人工核对');
     return outcome;
+  }
+  private async receiptDetails(tx: DbTx, receipt: ReceiptRow) {
+    const [purchase] = receipt.orderId
+      ? await tx.db
+          .select({ kind: scanOrders.kind, title: scanOrders.title })
+          .from(scanOrders)
+          .where(eq(scanOrders.id, receipt.orderId))
+      : [];
+    return receiptView(receipt, purchase);
+  }
+  private async reportResult(tx: DbTx, receipt: ReceiptRow) {
+    const result = await this.receiptDetails(tx, receipt);
+    return { ok: true as const, status: receipt.status, purchaseKind: result.purchaseKind ?? null };
   }
   private async fulfill(tx: DbTx, order: OrderRow, receipt: ReceiptRow, actor: string | null) {
     if (!order.userId) return this.review(tx, order, receipt, 'account_unavailable');
@@ -618,13 +656,18 @@ export class ScanPaymentService {
   async receipts(query: { cursor?: string | undefined; limit: number }) {
     const offset = Number(query.cursor ?? 0);
     const rows = await this.database.db
-      .select()
+      .select({ receipt: scanReceipts, kind: scanOrders.kind, title: scanOrders.title })
       .from(scanReceipts)
+      .leftJoin(scanOrders, eq(scanReceipts.orderId, scanOrders.id))
       .orderBy(desc(scanReceipts.receivedAt), desc(scanReceipts.id))
       .offset(offset)
       .limit(query.limit + 1);
     return {
-      items: rows.slice(0, query.limit).map(receiptView),
+      items: rows
+        .slice(0, query.limit)
+        .map((r) =>
+          receiptView(r.receipt, r.kind && r.title ? { kind: r.kind, title: r.title } : null),
+        ),
       nextCursor: rows.length > query.limit ? String(offset + query.limit) : null,
     };
   }
@@ -635,7 +678,7 @@ export class ScanPaymentService {
       if (!receipt) throw new AppError('not_found', '到账记录不存在');
       if (receipt.status !== 'review') {
         if ((orderId && receipt.orderId === orderId) || (!orderId && receipt.status === 'ignored'))
-          return receiptView(receipt);
+          return this.receiptDetails(tx, receipt);
         throw new AppError('conflict', '这条到账已处理');
       }
       if (!orderId)
@@ -650,7 +693,7 @@ export class ScanPaymentService {
       }
       await this.record(tx, actor, 'scan.receipt_resolved', id, { orderId, reason });
       const [saved] = await tx.db.select().from(scanReceipts).where(eq(scanReceipts.id, id));
-      return receiptView(saved!);
+      return this.receiptDetails(tx, saved!);
     });
   }
   async manualReceipt(
@@ -679,7 +722,7 @@ export class ScanPaymentService {
       if (old) {
         if (old.orderId !== order.id)
           throw new AppError('conflict', '该收款交易编号已登记，请从到账列表核对原记录');
-        return receiptView(old);
+        return this.receiptDetails(tx, old);
       }
       if (order.status === 'paid') throw new AppError('conflict', '订单已入账，不可重复登记');
       const now = this.clock.now();
@@ -709,7 +752,7 @@ export class ScanPaymentService {
         .select()
         .from(scanReceipts)
         .where(eq(scanReceipts.id, receipt!.id));
-      return receiptView(saved!);
+      return this.receiptDetails(tx, saved!);
     });
   }
   private async record(

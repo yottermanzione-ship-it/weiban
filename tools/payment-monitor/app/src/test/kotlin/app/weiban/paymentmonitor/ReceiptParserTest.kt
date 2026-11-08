@@ -19,6 +19,22 @@ class ReceiptParserTest {
         for (text in listOf("退款10元到账", "微信支付付款成功10元", "转账收款10元", "收款10元，累计100元", "[2条]微信支付收款10元", "收款10.001元", "收款0元", "收款999999999元", "收款10元\n收款20元")) assertNull(text, parse(text))
         assertNull(ReceiptParser.parse("com.tencent.mm", "微信支付", "收款10元", true, false))
     }
+    @Test fun legacyApk106FormatsAndAlternateViews() {
+        assertEquals(1234, ReceiptParser.parse("com.eg.android.AlipayGphone", "支付宝", "用户***向你付款12.34元", false, false)?.amountFen)
+        assertEquals(1234, ReceiptParser.parse("com.eg.android.AlipayGphone", "收钱码", "你已成功收款12.34元", false, false)?.amountFen)
+        assertEquals(1234, ReceiptParser.parse("com.tencent.mm", "微信", "微信支付：收款12.34元（朋友到店）", false, false)?.amountFen)
+        assertNull(ReceiptParser.parse("com.tencent.mm", "微信", "收款12.34元", false, false))
+        assertNull(parse("向你付款12.34元"))
+        assertEquals(1234, ReceiptParser.parseViews("com.tencent.mm", "微信支付", listOf("", "收款12.34元", "微信支付：收款12.34元"))?.amountFen)
+        assertEquals(1234, ReceiptParser.parseViews("com.eg.android.AlipayGphone", "支付宝", listOf("查看详情", "向你付款12.34元"))?.amountFen)
+    }
+    @Test fun conflictingAlternateViewsAndOutgoingNeverBecomeReceipts() {
+        assertNull(ReceiptParser.parseViews("com.tencent.mm", "微信支付", listOf("收款12元", "收款13元")))
+        assertNull(ReceiptParser.parseViews("com.tencent.mm", "微信支付", listOf("收款12元", "退款12元")))
+        assertNull(ReceiptParser.parseViews("com.tencent.mm", "微信支付", listOf("收款12元", "累计12元")))
+        for (text in listOf("付款成功12元", "已付款12元", "支出12元", "转出12元", "退款到账12元", "收到12元，又收到13元", "朋友：向你付款12元", "向你付款12.345元"))
+            assertNull(text, ReceiptParser.parse("com.eg.android.AlipayGphone", "支付宝", text, false, false))
+    }
     @Test fun deterministicEventIdentity() {
         assertEquals(ReceiptParser.eventId("wechat", "key", 100, 1), ReceiptParser.eventId("wechat", "key", 100, 1))
         assertNotEquals(ReceiptParser.eventId("wechat", "key", 100, 1), ReceiptParser.eventId("alipay", "key", 100, 1))

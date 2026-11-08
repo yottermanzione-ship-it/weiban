@@ -24,12 +24,15 @@ object Delivery {
                 MonitorApi.report(app, JSONObject().put("type", "heartbeat").put("listenerConnected", ReceiptListener.connected).put("queued", queue.size))
                 // Bound one upload burst; queued work remains persisted for the next pass.
                 for (event in queue.take(10)) {
-                    val payload = JSONObject(event.toString()).apply { remove("accepted") }
+                    val payload = JSONObject().apply { for (key in listOf("type", "eventId", "channel", "amountFen", "observedAt", "postedAt")) put(key, event.get(key)) }
                     val result = MonitorApi.report(app, payload)
-                    QueueStore.accept(app, event.getString("eventId"))
+                    QueueStore.accept(app, event.getString("eventId"), result)
                     if (result.optString("status") == "review") QueueStore.prefs(app).edit().putBoolean("reviewPending", true).commit()
                 }
-                QueueStore.status(app, if (QueueStore.prefs(app).getBoolean("reviewPending", false)) "连接正常；有到账需要到后台核对" else "连接正常，已补报的记录由服务器保存")
+                QueueStore.prefs(app).edit().putLong("connectedAt", System.currentTimeMillis()).commit()
+                QueueStore.status(app, if (!ReceiptListener.connected) "服务器连接正常；通知监听未连接，尚不能监控到账"
+                    else if (QueueStore.prefs(app).getBoolean("reviewPending", false)) "监控已连接；有到账需要到后台核对"
+                    else "通知监听与服务器均已连接")
             } catch (_: java.io.IOException) { QueueStore.status(app, "网络未连通，到账记录保留待补报") }
             catch (e: IllegalStateException) { QueueStore.status(app, e.message?.takeIf { it.startsWith("后台") || it.startsWith("到账标识") || it.startsWith("服务器") } ?: "本地记录或签名暂不可用，已保留数据，请核对") }
             catch (_: Exception) { QueueStore.status(app, "本地记录或签名暂不可用，已保留数据，请核对") }
@@ -69,9 +72,15 @@ class RetryJob : JobService() {
     companion object {
         fun schedule(ctx: Context) {
             if (QueueStore.deviceId(ctx).isEmpty()) return
-            val scheduler = ctx.getSystemService(JobScheduler::class.java)
-            scheduler.schedule(JobInfo.Builder(82, ComponentName(ctx, RetryJob::class.java))
-                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setMinimumLatency(60_000).setPersisted(true).build())
+            // This also runs in Delivery's finally block and in the boot receiver.
+            // A rejected job must not escape those callbacks and kill the monitor process.
+            val scheduled = try {
+                val scheduler = ctx.getSystemService(JobScheduler::class.java)
+                scheduler.schedule(JobInfo.Builder(82, ComponentName(ctx, RetryJob::class.java))
+                    .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setMinimumLatency(60_000).setPersisted(true).build()) == JobScheduler.RESULT_SUCCESS
+            } catch (_: RuntimeException) { false }
+            // Keep this separate from the connection/receipt status; never discard queued receipts.
+            QueueStore.prefs(ctx).edit().putBoolean("retryUnavailable", !scheduled).commit()
         }
     }
     override fun onStartJob(params: JobParameters): Boolean { Delivery.start(this) { jobFinished(params, false) }; return true }
