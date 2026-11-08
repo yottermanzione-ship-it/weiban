@@ -11,5 +11,9 @@ for (const file of files) {
       throw Error('Monitor tests failed or skipped');
   }
 }
-if (count < 10) throw Error('Monitor tests did not run');
+for (const suite of ['ReceiptParserTest', 'QueueStoreTest', 'RetryJobTest', 'StartupTest']) {
+  if (!files.some((file) => file.endsWith(`.${suite}.xml`)))
+    throw Error(`Monitor test suite missing: ${suite}`);
+}
+if (count < 26) throw Error('Monitor tests did not run');
 console.log(`Payment monitor: ${count} tests, zero failures/skips`);

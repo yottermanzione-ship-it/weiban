@@ -69,9 +69,15 @@ class RetryJob : JobService() {
     companion object {
         fun schedule(ctx: Context) {
             if (QueueStore.deviceId(ctx).isEmpty()) return
-            val scheduler = ctx.getSystemService(JobScheduler::class.java)
-            scheduler.schedule(JobInfo.Builder(82, ComponentName(ctx, RetryJob::class.java))
-                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setMinimumLatency(60_000).setPersisted(true).build())
+            // This also runs in Delivery's finally block and in the boot receiver.
+            // A rejected job must not escape those callbacks and kill the monitor process.
+            val scheduled = try {
+                val scheduler = ctx.getSystemService(JobScheduler::class.java)
+                scheduler.schedule(JobInfo.Builder(82, ComponentName(ctx, RetryJob::class.java))
+                    .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setMinimumLatency(60_000).setPersisted(true).build()) == JobScheduler.RESULT_SUCCESS
+            } catch (_: RuntimeException) { false }
+            // Keep this separate from the connection/receipt status; never discard queued receipts.
+            QueueStore.prefs(ctx).edit().putBoolean("retryUnavailable", !scheduled).commit()
         }
     }
     override fun onStartJob(params: JobParameters): Boolean { Delivery.start(this) { jobFinished(params, false) }; return true }

@@ -1,6 +1,6 @@
 # 微伴收款监控
 
-独立的收款管理员安卓应用，不是微伴用户端。仅连接 `https://app.weiban.online/api/v1/billing/scan/monitor/`。包名 `app.weiban.paymentmonitor`，正式1.0.0/1，最低Android 8。
+独立的收款管理员安卓应用，不是微伴用户端。仅连接 `https://app.weiban.online/api/v1/billing/scan/monitor/`。包名 `app.weiban.paymentmonitor`，正式1.0.1/2，最低Android 8。覆盖安装保留原配对、系统密钥和待补报记录，不要先卸载。
 
 后台入口：用户 → 扫码收款。生成十分钟一次性配对信息，手机配对后在后台设为唯一监控；授予通知使用权，再从手机主动开始监控。私钥由Android Keystore生成，不导出；服务端保存公钥。发布签名沿用受保护的外部签名配置，不能退回调试签名。
 
@@ -8,6 +8,8 @@
 
 运行状态通知、45秒心跳、重试任务与重启重绑不能消除系统省电限制。服务器两分钟未收到正常监听心跳就暂停创建新单；旧的真实到账仍保存供核对。没有支付机构真实交易号的通知不能代替官方账单。必须在实际收款手机分别验证微信和支付宝，不能将合成测试写为真实到账通过。
 
-本地检查：`gradlew.bat testDebugUnitTest lintDebug assembleRelease`，正式签名从已有受保护环境变量 `WEIBAN_ANDROID_SIGNING_PROPERTIES_FILE` 指向的配置读取。持续检查无发布凭据时运行 `testDebugUnitTest assembleDebug lintDebug`，随后 `node check-tests.mjs` 确认至少10项且零失败/跳过。调试包只供自动检查，不作为用户交付。
+本地检查：`gradlew.bat testDebugUnitTest lintDebug assembleRelease`，正式签名从已有受保护环境变量 `WEIBAN_ANDROID_SIGNING_PROPERTIES_FILE` 指向的配置读取。持续检查无发布凭据时运行 `testDebugUnitTest assembleDebug lintDebug`，随后 `node check-tests.mjs` 确认四个必需测试类、至少26项且零失败/跳过。调试包只供自动检查，不作为用户交付。
+
+1.0.1补齐Android 14及以上网络补报调度需要的普通安装权限；调度遭系统拒绝时不会让进程退出，界面独立提示“后台补报未能安排”，后续成功自动清除该提示。通知访问仍需用户授权，任务调度成功不等于已收到真实款项。详见[启动修复报告](../../docs/quality/2026-11-08-payment-monitor-startup-fix.md)。
 
 不要清应用数据、卸载或转移设备，直到待补报与后台待核对记录处理完毕。仅开放后台人工核对和漏报登记，没有自动退款或绕过确认的“我已付款”接口。具体收款切换和经理操作见[交接](../../docs/handoffs/2026-11-08-scan-payment-monitor.md)。

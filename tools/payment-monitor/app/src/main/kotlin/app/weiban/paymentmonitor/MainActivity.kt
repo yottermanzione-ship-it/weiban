@@ -26,6 +26,7 @@ class MainActivity : Activity() {
         val scroll = ScrollView(this).apply { addView(outer) }; setContentView(scroll)
         fun text(value: String, size: Float = 16f): TextView = TextView(this).apply { text = value; textSize = size; setTextColor(Color.rgb(30,30,30)); setPadding(0,14,0,14); outer.addView(this) }
         text("微伴收款监控", 26f)
+        text("版本 ${packageManager.getPackageInfo(packageName, 0).versionName}", 14f)
         text("只在收款手机使用。处理微信、支付宝收款通知并签名报账；不保存通知原文，不读取短信、联系人及其他应用通知。")
         status = text("正在读取状态…")
         pairing = EditText(this).apply { hint = "粘贴后台配对信息"; maxLines = 4; isSaveEnabled = false; importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO; outer.addView(this) }
@@ -53,7 +54,8 @@ class MainActivity : Activity() {
     }
     private fun renderStatus() {
         val count = try { QueueStore.pending(this).size.toString() } catch (_: Exception) { "无法读取（已保留）" }
-        status.text = "配对：${if (QueueStore.deviceId(this).isEmpty()) "未配对" else "已配对"}\n通知监听：${if (ReceiptListener.connected) "已连接" else "未连接"}\n待补报：$count\n未能识别的支付应用通知：${QueueStore.prefs(this).getInt("unrecognized",0)}（请核对账单）\n${QueueStore.lastStatus(this)}"
+        val retryWarning = if (QueueStore.prefs(this).getBoolean("retryUnavailable", false)) "\n后台补报未能安排，到账记录仍保留；请保持应用打开，点“立即检查连接并补报”重试。" else ""
+        status.text = "配对：${if (QueueStore.deviceId(this).isEmpty()) "未配对" else "已配对"}\n通知监听：${if (ReceiptListener.connected) "已连接" else "未连接"}\n待补报：$count\n未能识别的支付应用通知：${QueueStore.prefs(this).getInt("unrecognized",0)}（请核对账单）\n${QueueStore.lastStatus(this)}$retryWarning"
     }
     private fun alert(message: String) { AlertDialog.Builder(this).setTitle("提示").setMessage(message).setPositiveButton("知道了", null).show() }
     override fun onResume() { super.onResume(); handler.post(refresh) }
