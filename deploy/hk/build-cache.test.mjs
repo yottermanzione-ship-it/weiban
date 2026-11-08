@@ -51,7 +51,7 @@ function fixture(t, overrides = {}) {
     flock: '#!/bin/bash\n[[ $FAKE_BUSY != 1 ]]\n',
     id: '#!/bin/bash\necho 0\n',
     systemctl:
-      '#!/bin/bash\ncase "$*" in *weiban-backup.service*) [[ $FAKE_BACKUP_ACTIVE == 1 ]];; *) [[ $FAKE_DOCKER_INACTIVE != 1 ]];; esac\n',
+      '#!/bin/bash\ncase "$*" in show*weiban-backup.service*) echo "$FAKE_BACKUP_STATE";; *weiban-backup.service*) [[ $FAKE_BACKUP_STATE == active ]];; *) [[ $FAKE_DOCKER_INACTIVE != 1 ]];; esac\n',
   };
   for (const [name, text] of Object.entries(stubs))
     writeFileSync(join(bin, name), text, { mode: 0o755 });
@@ -71,7 +71,7 @@ function fixture(t, overrides = {}) {
     FAKE_RUNNING: 'true',
     FAKE_BUSY: '0',
     FAKE_DOCKER_INACTIVE: '0',
-    FAKE_BACKUP_ACTIVE: '0',
+    FAKE_BACKUP_STATE: 'inactive',
     ...overrides,
   };
   return {
@@ -128,11 +128,13 @@ test('a missing volume or stopped builder fails before pruning', (t) => {
   }
 });
 test('maintenance defers cache I/O while the production backup is running', (t) => {
-  const f = fixture(t, { FAKE_BACKUP_ACTIVE: '1' });
-  const r = f.run('prune');
-  assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /backup is running; skipped/);
-  assert.equal(f.calls(), '');
+  for (const state of ['activating', 'active', 'deactivating', 'reloading', '']) {
+    const f = fixture(t, { FAKE_BACKUP_STATE: state });
+    const r = f.run('prune');
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /backup.*skipped/);
+    assert.equal(f.calls(), '', state);
+  }
 });
 test('insufficient build filesystem space blocks builds, not running services', (t) => {
   const f = fixture(t, { FAKE_AVAIL: '1000000000' });
