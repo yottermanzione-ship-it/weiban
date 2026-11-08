@@ -50,6 +50,31 @@ class QueueStoreTest {
         QueueStore.enqueue(ctx, ReceiptCandidate("wechat", 500), "synthetic", 3000)
         assertTrue(QueueStore.pending(ctx).isEmpty()); assertEquals(1, QueueStore.read(ctx).length())
     }
+    @Test fun correctedUnreadReceiptKeepsOriginalIdentityAcrossExpansionAndRepeatScanning() {
+        val collapsed = ReceiptParser.parse("com.tencent.mm", "微信收款助手", "[3条]微信收款助手: 微信支付收款5.00元(老顾客第6次消费)", true, false)!!
+        val expanded = ReceiptParser.parseViews("com.tencent.mm", "微信收款助手", listOf("[3条]微信收款助手: 微信支付收款5.00元(老顾客第6次消费)", "微信支付收款5.00元(老顾客第6次消费)"), true)!!
+        assertNull(collapsed.reviewReason); assertEquals(collapsed, expanded)
+        QueueStore.enqueue(ctx, collapsed, "unread-synthetic", 7000)
+        val first = QueueStore.pending(ctx).single().toString()
+        repeat(3) { QueueStore.enqueue(ctx, expanded, "unread-synthetic", 7000) }
+        assertEquals(first, QueueStore.pending(ctx).single().toString())
+        QueueStore.accept(ctx, QueueStore.pending(ctx).single().getString("eventId"))
+        QueueStore.enqueue(ctx, expanded, "unread-synthetic", 7000)
+        assertTrue(QueueStore.pending(ctx).isEmpty()); assertEquals(1, QueueStore.read(ctx).length())
+        // Another actual payment with the same amount remains a distinct notification event.
+        QueueStore.enqueue(ctx, expanded, "unread-synthetic", 8000)
+        assertEquals(2, QueueStore.read(ctx).length()); assertEquals(1, QueueStore.pending(ctx).size)
+    }
+    @Test fun upgradeNeverReclassifiesAnAlreadyReportedSummaryOrMakesItANewPayment() {
+        QueueStore.enqueue(ctx, ReceiptCandidate("wechat", 500, "notice_summary"), "legacy-unread", 9000)
+        val id = QueueStore.pending(ctx).single().getString("eventId")
+        QueueStore.accept(ctx, id, org.json.JSONObject().put("status", "review"))
+        val original = QueueStore.read(ctx).toString()
+        val corrected = ReceiptParser.parse("com.tencent.mm", "微信收款助手", "[3条]微信收款助手: 微信支付收款5.00元", true, false)!!
+        assertNull(corrected.reviewReason)
+        repeat(3) { QueueStore.enqueue(ctx, corrected, "legacy-unread", 9000) }
+        assertEquals(original, QueueStore.read(ctx).toString()); assertTrue(QueueStore.pending(ctx).isEmpty())
+    }
     @Test fun receiptKindComesOnlyFromAcceptedServerResult() {
         QueueStore.enqueue(ctx, ReceiptCandidate("wechat", 999), "synthetic", 4000)
         val pending = QueueStore.pending(ctx).single()

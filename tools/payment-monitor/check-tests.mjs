@@ -23,5 +23,5 @@ for (const suite of [
   if (!files.some((file) => file.endsWith(`.${suite}.xml`)))
     throw Error(`Monitor test suite missing: ${suite}`);
 }
-if (count < 70) throw Error('Monitor tests did not run');
+if (count < 79) throw Error('Monitor tests did not run');
 console.log(`Payment monitor: ${count} tests, zero failures/skips`);

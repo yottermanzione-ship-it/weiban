@@ -17,6 +17,15 @@ object ReceiptParser {
     private val incoming = Regex("""^(?:(?:微信支付|微信收款助手|支付宝)[：:\s]*)?(?:(?:你已|您已)?(?:成功收款|收款到账|收款成功|收款|成功收钱|收钱码到账|到账)[：:\s]*|(?:[\p{L}\p{N}*·]{1,30})?向[你您]付款[：:\s]*)[0-9]""")
     private val nonReceipt = Regex("退款|付款成功|已付款|扣款|转账|转出|支出|优惠|红包|活动|奖励|返现|领券")
     private val aggregate = Regex("""累计|汇总|合计|共计|条消息|\[\d+条\]""")
+    // WeChat prefixes the latest visible message with the unread count and sometimes its sender.
+    // That count is not a payment total. Only unwrap an anchored, explicit incoming receipt.
+    private val wechatUnreadPrefix = Regex("""^\[[1-9][0-9]*条\]\s*(?:(?:微信收款助手|收款助手|微信支付)\s*[：:]\s*)?""")
+    private fun receiptView(channel: String, raw: String): String {
+        val text = raw.trim()
+        if (channel != "wechat") return text
+        val latest = wechatUnreadPrefix.replaceFirst(text, "")
+        return if (incoming.containsMatchIn(latest)) latest else text
+    }
     fun acceptsMessagingTitle(pkg: String, title: String): Boolean = pkg != "com.eg.android.AlipayGphone" || incoming.containsMatchIn(title.trim())
 
     fun parse(pkg: String, title: String, text: String, summary: Boolean, messaging: Boolean): ReceiptCandidate? =
@@ -28,7 +37,7 @@ object ReceiptParser {
         if (!acceptsTitle(pkg, title)) return null
         // Do not inspect or forward an ordinary private-message notification in Alipay.
         if (messaging && !acceptsMessagingTitle(pkg, title)) return null
-        val views = (listOf(title) + texts).map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        val views = (listOf(title) + texts).map { receiptView(channel, it) }.filter { it.isNotEmpty() }.distinct()
         val amounts = views.flatMap { view -> money.findAll(view).mapNotNull { match ->
             try {
                 val decimal = match.groupValues[2].takeIf { it.isNotEmpty() }?.let { ".$it" }.orEmpty()
