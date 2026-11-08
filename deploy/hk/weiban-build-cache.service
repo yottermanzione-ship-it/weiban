@@ -1,0 +1,12 @@
+[Unit]
+Description=Bound Weiban build cache without restarting application services
+After=docker.service
+ConditionPathExists=/srv/weiban/ops-state/build-cache.env
+
+[Service]
+Type=oneshot
+ExecCondition=/bin/systemctl --quiet is-active docker.service
+ExecStart=/bin/bash /srv/weiban/ops/current/build-cache.sh prune
+TimeoutStartSec=10min
+Nice=10
+IOSchedulingClass=idle

@@ -253,10 +253,18 @@ cache_args=(--all --force)
 [[ -z $BUILD_CACHE_UNTIL ]] || cache_args+=(--filter "until=$BUILD_CACHE_UNTIL")
 if ((dry_run)); then
   echo '[演练] 将执行 docker image prune --force'
-  echo "[演练] 将执行 docker builder prune ${cache_args[*]}"
+  if [[ -f ${WEIBAN_BUILD_CACHE_CONFIG:-/srv/weiban/ops-state/build-cache.env} ]]; then
+    bash "$(dirname -- "${BASH_SOURCE[0]}")/build-cache.sh" dry-run
+  else
+    echo "[演练] 将执行 docker builder prune ${cache_args[*]}"
+  fi
 else
   docker image prune --force
-  docker builder prune "${cache_args[@]}"
+  if [[ -f ${WEIBAN_BUILD_CACHE_CONFIG:-/srv/weiban/ops-state/build-cache.env} ]]; then
+    bash "$(dirname -- "${BASH_SOURCE[0]}")/build-cache.sh" prune
+  else
+    docker builder prune "${cache_args[@]}"
+  fi
 fi
 
 echo '清理后：'

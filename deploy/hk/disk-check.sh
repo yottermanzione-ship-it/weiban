@@ -21,11 +21,7 @@ for mount in "${mounts[@]}"; do
     echo "$mount 的磁盘用量格式不认识：$line" >&2
     continue
   fi
-  case $mount in
-    /srv/weiban) name='数据盘' ;;
-    /) name='系统盘' ;;
-    *) name='磁盘' ;;
-  esac
+  name='磁盘'
   echo "$name $mount：已用 ${pct}%，剩余 $(human_bytes "$avail")"
   ((pct >= warn_at)) || continue
   severity=warning
