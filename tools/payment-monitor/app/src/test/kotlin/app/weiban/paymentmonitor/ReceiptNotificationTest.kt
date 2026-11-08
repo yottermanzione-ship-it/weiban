@@ -28,10 +28,19 @@ class ReceiptNotificationTest {
     }
     @Test fun ambiguousAndPromotionalNotificationsRemainReportableButNotAutomaticallyCreditable() {
         val summary = notification("微信支付", "微信支付收款12.34元").apply { flags = flags or Notification.FLAG_GROUP_SUMMARY }
-        assertEquals("notice_summary", ReceiptNotification.read("com.tencent.mm", summary)?.reviewReason)
+        assertEquals(ReceiptCandidate("wechat", 1234), ReceiptNotification.read("com.tencent.mm", summary))
         val conflict = notification("支付宝", "收款23.45元").apply { extras.putCharSequence(Notification.EXTRA_BIG_TEXT, "收款34.56元") }
         assertEquals("notice_multiple_amounts", ReceiptNotification.read("com.eg.android.AlipayGphone", conflict)?.reviewReason)
         assertEquals(ReceiptCandidate("alipay", 2000, "notice_uncertain"), ReceiptNotification.read("com.eg.android.AlipayGphone", notification("优惠活动", "20元优惠券")))
+    }
+    @Test fun actualInboxPaymentsRemainReviewEvenWhenTheirAmountsAreEqual() {
+        for (second in listOf("微信支付收款12.34元", "微信支付收款23.45元")) {
+            val n = notification("微信支付", "查看详情").apply {
+                flags = flags or Notification.FLAG_GROUP_SUMMARY
+                extras.putCharSequenceArray(Notification.EXTRA_TEXT_LINES, arrayOf("微信支付收款12.34元", second))
+            }
+            assertEquals("notice_summary", ReceiptNotification.read("com.tencent.mm", n)?.reviewReason)
+        }
     }
     @Test fun otherAppsAndOrdinaryPrivateMessagesAreNotPaymentReports() {
         assertNull(ReceiptNotification.read("other.app", notification("支付宝", "收款23.45元")))
