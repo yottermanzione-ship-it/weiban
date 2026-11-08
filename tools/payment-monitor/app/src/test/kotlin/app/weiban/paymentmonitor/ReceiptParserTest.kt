@@ -18,7 +18,13 @@ class ReceiptParserTest {
     @Test fun rejectsRefundsAggregationAndBadDecimals() {
         for (text in listOf("退款10元到账", "微信支付付款成功10元", "转账收款10元", "收款10元，累计100元", "[2条]微信支付收款10元", "收款10元\n收款20元")) assertNotNull(text, parse(text)?.reviewReason)
         for (text in listOf("收款10.001元", "收款0元", "收款999999999元")) assertNull(text, parse(text))
-        assertEquals("notice_summary", ReceiptParser.parse("com.tencent.mm", "微信支付", "收款10元", true, false)?.reviewReason)
+        assertEquals(ReceiptCandidate("wechat", 1000), ReceiptParser.parse("com.tencent.mm", "微信支付", "收款10元", true, false))
+    }
+    @Test fun groupFlagIsNotProofOfAggregationButActualRepeatedMoneyIs() {
+        assertEquals(ReceiptCandidate("wechat", 499), ReceiptParser.parse("com.tencent.mm", "微信收款助手", "微信支付收款4.99元（老顾客第四次消费）", true, false))
+        assertEquals("notice_summary", ReceiptParser.parse("com.tencent.mm", "微信支付", "收款4.99元，收款4.99元", true, false)?.reviewReason)
+        assertEquals("notice_summary", ReceiptParser.parse("com.tencent.mm", "微信支付", "[2条]微信支付收款4.99元", true, false)?.reviewReason)
+        assertEquals("notice_summary", ReceiptParser.parseViews("com.tencent.mm", "微信支付", listOf("微信支付收款4.99元"), multipleItems = true)?.reviewReason)
     }
     @Test fun legacyApk106FormatsAndAlternateViews() {
         assertEquals(1234, ReceiptParser.parse("com.eg.android.AlipayGphone", "支付宝", "用户***向你付款12.34元", false, false)?.amountFen)

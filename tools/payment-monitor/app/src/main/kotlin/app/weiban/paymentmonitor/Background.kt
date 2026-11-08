@@ -23,7 +23,11 @@ object Delivery {
                 val queue = QueueStore.pending(app)
                 MonitorApi.report(app, JSONObject().put("type", "heartbeat").put("listenerConnected", ReceiptListener.connected).put("queued", queue.size))
                 // Bound one upload burst; queued work remains persisted for the next pass.
-                for (event in queue.take(10)) {
+                for (pending in queue.take(10)) {
+                    val event = if (pending.optBoolean("clockPending", false))
+                        QueueStore.prepare(app, pending.getString("eventId"), MonitorClock.offset()
+                            ?: throw IllegalStateException("服务器时间尚未校准，到账记录保留待补报"))
+                    else pending
                     val payload = JSONObject().apply { for (key in listOf("type", "eventId", "channel", "amountFen", "observedAt", "postedAt")) put(key, event.get(key)) }
                     if (event.has("reviewReason")) payload.put("reviewReason", event.getString("reviewReason"))
                     val result = MonitorApi.report(app, payload)

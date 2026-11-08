@@ -1,6 +1,7 @@
 package app.weiban.paymentmonitor
 
 import android.content.Context
+import android.os.SystemClock
 import org.json.JSONObject
 import java.net.URL
 import java.time.Instant
@@ -21,6 +22,7 @@ object MonitorApi {
         val conn = URL(root + path).openConnection() as HttpsURLConnection
         conn.requestMethod = "POST"; conn.connectTimeout = 10_000; conn.readTimeout = 15_000
         conn.instanceFollowRedirects = false; conn.doOutput = true; conn.setRequestProperty("Content-Type", "application/json")
+        val started = SystemClock.elapsedRealtime()
         try {
             conn.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
             val code = conn.responseCode
@@ -31,6 +33,7 @@ object MonitorApi {
                 out.toByteArray().toString(Charsets.UTF_8)
             }
             if (!accepted(code, body)) throw IllegalStateException("服务器未明确确认，记录保留待补报")
+            MonitorClock.observe(conn.getHeaderFieldDate("Date", 0), started, SystemClock.elapsedRealtime(), System.currentTimeMillis())
             return JSONObject(body)
         } finally { conn.disconnect() }
     }
@@ -47,7 +50,7 @@ object MonitorApi {
     }
     fun report(ctx: Context, event: JSONObject): JSONObject {
         val id = QueueStore.deviceId(ctx); check(id.isNotEmpty()) { "请先配对" }
-        val requestTime = Instant.now().toString()
+        val requestTime = Instant.ofEpochMilli(MonitorClock.nowMillis()).toString()
         return post("report", JSONObject().put("deviceId", id).put("requestTime", requestTime).put("event", event).put("signature", DeviceKey.sign(signingText(id, requestTime, event))))
     }
 }

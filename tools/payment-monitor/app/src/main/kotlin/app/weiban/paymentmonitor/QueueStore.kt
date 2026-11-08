@@ -2,6 +2,7 @@ package app.weiban.paymentmonitor
 
 import android.content.Context
 import android.util.AtomicFile
+import android.os.SystemClock
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -48,8 +49,34 @@ object QueueStore {
         val event = JSONObject().put("type", "receipt").put("eventId", id).put("channel", candidate.channel)
             .put("amountFen", candidate.amountFen).put("postedAt", Instant.ofEpochMilli(postedAt).toString())
             .put("observedAt", Instant.now().toString()).put("accepted", false)
+            .put("clockPending", true).put("capturedElapsed", SystemClock.elapsedRealtime())
         candidate.reviewReason?.let { event.put("reviewReason", it) }
         queue.put(event); write(ctx, queue)
+    }
+    @Synchronized fun prepare(ctx: Context, id: String, offset: Long, wall: Long = System.currentTimeMillis(), elapsed: Long = SystemClock.elapsedRealtime()): JSONObject {
+        val data = read(ctx)
+        for (i in 0 until data.length()) {
+            val event = data.getJSONObject(i)
+            if (event.getString("eventId") != id) continue
+            if (!event.optBoolean("clockPending", false) || event.getBoolean("accepted")) return event
+            val observed = Instant.parse(event.getString("observedAt")).toEpochMilli()
+            val posted = Instant.parse(event.getString("postedAt")).toEpochMilli()
+            val age = elapsed - event.getLong("capturedElapsed")
+            if (age < 0 || kotlin.math.abs((wall - observed) - age) > 3000) {
+                // A reboot or manual clock jump cannot safely reconstruct an old payment time.
+                event.put("reviewReason", "notice_uncertain")
+            } else {
+                event.put("deviceObservedAt", event.getString("observedAt"))
+                event.put("devicePostedAt", event.getString("postedAt"))
+                event.put("observedAt", Instant.ofEpochMilli(observed + offset).toString())
+                event.put("postedAt", Instant.ofEpochMilli(posted + offset).toString())
+            }
+            // Persist once before sending: a lost response must retry byte-identical signed event times.
+            event.put("clockPending", false)
+            write(ctx, data)
+            return event
+        }
+        throw IllegalStateException("到账记录不存在，原记录已保留")
     }
     @Synchronized fun accept(ctx: Context, id: String, result: JSONObject? = null) {
         val queue = read(ctx)

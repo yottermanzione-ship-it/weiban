@@ -36,8 +36,10 @@ export function ScanCheckout({ purchase, onClose }: { purchase?: ScanPurchase; o
       live.current = false;
     };
   }, []);
-  const existing = purchase ? recent.data?.items.find((r) => r.status === 'pending') : undefined;
-  const showing = order ?? existing;
+  const pendingOrders = recent.data?.items.filter((r) => r.status === 'pending') ?? [];
+  // Existing orders stay explicit in history. Opening a different product must not
+  // silently replace the current purchase with an earlier order.
+  const showing = order;
   const showingId = showing?.id;
   const showingStatus = showing?.status;
   useEffect(() => {
@@ -156,7 +158,9 @@ export function ScanCheckout({ purchase, onClose }: { purchase?: ScanPurchase; o
                   扫码或识别图片，务必支付上面的准确金额。
                 </p>
                 {showing.amountFen < showing.baseFen && (
-                  <p className="hint">已减去少量零头用于核对到账；充值积分按实际付款金额计算。</p>
+                  <p className="hint">
+                    同渠道已有相同金额的待付款订单，本单减去少量零头以区分到账；充值积分按实付金额计算，会员权益不变。
+                  </p>
                 )}
                 <p className="hint">
                   有效至{' '}
@@ -182,6 +186,11 @@ export function ScanCheckout({ purchase, onClose }: { purchase?: ScanPurchase; o
         ) : (
           <>
             {(recent.loading || options.loading) && <p>正在查询付款状态…</p>}
+            {purchase && pendingOrders.length > 0 && (
+              <p className="hint">
+                另有未完成的付款订单，可选择空闲渠道购买当前商品。已付款请勿取消或重复付款；原订单可在下方“最近付款记录”查看。
+              </p>
+            )}
             {purchase && options.data && (!options.data.enabled || !options.data.monitorOnline) && (
               <p>扫码收款暂未准备就绪，请稍后再试或联系管理员。</p>
             )}
@@ -195,16 +204,21 @@ export function ScanCheckout({ purchase, onClose }: { purchase?: ScanPurchase; o
                     busy ||
                     recent.loading ||
                     !!recent.error ||
+                    pendingOrders.some((r) => r.channel === channel) ||
                     !options.data?.enabled ||
                     !options.data.monitorOnline
                   }
                   onClick={() => void create(channel)}
                 >
-                  {channel === 'wechat' ? '微信扫码付款' : '支付宝扫码付款'}
+                  {pendingOrders.some((r) => r.channel === channel)
+                    ? `${channel === 'wechat' ? '微信' : '支付宝'}已有待付款订单`
+                    : channel === 'wechat'
+                      ? '微信扫码付款'
+                      : '支付宝扫码付款'}
                 </button>
               ))}
             {recent.data?.items.length ? (
-              <details open={!purchase}>
+              <details open={!purchase || pendingOrders.length > 0}>
                 <summary>最近付款记录</summary>
                 {recent.data.items.map((r) => (
                   <button

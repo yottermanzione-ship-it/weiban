@@ -304,18 +304,94 @@ describeDb('扫码支付：真实数据库、设备签名、并发与用户隔�
       expect(JSON.stringify(listed)).not.toContain('notificationText');
     }
   });
-  it('同一金额并发下单分配不同零头，取消后金额仍隔离，不被新订单复用', async () => {
+  it('仅正在付款的同渠道订单占用金额；并发减零头，取消后释放原金额', async () => {
     const users = await Promise.all([user(), user(), user()]);
     const result = await Promise.all(users.map((u) => order(u.id, 6000)));
     expect(new Set(result.map((o) => o.amountFen)).size).toBe(3);
     expect(result.map((o) => o.points).sort()).toEqual([5998, 5999, 6000]);
     await service.get(users[0]!.id, result[0]!.id, true);
     const retry = await order(users[0]!.id, 6000);
-    expect(result.map((o) => o.amountFen)).not.toContain(retry.amountFen);
+    expect(retry.amountFen).toBe(result[0]!.amountFen);
     const lowTierUsers = await Promise.all([user(), user()]);
     const lowTier = await Promise.all(lowTierUsers.map((u) => order(u.id, 500, 'alipay')));
     expect(lowTier.map((o) => o.amountFen).sort()).toEqual([499, 500]);
     expect(lowTier.map((o) => o.points).sort()).toEqual([499, 500]);
+  });
+  it('同一用户的微信充值不会阻止支付宝会员，但同渠道仍只能有一笔待付款订单', async () => {
+    const u = await user();
+    const recharge = await order(u.id, 4321, 'wechat');
+    const member = await service.create(u.id, {
+      clientOrderId: randomUUID(),
+      channel: 'alipay',
+      purchase: { kind: 'membership', planId: 'month' },
+    });
+    expect(member.kind).toBe('membership');
+    expect(member.id).not.toBe(recharge.id);
+    expect(member.amountFen).toBe(member.baseFen);
+    await expect(order(u.id, 5432, 'wechat')).rejects.toMatchObject({ code: 'conflict' });
+    expect(await service.report(await receipt(recharge))).toMatchObject({
+      purchaseKind: 'recharge',
+    });
+    expect(await service.report(await receipt(member))).toMatchObject({
+      purchaseKind: 'membership',
+    });
+    expect((await q.ledgerOf(u.id)).filter((e) => e.purpose === 'scan_recharge')).toHaveLength(1);
+    expect(
+      (await app.get(MembershipOrderService).listOrders({ userId: u.id, limit: 10 })).items,
+    ).toHaveLength(1);
+  });
+  it('已付、取消和过期历史不减价；旧通知即使换事件编号也不能给新订单入账', async () => {
+    const u = await user(),
+      amount = 8765;
+    const first = await order(u.id, amount, 'alipay');
+    const old = await receipt(first);
+    await service.report(old);
+    clock.advance(10_000);
+    await heartbeat();
+    const second = await order(u.id, amount, 'alipay');
+    expect(second.amountFen).toBe(amount);
+    if (old.event.type !== 'receipt') throw Error('fixture');
+    const replay = await signed({
+      ...old.event,
+      eventId: createHash('sha256').update(randomUUID()).digest('hex'),
+    });
+    expect((await service.report(replay)).status).toBe('review');
+    expect((await service.get(u.id, second.id)).status).toBe('pending');
+    await service.get(u.id, second.id, true);
+    const third = await order(u.id, amount, 'alipay');
+    expect(third.amountFen).toBe(amount);
+    clock.advance(16 * 60_000);
+    await heartbeat();
+    const fourth = await order(u.id, amount, 'alipay');
+    expect(fourth.amountFen).toBe(amount);
+    expect((await q.ledgerOf(u.id)).filter((e) => e.purpose === 'scan_recharge')).toHaveLength(1);
+  });
+  it('会员也只在真实撞金额时减零头，权益保持快照；历史订单不占金额', async () => {
+    const a = await user(),
+      b = await user(),
+      c = await user();
+    const member = (id: string) =>
+      service.create(id, {
+        clientOrderId: randomUUID(),
+        channel: 'wechat',
+        purchase: { kind: 'membership', planId: 'month' },
+      });
+    const first = await member(a.id),
+      second = await member(b.id);
+    expect(first.amountFen).toBe(first.baseFen);
+    expect(second.amountFen).toBe(first.amountFen - 1);
+    expect(second.points).toBe(first.points);
+    await service.get(a.id, first.id, true);
+    const next = await member(c.id);
+    expect(next.amountFen).toBe(next.baseFen);
+    expect((await service.report(await receipt(second))).status).toBe('matched');
+    expect(
+      (await app.get(MembershipOrderService).listOrders({ userId: b.id, limit: 10 })).items[0],
+    ).toMatchObject({
+      priceFen: second.amountFen,
+      bonusPoints: second.points,
+    });
+    await service.get(c.id, next.id, true);
   });
   it('请求响应丢失后重试取回同一订单，不接受同编号换购买内容', async () => {
     const u = await user(),

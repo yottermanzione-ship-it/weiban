@@ -95,6 +95,7 @@ test('扫码收款：后台配置、手机签名到账、积分和会员页面�
       .getByRole('button', { name: purchase === 'recharge' ? '微信扫码付款' : '支付宝扫码付款' })
       .click();
     const o = ScanOrder.parse(await (await created).json());
+    expect(o.amountFen).toBe(o.baseFen);
     await expect(
       page.getByText(`¥${(o.amountFen / 100).toFixed(2)}`, { exact: true }),
     ).toBeVisible();
@@ -105,6 +106,32 @@ test('扫码收款：后台配置、手机签名到账、积分和会员页面�
     const download = page.waitForEvent('download');
     await page.getByRole('button', { name: '保存收款码', exact: true }).click();
     expect((await download).suggestedFilename()).toContain('weiban-payment-');
+    if (purchase === 'recharge') {
+      // A pending WeChat recharge must not hijack an Alipay membership checkout.
+      await page.getByRole('button', { name: '关闭', exact: true }).click();
+      await page.goto('/membership');
+      await page.getByRole('button').filter({ hasText: '月卡' }).click();
+      await expect(page.getByRole('dialog', { name: '选择扫码付款方式' })).toBeVisible();
+      await expect(page.getByRole('button', { name: '微信已有待付款订单' })).toBeDisabled();
+      await expect(page.getByRole('button', { name: '支付宝扫码付款' })).toBeEnabled();
+      const otherCreated = page.waitForResponse(
+        (r) => r.request().method() === 'POST' && r.url().endsWith('/billing/scan/orders'),
+      );
+      await page.getByRole('button', { name: '支付宝扫码付款' }).click();
+      const other = ScanOrder.parse(await (await otherCreated).json());
+      expect(other).toMatchObject({ kind: 'membership', channel: 'alipay' });
+      expect(other.id).not.toBe(o.id);
+      expect(other.amountFen).toBe(other.baseFen);
+      await expect(page.getByAltText('支付宝收款码')).toBeVisible();
+      await page.getByRole('button', { name: '尚未付款，取消订单' }).click();
+      await expect(page.getByText('已取消', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: '关闭', exact: true }).click();
+      await page.goto('/wallet/recharge');
+      await page.getByRole('button', { name: '扫码充值', exact: true }).click();
+      await page.getByRole('button').filter({ hasText: '积分充值 ¥' }).click();
+      await expect(page.getByAltText('微信收款码')).toBeVisible();
+      await expect(page.getByText('订单编号：' + o.id, { exact: true })).toBeVisible();
+    }
     const eventId = createHash('sha256').update(randomBytes(16)).digest('hex');
     const event = {
       type: 'receipt',

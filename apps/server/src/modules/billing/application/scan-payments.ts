@@ -45,7 +45,6 @@ type ReceiptRow = typeof scanReceipts.$inferSelect;
 type DeviceRow = typeof scanDevices.$inferSelect;
 const SETTINGS_KEY = 'scan_payment';
 const MINUTE = 60_000;
-const DAY = 24 * 60 * MINUTE;
 const DEFAULTS: ScanPaymentSettings = {
   enabled: false,
   cutoverConfirmed: false,
@@ -245,8 +244,18 @@ export class ScanPaymentService {
       const [pending] = await tx.db
         .select()
         .from(scanOrders)
-        .where(and(eq(scanOrders.userId, userId), eq(scanOrders.status, 'pending')));
-      if (pending) throw new AppError('conflict', '还有一笔待付款订单，请先查看或取消原订单');
+        .where(
+          and(
+            eq(scanOrders.userId, userId),
+            eq(scanOrders.channel, input.channel),
+            eq(scanOrders.status, 'pending'),
+          ),
+        );
+      if (pending)
+        throw new AppError(
+          'conflict',
+          '这个付款渠道还有待付款订单，请查看原订单或选择另一渠道；已付款请勿取消或重复付款',
+        );
       const recent = await tx.db
         .select({ id: scanOrders.id })
         .from(scanOrders)
@@ -280,19 +289,21 @@ export class ScanPaymentService {
         title = '积分充值';
       }
       if (baseFen < 1) throw new AppError('conflict', '该档位无需扫码付款，请联系管理员开通');
-      // Amounts are quarantined 24h, including cancelled/paid orders and unmatched receipts. Offline receipts never auto-match.
-      const since = new Date(this.clock.now().getTime() - DAY);
+      // Only simultaneous live orders occupy an amount; history must not change the next price.
+      // Receipt identity and original notification times still exclude late reports.
       const used = await tx.db
         .select({ fen: scanOrders.amountFen })
         .from(scanOrders)
-        .where(and(eq(scanOrders.channel, input.channel), gt(scanOrders.createdAt, since)));
-      const seen = await tx.db
-        .select({ fen: scanReceipts.amountFen })
-        .from(scanReceipts)
-        .where(and(eq(scanReceipts.channel, input.channel), gt(scanReceipts.receivedAt, since)));
-      const amounts = new Set([...used, ...seen].map((r) => r.fen));
+        .where(
+          and(
+            eq(scanOrders.channel, input.channel),
+            eq(scanOrders.status, 'pending'),
+            gt(scanOrders.expiresAt, this.clock.now()),
+          ),
+        );
+      const amounts = new Set(used.map((r) => r.fen));
       // The selected recharge tier starts at ¥5; the actual discounted amount may be lower.
-      // Otherwise the smallest tier could only serve one buyer per channel per day.
+      // Otherwise the smallest tier could only serve one buyer per channel at a time.
       const min = 1;
       let amountFen = baseFen;
       while (amounts.has(amountFen) && amountFen >= Math.max(min, baseFen - 99)) amountFen--;

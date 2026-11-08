@@ -8,6 +8,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.io.File
+import java.time.Instant
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28, 35])
@@ -73,5 +74,47 @@ class QueueStoreTest {
         assertThrows(Exception::class.java) { QueueStore.pending(ctx) }
         assertThrows(Exception::class.java) { QueueStore.enqueue(ctx, ReceiptCandidate("wechat", 500), "synthetic", 4000) }
         assertEquals("synthetic-corrupt-record", file.readText())
+    }
+    @Test fun serverTimeCorrectionIsPersistedOnceAndKeepsOriginalTimes() {
+        val posted = System.currentTimeMillis() - 1000
+        QueueStore.enqueue(ctx, ReceiptCandidate("wechat", 499), "clock-synthetic", posted)
+        val raw = QueueStore.pending(ctx).single()
+        val observed = Instant.parse(raw.getString("observedAt")).toEpochMilli()
+        val elapsed = raw.getLong("capturedElapsed")
+        val fixed = QueueStore.prepare(ctx, raw.getString("eventId"), -60_000, observed + 200, elapsed + 200)
+        assertEquals(raw.getString("observedAt"), fixed.getString("deviceObservedAt"))
+        assertEquals(raw.getString("postedAt"), fixed.getString("devicePostedAt"))
+        assertEquals(observed - 60_000, Instant.parse(fixed.getString("observedAt")).toEpochMilli())
+        assertEquals(posted - 60_000, Instant.parse(fixed.getString("postedAt")).toEpochMilli())
+        assertEquals(fixed.toString(), QueueStore.prepare(ctx, raw.getString("eventId"), 20_000, observed + 400, elapsed + 400).toString())
+        QueueStore.enqueue(ctx, ReceiptCandidate("wechat", 499), "clock-synthetic", posted)
+        assertEquals(1, QueueStore.pending(ctx).size)
+    }
+    @Test fun delayedUploadIsNotMadeFreshByCalibration() {
+        QueueStore.enqueue(ctx, ReceiptCandidate("wechat", 500), "old-synthetic", System.currentTimeMillis())
+        val raw = QueueStore.pending(ctx).single()
+        val observed = Instant.parse(raw.getString("observedAt")).toEpochMilli()
+        val elapsed = raw.getLong("capturedElapsed")
+        val delay = 600_000L
+        val fixed = QueueStore.prepare(ctx, raw.getString("eventId"), -60_000, observed + delay, elapsed + delay)
+        assertEquals(delay, observed + delay - 60_000 - Instant.parse(fixed.getString("observedAt")).toEpochMilli())
+    }
+    @Test fun deviceClockJumpRequiresReviewAndPreservesRawTime() {
+        QueueStore.enqueue(ctx, ReceiptCandidate("wechat", 500), "jump-synthetic", System.currentTimeMillis())
+        val raw = QueueStore.pending(ctx).single()
+        val observed = Instant.parse(raw.getString("observedAt")).toEpochMilli()
+        val fixed = QueueStore.prepare(ctx, raw.getString("eventId"), -60_000, observed + 10_000, raw.getLong("capturedElapsed") + 100)
+        assertEquals("notice_uncertain", fixed.getString("reviewReason"))
+        assertEquals(raw.getString("observedAt"), fixed.getString("observedAt"))
+    }
+    @Test fun acceptedAndLegacyEventsNeverHaveTheirSignedTimesChanged() {
+        QueueStore.enqueue(ctx, ReceiptCandidate("wechat", 500), "accepted-synthetic", System.currentTimeMillis())
+        val id = QueueStore.pending(ctx).single().getString("eventId")
+        QueueStore.accept(ctx, id)
+        val accepted = QueueStore.read(ctx).getJSONObject(0)
+        assertEquals(accepted.toString(), QueueStore.prepare(ctx, id, -60_000).toString())
+        accepted.put("accepted", false).remove("clockPending")
+        File(ctx.filesDir, "receipts-v1.json").writeText(org.json.JSONArray().put(accepted).toString())
+        assertEquals(accepted.toString(), QueueStore.prepare(ctx, id, -60_000).toString())
     }
 }
