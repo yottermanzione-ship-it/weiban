@@ -58,16 +58,24 @@ class MainActivity : Activity() {
         button("开始监控") { startMonitoring() }
         button("检查连接并补报") {
             if (QueueStore.deviceId(this).isEmpty()) alert("请先保存连接设置")
-            else { ReceiptListener.scan(this); Delivery.start(this); renderStatus() }
+            else { ReceiptListener.scan(this); Delivery.start(this); renderStatus(); alert("已请求检查连接并补报，请查看首页的通知监听、服务器连接和待补报状态。") }
         }
         text("最近到账", 20f)
         history = text("尚无到账记录")
         text("到账后自动对应订单，区分积分充值和会员购买。未匹配的记录显示“待核对”，请到后台对照账单。", 14f)
-        button("通知权限") { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
+        button("通知权限") { openListenerSettings() }
         button("后台运行设置") { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
         text("保持微信、支付宝已登录且收款通知开启。仅处理这两个应用的到账通知，不保存通知原文；软件或系统断开监听时，会暂停新订单。", 14f)
     }
+    private fun openListenerSettings() {
+        val detail = if (Build.VERSION.SDK_INT >= 30) Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS)
+            .putExtra(Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME, ComponentName(this, ReceiptListener::class.java).flattenToString()) else null
+        try { startActivity(detail ?: Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
+        catch (_: ActivityNotFoundException) { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
+    }
     private fun listenerAllowed(): Boolean {
+        if (Build.VERSION.SDK_INT >= 27) return getSystemService(NotificationManager::class.java)
+            .isNotificationListenerAccessGranted(ComponentName(this, ReceiptListener::class.java))
         val enabled = Settings.Secure.getString(contentResolver, "enabled_notification_listeners").orEmpty()
         val component = ComponentName(this, ReceiptListener::class.java)
         return enabled.split(':').any { ComponentName.unflattenFromString(it) == component }
@@ -77,7 +85,7 @@ class MainActivity : Activity() {
         if (!listenerAllowed()) {
             AlertDialog.Builder(this).setTitle("开启通知使用权").setMessage("允许微伴收款监控读取到账通知，设置完成返回后会开始监控。")
                 .setNegativeButton("暂不开启", null).setPositiveButton("去开启") { _, _ ->
-                    startAfterPermission = true; startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                    startAfterPermission = true; openListenerSettings()
                 }.show()
             return
         }
@@ -86,19 +94,31 @@ class MainActivity : Activity() {
         try {
             startForegroundService(Intent(this, MonitorService::class.java))
             ReceiptListener.scan(this); Delivery.start(this)
+            alert("已请求启动监控。通知监听和服务器都连接后才能监控到账；首页会显示实际状态。")
+            handler.postDelayed({
+                if (!isFinishing && !isDestroyed && !ReceiptListener.connected) {
+                    AlertDialog.Builder(this).setTitle("通知监听还未连接")
+                        .setMessage("通知权限已开启，但手机系统尚未连接监听。请在通知权限中将“微伴收款监控”关闭再开启，然后返回。")
+                        .setNegativeButton("稍后处理", null).setPositiveButton("打开通知权限") { _, _ -> startAfterPermission = true; openListenerSettings() }.show()
+                }
+            }, 8000)
         } catch (_: Exception) { alert("系统未允许后台监控，请检查应用电池和通知设置") }
     }
     private fun time(iso: String): String = try {
         DateTimeFormatter.ofPattern("MM-dd HH:mm:ss").withZone(ZoneId.systemDefault()).format(Instant.parse(iso))
     } catch (_: Exception) { "时间待核对" }
     private fun renderStatus() {
-        setupPanel.visibility = if (QueueStore.deviceId(this).isEmpty()) View.VISIBLE else View.GONE
+        val configured = QueueStore.deviceId(this).isNotEmpty()
+        setupPanel.visibility = if (configured) View.GONE else View.VISIBLE
+        if (configured) window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        else window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         val prefs = QueueStore.prefs(this)
         val count = try { QueueStore.pending(this).size.toString() } catch (_: Exception) { "无法读取（已保留）" }
         val connectedAt = prefs.getLong("connectedAt", 0)
         val connection = if (connectedAt == 0L) "尚未连接服务器" else "最近连接：${time(Instant.ofEpochMilli(connectedAt).toString())}"
         val retryWarning = if (prefs.getBoolean("retryUnavailable", false)) "\n后台补报未能安排，到账记录仍保留；请保持应用打开，点“检查连接并补报”重试。" else ""
-        status.text = "设置：${if (QueueStore.deviceId(this).isEmpty()) "未设置" else "已保存，无需重复设置"}\n通知监听：${if (ReceiptListener.connected) "已连接" else "未连接"}\n$connection\n待补报：$count\n${QueueStore.lastStatus(this)}$retryWarning"
+        val readiness = if (!ReceiptListener.connected) "监控尚未就绪：通知监听未连接" else if (connectedAt == 0L || System.currentTimeMillis() - connectedAt > 120_000) "通知监听已连接，等待服务器确认" else "监控已连接"
+        status.text = "$readiness\n设置：${if (QueueStore.deviceId(this).isEmpty()) "未设置" else "已保存，无需重复设置"}\n通知监听：${if (ReceiptListener.connected) "已连接" else "未连接"}\n$connection\n待补报：$count\n${QueueStore.lastStatus(this)}$retryWarning"
         val unknown = prefs.getInt("unrecognized",0)
         if (unknown > 0) status.append("\n未能识别的支付通知：$unknown（请核对账单）")
         history.text = try {
@@ -116,5 +136,5 @@ class MainActivity : Activity() {
         super.onResume(); handler.post(refresh)
         if (startAfterPermission) { startAfterPermission = false; if (listenerAllowed()) startMonitoring() }
     }
-    override fun onPause() { handler.removeCallbacks(refresh); super.onPause() }
+    override fun onPause() { handler.removeCallbacksAndMessages(null); super.onPause() }
 }

@@ -12,8 +12,11 @@ class ReceiptListener : NotificationListenerService() {
         fun scan(context: android.content.Context) {
             try {
                 val listener = live?.get()
-                if (listener == null) requestRebind(ComponentName(context, ReceiptListener::class.java))
-                else listener.scanCurrent()
+                if (listener != null && connected) listener.scanCurrent()
+                else {
+                    connected = false; live = null
+                    requestRebind(ComponentName(context, ReceiptListener::class.java))
+                }
             } catch (_: RuntimeException) { QueueStore.status(context, "通知监听未能连接，请检查通知使用权") }
         }
     }
@@ -27,10 +30,15 @@ class ReceiptListener : NotificationListenerService() {
         Delivery.start(this)
     }
     override fun onListenerDisconnected() {
-        connected = false; QueueStore.status(this, "通知监听已断开，请重新开启通知使用权")
-        Delivery.start(this); requestRebind(ComponentName(this, ReceiptListener::class.java))
+        if (live?.get() !== this) return
+        connected = false; live = null
+        QueueStore.status(this, "通知监听已断开，正在重新连接；此时尚不能监控到账")
+        scan(this); Delivery.start(this)
     }
-    override fun onDestroy() { connected = false; live = null; super.onDestroy() }
+    override fun onDestroy() {
+        if (live?.get() === this) { connected = false; live = null }
+        super.onDestroy()
+    }
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         // Filter before reading extras. Other app notifications are neither read nor logged.
         if (sbn.packageName != "com.tencent.mm" && sbn.packageName != "com.eg.android.AlipayGphone") return

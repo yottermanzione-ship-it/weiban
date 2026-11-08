@@ -48,6 +48,7 @@ class StartupTest {
             val dialog = ShadowAlertDialog.getLatestAlertDialog()
             assertTrue(dialog.isShowing)
             assertEquals("请先保存连接设置", shadowOf(dialog).message)
+            assertTrue(activity.window.attributes.flags and android.view.WindowManager.LayoutParams.FLAG_SECURE != 0)
             assertNull(shadowOf(RuntimeEnvironment.getApplication()).nextStartedService)
         } finally { controller.pause().stop().destroy() }
     }
@@ -76,6 +77,7 @@ class StartupTest {
             val views = descendants(controller.get().window.decorView)
             val save = views.filterIsInstance<Button>().single { it.text == "保存设置" }
             assertEquals(View.GONE, (save.parent as View).visibility)
+            assertEquals(0, controller.get().window.attributes.flags and android.view.WindowManager.LayoutParams.FLAG_SECURE)
             val text = views.filterIsInstance<TextView>().joinToString("\n") { it.text }
             assertTrue(text.contains("已保存，无需重复设置"))
             assertTrue(text, text.contains("支付宝  ¥12.90\n会员购买"))
