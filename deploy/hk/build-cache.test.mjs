@@ -50,6 +50,7 @@ function fixture(t, overrides = {}) {
     df: '#!/bin/bash\nprintf "Avail\\n%s\\n" "$FAKE_AVAIL"\n',
     flock: '#!/bin/bash\n[[ $FAKE_BUSY != 1 ]]\n',
     id: '#!/bin/bash\necho 0\n',
+    systemctl: '#!/bin/bash\n[[ $FAKE_DOCKER_INACTIVE != 1 ]]\n',
   };
   for (const [name, text] of Object.entries(stubs))
     writeFileSync(join(bin, name), text, { mode: 0o755 });
@@ -68,6 +69,7 @@ function fixture(t, overrides = {}) {
     FAKE_AVAIL: '30000000000',
     FAKE_RUNNING: 'true',
     FAKE_BUSY: '0',
+    FAKE_DOCKER_INACTIVE: '0',
     ...overrides,
   };
   return {
@@ -107,6 +109,13 @@ test('same filesystem and an incorrectly bound volume fail before pruning', (t) 
     assert.notEqual(r.status, 0);
     assert.doesNotMatch(f.calls(), /buildx prune/);
   }
+});
+test('maintenance does not contact Docker or reactivate it while intentionally stopped', (t) => {
+  const f = fixture(t, { FAKE_DOCKER_INACTIVE: '1' });
+  const r = f.run('prune');
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /stopped; skipped/);
+  assert.equal(f.calls(), '');
 });
 test('a missing volume or stopped builder fails before pruning', (t) => {
   for (const overrides of [{ FAKE_VOLUME_MISSING: '1' }, { FAKE_RUNNING: 'false' }]) {

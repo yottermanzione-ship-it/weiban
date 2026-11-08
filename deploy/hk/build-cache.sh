@@ -103,6 +103,10 @@ EOF
 prune_cache() {
   local dry=${1:-0}
   ((configured)) || return 0
+  if command -v systemctl >/dev/null && ! systemctl is-active --quiet docker.service; then
+    echo 'Build cache: Docker is intentionally stopped; skipped without activating it'
+    return 0
+  fi
   check_builder
   local args=(--all --force --reserved-space "$reserve_bytes" --max-used-space "$max_bytes" --min-free-space "$free_bytes")
   if ((dry)); then
