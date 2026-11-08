@@ -65,12 +65,16 @@ class StartupTest {
         } finally { controller.pause().stop().destroy() }
     }
 
-    @Test fun savedDeviceHidesFirstTimeSetupAndShowsPurchaseResult() {
+    @Test fun upgradeKeepsBindingAndJournalWithoutDisplayingStaleSettlement() {
         QueueStore.saveDevice(ctx, "synthetic-device")
         QueueStore.enqueue(ctx, ReceiptCandidate("alipay", 1290), "synthetic-history", 1000)
         val event = QueueStore.pending(ctx).first()
-        QueueStore.accept(ctx, event.getString("eventId"), org.json.JSONObject().put("status", "matched").put("purchaseKind", "membership"))
+        QueueStore.accept(ctx, event.getString("eventId"), org.json.JSONObject().put("status", "review"))
         assertTrue("ack must persist before opening UI", QueueStore.pending(ctx).isEmpty())
+        QueueStore.enqueue(ctx, ReceiptCandidate("wechat", 1440), "synthetic-pending", 2000)
+        val journal = QueueStore.read(ctx).toString()
+        QueueStore.prefs(ctx).edit().putInt("unrecognized", 81).putBoolean("reviewPending", true)
+            .putLong("connectedAt", 9876).putString("status", "监控已连接；有到账需要到后台核对").commit()
         val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
         try {
             ShadowLooper.idleMainLooper()
@@ -80,8 +84,18 @@ class StartupTest {
             assertEquals(0, controller.get().window.attributes.flags and android.view.WindowManager.LayoutParams.FLAG_SECURE)
             val text = views.filterIsInstance<TextView>().joinToString("\n") { it.text }
             assertTrue(text.contains("已保存，无需重复设置"))
-            assertTrue(text, text.contains("支付宝  ¥12.90\n会员购买"))
+            assertTrue(text, text.contains("待补报：1"))
+            assertTrue(text, text.contains("监控上报记录"))
+            assertFalse(text.contains("最近到账"))
+            assertFalse(text.contains("历史未识别通知"))
+            assertFalse(text.contains("待核对"))
+            assertFalse(text.contains("有到账需要到后台核对"))
             assertFalse(text.contains("synthetic-history"))
+            assertEquals("synthetic-device", QueueStore.deviceId(ctx))
+            assertEquals(9876L, QueueStore.prefs(ctx).getLong("connectedAt", 0))
+            assertEquals(journal, QueueStore.read(ctx).toString())
+            QueueStore.retireLegacyDisplay(ctx)
+            assertEquals(journal, QueueStore.read(ctx).toString())
         } finally { controller.pause().stop().destroy() }
     }
 

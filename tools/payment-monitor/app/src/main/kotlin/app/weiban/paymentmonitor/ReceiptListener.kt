@@ -42,14 +42,8 @@ class ReceiptListener : NotificationListenerService() {
         // Filter before reading extras. Other app notifications are neither read nor logged.
         if (sbn.packageName != "com.tencent.mm" && sbn.packageName != "com.eg.android.AlipayGphone") return
         if (QueueStore.deviceId(this).isEmpty()) return
-        val parsed = ReceiptNotification.read(sbn.packageName, sbn.notification)
-        if (parsed == null) { unrecognized(); return }
+        val parsed = ReceiptNotification.read(sbn.packageName, sbn.notification) ?: return
         try { QueueStore.enqueue(this, parsed, sbn.key, sbn.postTime); Delivery.start(this) }
         catch (_: Exception) { QueueStore.status(this, "到账记录未能写入，请立即核对实际收款；原队列未清除") }
-    }
-    private fun unrecognized() {
-        val prefs = QueueStore.prefs(this)
-        prefs.edit().putInt("unrecognized", prefs.getInt("unrecognized", 0) + 1).commit()
-        QueueStore.status(this, "有通知未提取到有效金额；已识别金额的通知会报到后台，通知原文不保存")
     }
 }

@@ -1,5 +1,78 @@
 import { expect, test, type Page } from '@playwright/test';
 
+test('昵称选择保留同名用户编号，完整编号和多用户查询仍准确', async ({ page }) => {
+  await login(page);
+  const auth = await authorization(page);
+  const response = await page.request.get('/api/v1/admin/users', {
+    headers: { Authorization: auth },
+  });
+  expect(response.ok()).toBe(true);
+  const data = await response.json();
+  const targets = data.items.filter((u: { username: string }) =>
+    ['browser_admin', 'browser_other'].includes(u.username),
+  ) as Array<{ userId: string }>;
+  expect(targets).toHaveLength(2);
+  const [first, second] = targets.map((u) => u.userId) as [string, string];
+  // Two synthetic accounts share a nickname; the selected UUID must never be inferred from the name.
+  await page.route('**/api/v1/admin/users', async (route) => {
+    const original = await route.fetch();
+    const body = await original.json();
+    await route.fulfill({
+      response: original,
+      json: {
+        ...body,
+        items: body.items.map((u: { userId: string }) =>
+          targets.some((t) => t.userId === u.userId) ? { ...u, nickname: '同名核对用户' } : u,
+        ),
+      },
+    });
+  });
+  await page.goto('/role-requests');
+  const picker = page.getByRole('combobox', { name: '用户（昵称、账号或编号）', exact: true });
+  await picker.fill('同名核对用户');
+  for (const id of [first, second])
+    await expect(page.locator(`.ant-select-item-option[title="${id}"]`)).toBeVisible();
+  const chosen = page.waitForRequest((r) => new URL(r.url()).searchParams.get('userId') === second);
+  await page.locator(`.ant-select-item-option[title="${second}"]`).click();
+  expect(new URL((await chosen).url()).searchParams.get('userId')).toBe(second);
+  const missing = 'd757240f-4732-45a1-a291-f67051ed9777';
+  await picker.fill(missing);
+  const pasted = page.waitForRequest(
+    (r) => new URL(r.url()).searchParams.get('userId') === missing,
+  );
+  await page.locator(`.ant-select-item-option[title="${missing}"]`).click();
+  expect(new URL((await pasted).url()).searchParams.get('userId')).toBe(missing);
+  await page.goto('/model?tab=records');
+  const multi = page.getByRole('combobox', { name: '用户（可多选昵称、账号或编号）' });
+  await multi.click();
+  await multi.fill('同名核对用户');
+  await page.locator(`.ant-select-item-option[title="${first}"]`).click();
+  await multi.click();
+  await multi.fill('同名核对用户');
+  const filtered = page.waitForRequest((r) => {
+    if (r.method() !== 'POST') return false;
+    try {
+      return r.postDataJSON()?.filter?.userIds?.length === 2;
+    } catch {
+      return false;
+    }
+  });
+  await page.locator(`.ant-select-item-option[title="${second}"]`).click();
+  expect((await filtered).postDataJSON().filter.userIds).toEqual([first, second]);
+  await page.reload();
+  await multi.click();
+  const bulk = page.waitForRequest((r) => {
+    if (r.method() !== 'POST') return false;
+    try {
+      return r.postDataJSON()?.filter?.userIds?.length === 2;
+    } catch {
+      return false;
+    }
+  });
+  await multi.fill(`${second}，${first},${second}`);
+  expect((await bulk).postDataJSON().filter.userIds).toEqual([second, first]);
+});
+
 async function login(page: Page, username = 'browser_admin') {
   await page.goto('/');
   await page.getByLabel('管理员账号').fill(username);

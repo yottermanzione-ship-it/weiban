@@ -24,7 +24,7 @@ import { DataTable, type ProColumns } from '../ui/table.js';
 import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
 import { FieldHelp, FormSection, Page, StatusTag, useToast } from '../ui/page.js';
 import { formatDateTime, formatPercent } from '../ui/format.js';
-import { shortUserId, userDisplayName, useUserDirectory } from './users/identity.js';
+import { shortUserId, userDisplayName, UserPicker, useUserDirectory } from './users/identity.js';
 import { useFormFeedback } from '../data/form-feedback.js';
 
 type Decision = z.infer<typeof PlanningDecisionRecord>;
@@ -408,11 +408,10 @@ function PlannerDecisions() {
   return (
     <div className="tab-body">
       <div className="filter-panel">
-        <Input
-          style={{ width: 160 }}
-          placeholder="用户 ID"
+        <UserPicker
+          directory={directory}
           value={filters.userId}
-          onChange={(e) => setFilters({ ...filters, userId: e.target.value })}
+          onChange={(userId) => setFilters({ ...filters, userId })}
         />
         <Input
           style={{ width: 160 }}

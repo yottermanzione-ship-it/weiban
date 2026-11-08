@@ -9,6 +9,7 @@ import {
 import { api } from '../data/client.js';
 import { useRemote } from '../data/hooks.js';
 import { Page, SectionCard } from '../ui/page.js';
+import { UserIdentity, userDisplayName, useUserDirectory } from './users/identity.js';
 
 const statusNames: Record<string, string> = {
   pending: '待付款',
@@ -42,6 +43,7 @@ const date = (s: string | null) =>
   s ? new Date(s).toLocaleString('zh-CN', { hour12: false }) : '尚未连接';
 
 export function ScanPaymentsPage() {
+  const directory = useUserDirectory();
   const settings = useRemote(A.settings);
   const devices = useRemote(A.devices);
   const [oc, setOc] = useState<string | undefined>();
@@ -84,6 +86,7 @@ export function ScanPaymentsPage() {
   const [orderId, setOrderId] = useState<string | null>(null);
   const [reason, setReason] = useState('');
   function refresh() {
+    directory.refresh();
     settings.refresh();
     devices.refresh();
     orders.refresh();
@@ -216,7 +219,16 @@ export function ScanPaymentsPage() {
           scroll={{ x: 1000 }}
           columns={[
             { title: '订单编号', dataIndex: 'id', width: 260 },
-            { title: '用户编号', render: (_, r) => r.userId ?? '已注销', width: 260 },
+            {
+              title: '付款人',
+              render: (_, r) =>
+                r.userId ? (
+                  <UserIdentity userId={r.userId} label={directory.byId.get(r.userId)} />
+                ) : (
+                  '已注销账号'
+                ),
+              width: 260,
+            },
             { title: '购买类型', render: (_, r) => purchase(r.kind) },
             { title: '购买内容', dataIndex: 'title' },
             { title: '渠道', render: (_, r) => channel(r.channel) },
@@ -436,7 +448,10 @@ export function ScanPaymentsPage() {
                   r.channel === resolve?.channel &&
                   r.amountFen === resolve?.amountFen,
               )
-              .map((r) => ({ value: r.id, label: `${r.title} ${money(r.amountFen)} · ${r.id}` })),
+              .map((r) => ({
+                value: r.id,
+                label: `${userDisplayName(r.userId!, directory.byId.get(r.userId!))} · ${r.title} ${money(r.amountFen)} · ${r.id}`,
+              })),
           ]}
         />
         <p>上方订单翻页后再打开核对，可选择该页订单。</p>
@@ -482,6 +497,9 @@ export function ScanPaymentsPage() {
           {manual &&
             `${manual.title} · ${channel(manual.channel)} · 订单应付 ${money(manual.amountFen)}`}
         </p>
+        {manual?.userId && (
+          <UserIdentity userId={manual.userId} label={directory.byId.get(manual.userId)} />
+        )}
         <p>
           仅用于实际已收款、手机未上报的订单。先打开微信或支付宝账单，核对付款人、金额和交易编号；登记后会开通权益，不会再向用户收款。
         </p>
