@@ -2,10 +2,9 @@
 Description=Keep Weiban build caches within their retained-size budgets
 
 [Timer]
-OnBootSec=15min
+OnActiveSec=15min
 OnUnitActiveSec=30min
 RandomizedDelaySec=2min
-Persistent=true
 
 [Install]
 WantedBy=timers.target
