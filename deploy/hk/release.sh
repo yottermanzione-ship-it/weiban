@@ -82,6 +82,7 @@ if command -v flock >/dev/null; then
   mkdir -p -- "$(dirname -- "$LOCK_FILE")"
   exec 8>"$LOCK_FILE" || die "无法打开锁文件 $LOCK_FILE"
   flock -n 8 || die '已有另一个发版或回滚正在进行'
+  export WEIBAN_RELEASE_LOCK_HELD=1
 fi
 [[ -L $WEIBAN_SRC ]] || die "$WEIBAN_SRC 不是软链接，不知道当前版本在哪"
 OLD=$(readlink -f -- "$WEIBAN_SRC")
@@ -129,9 +130,16 @@ OLDC=$(kv_get "$WEIBAN_VERSION_FILE" sourceCommit)
 APP_NEW=${OLDAPP%:*}:release-$commit
 EDGE_NEW=${OLDEDGE%:*}:release-$commit
 avail=$(df -B1 --output=avail -- "$WEIBAN_RELEASES_DIR" | tail -n 1 | tr -dc '0-9') || avail=
-[[ -n $avail ]] || die '读不到数据盘剩余空间'
+[[ -n $avail ]] || die '读不到发布目录所在磁盘的剩余空间'
 ((avail >= MIN_FREE)) ||
-  die "数据盘只剩 $(human_bytes "$avail")，构建至少要 $(human_bytes "$MIN_FREE")。先运行 bash $WEIBAN_SRC/deploy/hk/release-prune.sh --dry-run 看能清什么"
+  die "发布目录所在磁盘只剩 $(human_bytes "$avail")，至少要 $(human_bytes "$MIN_FREE")。先运行 bash $WEIBAN_SRC/deploy/hk/release-prune.sh --dry-run 看能清什么"
+
+build_options=()
+if [[ -f ${WEIBAN_BUILD_CACHE_CONFIG:-/srv/weiban/ops-state/build-cache.env} ]]; then
+  bash "$D/deploy/hk/build-cache.sh" check || die '独立打包环境或其磁盘余量检查失败'
+  release_builder=$(bash "$D/deploy/hk/build-cache.sh" builder) || die '无法确定独立打包环境'
+  build_options=(--builder "$release_builder")
+fi
 
 echo "构建 $APP_NEW、$EDGE_NEW（应用照常运行）"
 build_compose=(docker compose --env-file "$WEIBAN_DEPLOY_ENV" -p "${WEIBAN_COMPOSE_PROJECT:-weiban-prod}"
@@ -139,7 +147,7 @@ build_compose=(docker compose --env-file "$WEIBAN_DEPLOY_ENV" -p "${WEIBAN_COMPO
 if [[ -n $(kv_get "$WEIBAN_DEPLOY_ENV" PUSH_CREDENTIALS_PATH) ]]; then
   build_compose+=(-f "$D/deploy/prod/push.override.yml")
 fi
-APP_IMAGE=$APP_NEW EDGE_IMAGE=$EDGE_NEW "${build_compose[@]}" build app caddy || die '构建失败，线上仍是原版本'
+APP_IMAGE=$APP_NEW EDGE_IMAGE=$EDGE_NEW "${build_compose[@]}" build "${build_options[@]}" app caddy || die '构建失败，线上仍是原版本'
 { image_id "$APP_NEW" && image_id "$EDGE_NEW"; } >/dev/null || die '构建命令成功了，但找不到新镜像'
 if ((enable_webpush)); then
   PUSH_APP_IMAGE=$APP_NEW bash "$D/deploy/hk/enable-webpush.sh" --prepare "$D" "$commit"

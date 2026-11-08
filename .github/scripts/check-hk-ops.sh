@@ -12,6 +12,9 @@ repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 cd -- "$repo_root"
 hk=$repo_root/deploy/hk
 node --test "$hk/provision-webpush.test.mjs"
+if [[ ${OSTYPE:-} != msys* ]]; then
+  node --test "$hk/build-cache.test.mjs"
+fi
 
 if command -v shellcheck >/dev/null; then
   shellcheck --severity=warning -x deploy/hk/*.sh .github/scripts/check-hk-ops.sh
@@ -47,7 +50,7 @@ if [[ $1 == compose ]]; then
   case $a in
     *" ps --status running -q app "*) [[ -n ${STUB_APP_STOPPED:-} ]] || echo app-cid ;;
     *" stop app "*) event stop-app ;;
-    *" build app caddy "*)
+    *" build app caddy "* | *" build --builder weiban-fixture app caddy "*)
       event "build $APP_IMAGE"
       [[ -z ${STUB_BUILD_FAIL:-} ]] || exit 1
       for ref in "$APP_IMAGE" "$EDGE_IMAGE"; do
@@ -445,7 +448,7 @@ check '一个镜像都没删' not_logged 'EVENT rm'
 tiny=$work/tiny
 mkdir -p "$tiny/deploy/hk" "$tiny/deploy/prod" "$tiny/apps/server/drizzle/meta" "$tiny/packages/contracts/src"
 cp "$hk"/ops-lib.sh "$hk"/release.sh "$hk"/release-prune.sh "$hk"/rollback.sh "$hk"/upload-release.sh \
-  "$hk"/install-ops-runtime.sh "$hk"/backup.sh "$hk"/disk-check.sh "$tiny/deploy/hk/"
+  "$hk"/install-ops-runtime.sh "$hk"/backup.sh "$hk"/disk-check.sh "$hk"/build-cache.sh "$tiny/deploy/hk/"
 echo 'services: {}' >"$tiny/deploy/prod/compose.yml"
 echo 'services: {}' >"$tiny/deploy/hk/compose.override.yml"
 echo 'services: {}' >"$tiny/deploy/prod/push.override.yml"
@@ -643,6 +646,38 @@ EOF
   check '老源码下固定备份成功' equals "$rc" 0
   check '备份操作仍带推送配置' logged "-f $srv/src/deploy/prod/push.override.yml"
   check '备份恢复原应用容器' logged 'EVENT start-app'
+
+  echo 'release.sh：独立打包环境与容量闸门'
+  cat >"$tiny/deploy/hk/build-cache.sh" <<'CACHE'
+#!/usr/bin/env bash
+case $1 in
+  check) echo 'EVENT cache-check' >>"$STUB_LOG"; [[ ${STUB_CACHE_BLOCKED:-0} != 1 ]] ;;
+  builder) echo weiban-fixture ;;
+  prune) echo 'EVENT cache-prune' >>"$STUB_LOG" ;;
+  *) exit 99 ;;
+esac
+CACHE
+  g add -A
+  g commit -qm dedicated-builder
+  c3=$(g rev-parse HEAD)
+  upload "$c3"
+  export WEIBAN_BUILD_CACHE_CONFIG=$work/dedicated-cache.env
+  echo configured >"$WEIBAN_BUILD_CACHE_CONFIG"
+  run_srv "$remote/rel-$c3.release.sh" "$c3"
+  check '独立打包环境发版成功' equals "$rc" 0
+  check '构建前核对缓存盘空间' before 'EVENT cache-check' "EVENT build weiban-app:release-$c3"
+  check '显式使用独立打包环境' logged 'build --builder weiban-fixture app caddy'
+  check '发版后执行容量回收' logged 'EVENT cache-prune'
+  echo blocked >>"$tiny/README"
+  g add -A
+  g commit -qm cache-capacity-gate
+  c4=$(g rev-parse HEAD)
+  upload "$c4"
+  STUB_CACHE_BLOCKED=1 run_srv "$remote/rel-$c4.release.sh" "$c4"
+  check '打包盘空间不足时拒绝发版' test "$rc" -ne 0
+  check '未启动构建' not_logged 'EVENT build'
+  check '未切换应用' not_logged 'EVENT up'
+  unset WEIBAN_BUILD_CACHE_CONFIG
 else
   echo 'release.sh / rollback.sh：本机不能建软链接，跳过（CI 会做）'
 fi

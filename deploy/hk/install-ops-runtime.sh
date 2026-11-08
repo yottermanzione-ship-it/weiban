@@ -15,10 +15,10 @@ slot='slot-a'
 destination=$ops_root/$slot
 [[ ! -L $destination ]] || { echo 'ops slot must not be a symlink' >&2; exit 1; }
 mkdir -p -- "$destination"
-for name in ops-lib.sh backup.sh disk-check.sh rollback.sh release-prune.sh; do
+for name in ops-lib.sh backup.sh disk-check.sh rollback.sh release-prune.sh build-cache.sh; do
   bash -n "$source_root/deploy/hk/$name"
 done
-for name in ops-lib.sh backup.sh disk-check.sh rollback.sh release-prune.sh; do
+for name in ops-lib.sh backup.sh disk-check.sh rollback.sh release-prune.sh build-cache.sh; do
   install -m 0750 -- "$source_root/deploy/hk/$name" "$destination/$name"
 done
 printf '%s\n' "$commit" >"$destination/source-commit"
