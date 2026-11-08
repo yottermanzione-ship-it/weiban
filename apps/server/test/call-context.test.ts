@@ -379,6 +379,143 @@ describeDb('电话与文字共用上下文：真实数据库及加密存档，�
     expect(state.rows[0]!.partial_offset).toBe(0);
   });
 
+  it('电话整理额外字段和未知操作不再取消合法记忆，保存后文字上下文可接续且重放不重复', async () => {
+    const saved = await record([{ role: 'user', content: 'REPAIR_FACT_CANARY：我喜欢蓝色风车。' }]);
+    const before = requests.length;
+    modelResult = JSON.stringify({
+      operations: [
+        {
+          action: 'ADD',
+          content: 'REPAIR_FACT_CANARY：喜欢蓝色风车',
+          category: 'preference',
+          importance: 8,
+          sourceMessageIds: [saved.message.messageId],
+          explanation: 'PRIVATE_EXTRA_CANARY',
+        },
+        {
+          action: 'UNSUPPORTED',
+          content: 'UNSUPPORTED_FACT_CANARY',
+          category: 'status',
+          importance: 5,
+          sourceMessageIds: [saved.message.messageId],
+        },
+      ],
+      episode: '一起聊了蓝色风车。',
+    });
+    try {
+      const worker = app.get(ConversationMemoryService);
+      await worker.call(saved.input.callId);
+      await worker.call(saved.input.callId);
+      expect(requests).toHaveLength(before + 1);
+      expect(requests.at(-1)!.meta?.promptTemplateVersion).toBe('call-memory-v2');
+      expect(requests.at(-1)!.messages[0]!.content).toContain('"action":"ADD"');
+      const state = await db.query(
+        'SELECT status,ciphertext,result_ciphertext FROM ai_runtime.call_memory_jobs WHERE id=$1',
+        [saved.input.callId],
+      );
+      expect(state.rows).toEqual([{ status: 'done', ciphertext: null, result_ciphertext: null }]);
+      const stored = await app
+        .get(MemoryService)
+        .context(userId, characterId, 'normal', '', undefined, { uncapped: true });
+      expect(
+        stored.items.filter((item) => item.content.includes('REPAIR_FACT_CANARY')),
+      ).toHaveLength(1);
+      expect(JSON.stringify(stored)).not.toContain('UNSUPPORTED_FACT_CANARY');
+      expect(JSON.stringify(stored)).not.toContain('PRIVATE_EXTRA_CANARY');
+      expect(JSON.stringify((await context())!.messages)).toContain('REPAIR_FACT_CANARY');
+      const audit = await db.query(
+        "SELECT action,details FROM platform.audit_log WHERE target_type='call_memory_job' AND target_id=$1",
+        [saved.input.callId],
+      );
+      expect(audit.rows).toEqual([
+        {
+          action: 'call_memory.done',
+          details: { reason: 'saved_valid_parts', ignoredOperations: 1 },
+        },
+      ]);
+      const episodes = await db.query(
+        "SELECT count(*)::int AS n FROM ai_runtime.shared_episodes WHERE source_key=encode(sha256(convert_to('call:'||$1::text,'UTF8')),'hex')",
+        [saved.input.callId],
+      );
+      expect(episodes.rows[0]!.n).toBe(1);
+    } finally {
+      modelResult = JSON.stringify({ operations: [], episode: '' });
+    }
+  });
+
+  it('合法结果保存中断后从加密结果重试，记忆与审计一起回滚且不再调用模型', async () => {
+    const saved = await record([{ role: 'user', content: 'REPAIR_RETRY_CANARY' }]);
+    modelResult = JSON.stringify({
+      operations: [
+        {
+          action: 'ADD',
+          content: 'REPAIR_RETRY_CANARY',
+          category: 'status',
+          importance: 5,
+          sourceMessageIds: [saved.message.messageId],
+          extra: 'PRIVATE_EXTRA',
+        },
+      ],
+      episode: '',
+    });
+    const before = requests.length;
+    const failAudit = vi
+      .spyOn(app.get<AuditLog>(AUDIT_LOG), 'record')
+      .mockRejectedValueOnce(new Error('fixture audit unavailable'));
+    try {
+      await app.get(ConversationMemoryService).call(saved.input.callId);
+      const pending = await db.query(
+        'SELECT status,result_ciphertext FROM ai_runtime.call_memory_jobs WHERE id=$1',
+        [saved.input.callId],
+      );
+      expect(pending.rows[0]!.status).toBe('pending');
+      expect(pending.rows[0]!.result_ciphertext).toBeInstanceOf(Buffer);
+      expect(pending.rows[0]!.result_ciphertext.toString()).not.toContain('REPAIR_RETRY_CANARY');
+      const beforeRetry = await app
+        .get(MemoryService)
+        .context(userId, characterId, 'normal', '', undefined, { uncapped: true });
+      expect(beforeRetry.items.some((item) => item.content.includes('REPAIR_RETRY_CANARY'))).toBe(
+        false,
+      );
+      failAudit.mockRestore();
+      await db.query('UPDATE ai_runtime.call_memory_jobs SET retry_after=NULL WHERE id=$1', [
+        saved.input.callId,
+      ]);
+      await app.get(ConversationMemoryService).call(saved.input.callId);
+      await app.get(ConversationMemoryService).call(saved.input.callId);
+      expect(requests).toHaveLength(before + 1);
+      const stored = await app
+        .get(MemoryService)
+        .context(userId, characterId, 'normal', '', undefined, { uncapped: true });
+      expect(
+        stored.items.filter((item) => item.content.includes('REPAIR_RETRY_CANARY')),
+      ).toHaveLength(1);
+    } finally {
+      failAudit.mockRestore();
+      modelResult = JSON.stringify({ operations: [], episode: '' });
+    }
+  });
+
+  it('整份操作均不支持时明确登记没有有效记忆，不猜测新事实，不重复扣模型调用', async () => {
+    const saved = await record([{ role: 'user', content: 'UNSUPPORTED_ONLY_PHONE' }]);
+    modelResult = JSON.stringify({ operations: [{ action: 'UNSUPPORTED' }], episode: '' });
+    const before = requests.length;
+    try {
+      await app.get(ConversationMemoryService).call(saved.input.callId);
+      await app.get(ConversationMemoryService).call(saved.input.callId);
+      expect(requests).toHaveLength(before + 1);
+      const audit = await db.query(
+        "SELECT action,details FROM platform.audit_log WHERE target_type='call_memory_job' AND target_id=$1",
+        [saved.input.callId],
+      );
+      expect(audit.rows).toEqual([
+        { action: 'call_memory.done', details: { reason: 'no_valid_parts', ignoredOperations: 1 } },
+      ]);
+    } finally {
+      modelResult = JSON.stringify({ operations: [], episode: '' });
+    }
+  });
+
   it.each([
     ['invalid_result_json', () => 'PRIVATE_RESULT_CANARY: not JSON'],
     [
