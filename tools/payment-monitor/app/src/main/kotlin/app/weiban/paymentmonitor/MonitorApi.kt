@@ -10,9 +10,11 @@ object MonitorApi {
     // Only the production origin. No arbitrary forwarding destination for payment metadata or signatures.
     private const val root = "https://app.weiban.online/api/v1/billing/scan/monitor/"
     fun signingText(deviceId: String, requestTime: String, event: JSONObject): String {
-        val prefix = "wb-pay-v1|$deviceId|$requestTime|${event.getString("type")}"
+        val version = if (event.has("reviewReason")) "wb-pay-v2" else "wb-pay-v1"
+        val prefix = "$version|$deviceId|$requestTime|${event.getString("type")}"
         return if (event.getString("type") == "heartbeat") "$prefix|${if (event.getBoolean("listenerConnected")) 1 else 0}|${event.getInt("queued")}"
-        else "$prefix|${event.getString("eventId")}|${event.getString("channel")}|${event.getInt("amountFen")}|${event.getString("observedAt")}|${event.getString("postedAt")}"
+        else "$prefix|${event.getString("eventId")}|${event.getString("channel")}|${event.getInt("amountFen")}|${event.getString("observedAt")}|${event.getString("postedAt")}" +
+            if (event.has("reviewReason")) "|${event.getString("reviewReason")}" else ""
     }
     fun accepted(code: Int, body: String): Boolean = code in 200..299 && try { JSONObject(body).opt("ok") == true } catch (_: Exception) { false }
     private fun post(path: String, payload: JSONObject): JSONObject {

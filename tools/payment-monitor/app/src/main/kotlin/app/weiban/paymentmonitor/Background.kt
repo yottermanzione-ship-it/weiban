@@ -25,6 +25,7 @@ object Delivery {
                 // Bound one upload burst; queued work remains persisted for the next pass.
                 for (event in queue.take(10)) {
                     val payload = JSONObject().apply { for (key in listOf("type", "eventId", "channel", "amountFen", "observedAt", "postedAt")) put(key, event.get(key)) }
+                    if (event.has("reviewReason")) payload.put("reviewReason", event.getString("reviewReason"))
                     val result = MonitorApi.report(app, payload)
                     QueueStore.accept(app, event.getString("eventId"), result)
                     if (result.optString("status") == "review") QueueStore.prefs(app).edit().putBoolean("reviewPending", true).commit()

@@ -38,6 +38,7 @@ object QueueStore {
         val event = JSONObject().put("type", "receipt").put("eventId", id).put("channel", candidate.channel)
             .put("amountFen", candidate.amountFen).put("postedAt", Instant.ofEpochMilli(postedAt).toString())
             .put("observedAt", Instant.now().toString()).put("accepted", false)
+        candidate.reviewReason?.let { event.put("reviewReason", it) }
         queue.put(event); write(ctx, queue)
     }
     @Synchronized fun accept(ctx: Context, id: String, result: JSONObject? = null) {

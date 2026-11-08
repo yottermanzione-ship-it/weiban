@@ -241,6 +241,10 @@ export const ScanMonitorReport = z
           amountFen: z.number().int().min(1).max(10_000_000),
           observedAt: Timestamp,
           postedAt: Timestamp,
+          /** 有金额但不是明确单笔收款的通知也保存供核对，绝不自动匹配订单。此字段参与v2签名。 */
+          reviewReason: z
+            .enum(['notice_uncertain', 'notice_multiple_amounts', 'notice_summary'])
+            .optional(),
         })
         .strict(),
     ]),
