@@ -9,8 +9,8 @@
  *   (b) 老会员——本次更新前就已是会员（这台设备上从没看到过「免费」），第一次进「服务」页时弹；
  *   (c) 任何一条路径弹过一次就记为已看过，之后都不再弹（例：更新后才开通的新会员，开通时弹过，进服务不再弹）。
  *
- * 「已看过」沿用引导现有的记录方式：本机 localStorage `weiban:guided-tour:v1:<用户ID>`，按账号区分。
- * 项目里没有现成的「服务端按用户存引导状态」机制，所以换设备、清浏览器数据后会再弹一次（交接已写明）。
+ * 「已看过」由账号端保存，本机 localStorage `weiban:guided-tour:v1:<用户ID>` 作兼容缓存。
+ * 旧本机记录会合并到账号；重新安装、换设备后读取账号状态，不再次自动弹。
  * 在新手引导目录里手动开始过（记入 shown）或学完（completed）的章节也算看过，不再自动弹。
  */
 export type ChapterId = 'scenario' | 'miniapps' | 'ecology';
@@ -58,7 +58,11 @@ export function parseGuideRecord(raw: unknown): GuideRecord {
 
 /** 这个章节算不算已经看过（自动弹过，或在目录里学完）。 */
 export function guideSeen(record: GuideRecord, chapter: ChapterId): boolean {
-  return record.shown.includes(chapter) || record.completed.includes(chapter);
+  return (
+    record.shown.includes(chapter) ||
+    record.completed.includes(chapter) ||
+    record.paused === chapter
+  );
 }
 
 /** 这个入口现在还能不能自动弹。 */

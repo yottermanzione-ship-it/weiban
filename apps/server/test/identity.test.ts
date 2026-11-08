@@ -595,6 +595,73 @@ describeDb('identity 模块（真实 PostgreSQL）', () => {
     });
   });
 
+  describe('账号操作引导', () => {
+    it('旧本机记录合并、同账号重登保留，其他账号隔离，旧主题更新不清引导', async () => {
+      const name = newUsername('guide');
+      const a = await register(name);
+      const b = await register();
+      const path = '/api/v1/me/onboarding-guides';
+      expect((await http().get(path, a.session.token).expect(200)).body).toEqual({ seen: [] });
+      expect(
+        (
+          await http()
+            .post(path, a.session.token)
+            .send({ seen: ['scenario', 'miniapps'] })
+            .expect(200)
+        ).body,
+      ).toEqual({ seen: ['scenario', 'miniapps'], claimed: false });
+      await http()
+        .patch('/api/v1/me/preferences', a.session.token)
+        .send({ theme: 'pink' })
+        .expect(200);
+      const next = AuthResponse.parse((await login(name).expect(200)).body);
+      secrets.add(next.session.token);
+      expect((await http().get(path, next.session.token).expect(200)).body.seen).toEqual([
+        'scenario',
+        'miniapps',
+      ]);
+      expect(
+        (
+          await http()
+            .post(path, next.session.token)
+            .send({ seen: [], claim: 'scenario' })
+            .expect(200)
+        ).body.claimed,
+      ).toBe(false);
+      expect((await http().get(path, b.session.token).expect(200)).body.seen).toEqual([]);
+      await http().get(path).expect(401);
+      await http()
+        .post(path, a.session.token)
+        .send({ seen: ['unknown'] })
+        .expect(400);
+      await http()
+        .post(path, a.session.token)
+        .send({ seen: [], userId: b.user.userId })
+        .expect(400);
+    });
+    it('多个设备竞争仅一个获得自动展示，旧集合重放不覆盖新的章节', async () => {
+      const a = await register();
+      const path = '/api/v1/me/onboarding-guides';
+      const replies = await Promise.all(
+        Array.from({ length: 5 }, () =>
+          http().post(path, a.session.token).send({ seen: [], claim: 'ecology' }).expect(200),
+        ),
+      );
+      expect(replies.filter((r) => r.body.claimed)).toHaveLength(1);
+      await Promise.all(
+        ['scenario', 'miniapps'].map((chapter) =>
+          http()
+            .post(path, a.session.token)
+            .send({ seen: [chapter] })
+            .expect(200),
+        ),
+      );
+      const final = (await http().post(path, a.session.token).send({ seen: [] }).expect(200)).body;
+      expect(final.claimed).toBe(false);
+      expect(final.seen.sort()).toEqual(['ecology', 'miniapps', 'scenario']);
+    });
+  });
+
   // ---------- 资料 ----------
 
   describe('我的资料 /me/profile', () => {

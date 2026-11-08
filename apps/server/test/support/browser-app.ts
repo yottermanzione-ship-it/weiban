@@ -196,6 +196,13 @@ for (const [name, balance] of [
   ['browser_other', 1_000_000],
   ['browser_first', 1_000_000],
   ['browser_guide', 1_000_000],
+  ['browser_guide_old', 1_000_000],
+  ['browser_guide_new', 1_000_000],
+  ['browser_guide_free', 1_000_000],
+  ['browser_guide_mini', 1_000_000],
+  ['browser_guide_restore', 1_000_000],
+  ['browser_guide_legacy', 1_000_000],
+  ['browser_guide_offline', 1_000_000],
   ['browser_avatar', 1_000_000],
   ['browser_layout', 1_000_000],
 ] as const) {
@@ -207,7 +214,10 @@ for (const [name, balance] of [
   if (name === 'browser_layout') layoutUser = user;
   await commands.setRole(name, 'user');
   await app.get(ScenarioService).updateConfig(user, { chat: { modelKey: chatModel } });
-  if (['browser_other', 'browser_guide', 'browser_avatar', 'browser_layout'].includes(name))
+  if (
+    name.startsWith('browser_guide') ||
+    ['browser_other', 'browser_avatar', 'browser_layout'].includes(name)
+  )
     await app.get(SettingsService).updateProfile(user, { nickname: '其他用户' });
   await app.get(BillingAdminService).adjust(admin, user, {
     direction: 'grant',

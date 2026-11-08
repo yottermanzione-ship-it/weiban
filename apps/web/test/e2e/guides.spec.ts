@@ -7,13 +7,16 @@ import { expect, test, type Page } from '@playwright/test';
  */
 const layer = (page: Page) => page.locator('.guided-tour-layer');
 
-async function login(page: Page) {
+async function login(page: Page, name = 'browser_guide') {
   await page.goto('/');
   await page.getByRole('button', { name: '登录', exact: true }).click();
-  await page.getByLabel('账号', { exact: true }).fill('browser_guide');
+  await page.getByLabel('账号', { exact: true }).fill(name);
   await page.getByLabel('密码', { exact: true }).fill('correct horse battery');
+  const signedIn = page.waitForResponse((response) => response.url().endsWith('/auth/login'));
   await page.getByRole('button', { name: '同意并登录', exact: true }).click();
+  const auth = (await (await signedIn).json()) as { user: { userId: string } };
   await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
+  return auth;
 }
 
 /** 等自动弹出的检查跑过几轮（每 250ms 一次，需连续两次稳定），确认没有弹出。 */
@@ -55,7 +58,7 @@ test('情景预设：第一次进入私聊页自动弹出，之后再进、刷�
 
 test('角色生态（老会员）：更新前就是会员，第一次进「服务」弹一次，之后不再弹', async ({ page }) => {
   await page.route(/\/me\/membership$/, (route) => route.fulfill({ json: membership('pro_plus') }));
-  await login(page);
+  await login(page, 'browser_guide_old');
   // 从没看到过「免费」：不是新开通，不弹新会员说明框
   await expectNoGuide(page);
   await page.goto('/services');
@@ -71,7 +74,7 @@ test('角色生态（老会员）：更新前就是会员，第一次进「服�
 test('角色生态（新会员）：开通成功马上弹，弹过后进「服务」不再弹', async ({ page }) => {
   let tier: 'free' | 'pro_plus' = 'free';
   await page.route(/\/me\/membership$/, (route) => route.fulfill({ json: membership(tier) }));
-  await login(page);
+  await login(page, 'browser_guide_new');
   // 先在这台设备上看到「免费」
   await expect
     .poll(() =>
@@ -98,14 +101,14 @@ test('角色生态（新会员）：开通成功马上弹，弹过后进「服�
 
 test('角色生态：免费用户进「服务」不弹', async ({ page }) => {
   await page.route(/\/me\/membership$/, (route) => route.fulfill({ json: membership('free') }));
-  await login(page);
+  await login(page, 'browser_guide_free');
   await page.goto('/services');
   await expect(page.locator('[data-guide="ecology-entry"]')).toBeVisible();
   await expectNoGuide(page);
 });
 
 test('小程序：第一次下拉打开小程序面板自动弹出，之后再下拉不再弹', async ({ page }) => {
-  await login(page);
+  await login(page, 'browser_guide_mini');
   await page.goto('/chat');
   // exact：引导卡片自己也是 dialog，标题里同样带「小程序」。
   const panel = page.getByRole('dialog', { name: '小程序', exact: true });
@@ -128,4 +131,74 @@ test('小程序：第一次下拉打开小程序面板自动弹出，之后再�
   await expect(panel).toBeHidden();
   await pullOpen();
   await expectNoGuide(page);
+});
+
+test('重新安装后的空白浏览器登录同一账号不再自动引导，手动重看保留', async ({ page, browser }) => {
+  await page.route(/\/me\/membership$/, (route) => route.fulfill({ json: membership('pro_plus') }));
+  await login(page, 'browser_guide_restore');
+  await page.goto('/services');
+  await expect(layer(page)).toHaveAttribute('data-tour-step', 'live-ecology-entry');
+  await page.getByRole('button', { name: '稍后再学，退出引导' }).click();
+  const clean = await browser.newContext({ baseURL: new URL(page.url()).origin });
+  try {
+    await clean.addInitScript(() => localStorage.setItem('permissions-onboarded', '1'));
+    const reopened = await clean.newPage();
+    await reopened.route(/\/me\/membership$/, (route) =>
+      route.fulfill({ json: membership('pro_plus') }),
+    );
+    const state = reopened.waitForResponse(
+      (response) =>
+        response.url().endsWith('/me/onboarding-guides') && response.request().method() === 'GET',
+    );
+    await login(reopened, 'browser_guide_restore');
+    expect((await (await state).json()).seen).toContain('ecology');
+    await reopened.goto('/services');
+    await expectNoGuide(reopened);
+    await reopened.reload();
+    await expectNoGuide(reopened);
+    await reopened.goto('/help/guide');
+    await reopened.getByRole('button', { name: /角色生态/ }).click();
+    await expect(layer(reopened)).toBeVisible();
+  } finally {
+    await clean.close();
+  }
+});
+
+test('旧版只记中途退出的记录导入账号，重载后不再次引导', async ({ page }) => {
+  await page.route(/\/me\/membership$/, (route) => route.fulfill({ json: membership('pro_plus') }));
+  const auth = await login(page, 'browser_guide_legacy');
+  await page.evaluate(
+    (id) =>
+      localStorage.setItem(
+        `weiban:guided-tour:v1:${id}`,
+        JSON.stringify({ completed: [], paused: 'ecology' }),
+      ),
+    auth.user.userId,
+  );
+  const imported = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/me/onboarding-guides') && response.request().method() === 'POST',
+  );
+  await page.reload();
+  expect((await (await imported).json()).seen).toContain('ecology');
+  await page.goto('/services');
+  await expectNoGuide(page);
+  await page.evaluate(
+    (id) => localStorage.removeItem(`weiban:guided-tour:v1:${id}`),
+    auth.user.userId,
+  );
+  await page.reload();
+  await expectNoGuide(page);
+});
+
+test('账号引导状态读取失败时保持安静，恢复后新用户仍可正常首次学习', async ({ page }) => {
+  await page.route(/\/me\/membership$/, (route) => route.fulfill({ json: membership('pro_plus') }));
+  await page.route('**/me/onboarding-guides', (route) => route.abort());
+  await login(page, 'browser_guide_offline');
+  await page.goto('/services');
+  await expectNoGuide(page);
+  await expect(page.locator('[data-guide="ecology-entry"]')).toBeVisible();
+  await page.unroute('**/me/onboarding-guides');
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await expect(layer(page)).toHaveAttribute('data-tour-step', 'live-ecology-entry');
 });

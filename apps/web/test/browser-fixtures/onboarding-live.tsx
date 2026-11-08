@@ -123,8 +123,21 @@ await api.authenticate(auth);
 await localStore.setOwned({ userId, sessionId }, `sync-state:${userId}:${sessionId}`, state);
 const calls: Array<{ path: string; method: string }> = [];
 Object.assign(window, { onboardingLiveCalls: calls });
+const seenGuides = new Set<string>();
 Object.assign(api, {
-  call: async (endpoint: { path: string; method: string }) => {
+  call: async (
+    endpoint: { path: string; method: string },
+    options?: { body?: { seen?: string[]; claim?: string } },
+  ) => {
+    // 仅允许引导自身保存已见标记；其他业务写入仍由下方硬性拒绝。
+    if (endpoint === IdentityEndpoints.getOnboardingGuides) return { seen: [...seenGuides] };
+    if (endpoint === IdentityEndpoints.syncOnboardingGuides) {
+      for (const chapter of options?.body?.seen ?? []) seenGuides.add(chapter);
+      const chapter = options?.body?.claim;
+      const claimed = !!chapter && !seenGuides.has(chapter);
+      if (chapter) seenGuides.add(chapter);
+      return { seen: [...seenGuides], claimed };
+    }
     calls.push({ path: endpoint.path, method: endpoint.method });
     if (endpoint.method !== 'GET')
       throw new Error(`Unexpected write in read-only guide: ${endpoint.path}`);
