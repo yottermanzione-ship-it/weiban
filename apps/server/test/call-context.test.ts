@@ -3,7 +3,7 @@ import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import {
   AdminCharacterWrite,
   CharacterCard,
@@ -17,11 +17,13 @@ import {
 import { AppModule } from '../src/app.module.js';
 import {
   DATABASE,
+  AUDIT_LOG,
   JOB_QUEUE,
   EVENT_DISPATCHER,
   TestClock,
   newId,
   type Database,
+  type AuditLog,
   type JobQueue,
   type EventDispatcher,
 } from '../src/platform/index.js';
@@ -340,6 +342,16 @@ describeDb('电话与文字共用上下文：真实数据库及加密存档，�
       [saved.input.callId],
     );
     expect(state.rows[0]).toMatchObject({ status: 'done', ciphertext: null });
+    const outcomes = await db.query<{ action: string; details: unknown }>(
+      "SELECT action,details FROM platform.audit_log WHERE target_type='call_memory_job' AND target_id=$1 ORDER BY occurred_at,id",
+      [saved.input.callId],
+    );
+    expect(outcomes.rows.filter((row) => row.action === 'call_memory.done')).toEqual([
+      { action: 'call_memory.done', details: { reason: 'saved' } },
+    ]);
+    expect(outcomes.rows.filter((row) => row.action === 'call_memory.partial')).toHaveLength(
+      chunks.length - 1,
+    );
     expect(
       (await app.get<ChatReadPort>(CHAT_READ_PORT).getMessage(saved.message.messageId, ['normal']))
         ?.content,
@@ -365,6 +377,136 @@ describeDb('电话与文字共用上下文：真实数据库及加密存档，�
     );
     expect(Number(state.rows[0]!.covered_seq)).toBe(lastSeq);
     expect(state.rows[0]!.partial_offset).toBe(0);
+  });
+
+  it.each([
+    ['invalid_result_json', () => 'PRIVATE_RESULT_CANARY: not JSON'],
+    [
+      'invalid_result_schema',
+      () => JSON.stringify({ operations: 'PRIVATE_RESULT_CANARY', episode: '' }),
+    ],
+    [
+      'invalid_source_reference',
+      () =>
+        JSON.stringify({
+          operations: [
+            {
+              action: 'ADD',
+              content: 'PRIVATE_RESULT_CANARY',
+              category: 'status',
+              importance: 5,
+              sourceMessageIds: [newId()],
+            },
+          ],
+          episode: '',
+        }),
+    ],
+    [
+      'restricted_content',
+      (sourceId: string) =>
+        JSON.stringify({
+          operations: [
+            {
+              action: 'ADD',
+              content: 'PRIVATE_RESULT_CANARY：经期记录',
+              category: 'status',
+              importance: 5,
+              sourceMessageIds: [sourceId],
+            },
+          ],
+          episode: '',
+        }),
+    ],
+  ] as const)('电话记忆取消区分 %s，保留原通话且审计不含模型内容', async (reason, output) => {
+    const turns: CallTranscriptTurn[] = [
+      { role: 'user', content: 'PRIVATE_PHONE_CANARY：周末看风车。' },
+    ];
+    const saved = await record(turns);
+    const before = requests.length;
+    modelResult = output(saved.message.messageId);
+    try {
+      const worker = app.get(ConversationMemoryService);
+      await worker.call(saved.input.callId);
+      await worker.call(saved.input.callId);
+      expect(requests).toHaveLength(before + 1);
+      const state = await db.query(
+        'SELECT status,ciphertext,result_ciphertext FROM ai_runtime.call_memory_jobs WHERE id=$1',
+        [saved.input.callId],
+      );
+      expect(state.rows).toEqual([
+        { status: 'cancelled', ciphertext: null, result_ciphertext: null },
+      ]);
+      const audit = await db.query(
+        'SELECT action,actor_type,details FROM platform.audit_log WHERE target_type=$1 AND target_id=$2',
+        ['call_memory_job', saved.input.callId],
+      );
+      expect(audit.rows).toEqual([
+        { action: 'call_memory.cancelled', actor_type: 'system', details: { reason } },
+      ]);
+      expect(JSON.stringify(audit.rows)).not.toContain('PRIVATE_');
+      expect(
+        (
+          await app
+            .get<ChatReadPort>(CHAT_READ_PORT)
+            .getMessage(saved.message.messageId, ['normal'])
+        )?.content,
+      ).toMatchObject({ transcript: turns });
+    } finally {
+      modelResult = JSON.stringify({ operations: [], episode: '' });
+    }
+  });
+
+  it.each(['contact_changed', 'memory_changed'] as const)(
+    '电话记忆 %s 屏障取消也留原因，不再请求模型',
+    async (reason) => {
+      const saved = await record([{ role: 'user', content: 'FENCE_PHONE_CANARY' }]);
+      if (reason === 'contact_changed')
+        await db.query('UPDATE ai_runtime.call_memory_jobs SET epoch=$2 WHERE id=$1', [
+          saved.input.callId,
+          newId(),
+        ]);
+      else
+        await db.query('UPDATE ai_runtime.call_memory_jobs SET revision=revision+1 WHERE id=$1', [
+          saved.input.callId,
+        ]);
+      const before = requests.length;
+      await app.get(ConversationMemoryService).call(saved.input.callId);
+      await app.get(ConversationMemoryService).call(saved.input.callId);
+      expect(requests).toHaveLength(before);
+      const audit = await db.query(
+        'SELECT action,details FROM platform.audit_log WHERE target_type=$1 AND target_id=$2',
+        ['call_memory_job', saved.input.callId],
+      );
+      expect(audit.rows).toEqual([{ action: 'call_memory.cancelled', details: { reason } }]);
+    },
+  );
+
+  it('取消审计写入失败时整次状态更新回滚，不丢临时输入或制造无原因取消', async () => {
+    const saved = await record([{ role: 'user', content: 'AUDIT_ATOMIC_PHONE_CANARY' }]);
+    modelResult = 'invalid JSON';
+    const audit = app.get<AuditLog>(AUDIT_LOG);
+    const failAudit = vi
+      .spyOn(audit, 'record')
+      .mockRejectedValueOnce(new Error('fixture audit unavailable'));
+    try {
+      await expect(app.get(ConversationMemoryService).call(saved.input.callId)).rejects.toThrow(
+        'fixture audit unavailable',
+      );
+      const state = await db.query<{ status: string; ciphertext: Buffer | null }>(
+        'SELECT status,ciphertext FROM ai_runtime.call_memory_jobs WHERE id=$1',
+        [saved.input.callId],
+      );
+      expect(state.rows[0]!.status).toBe('pending');
+      expect(state.rows[0]!.ciphertext).not.toBeNull();
+      const events = await db.query(
+        'SELECT id FROM platform.audit_log WHERE target_type=$1 AND target_id=$2',
+        ['call_memory_job', saved.input.callId],
+      );
+      expect(events.rows).toEqual([]);
+    } finally {
+      failAudit.mockRestore();
+      modelResult = JSON.stringify({ operations: [], episode: '' });
+    }
   });
 
   it('电话来源范围、归属和已清空记录都不能被迟到收尾写回', async () => {
