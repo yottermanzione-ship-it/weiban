@@ -25,6 +25,7 @@ class StartupTest {
     @Before fun setup() {
         ctx = RuntimeEnvironment.getApplication()
         QueueStore.prefs(ctx).edit().clear().commit()
+        listOf("receipts-v1.json", "receipts-v1.json.bak", "receipts-v1.json.new").forEach { java.io.File(ctx.filesDir, it).delete() }
     }
 
     @Test fun foregroundMonitorCreatesOngoingStatusNotification() {
@@ -43,10 +44,10 @@ class StartupTest {
         val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
         try {
             val activity = controller.get()
-            descendants(activity.window.decorView).filterIsInstance<Button>().single { it.text == "开始监控与补报" }.performClick()
+            descendants(activity.window.decorView).filterIsInstance<Button>().single { it.text == "开始监控" }.performClick()
             val dialog = ShadowAlertDialog.getLatestAlertDialog()
             assertTrue(dialog.isShowing)
-            assertEquals("请先配对，再到后台启用这台手机", shadowOf(dialog).message)
+            assertEquals("请先保存连接设置", shadowOf(dialog).message)
             assertNull(shadowOf(RuntimeEnvironment.getApplication()).nextStartedService)
         } finally { controller.pause().stop().destroy() }
     }
@@ -60,6 +61,25 @@ class StartupTest {
             assertTrue(text.contains("后台补报未能安排"))
             assertTrue(text.contains("通知监听：未连接"))
             assertTrue(text.contains("尚未连接服务器"))
+        } finally { controller.pause().stop().destroy() }
+    }
+
+    @Test fun savedDeviceHidesFirstTimeSetupAndShowsPurchaseResult() {
+        QueueStore.saveDevice(ctx, "synthetic-device")
+        QueueStore.enqueue(ctx, ReceiptCandidate("alipay", 1290), "synthetic-history", 1000)
+        val event = QueueStore.pending(ctx).first()
+        QueueStore.accept(ctx, event.getString("eventId"), org.json.JSONObject().put("status", "matched").put("purchaseKind", "membership"))
+        assertTrue("ack must persist before opening UI", QueueStore.pending(ctx).isEmpty())
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        try {
+            ShadowLooper.idleMainLooper()
+            val views = descendants(controller.get().window.decorView)
+            val save = views.filterIsInstance<Button>().single { it.text == "保存设置" }
+            assertEquals(View.GONE, (save.parent as View).visibility)
+            val text = views.filterIsInstance<TextView>().joinToString("\n") { it.text }
+            assertTrue(text.contains("已保存，无需重复设置"))
+            assertTrue(text, text.contains("支付宝  ¥12.90\n会员购买"))
+            assertFalse(text.contains("synthetic-history"))
         } finally { controller.pause().stop().destroy() }
     }
 

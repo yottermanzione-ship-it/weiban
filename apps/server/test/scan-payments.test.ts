@@ -147,10 +147,12 @@ describeDb('扫码支付：真实数据库、设备签名、并发与用户隔�
       keys.privateKey,
     ).toString('base64');
     const pairInput = { deviceId, pairCode: pair.pairCode, publicKey, signature };
-    await http().post(ScanMonitorEndpoints.pair.path).send(pairInput).expect(201);
+    expect(
+      (await http().post(ScanMonitorEndpoints.pair.path).send(pairInput).expect(201)).body,
+    ).toMatchObject({ active: true });
+    expect((await service.devices()).find((d) => d.id === deviceId)?.active).toBe(true);
     await service.pair(pairInput); // response lost, same proof safely retries
     expect(capture.text).not.toContain(pair.pairCode);
-    await service.activate(adminId, deviceId, true);
     await heartbeat();
     image =
       'data:image/png;base64,' +
@@ -168,6 +170,33 @@ describeDb('扫码支付：真实数据库、设备签名、并发与用户隔�
   }, 120_000);
   afterAll(async () => {
     await app?.close();
+  });
+
+  it('首次设置自动启用，重复申请复用，换机和停用不会被配对重放覆盖', async () => {
+    const first = await service.pairCode(adminId, '新手机');
+    const again = await service.pairCode(adminId, '新手机');
+    expect(first.deviceId).toBe(again.deviceId);
+    const pairKeys = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+    const pub = pairKeys.publicKey.export({ type: 'spki', format: 'der' }).toString('base64');
+    const input = (p: typeof first) => ({
+      deviceId: p.deviceId,
+      pairCode: p.pairCode,
+      publicKey: pub,
+      signature: sign(
+        'sha256',
+        Buffer.from(`wb-pay-pair-v1|${p.deviceId}|${p.pairCode}|${pub}`),
+        pairKeys.privateKey,
+      ).toString('base64'),
+    });
+    await expect(service.pair(input(first))).rejects.toMatchObject({ code: 'unauthenticated' });
+    expect(await service.pair(input(again))).toMatchObject({ active: false });
+    expect((await service.devices()).filter((d) => d.active).map((d) => d.id)).toEqual([deviceId]);
+    await service.activate(adminId, again.deviceId, true);
+    await service.activate(adminId, again.deviceId, false);
+    expect(await service.pair(input(again))).toMatchObject({ active: false });
+    expect((await service.devices()).filter((d) => d.active)).toHaveLength(0);
+    await service.activate(adminId, deviceId, true);
+    await heartbeat();
   });
 
   it('只有管理会话能配置、生成配对码；普通用户不能伪造已付款或看别人订单', async () => {
@@ -215,7 +244,19 @@ describeDb('扫码支付：真实数据库、设备签名、并发与用户隔�
         service.report(event),
         service.report(event),
       ]);
-      expect(results.every((r) => r.status === 'matched')).toBe(true);
+      expect(
+        results.every(
+          (r) => r.status === 'matched' && 'purchaseKind' in r && r.purchaseKind === 'recharge',
+        ),
+      ).toBe(true);
+      const detail = (await service.receipts({ limit: 100 })).items.find(
+        (r) => r.orderId === o.id,
+      )!;
+      expect(detail).toMatchObject({
+        purchaseKind: 'recharge',
+        purchaseTitle: '积分充值',
+        postedAt: clock.now().toISOString(),
+      });
       expect((await service.get(u.id, o.id)).status).toBe('paid');
       const entries = (await q.ledgerOf(u.id)).filter((e) => e.purpose === 'scan_recharge');
       expect(entries).toHaveLength(1);

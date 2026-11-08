@@ -6,7 +6,7 @@ val signingStore = signing.getProperty("storeFile")?.let { signingFile!!.parentF
 android {
     namespace = "app.weiban.paymentmonitor"
     compileSdk = 36
-    defaultConfig { applicationId = "app.weiban.paymentmonitor"; minSdk = 26; targetSdk = 36; versionCode = 2; versionName = "1.0.1" }
+    defaultConfig { applicationId = "app.weiban.paymentmonitor"; minSdk = 26; targetSdk = 36; versionCode = 3; versionName = "1.0.2" }
     signingConfigs { create("formal") {
         if (signingStore?.isFile == true) {
             storeFile = signingStore; storePassword = signing.getProperty("storePassword")

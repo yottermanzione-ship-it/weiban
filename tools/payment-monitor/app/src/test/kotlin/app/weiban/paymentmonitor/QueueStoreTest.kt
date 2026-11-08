@@ -10,7 +10,7 @@ import org.robolectric.annotation.Config
 import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28])
+@Config(sdk = [28, 35])
 class QueueStoreTest {
     private lateinit var ctx: Context
     @Before fun setup() {
@@ -37,6 +37,25 @@ class QueueStoreTest {
         assertTrue(QueueStore.pending(ctx).isEmpty())
         QueueStore.enqueue(ctx, ReceiptCandidate("wechat", 500), "synthetic", 3000)
         assertTrue(QueueStore.pending(ctx).isEmpty()); assertEquals(1, QueueStore.read(ctx).length())
+    }
+    @Test fun receiptKindComesOnlyFromAcceptedServerResult() {
+        QueueStore.enqueue(ctx, ReceiptCandidate("wechat", 999), "synthetic", 4000)
+        val pending = QueueStore.pending(ctx).single()
+        assertFalse(pending.has("purchaseKind"))
+        QueueStore.accept(ctx, pending.getString("eventId"), org.json.JSONObject().put("status", "matched").put("purchaseKind", "recharge"))
+        val saved = QueueStore.read(ctx).getJSONObject(0)
+        assertEquals("recharge", saved.getString("purchaseKind"))
+        assertEquals("matched", saved.getString("status"))
+        assertEquals(pending.getString("postedAt"), saved.getString("postedAt"))
+        assertTrue(QueueStore.pending(ctx).isEmpty())
+    }
+    @Test fun legacyInterruptedWriteRestoresBackupInsteadOfReturningEmpty() {
+        QueueStore.enqueue(ctx, ReceiptCandidate("wechat", 1200), "synthetic-backup", 5000)
+        val base = File(ctx.filesDir, "receipts-v1.json")
+        assertTrue(base.renameTo(File(ctx.filesDir, "receipts-v1.json.bak")))
+        val restored = QueueStore.pending(ctx).single()
+        assertEquals(1200, restored.getInt("amountFen"))
+        assertEquals("1970-01-01T00:00:05Z", restored.getString("postedAt"))
     }
     @Test fun corruptQueueIsPreservedAndNewWriteStops() {
         val file = File(ctx.filesDir, "receipts-v1.json"); file.writeText("synthetic-corrupt-record")

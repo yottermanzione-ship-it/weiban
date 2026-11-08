@@ -24,11 +24,12 @@ object Delivery {
                 MonitorApi.report(app, JSONObject().put("type", "heartbeat").put("listenerConnected", ReceiptListener.connected).put("queued", queue.size))
                 // Bound one upload burst; queued work remains persisted for the next pass.
                 for (event in queue.take(10)) {
-                    val payload = JSONObject(event.toString()).apply { remove("accepted") }
+                    val payload = JSONObject().apply { for (key in listOf("type", "eventId", "channel", "amountFen", "observedAt", "postedAt")) put(key, event.get(key)) }
                     val result = MonitorApi.report(app, payload)
-                    QueueStore.accept(app, event.getString("eventId"))
+                    QueueStore.accept(app, event.getString("eventId"), result)
                     if (result.optString("status") == "review") QueueStore.prefs(app).edit().putBoolean("reviewPending", true).commit()
                 }
+                QueueStore.prefs(app).edit().putLong("connectedAt", System.currentTimeMillis()).commit()
                 QueueStore.status(app, if (QueueStore.prefs(app).getBoolean("reviewPending", false)) "连接正常；有到账需要到后台核对" else "连接正常，已补报的记录由服务器保存")
             } catch (_: java.io.IOException) { QueueStore.status(app, "网络未连通，到账记录保留待补报") }
             catch (e: IllegalStateException) { QueueStore.status(app, e.message?.takeIf { it.startsWith("后台") || it.startsWith("到账标识") || it.startsWith("服务器") } ?: "本地记录或签名暂不可用，已保留数据，请核对") }
