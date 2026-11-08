@@ -1,3 +1,8 @@
+export {
+  SCENARIO_DEFAULT_PROMPTS,
+  STYLE_TEXT,
+  defaultScenarioPrompt,
+} from './domain/scenario-defaults.js';
 export { CharactersModule } from './characters.module.js';
 export {
   CHARACTER_READ_PORT,

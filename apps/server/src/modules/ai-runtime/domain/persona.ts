@@ -1,5 +1,5 @@
 import type { ScenarioModeTraits, ScenarioMode } from '@weiban/contracts';
-import { STYLE_TEXT } from './scenario.js';
+import { SCENARIO_DEFAULT_PROMPTS as MODES } from '../../characters/index.js';
 /**
  * 情景预设（docs/refactor/02 第 5.3 节），顺序即弹层顺序。
  * 三个新预设（auto / treehole / cheer）的 AI 策略见 domain/scenario.ts（2026-10-13 实现，aiReady = true）；
@@ -113,17 +113,6 @@ const FIT = [
   '坚持角色立场，明确拒绝与性格冲突的要求。',
   '完全保持角色性格，不为了迎合改变身份、价值观或说话方式。',
 ];
-const MODES = {
-  daily:
-    '按原本身份和说话习惯自然交流，不延续上一情景的特殊口吻；先回应对方这一句，不套用咨询、打气或斗嘴套路。',
-  tsundere: `傲娇斗嘴——${STYLE_TEXT.tsundere}用一句轻微嘴硬接住话题，再用实际关心或帮助体现心软；不是每句都反话，不冷暴力。关怀时停止斗嘴。`,
-  romance: '允许恋爱语气，仍是同一个角色，不升级用户选择的关系。',
-  adult: '当前为私密对话，沿用私密模式的关系口吻。',
-  // 三个新预设（domain/scenario.ts）：自动的本轮风格在请求末尾单独给出。
-  auto: '自动：平时自然日常交流；对话里若有「本轮风格」提示就按它调整语气。自动不会变成恋爱语气。',
-  treehole: `树洞分享——${STYLE_TEXT.treehole}`,
-  cheer: `加油打气——${STYLE_TEXT.cheer}`,
-} satisfies Record<ScenarioMode, string>;
 /** 群聊等只需要一句话描述当前预设的地方用。 */
 export function scenarioText(mode: ScenarioMode): string {
   return MODES[mode] ?? MODES.daily;
@@ -133,11 +122,13 @@ export function personaPrompt(input: {
   mode: ScenarioMode;
   /** 3.25：好感度阶段一段（relationshipStageText）。给了就由它决定恋爱表达，不再一律「不要表白」。 */
   stageText?: string;
+  /** 配置中的预设已在独立段落提供，不能再叠加不可编辑的默认风格。 */
+  configuredScenario?: boolean;
 }): string {
   // 3.27（H1，总经理 10-21）：关系类型选择已删除，恋爱表达只随好感度阶段（stageText）。
   const romanceRule =
     input.stageText !== undefined
       ? `\n${input.stageText}`
       : '不要主动表白、暗示恋爱或使用恋爱称呼。';
-  return `人设贴合度${input.fit}/5：${FIT[input.fit - 1] ?? FIT[2]}\n情景模式：${MODES[input.mode]}\n你们的关系由相处中的好感度阶段决定，不自称升级关系。${romanceRule}`;
+  return `人设贴合度${input.fit}/5：${FIT[input.fit - 1] ?? FIT[2]}\n情景模式：${input.configuredScenario ? '按下方当前情景预设执行' : MODES[input.mode]}\n你们的关系由相处中的好感度阶段决定，不自称升级关系。${romanceRule}`;
 }

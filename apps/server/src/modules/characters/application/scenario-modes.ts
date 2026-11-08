@@ -23,6 +23,7 @@ import {
   type Database,
 } from '../../../platform/index.js';
 import { scenarioModes } from '../infra/db/schema.js';
+import { defaultScenarioPrompt } from '../domain/scenario-defaults.js';
 
 type Row = typeof scenarioModes.$inferSelect;
 type CreateInput = AdminScenarioModeCreate;
@@ -33,7 +34,7 @@ function toDto(r: Row): AdminScenarioMode {
     id: r.id,
     name: r.name,
     description: r.description,
-    presetPrompt: r.presetPrompt,
+    presetPrompt: r.presetPrompt?.trim() || (r.isBuiltin ? defaultScenarioPrompt(r.id) : null),
     appliesTo: r.appliesTo as AdminScenarioMode['appliesTo'],
     hasRomanceContent: r.hasRomanceContent,
     hasAdultContent: r.hasAdultContent,

@@ -176,15 +176,18 @@ export function scenarioNote(
   card: WeibanCardData,
   mode: ScenarioMode,
   autoStylePrompt: string | null,
+  configuredScenario = false,
 ): string {
   const anchor = `继续以{{char}}的身份和口吻回复：${card.speech.tone.slice(0, 60)}；句子${SENTENCE[card.speech.sentenceLength]}。`;
   const style =
     mode === 'auto'
       ? (autoStylePrompt ?? '')
-      : mode === 'treehole' || mode === 'cheer' || mode === 'tsundere'
-        ? `【当前情景】${STYLE_TEXT[mode]}`
-        : mode === 'daily'
-          ? ''
-          : `【当前情景】${scenarioText(mode)}`;
+      : configuredScenario
+        ? '【当前情景】遵循前文的当前情景预设，保持角色身份。'
+        : mode === 'treehole' || mode === 'cheer' || mode === 'tsundere'
+          ? `【当前情景】${STYLE_TEXT[mode]}`
+          : mode === 'daily'
+            ? ''
+            : `【当前情景】${scenarioText(mode)}`;
   return `【写作提示】${anchor}${style ? `\n${style}` : ''}`;
 }
