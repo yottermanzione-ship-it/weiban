@@ -20,11 +20,10 @@ import {
   canAutoStart,
   markShown,
   observeTier,
-  parseGuideRecord,
   type AutoFlow,
   type ChapterId,
-  type GuideRecord,
 } from './guide-triggers.js';
+import { useGuideRecord } from './use-guide-record.js';
 import { AutoGuideContext, type AutoGuideApi } from './onboarding-auto.js';
 import { GroupHeader, MenuGroup, MenuRow, NavBar, Sheet } from './shell-kit.js';
 import { Dialog, showToast } from './toast.js';
@@ -230,13 +229,6 @@ interface GuideContext {
   reset(): void;
 }
 const Context = createContext<GuideContext | null>(null);
-function load(key: string): GuideRecord {
-  try {
-    return parseGuideRecord(JSON.parse(localStorage.getItem(key) ?? 'null'));
-  } catch {
-    return parseGuideRecord(null);
-  }
-}
 /** 等待自动弹出的请求：页面满足条件后，等其他弹窗关掉、目标位置稳定再开始。 */
 interface Pending {
   flow: AutoFlow;
@@ -255,82 +247,96 @@ export function OnboardingGuideProvider({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const storageKey = `weiban:guided-tour:v1:${userId}`;
-  const [saved, setSaved] = useState<GuideRecord>(() => load(storageKey));
+  const { saved, recordRef: savedRef, update: setSaved, ready, claim } = useGuideRecord(userId);
   const [active, setActive] = useState<Progress | null>(null);
   const [done, setDone] = useState<ChapterId | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const [memberIntro, setMemberIntro] = useState(false);
-  const owner = useRef(userId);
   const activeRef = useRef(active);
   activeRef.current = active;
-  const savedRef = useRef(saved);
-  savedRef.current = saved;
   const autoRef = useRef(autoEnabled);
   autoRef.current = autoEnabled;
   const tokenRef = useRef(0);
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
+  const claiming = useRef<number | null>(null);
   const current = active ? active.steps[active.index]! : null;
-  useEffect(() => {
-    if (owner.current !== userId) return;
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(saved));
-    } catch {
-      /* Guide remains optional when local storage is unavailable. */
-    }
-  }, [storageKey, saved, userId]);
   const pause = useCallback(() => {
     const old = activeRef.current;
     activeRef.current = null;
     if (old) setSaved((record) => ({ ...record, paused: old.chapter }));
     setActive(null);
-  }, []);
-  const advance = useCallback((expected: Progress) => {
-    const old = activeRef.current;
-    // A DOM observer from the preceding step must never advance the new step.
-    if (!old || old !== expected) return;
-    if (old.index + 1 < old.steps.length) {
-      const next = { ...old, index: old.index + 1, armed: false };
+  }, [setSaved]);
+  const advance = useCallback(
+    (expected: Progress) => {
+      const old = activeRef.current;
+      // A DOM observer from the preceding step must never advance the new step.
+      if (!old || old !== expected) return;
+      if (old.index + 1 < old.steps.length) {
+        const next = { ...old, index: old.index + 1, armed: false };
+        activeRef.current = next;
+        setActive(next);
+        return;
+      }
+      activeRef.current = null;
+      setSaved((record) => ({
+        ...record,
+        completed: [...new Set([...record.completed, old.chapter])],
+        paused: null,
+      }));
+      setDone(old.chapter);
+      setActive(null);
+    },
+    [setSaved],
+  );
+  /** 目标稳定后向账号认领；响应期间离开页面则不打扰，仍可在目录手动学习。 */
+  const begin = useCallback(
+    async (flow: AutoFlow, token: number) => {
+      const chapter = FLOW_CHAPTER[flow];
+      claiming.current = token;
+      const accepted = await claim(chapter);
+      claiming.current = null;
+      if (pendingRef.current?.token !== token) return;
+      setPending(null);
+      if (!accepted || !autoRef.current || activeRef.current) return;
+      const first = flow === 'ecology-member' ? null : AUTO_STEPS[flow][0]!;
+      if (
+        [...document.querySelectorAll<HTMLElement>('[role="dialog"]')].some((element) =>
+          isGuideBlockingDialog(element, first?.allowedDialog),
+        )
+      )
+        return;
+      if (first && !document.querySelector(first.target)?.getClientRects().length) return;
+      setSaved((record) => markShown(record, chapter));
+      if (flow === 'ecology-member') {
+        setMemberIntro(true);
+        return;
+      }
+      const next: Progress = { chapter, steps: AUTO_STEPS[flow], index: 0, armed: false };
       activeRef.current = next;
+      setDone(null);
+      setSaved((record) => ({ ...record, paused: chapter }));
       setActive(next);
-      return;
-    }
-    activeRef.current = null;
-    setSaved((record) => ({
-      ...record,
-      completed: [...new Set([...record.completed, old.chapter])],
-      paused: null,
-    }));
-    setDone(old.chapter);
-    setActive(null);
-  }, []);
-  /** 自动弹出真正开始的那一刻才记「已看过」（被别的弹窗挡住、没弹出来就离开页面的不算）。 */
-  const begin = useCallback((flow: AutoFlow) => {
-    const chapter = FLOW_CHAPTER[flow];
-    setPending(null);
-    setSaved((record) => markShown(record, chapter));
-    if (flow === 'ecology-member') {
-      setMemberIntro(true);
-      return;
-    }
-    const next: Progress = { chapter, steps: AUTO_STEPS[flow], index: 0, armed: false };
-    activeRef.current = next;
-    setDone(null);
-    setSaved((record) => ({ ...record, paused: chapter }));
-    setActive(next);
-  }, []);
-  const request = useCallback((flow: AutoFlow) => {
-    if (!autoRef.current || !canAutoStart(savedRef.current, flow)) return () => {};
-    const token = ++tokenRef.current;
-    // 新会员入口优先（「开通后马上弹」）：它在等待时，其他页面的请求不顶替它，那些页面下次进入再弹。
-    setPending((old) => (old?.flow === 'ecology-member' ? old : { flow, token }));
-    return () => setPending((old) => (old?.token === token ? null : old));
-  }, []);
+    },
+    [claim, setSaved],
+  );
+  const request = useCallback(
+    (flow: AutoFlow) => {
+      if (!autoRef.current || !canAutoStart(savedRef.current, flow)) return () => {};
+      const token = ++tokenRef.current;
+      // 新会员入口优先（「开通后马上弹」）：它在等待时，其他页面的请求不顶替它，那些页面下次进入再弹。
+      setPending((old) => (old?.flow === 'ecology-member' ? old : { flow, token }));
+      return () => setPending((old) => (old?.token === token ? null : old));
+    },
+    [savedRef],
+  );
   useEffect(() => {
     if (!autoEnabled) setPending(null);
   }, [autoEnabled]);
   // 等待中的自动弹出：没有别的弹窗、没有正在进行的引导、目标元素出现且位置稳定（动画结束）后再开始。
   useEffect(() => {
-    if (!pending || active || done || memberIntro) return;
+    if (!ready || !pending || active || done || memberIntro || claiming.current === pending.token)
+      return;
     if (!canAutoStart(saved, pending.flow)) {
       setPending(null);
       return;
@@ -358,10 +364,10 @@ export function OnboardingGuideProvider({
         return;
       }
       window.clearInterval(timer);
-      begin(flow);
+      void begin(flow, pending.token);
     }, POLL_MS);
     return () => window.clearInterval(timer);
-  }, [pending, active, done, memberIntro, saved, begin]);
+  }, [pending, active, done, memberIntro, saved, begin, ready]);
   // 新会员：这台设备上先看到「免费」、后看到「PRO+」= 第一次开通成功，马上弹（guide-triggers.ts）。
   // 只认实时结果（networkOnly），不拿本机缓存的旧档位当依据；余额 / 设置变化时 useRemote 会自动重新拉取。
   const membership = useRemote(MembershipEndpoints.get, { networkOnly: true }, autoEnabled);
@@ -374,7 +380,7 @@ export function OnboardingGuideProvider({
       setSaved((old) => observeTier(old, tier).record);
     }
     if (newMember) request('ecology-member');
-  }, [tier, request]);
+  }, [tier, request, setSaved, savedRef]);
   useEffect(() => {
     if (!current || !active) return;
     let frame = 0;
@@ -421,7 +427,7 @@ export function OnboardingGuideProvider({
       setActive({ chapter, steps: onboardingChapters[chapter].steps, index: 0, armed: false });
       navigate(chapter === 'scenario' ? `/chat/${encodeURIComponent(conversationId!)}` : '/chat');
     },
-    [navigate],
+    [navigate, setSaved],
   );
   const value = useMemo(
     () => ({
@@ -435,7 +441,7 @@ export function OnboardingGuideProvider({
         setDone(null);
       },
     }),
-    [saved.completed, saved.paused, start],
+    [saved.completed, saved.paused, start, setSaved],
   );
   const auto = useMemo<AutoGuideApi>(() => ({ request }), [request]);
   return (

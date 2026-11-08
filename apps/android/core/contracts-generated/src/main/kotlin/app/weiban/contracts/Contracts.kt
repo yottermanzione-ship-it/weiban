@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 7.4. Regenerate: pnpm android:generate
+// Contract 7.5. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "7.4"
+const val CONTRACT_VERSION: String = "7.5"
 
 @Serializable
 data class AccountAlias(
@@ -8065,6 +8065,13 @@ data class OfficialProfile(
     @SerialName("avatarPath") val `avatarPath`: String?,
 )
 
+typealias OnboardingChapter = String
+
+@Serializable
+data class OnboardingGuideState(
+    @SerialName("seen") val `seen`: List<OnboardingChapter>,
+)
+
 @Serializable
 data class Participant(
     @SerialName("participantId") val `participantId`: Id,
@@ -10998,6 +11005,18 @@ data class SyncEndpointsGetUpdatesResponse(
     @SerialName("items") val `items`: List<UserUpdate>,
     @SerialName("latestUpdateSeq") val `latestUpdateSeq`: UpdateSeq,
     @SerialName("hasMore") val `hasMore`: Boolean,
+)
+
+@Serializable
+data class SyncOnboardingGuidesRequest(
+    @SerialName("seen") val `seen`: List<OnboardingChapter>,
+    @SerialName("claim") val `claim`: OnboardingChapter? = null,
+)
+
+@Serializable
+data class SyncOnboardingGuidesResponse(
+    @SerialName("seen") val `seen`: List<OnboardingChapter>,
+    @SerialName("claimed") val `claimed`: Boolean,
 )
 
 typealias SystemAnniversaryDay = Long

@@ -26,6 +26,8 @@ import {
   type Profile,
   type SessionSummary,
   type UserPreferences,
+  type OnboardingGuideState,
+  type SyncOnboardingGuidesResponse,
 } from '@weiban/contracts';
 import type { Request, Response } from 'express';
 import type { z } from 'zod';
@@ -197,6 +199,23 @@ export class IdentityController {
   }
 
   // ---------- 注销 ----------
+
+  @Get('me/onboarding-guides')
+  @RequireAuth(E.getOnboardingGuides.auth)
+  getOnboardingGuides(@CurrentPrincipal() me: AuthPrincipal): Promise<OnboardingGuideState> {
+    return this.settings.getOnboardingGuides(me.userId);
+  }
+
+  @Post('me/onboarding-guides')
+  @HttpCode(200)
+  @RequireAuth(E.syncOnboardingGuides.auth)
+  syncOnboardingGuides(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Body(new ContractPipe(schema(E.syncOnboardingGuides.body)))
+    body: Body<typeof E.syncOnboardingGuides>,
+  ): Promise<SyncOnboardingGuidesResponse> {
+    return this.settings.syncOnboardingGuides(me.userId, body);
+  }
 
   @Delete('me')
   @HttpCode(202)

@@ -172,9 +172,40 @@ export type UserPreferences = z.infer<typeof UserPreferences>;
 export const UpdateUserPreferencesRequest = z.object({ theme: AppTheme }).partial();
 export type UpdateUserPreferencesRequest = z.infer<typeof UpdateUserPreferencesRequest>;
 
+/** 7.5：操作引导随账号保存，和设备权限提示分开。已见集合只增不减。 */
+export const OnboardingChapter = z.enum(['scenario', 'miniapps', 'ecology']);
+export type OnboardingChapter = z.infer<typeof OnboardingChapter>;
+export const OnboardingGuideState = z.object({ seen: z.array(OnboardingChapter).max(3) });
+export type OnboardingGuideState = z.infer<typeof OnboardingGuideState>;
+export const SyncOnboardingGuidesRequest = z
+  .object({
+    seen: z.array(OnboardingChapter).max(3),
+    /** 自动展示前认领；仅第一次成功认领返回claimed=true。 */
+    claim: OnboardingChapter.optional(),
+  })
+  .strict();
+export type SyncOnboardingGuidesRequest = z.infer<typeof SyncOnboardingGuidesRequest>;
+export const SyncOnboardingGuidesResponse = OnboardingGuideState.extend({ claimed: z.boolean() });
+export type SyncOnboardingGuidesResponse = z.infer<typeof SyncOnboardingGuidesResponse>;
+
 // ---------- 接口 ----------
 
 export const IdentityEndpoints = {
+  getOnboardingGuides: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/me/onboarding-guides`,
+    auth: 'user',
+    response: OnboardingGuideState,
+    summary: '读取当前账号已见操作引导，重新安装后继续保留',
+  }),
+  syncOnboardingGuides: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/me/onboarding-guides`,
+    auth: 'user',
+    body: SyncOnboardingGuidesRequest,
+    response: SyncOnboardingGuidesResponse,
+    summary: '合并本机已见操作引导并可原子认领一次自动展示；不清除既有记录',
+  }),
   getAlias: defineEndpoint({
     method: 'GET',
     path: `${API_PREFIX}/me/alias`,

@@ -102,6 +102,7 @@ await app.get<JobQueue>(JOB_QUEUE).start();
 const commands = app.get(IdentityCommands);
 let chatUser = '';
 let guideUser = '';
+let scenarioGuideUser = '';
 let importUser = '';
 let avatarUser = '';
 let layoutUser = '';
@@ -196,18 +197,30 @@ for (const [name, balance] of [
   ['browser_other', 1_000_000],
   ['browser_first', 1_000_000],
   ['browser_guide', 1_000_000],
+  ['browser_guide_scenario', 1_000_000],
+  ['browser_guide_old', 1_000_000],
+  ['browser_guide_new', 1_000_000],
+  ['browser_guide_free', 1_000_000],
+  ['browser_guide_mini', 1_000_000],
+  ['browser_guide_restore', 1_000_000],
+  ['browser_guide_legacy', 1_000_000],
+  ['browser_guide_offline', 1_000_000],
   ['browser_avatar', 1_000_000],
   ['browser_layout', 1_000_000],
 ] as const) {
   const user = await commands.createAdmin(name, 'correct horse battery');
   if (name === 'browser_user') chatUser = user;
   if (name === 'browser_guide') guideUser = user;
+  if (name === 'browser_guide_scenario') scenarioGuideUser = user;
   if (name === 'browser_other') importUser = user;
   if (name === 'browser_avatar') avatarUser = user;
   if (name === 'browser_layout') layoutUser = user;
   await commands.setRole(name, 'user');
   await app.get(ScenarioService).updateConfig(user, { chat: { modelKey: chatModel } });
-  if (['browser_other', 'browser_guide', 'browser_avatar', 'browser_layout'].includes(name))
+  if (
+    name.startsWith('browser_guide') ||
+    ['browser_other', 'browser_avatar', 'browser_layout'].includes(name)
+  )
     await app.get(SettingsService).updateProfile(user, { nickname: '其他用户' });
   await app.get(BillingAdminService).adjust(admin, user, {
     direction: 'grant',
@@ -303,6 +316,7 @@ async function seedConversation(userId: string, count: number, character = role)
 }
 await seedConversation(chatUser, 70);
 await seedConversation(guideUser, 1);
+await seedConversation(scenarioGuideUser, 1);
 await seedConversation(avatarUser, 1);
 // Dedicated long address book: real contact/profile APIs, no production records or provider calls.
 const layoutCharacters: string[] = [];

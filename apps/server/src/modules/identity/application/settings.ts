@@ -21,10 +21,13 @@ import type {
   UpdateProfileRequest,
   UpdateUserPreferencesRequest,
   UserPreferences,
+  OnboardingGuideState,
+  SyncOnboardingGuidesRequest,
+  SyncOnboardingGuidesResponse,
   MediaReadPort,
   MediaSystemPort,
 } from '@weiban/contracts';
-import { UpdateNotificationSettingsRequest, Username } from '@weiban/contracts';
+import { OnboardingChapter, UpdateNotificationSettingsRequest, Username } from '@weiban/contracts';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import {
@@ -377,6 +380,47 @@ export class SettingsService
   }
 
   // ---------- 界面偏好 ----------
+
+  async getOnboardingGuides(userId: string): Promise<OnboardingGuideState> {
+    const [row] = await this.database.db
+      .select({ seen: preferences.guideSeen })
+      .from(preferences)
+      .where(eq(preferences.userId, userId));
+    if (!row) throw new AppError('not_found', '账号不存在');
+    return { seen: OnboardingChapter.array().parse(row.seen) };
+  }
+
+  async syncOnboardingGuides(
+    userId: string,
+    input: SyncOnboardingGuidesRequest,
+  ): Promise<SyncOnboardingGuidesResponse> {
+    return this.database.transaction(async (tx) => {
+      const [user] = await tx.db
+        .select({ status: users.status })
+        .from(users)
+        .where(eq(users.id, userId))
+        .for('update');
+      if (!user || user.status !== 'active') throw new AppError('not_found', '账号不存在');
+      const [row] = await tx.db
+        .select({ seen: preferences.guideSeen })
+        .from(preferences)
+        .where(eq(preferences.userId, userId))
+        .for('update');
+      if (!row) throw new AppError('not_found', '账号不存在');
+      const current = OnboardingChapter.array().parse(row.seen);
+      const imported = [...new Set([...current, ...input.seen])];
+      const claimed = !!input.claim && !imported.includes(input.claim);
+      const seen = input.claim ? [...new Set([...imported, input.claim])] : imported;
+      if (seen.length !== current.length) {
+        await tx.db
+          .update(preferences)
+          .set({ guideSeen: seen, updatedAt: this.clock.now() })
+          .where(eq(preferences.userId, userId));
+        await this.outbox.publish(tx, 'identity.preferences_updated', 'identity', { userId });
+      }
+      return { seen, claimed };
+    });
+  }
 
   async getPreferences(userId: string): Promise<UserPreferences> {
     const [row] = await this.database.db

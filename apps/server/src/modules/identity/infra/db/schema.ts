@@ -138,13 +138,23 @@ export const notificationSettings = identitySchema.table('notification_settings'
 });
 
 /** 界面偏好（SVC-01 第 7 条：主题，所有设备同步），每个用户一行。 */
-export const preferences = identitySchema.table('preferences', {
-  userId: uuid('user_id')
-    .primaryKey()
-    .references(() => users.id, { onDelete: 'cascade' }),
-  theme: text('theme').notNull(),
-  updatedAt: tz('updated_at').notNull(),
-});
+export const preferences = identitySchema.table(
+  'preferences',
+  {
+    userId: uuid('user_id')
+      .primaryKey()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    theme: text('theme').notNull(),
+    guideSeen: jsonb('guide_seen').$type<string[]>().notNull().default([]),
+    updatedAt: tz('updated_at').notNull(),
+  },
+  (t) => [
+    check(
+      'preferences_guide_seen_check',
+      sql`jsonb_typeof(${t.guideSeen}) = 'array' AND ${t.guideSeen} <@ '["scenario","miniapps","ecology"]'::jsonb`,
+    ),
+  ],
+);
 
 /** 邀请码（一次性，可设有效期）。code 存归一化后的值（大写、无连字符）。 */
 export const invites = identitySchema.table(
