@@ -7,7 +7,7 @@ import { expect, test, type Page } from '@playwright/test';
  */
 const layer = (page: Page) => page.locator('.guided-tour-layer');
 
-async function login(page: Page, name = 'browser_guide') {
+async function login(page: Page, name = 'browser_guide_scenario') {
   await page.goto('/');
   await page.getByRole('button', { name: '登录', exact: true }).click();
   await page.getByLabel('账号', { exact: true }).fill(name);
@@ -42,7 +42,13 @@ async function openChat(page: Page) {
 }
 
 test('情景预设：第一次进入私聊页自动弹出，之后再进、刷新都不再弹', async ({ page }) => {
+  const state = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/me/onboarding-guides') && response.request().method() === 'GET',
+  );
   await login(page);
+  // 通用账号用于其他测试时会导入「已看过」；首次引导必须使用独立的新账号。
+  expect((await (await state).json()).seen).toEqual([]);
   await expectNoGuide(page);
   await openChat(page);
   await expect(layer(page)).toHaveAttribute('data-tour-step', 'live-scenario-plus');
