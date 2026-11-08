@@ -59,11 +59,13 @@ location_check() {
     die 'cache would still use the same filesystem as image storage'
 }
 check_builder() {
-  local actual
+  local actual builder_info driver
   ((configured)) || die 'dedicated build cache is not configured'
   location_check
   volume_check
-  [[ $(docker buildx inspect "$builder" --format '{{.Driver}}') == docker-container ]] ||
+  builder_info=$(docker buildx inspect "$builder") || die 'dedicated builder is missing'
+  driver=$(sed -n 's/^Driver:[[:space:]]*//p' <<<"$builder_info")
+  [[ $driver == docker-container ]] ||
     die 'unexpected builder driver'
   actual=$(docker inspect --format '{{.State.Running}}|{{range .Mounts}}{{if eq .Destination "/var/lib/buildkit"}}{{.Name}}{{end}}{{end}}' "$container")
   [[ $actual == "true|$volume" ]] || die 'builder is stopped or its storage is incorrect'

@@ -40,7 +40,9 @@ function fixture(t, overrides = {}) {
       ' "volume inspect")',
       '   [[ $FAKE_VOLUME_MISSING != 1 ]] || exit 1',
       '   echo "local|none|bind|$FAKE_VOLUME_PATH|build-cache";;',
-      ' "buildx inspect") echo docker-container;;',
+      ' "buildx inspect")',
+      '   [[ " $* " != *" --format "* ]] || { echo "unknown flag: --format" >&2; exit 97; }',
+      '   printf "Name: weiban-release\\nDriver: %s\\n" "$FAKE_DRIVER";;',
       ' "inspect --format") echo "$FAKE_RUNNING|buildx_buildkit_weiban-release0_state";;',
       ' "buildx prune") ;;',
       ' *) echo "unexpected docker command" >&2; exit 97;;',
@@ -69,6 +71,7 @@ function fixture(t, overrides = {}) {
     FAKE_SAME_DISK: '0',
     FAKE_AVAIL: '30000000000',
     FAKE_RUNNING: 'true',
+    FAKE_DRIVER: 'docker-container',
     FAKE_BUSY: '0',
     FAKE_DOCKER_INACTIVE: '0',
     FAKE_BACKUP_STATE: 'inactive',
@@ -126,6 +129,12 @@ test('a missing volume or stopped builder fails before pruning', (t) => {
     assert.notEqual(r.status, 0);
     assert.doesNotMatch(f.calls(), /buildx prune/);
   }
+});
+test('an unexpected builder driver is rejected using the supported inspect output', (t) => {
+  const f = fixture(t, { FAKE_DRIVER: 'docker' });
+  const r = f.run('prune');
+  assert.notEqual(r.status, 0);
+  assert.doesNotMatch(f.calls(), /buildx prune/);
 });
 test('maintenance defers cache I/O while the production backup is running', (t) => {
   for (const state of ['activating', 'active', 'deactivating', 'reloading', '']) {
