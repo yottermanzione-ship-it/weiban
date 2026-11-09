@@ -1080,6 +1080,20 @@
       "when": 1794189600000,
       "tag": "0165_weibo_slots",
       "breakpoints": true
+    },
+    {
+      "idx": 166,
+      "version": "7",
+      "when": 1794193200000,
+      "tag": "0166_legacy_persona_overrides",
+      "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1794196800000,
+      "tag": "0167_contact_organization",
+      "breakpoints": true
     }
   ]
 }

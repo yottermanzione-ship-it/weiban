@@ -2,6 +2,13 @@
  * only plan.summary is public. No URL/file readers, business ports or event publishers. */
 import { assertIsolatedTarget, fingerprint, invariant, utc } from './legacy-delta-core.mjs';
 import { assertFixtureDatabase } from './legacy-delta-db.mjs';
+import {
+  assertMigrationOwnersAllowed,
+  assertMigrationMediaOwners,
+  migrationOwnersOf,
+  partitionMigrationOwners,
+  scopeMigrationBaseline,
+} from './legacy-migration-owner-guards.mjs';
 
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/iu;
 const HEX = /^[a-f0-9]{64}$/u;
@@ -183,11 +190,16 @@ async function readBaseline(tx, scope) {
 
 async function guard(database, target) {
   invariant(
-    assertIsolatedTarget(target) === 'codex_migration_preferences_1109',
+    ['codex_migration_preferences_1109', 'codex_migration_preservation_1109'].includes(
+      assertIsolatedTarget(target),
+    ),
     'DEDICATED_PREFERENCE_FIXTURE_REQUIRED',
   );
   invariant(
-    target.url === 'postgres://postgres@127.0.0.1:56389/codex_migration_preferences_1109',
+    [
+      'postgres://postgres@127.0.0.1:56389/codex_migration_preferences_1109',
+      'postgres://postgres@127.0.0.1:56389/codex_migration_preservation_1109',
+    ].includes(target.url),
     'PREFERENCE_FIXTURE_ENDPOINT_REQUIRED',
   );
   await assertFixtureDatabase(database, target);
@@ -197,7 +209,14 @@ export async function readLegacyPreferencesBaseline({
   target,
   bindings,
   mediaReady = [],
+  options = {},
 }) {
+  bindings = partitionMigrationOwners(
+    bindings,
+    (row) => [row.sourceUserId, row.ownerUserId],
+    options,
+  ).allowed;
+  mediaReady = partitionMigrationOwners(mediaReady, (row) => row.ownerUserId, options).allowed;
   await guard(database, target);
   return readBaseline(database, scopeFor(bindings, mediaReady));
 }
@@ -216,7 +235,9 @@ export function preferenceNewAccountRequirements({
   source,
   initialTarget,
   targetBaseline,
+  options = {},
 }) {
+  assertMigrationOwnersAllowed([ownerUserId], options);
   return {
     initialAbsenceFingerprint: fingerprint({
       ownerUserId,
@@ -299,6 +320,7 @@ export function planLegacyPreferences({
   decisions = {},
   newAccountDefaults = {},
   capturedAt,
+  options = {},
 }) {
   invariant(protection?.inventoryComplete === true, 'PREFERENCE_DELETION_INVENTORY_REQUIRED');
   invariant(
@@ -307,8 +329,24 @@ export function planLegacyPreferences({
       isObject(initialBaseline.target),
     'PREFERENCE_INITIAL_BASELINE_REQUIRED',
   );
+  const preservation = partitionMigrationOwners(
+    bindings,
+    (row) => [row.sourceUserId, row.ownerUserId],
+    options,
+  );
+  const preservedSourceIds = new Set(
+    bindings.filter((row) => !preservation.allowed.includes(row)).map((row) => row.sourceUserId),
+  );
+  const preservedSources = partitionMigrationOwners(sources, (row) => row.sourceUserId, options);
+  for (const receipt of preservedSources.skipped)
+    if (!preservation.skipped.some((row) => row.ownerDigest === receipt.ownerDigest))
+      preservation.skipped.push(receipt);
+  bindings = preservation.allowed;
+  sources = preservedSources.allowed.filter((row) => !preservedSourceIds.has(row.sourceUserId));
+  mediaReady = partitionMigrationOwners(mediaReady, (row) => row.ownerUserId, options).allowed;
   const scope = scopeFor(bindings, mediaReady),
     at = utc(capturedAt);
+  targetBaseline = scopeMigrationBaseline(targetBaseline, scope);
   const sourceMap = indexed(sources, sourceIdentity, 'DUPLICATE_PREFERENCE_SOURCE');
   const initialSources = indexed(
     initialBaseline.sources,
@@ -319,7 +357,7 @@ export function planLegacyPreferences({
   const candidates = [],
     changes = [],
     pending = [],
-    outcomes = [],
+    outcomes = [...preservation.skipped],
     conflicts = [],
     authorizations = {};
   const fail = (reason) => {
@@ -506,7 +544,14 @@ export function planLegacyPreferences({
           values = { [field]: mediaId };
         }
         for (const [field, value] of Object.entries(values)) {
-          const item = { ownerUserId: owner, table, rowId, field, value };
+          const item = {
+            ownerUserId: owner,
+            sourceOwnerUserId: source.sourceUserId,
+            table,
+            rowId,
+            field,
+            value,
+          };
           const before = targetValue(initialBaseline.target, item),
             current = targetValue(targetBaseline, item);
           if (!current.present) {
@@ -662,11 +707,34 @@ export async function initializePreferenceFixture({ database, target }) {
 }
 /** Whole-table locks are intentionally limited to this explicit synthetic rehearsal DB.
  * A receipt never permits rewriting a later edit; retries re-read their per-field receipts. */
-export async function applyLegacyPreferences({ database, target, plan, maintenance, fault }) {
+export async function applyLegacyPreferences({
+  database,
+  target,
+  plan,
+  maintenance,
+  fault,
+  options = {},
+}) {
+  assertMigrationOwnersAllowed(
+    [
+      ...plan.scope.ownerUserIds,
+      ...plan.changes.flatMap((row) => migrationOwnersOf(row, row.ownerUserId)),
+      ...plan.candidates.flatMap((row) => migrationOwnersOf(row, row.ownerUserId)),
+      ...plan.pending.map((row) => row.ownerUserId),
+    ],
+    options,
+  );
   await guard(database, target);
   invariant(
     maintenance?.writersStopped === true && maintenance?.notificationsCaptured === true,
     'PREFERENCE_MAINTENANCE_REQUIRED',
+  );
+  await assertMigrationMediaOwners(
+    database,
+    plan.changes
+      .filter((row) => row.field.endsWith('_media_id') && typeof row.value === 'string')
+      .map((row) => row.value),
+    options,
   );
   const { digest: planDigest, ...payload } = plan;
   invariant(

@@ -39,7 +39,7 @@ done
 
 for database in codex_migration_chat_ci codex_migration_relations_ci \
   codex_migration_group_memory_1109 codex_migration_favorite_sources_ci \
-  codex_migration_preferences_1109; do
+  codex_migration_preferences_1109 codex_migration_preservation_1109; do
   docker exec "$migration_container" createdb -U postgres "$database"
 done
 export TSX_TSCONFIG_PATH=apps/server/tsconfig.json
@@ -48,7 +48,8 @@ export MIGRATION_RELATIONS_DATABASE_URL=postgres://postgres@127.0.0.1:56389/code
 export MIGRATION_GROUP_MEMORY_DATABASE_URL=postgres://postgres@127.0.0.1:56389/codex_migration_group_memory_1109
 export MIGRATION_FAVORITE_SOURCES_DATABASE_URL=postgres://postgres@127.0.0.1:56389/codex_migration_favorite_sources_ci
 export MIGRATION_PREFERENCES_DATABASE_URL=postgres://postgres@127.0.0.1:56389/codex_migration_preferences_1109
+export MIGRATION_PRESERVATION_DATABASE_URL=postgres://postgres@127.0.0.1:56389/codex_migration_preservation_1109
 node --import ./apps/server/node_modules/tsx/dist/loader.mjs --test --test-concurrency=1 \
   scripts/ops/legacy-delta-db.test.mjs scripts/ops/legacy-delta-relations.test.mjs \
   scripts/ops/legacy-delta-group-memory.test.mjs scripts/ops/legacy-delta-favorite-sources.test.mjs \
-  scripts/ops/legacy-delta-preferences.test.mjs
+  scripts/ops/legacy-delta-preferences.test.mjs scripts/ops/legacy-migration-preservation-domains.test.mjs

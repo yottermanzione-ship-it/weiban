@@ -1,5 +1,11 @@
 export { ContactsCommands, ACCEPT_CONTACT_JOB, PURGE_CONTACT_JOB } from './application/commands.js';
 export { ContactsLifecycle } from './application/lifecycle.js';
+export { ContactOrganizationService } from './application/organization.js';
+export {
+  LegacyOrganizationImport,
+  organizationDigest,
+  organizationNameAad,
+} from './domain/organization.js';
 import type { Database } from '../../platform/index.js';
 export class ContactsTestQueries {
   constructor(private readonly db: Database) {}

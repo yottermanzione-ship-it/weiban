@@ -9,6 +9,11 @@ import { constants } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { legacyId } from './legacy-content-rules.mjs';
+import {
+  assertMigrationOwnersAllowed,
+  migrationOwnersOf,
+  partitionMigrationOwners,
+} from './legacy-migration-owner-guards.mjs';
 
 const HASH = /^[a-f0-9]{64}$/;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -280,6 +285,9 @@ function checkPlan(plan) {
       throw fail('MEDIA_PLAN_INVALID');
     ids.add(object.id);
   }
+  for (const file of plan.files)
+    if (!plan.objects.some((object) => object.sourceKey === file.sourceKey))
+      throw fail('MEDIA_PLAN_INVALID');
 }
 
 /** Input objects are exactly the existing import-legacy-content media-plan objects. */
@@ -289,6 +297,7 @@ export async function buildLegacyDeltaMediaPlan({
   unresolvedReferences = [],
   chunkBytes = 1024 * 1024,
   maxSourceBytes = 128 * 1024 * 1024,
+  options = {},
 }) {
   if (
     !Array.isArray(objects) ||
@@ -306,10 +315,22 @@ export async function buildLegacyDeltaMediaPlan({
     )
   )
     throw fail('MEDIA_PLAN_INPUT_INVALID');
+  const inputCount = objects.length;
+  const preservation = partitionMigrationOwners(
+    objects,
+    (row) => migrationOwnersOf(row, row.ownerUserId),
+    options,
+  );
+  objects = preservation.allowed;
   const root = await checkedRoot(sourceRoot);
   const candidates = objects.map((object) => ({
     id: object?.id,
     ownerUserId: object?.ownerUserId,
+    sourceOwnerUserId:
+      object?.sourceOwnerUserId ??
+      object?.legacyOwnerUserId ??
+      object?.sourceUserId ??
+      object?.ownerUserId,
     purpose: object?.purpose,
     stickerId: object?.stickerId ?? null,
     durationMs: object?.durationMs ?? null,
@@ -384,6 +405,7 @@ export async function buildLegacyDeltaMediaPlan({
     maxSourceBytes,
     files: [...sources.values()],
     objects: uniqueObjects,
+    preserved: preservation.skipped,
     unresolvedReferences: unresolvedReferences.map(({ classification, count }) => ({
       classification,
       count,
@@ -399,7 +421,8 @@ export async function buildLegacyDeltaMediaPlan({
       plan.files.every((file) => file.classification === 'ready') &&
       uniqueObjects.every((object) => object.classification === 'ready') &&
       unresolvedReferences.length === 0,
-    inputObjects: objects.length,
+    inputObjects: inputCount,
+    preservedObjects: preservation.skipped.length,
     objects: uniqueObjects.length,
     files: plan.files.length,
     fileClassifications: countBy(plan.files),
@@ -597,7 +620,12 @@ export async function transferLegacyDeltaMedia({
   checkpoint,
   onCheckpoint,
   repairCorruptStaging = false,
+  options = {},
 }) {
+  assertMigrationOwnersAllowed(
+    plan.objects.flatMap((row) => migrationOwnersOf(row, row.ownerUserId)),
+    options,
+  );
   checkPlan(plan);
   const roots = [await checkedRoot(sourceRoot), await checkedRoot(stagingRoot)];
   for (const [base, child] of [roots, [...roots].reverse()]) {
@@ -661,7 +689,13 @@ export async function transferLegacyDeltaMedia({
  * No credentials/config/DB creation here. lookupObject returns camelCase MediaService rows.
  * bindSticker must idempotently check ownership before binding a user-sticker entry.
  */
-export function createLegacyDeltaMediaPort({ media, lookupObject, adminId, bindSticker }) {
+export function createLegacyDeltaMediaPort({
+  media,
+  lookupObject,
+  adminId,
+  bindSticker,
+  options = {},
+}) {
   if (!UUID.test(adminId) || !media || typeof lookupObject !== 'function')
     throw fail('MEDIA_PORT_INVALID');
   return {
@@ -676,8 +710,9 @@ export function createLegacyDeltaMediaPort({ media, lookupObject, adminId, bindS
         buffer.fill(0);
       }
     },
-    importLegacyObject: (object, file) =>
-      media.importLegacyObject({
+    importLegacyObject: (object, file) => {
+      assertMigrationOwnersAllowed(migrationOwnersOf(object, object.ownerUserId), options);
+      return media.importLegacyObject({
         id: object.id,
         ownerUserId: object.ownerUserId,
         purpose: object.purpose,
@@ -686,13 +721,19 @@ export function createLegacyDeltaMediaPort({ media, lookupObject, adminId, bindS
         mimeType: file.mimeType,
         durationMs: file.durationMs,
         legacyVideo: file.legacyVideo,
-      }),
+      });
+    },
     readOwned: async (object) => {
       if (!(await media.canUse(object.ownerUserId, object.id, [object.purpose])))
         throw fail('access_rejected');
       return media.readBytes(object.id);
     },
-    bindSticker,
+    bindSticker: bindSticker
+      ? (object) => {
+          assertMigrationOwnersAllowed(migrationOwnersOf(object, object.ownerUserId), options);
+          return bindSticker(object);
+        }
+      : undefined,
   };
 }
 async function readVerifiedStaged(plan, stagingRoot, file) {
@@ -746,7 +787,12 @@ export async function importLegacyDeltaMedia({
   normalize,
   checkpoint,
   onCheckpoint,
+  options = {},
 }) {
+  assertMigrationOwnersAllowed(
+    plan.objects.flatMap((row) => migrationOwnersOf(row, row.ownerUserId)),
+    options,
+  );
   checkPlan(plan);
   if (
     typeof normalize !== 'function' ||
@@ -756,6 +802,12 @@ export async function importLegacyDeltaMedia({
     )
   )
     throw fail('MEDIA_PORT_INVALID');
+  // Validate the entire immutable destination ownership set before the first object write.
+  // A plan can be re-signed, but cannot disguise an already-existing protected target.
+  for (const object of plan.objects) {
+    const existing = await mediaPort.lookup(object.id);
+    if (existing) assertMigrationOwnersAllowed([existing.ownerId], options);
+  }
   const root = await checkedRoot(stagingRoot);
   const receipt = checkpointFor(plan, checkpoint);
   const ready = new Map(),

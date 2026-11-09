@@ -4,6 +4,10 @@
 import { fingerprint, invariant, utc } from './legacy-delta-core.mjs';
 import { assertFixtureDatabase } from './legacy-delta-db.mjs';
 import { legacyId } from './legacy-content-rules.mjs';
+import {
+  assertMigrationOwnersAllowed,
+  assertMigrationConversationOwners,
+} from './legacy-migration-owner-guards.mjs';
 
 export async function initializeGroupMemoryFixture(database, target) {
   await assertFixtureDatabase(database, target);
@@ -13,7 +17,8 @@ export async function initializeGroupMemoryFixture(database, target) {
     plan_digest text NOT NULL)`);
 }
 
-export async function readGroupMemoryBaseline(database, binding, lock = false) {
+export async function readGroupMemoryBaseline(database, binding, lock = false, options = {}) {
+  assertMigrationOwnersAllowed([binding.ownerUserId], options);
   const suffix = lock ? ' FOR UPDATE' : '';
   const one = async (sql, params) => (await database.query(sql + suffix, params)).rows[0] ?? null;
   const rows = async (sql, params) => (await database.query(sql + suffix, params)).rows;
@@ -134,7 +139,16 @@ export function planGroupMemoryDelta({
   finalCutoff,
   validatePayload,
   healthPrivate,
+  options = {},
 }) {
+  assertMigrationOwnersAllowed(
+    [
+      binding.ownerUserId,
+      binding.legacyOwnerUserId,
+      ...(sourceGroup?.user_id ? [sourceGroup.user_id] : []),
+    ],
+    options,
+  );
   invariant(
     Array.isArray(rows) &&
       typeof validatePayload === 'function' &&
@@ -341,7 +355,9 @@ export async function applyGroupMemoryDelta({
   healthPrivate,
   maintenance,
   fault,
+  options = {},
 }) {
+  assertMigrationOwnersAllowed([plan.binding.ownerUserId, plan.binding.legacyOwnerUserId], options);
   await assertFixtureDatabase(database, target);
   invariant(
     maintenance?.writersStopped === true && maintenance?.notificationsCaptured === true,
@@ -358,6 +374,11 @@ export async function applyGroupMemoryDelta({
     'GROUP_MEMORY_VALIDATORS_REQUIRED',
   );
   return database.transaction(async (tx) => {
+    await assertMigrationConversationOwners(
+      tx,
+      [plan.binding.groupConversationId, plan.binding.directConversationId],
+      options,
+    );
     const binding = plan.binding;
     await tx.query(
       "SELECT pg_advisory_xact_lock(hashtextextended('migration-group-memory:' || $1,0))",

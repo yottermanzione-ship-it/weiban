@@ -1,6 +1,7 @@
 import { SupportRow } from './support.js';
 import { WebUpdatePanel } from './web-update-panel.js';
 import { HistoryRecoveryRow } from './history-recovery.js';
+import { LegacyPersonaEntry } from './legacy-personas.js';
 /*
  * 设置（docs/refactor/06-old-ui-spec.md 4.10）：每组前有分组标题；普通行 MenuRow，带说明的开关用 SwitchRow；
  * 选择类（深色模式、字体大小、提示音）用单列单选弹层，选中项右侧绿色 ✓。
@@ -202,6 +203,8 @@ export function SettingsPage() {
       <GroupHeader>账号</GroupHeader>
       <MenuGroup>
         <MenuRow to="/settings/security" label="账号与安全" />
+        <LegacyPersonaEntry />
+        <MenuRow to="/contacts/organization" label="标签与星标" />
       </MenuGroup>
       <GroupHeader>通知</GroupHeader>
       <MenuGroup>

@@ -15,11 +15,14 @@ import { ContactsCommands } from './application/commands.js';
 import { ContactsReadService } from './application/read.js';
 import { ContactsLifecycle } from './application/lifecycle.js';
 import { ContactsController } from './http/contacts.controller.js';
+import { ContactOrganizationController } from './http/organization.controller.js';
+import { ContactOrganizationService } from './application/organization.js';
 @Module({
   imports: [IdentityModule, ChatModule, CharactersModule, MediaModule, RealtimeModule],
-  controllers: [ContactsController],
+  controllers: [ContactsController, ContactOrganizationController],
   providers: [
     ContactsCommands,
+    ContactOrganizationService,
     ContactsReadService,
     ContactsLifecycle,
     ContactCardRecommendationService,

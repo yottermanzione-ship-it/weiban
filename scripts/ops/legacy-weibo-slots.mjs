@@ -1,4 +1,5 @@
 /** Metadata-only candidate planner. No I/O, credentials, network, SQL or activation. */
+import { isMigrationOwnerPreserved, preservedOwnerSkip } from './legacy-migration-owner-guards.mjs';
 const slots = new Set(['main', 'blue', 'white', 'pink', 'yellow']);
 const hash = (value) => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const id = (value) => typeof value === 'string' && /^[A-Za-z0-9:_-]{1,200}$/.test(value);
@@ -39,7 +40,13 @@ function proof(value, row, kind) {
  * Maps already-reviewed non-secret metadata. A proof digest is only a reference: it does
  * not prove custody or authorize activation. Production execution is deliberately absent.
  */
-export function planLegacyWeiboSlots({ source, targets = [], userMap, characterMap }) {
+export function planLegacyWeiboSlots({
+  source,
+  targets = [],
+  userMap,
+  characterMap,
+  options = {},
+}) {
   if (!Array.isArray(source) || !Array.isArray(targets) || !userMap || !characterMap)
     throw new Error('METADATA_PLAN_REQUIRED');
   const targetSlots = new Set(),
@@ -69,7 +76,8 @@ export function planLegacyWeiboSlots({ source, targets = [], userMap, characterM
     seenRoles = new Set(),
     seenApps = new Map();
   const actions = [],
-    blocked = [];
+    blocked = [],
+    preserved = [];
   for (const row of source) {
     if (
       !exact(row, sourceFields) ||
@@ -84,6 +92,13 @@ export function planLegacyWeiboSlots({ source, targets = [], userMap, characterM
     if (seenIds.has(row.legacyBindingId)) reasons.push('DUPLICATE_SOURCE_BINDING');
     seenIds.add(row.legacyBindingId);
     const userId = userMap[row.legacyUserId];
+    const protectedOwner = [row.legacyUserId, ...(id(userId) ? [userId] : [])].find((owner) =>
+      isMigrationOwnerPreserved(owner, options),
+    );
+    if (protectedOwner) {
+      preserved.push(preservedOwnerSkip(protectedOwner));
+      continue;
+    }
     const characterId = characterMap[`${row.legacyUserId}:${row.personaKey}`];
     if (!id(userId)) reasons.push('USER_MAPPING_REQUIRED');
     if (row.status === 'active' && !id(characterId)) reasons.push('CHARACTER_MAPPING_REQUIRED');
@@ -162,6 +177,7 @@ export function planLegacyWeiboSlots({ source, targets = [], userMap, characterM
     execute: false,
     status: blocked.length ? 'blocked' : 'candidate-only',
     actions,
+    preserved,
     blocked,
   };
 }

@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { ChatReadPort, ContactsReadPort, IdentityAccountStatusPort } from '@weiban/contracts';
 import {
   AppError,
+  assertLegacyMigrationOwnerAllowed,
   CLOCK,
   DATABASE,
   ENVELOPE_CRYPTO,
@@ -92,7 +93,12 @@ export class LegacyGroupMemoryService {
     return { group, generation, protectedTarget, digest: legacyGroupDigest({ group, generation }) };
   }
   /** Internal importer only; no HTTP route. The ops adapter must establish an isolated target first. */
-  async importBatch(userId: string, value: unknown) {
+  async importBatch(
+    userId: string,
+    value: unknown,
+    extraPreservedOwnerDigests: readonly string[] = [],
+  ) {
+    assertLegacyMigrationOwnerAllowed(userId, extraPreservedOwnerDigests);
     const input = LegacySharedGroupBatch.parse(value);
     if (
       input.sourceAccountId !== userId ||

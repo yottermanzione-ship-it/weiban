@@ -244,6 +244,10 @@ export class LegacyCharacterCard {
   get soulPersonality(): string {
     return this.text('soul_personality');
   }
+  /** 7.11: generated only by the owner's verified structured compatibility projection. */
+  get personalNotes(): string {
+    return this.text('_legacy_personal_notes');
+  }
 
   get soulEmotionalTone(): string {
     return this.text('soul_emotional_tone');

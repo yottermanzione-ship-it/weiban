@@ -42,6 +42,7 @@ import { SYNC_PORT } from '../../realtime/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
 import { contacts } from '../infra/db/schema.js';
 import { contactDto, type ContactRow } from './read.js';
+import { ContactOrganizationService } from './organization.js';
 export interface ContactJob {
   userId: string;
   characterId: string;
@@ -67,6 +68,7 @@ export class ContactsCommands {
     @Inject(OUTBOX) private readonly outbox: Outbox,
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
     @Inject(POLICY_PORT) private readonly policy: PolicyPort,
+    @Inject(ContactOrganizationService) private readonly organization: ContactOrganizationService,
   ) {}
   async lockUser(tx: DbTx, userId: string): Promise<void> {
     parseContract(Id, userId);
@@ -377,6 +379,7 @@ export class ContactsCommands {
    * 朋友圈分流清理在 #27 合并后的基线上另行接入（本轮不写分流条件）。
    */
   private async resetTx(tx: DbTx, row: ContactRow): Promise<void> {
+    await this.organization.removeContact(tx, row.userId, row.characterId);
     const profile = await this.identity.getProfile(row.userId, tx);
     const knownSince = new Intl.DateTimeFormat('en-CA', {
       timeZone: profile?.timeZone ?? 'UTC',
@@ -418,6 +421,7 @@ export class ContactsCommands {
     });
   }
   private async softRemoveTx(tx: DbTx, row: ContactRow): Promise<void> {
+    await this.organization.removeContact(tx, row.userId, row.characterId);
     const purgeAfter = new Date(this.clock.nowMs() + RETENTION_MS);
     const requestId = newId();
     // CHR-06 第 2 条：删除后退出其所在群聊（群里显示「XX 退出了群聊」）；先于状态变更，名字仍可取到备注。
@@ -455,6 +459,7 @@ export class ContactsCommands {
     });
   }
   private async purgeTx(tx: DbTx, row: ContactRow): Promise<void> {
+    await this.organization.removeContact(tx, row.userId, row.characterId);
     await this.chatGroups.removeCharacterFromUserGroups(tx, {
       userId: row.userId,
       characterId: row.characterId,

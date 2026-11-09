@@ -2,6 +2,7 @@
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { assertFixtureDatabase } from './legacy-delta-db.mjs';
+import { assertMigrationOwnersAllowed } from './legacy-migration-owner-guards.mjs';
 
 export async function applySharedGroupMemoryFixture({
   database,
@@ -9,12 +10,14 @@ export async function applySharedGroupMemoryFixture({
   service,
   input,
   maintenance,
+  options = {},
 }) {
+  assertMigrationOwnersAllowed([input?.sourceAccountId], options);
   await assertFixtureDatabase(database, target);
   if (service?.database !== database) throw new Error('GROUP_MEMORY_SERVICE_DATABASE_MISMATCH');
   if (maintenance?.writersStopped !== true || maintenance?.notificationsCaptured !== true)
     throw new Error('GROUP_MEMORY_MAINTENANCE_REQUIRED');
-  return service.importBatch(input.sourceAccountId, input);
+  return service.importBatch(input.sourceAccountId, input, options);
 }
 export const sharedGroupMemoryPreparation = () => ({
   mode: 'plan-only',

@@ -1,0 +1,75 @@
+.organization-page {
+  padding-bottom: 32px;
+}
+.organization-notice {
+  margin: 16px;
+  padding: 14px 16px;
+  background: var(--wb-color-bg-surface);
+  border-radius: 8px;
+  line-height: 1.6;
+  color: var(--wb-color-text-secondary);
+}
+.organization-notice p {
+  margin: 0 0 8px;
+}
+.organization-notice button + button {
+  margin-left: 16px;
+}
+label.menu-row.organization-member {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 0 16px;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 54px;
+}
+.organization-member span {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.organization-member input {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  accent-color: var(--wb-color-brand-primary);
+}
+label.menu-row.organization-name {
+  display: grid;
+  padding: 0 16px;
+  grid-template-columns: 80px minmax(0, 1fr);
+  gap: 12px;
+}
+.organization-name .edit-input-row {
+  min-width: 0;
+  padding: 0;
+}
+.organization-legacy {
+  margin: 24px 16px;
+  color: var(--wb-color-text-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.organization-legacy summary {
+  cursor: pointer;
+}
+.organization-claim-list {
+  max-height: 220px;
+  overflow: auto;
+  text-align: left;
+}
+.organization-filter {
+  padding: 8px 16px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.organization-filter select {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  background: var(--wb-color-bg-surface);
+  border: 0;
+  border-radius: 5px;
+  color: var(--wb-color-text-primary);
+}

@@ -1,6 +1,10 @@
 /** Isolated-only rehearsal executor for the real PostgreSQL schema. There is deliberately
  * no production CLI, environment discovery, SSH, DNS, model, push or billing client here. */
 import {
+  assertMigrationOwnersAllowed,
+  migrationOwnersOf,
+} from './legacy-migration-owner-guards.mjs';
+import {
   assertIsolatedTarget,
   fingerprint,
   invariant,
@@ -178,7 +182,17 @@ export async function applyConversationDelta({
   validateContent,
   maintenance,
   fault,
+  options = {},
 }) {
+  assertMigrationOwnersAllowed(
+    [
+      plan.ownerUserId,
+      ...plan.newMessages.flatMap((row) => migrationOwnersOf(row, row.owner_user_id)),
+      ...plan.states.map((row) => row.user_id),
+      ...plan.participants.filter((row) => row.kind === 'user').map((row) => row.ref_id),
+    ],
+    options,
+  );
   await assertFixtureDatabase(database, target);
   invariant(
     maintenance?.writersStopped === true && maintenance?.notificationsCaptured === true,
@@ -223,6 +237,14 @@ export async function applyConversationDelta({
     ).rows;
     if (receipt.length) return { status: 'already_applied', inserted: 0 };
     const baseline = await readConversationBaseline(tx, plan.conversationId, true);
+    assertMigrationOwnersAllowed(
+      [baseline.conversation.owner_user_id, ...baseline.states.map((row) => row.user_id)],
+      options,
+    );
+    invariant(
+      baseline.conversation.owner_user_id === plan.ownerUserId,
+      'MIGRATION_OWNER_SCOPE_MISMATCH',
+    );
     const account = await tx.query('SELECT status FROM identity.users WHERE id=$1', [
       plan.ownerUserId,
     ]);
@@ -379,7 +401,21 @@ export async function applyMissingAccounts({
   source,
   createDefaults,
   maintenance,
+  options = {},
 }) {
+  assertMigrationOwnersAllowed(
+    plan.filter((item) => item.id).map((item) => item.id),
+    options,
+  );
+  const requestedIds = new Set(
+    plan.filter((item) => item.action === 'insert').map((item) => item.id),
+  );
+  assertMigrationOwnersAllowed(
+    source
+      .filter((row) => requestedIds.has(row.id))
+      .flatMap((row) => migrationOwnersOf(row, row.id)),
+    options,
+  );
   await assertFixtureDatabase(database, target);
   invariant(maintenance?.writersStopped === true, 'MAINTENANCE_REQUIRED');
   invariant(

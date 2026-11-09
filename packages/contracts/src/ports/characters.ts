@@ -45,6 +45,10 @@ export interface CharacterForRuntime {
    * 新卡角色为 null。
    */
   legacyCard: Record<string, unknown> | null;
+  /** 7.11: owner-scoped effective legacy lorebook/examples from the same persona snapshot. */
+  legacyContext?: LegacyRuntimeContext;
+  /** 7.11: personal override version; public personaVersion remains the public revision. */
+  legacyPersonaVersion?: number;
   personaVersion: number;
   /** 备用开场白（未配置模型时用，CHR-03 第 6 条）。旧卡角色取 opening_messages_json。 */
   fallbackGreetings: string[];

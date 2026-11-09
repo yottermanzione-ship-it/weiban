@@ -2,8 +2,10 @@
 import { fingerprint, invariant, utc } from './legacy-delta-core.mjs';
 import { assertFixtureDatabase } from './legacy-delta-db.mjs';
 import { legacyId } from './legacy-content-rules.mjs';
+import { assertMigrationOwnersAllowed } from './legacy-migration-owner-guards.mjs';
 
-export async function readEntitlementBaseline(database, userId) {
+export async function readEntitlementBaseline(database, userId, options = {}) {
+  assertMigrationOwnersAllowed([userId], options);
   const result = await database.query(
     'SELECT user_id,pro_plus_until,granted_by,updated_at FROM identity.memberships WHERE user_id=$1',
     [userId],
@@ -19,7 +21,16 @@ export function planEntitlementDelta({
   originalCutoff,
   finalCutoff,
   decisionId,
+  options = {},
 }) {
+  assertMigrationOwnersAllowed(
+    [
+      userId,
+      ...(targetBaseline?.user_id ? [targetBaseline.user_id] : []),
+      ...(sourceEvents ?? []).map((row) => row.userId),
+    ],
+    options,
+  );
   invariant(
     Array.isArray(sourceEvents) && Array.isArray(appliedReceipts),
     'ENTITLEMENT_EVENT_LIST_REQUIRED',
@@ -144,7 +155,15 @@ export async function initializeEntitlementFixture(database, target) {
     previous_until timestamptz, next_until timestamptz NOT NULL)`);
 }
 
-export async function applyEntitlementDelta({ database, target, plan, maintenance, fault }) {
+export async function applyEntitlementDelta({
+  database,
+  target,
+  plan,
+  maintenance,
+  fault,
+  options = {},
+}) {
+  assertMigrationOwnersAllowed([plan.userId], options);
   await assertFixtureDatabase(database, target);
   invariant(
     maintenance?.writersStopped === true && maintenance?.notificationsCaptured === true,

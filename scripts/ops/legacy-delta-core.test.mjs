@@ -214,6 +214,7 @@ test('密码算法升级保留；凭据真变、重名、被删除账号有明�
 
 test('资料记忆三方比较保留新站编辑和遗忘，不以较晚时间覆盖', () => {
   const result = planProtectedRecords({
+    ownerUserId: 'synthetic-record-owner',
     domain: 'memory',
     inventoryComplete: true,
     source: [
@@ -253,6 +254,7 @@ test('资料记忆三方比较保留新站编辑和遗忘，不以较晚时间�
 test('源删除按全部拆条计算影响，结果只是审查范围', () => {
   const row = {
     id: 5,
+    user_id: 'synthetic-delete-owner',
     content: '合'.repeat(9000),
     message_type: 'text',
     deleted_at: '2026-11-08T00:00:00Z',

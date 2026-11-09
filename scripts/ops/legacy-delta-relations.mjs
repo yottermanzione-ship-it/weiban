@@ -1,6 +1,13 @@
 /** Insert-only relation dependency preparation. No business creation endpoints or workers.
  * Plans/bindings are protected operator data; only summary is safe for a public receipt. */
 import { legacyId } from './legacy-content-rules.mjs';
+import {
+  assertMigrationOwnersAllowed,
+  migrationOwnersOf,
+  assertMigrationConversationOwners,
+  partitionMigrationOwners,
+  scopeMigrationBaseline,
+} from './legacy-migration-owner-guards.mjs';
 import { fingerprint, invariant, utc } from './legacy-delta-core.mjs';
 import { assertFixtureDatabase } from './legacy-delta-db.mjs';
 import {
@@ -108,7 +115,17 @@ async function readBaseline(tx, scope) {
   ).rows;
   return { users, characters, conversations, participants, states, contacts };
 }
-export async function readLegacyRelationsBaseline({ database, target, sourceRelations }) {
+export async function readLegacyRelationsBaseline({
+  database,
+  target,
+  sourceRelations,
+  options = {},
+}) {
+  sourceRelations = partitionMigrationOwners(
+    sourceRelations,
+    (row) => migrationOwnersOf(row, row.ownerUserId),
+    options,
+  ).allowed;
   await assertFixtureDatabase(database, target);
   return readBaseline(database, scopeOf(sourceRelations));
 }
@@ -125,11 +142,24 @@ export async function readLegacyRelationsBaseline({ database, target, sourceRela
  * purgedContactKeys / previouslyImportedContactKeys (legacyContactKey), and
  * leftParticipantKeys (`conversationId:kind:refId`). Missing deletion evidence is not inferred.
  */
-export function planLegacyRelations({ sourceRelations, targetBaseline, protection, capturedAt }) {
+export function planLegacyRelations({
+  sourceRelations,
+  targetBaseline,
+  protection,
+  capturedAt,
+  options = {},
+}) {
   invariant(protection?.inventoryComplete === true, 'RELATION_DELETION_INVENTORY_REQUIRED');
   invariant(Array.isArray(sourceRelations), 'RELATION_SOURCE_REQUIRED');
+  const preservation = partitionMigrationOwners(
+    sourceRelations,
+    (row) => migrationOwnersOf(row, row.ownerUserId),
+    options,
+  );
+  sourceRelations = preservation.allowed;
   const at = utc(capturedAt),
     scope = scopeOf(sourceRelations);
+  targetBaseline = scopeMigrationBaseline(targetBaseline, scope);
   const baseline = structuredClone(targetBaseline);
   const users = indexBy(baseline.users, (row) => row.id);
   const characters = indexBy(baseline.characters, (row) => row.id);
@@ -158,7 +188,7 @@ export function planLegacyRelations({ sourceRelations, targetBaseline, protectio
   const leftMembers = new Set(protection.leftParticipantKeys ?? []);
   const insert = { conversations: [], participants: [], states: [], contacts: [] };
   const bindings = [],
-    excluded = [],
+    excluded = [...preservation.skipped],
     conflicts = [],
     seen = new Set(),
     plannedConversationIds = new Set();
@@ -344,6 +374,11 @@ export function planLegacyRelations({ sourceRelations, targetBaseline, protectio
       binding = {
         sourceKey: source.sourceKey,
         ownerUserId: source.ownerUserId,
+        legacyOwnerUserId:
+          source.legacyOwnerUserId ??
+          source.sourceOwnerUserId ??
+          source.sourceUserId ??
+          source.ownerUserId,
         conversationId: id,
         systemParticipantId: systemId,
         peerKind: source.kind === 'official' ? 'official' : 'character',
@@ -473,13 +508,41 @@ export async function initializeRelationFixture({ database, target }) {
 }
 
 /** Real schema inserts in one transaction; receipt shares the transaction and enables retry. */
-export async function applyLegacyRelations({ database, target, plan, maintenance, fault }) {
+export async function applyLegacyRelations({
+  database,
+  target,
+  plan,
+  maintenance,
+  fault,
+  options = {},
+}) {
+  assertMigrationOwnersAllowed(
+    [
+      ...plan.scope.ownerUserIds,
+      ...plan.bindings.flatMap((row) => migrationOwnersOf(row, row.ownerUserId)),
+      ...plan.insert.conversations.map((row) => row.owner_user_id),
+      ...plan.insert.states.map((row) => row.user_id),
+      ...plan.insert.contacts.map((row) => row.user_id),
+      ...plan.insert.participants.filter((row) => row.kind === 'user').map((row) => row.ref_id),
+    ],
+    options,
+  );
   await assertFixtureDatabase(database, target);
   invariant(maintenance?.writersStopped === true, 'MAINTENANCE_REQUIRED');
   const { digest, ...payload } = plan;
   invariant(plan.version === 1 && digest === fingerprint(payload), 'RELATION_PLAN_DIGEST_MISMATCH');
   invariant(plan.conflicts.length === 0, 'RELATION_PLAN_HAS_CONFLICTS');
   return database.transaction(async (tx) => {
+    await assertMigrationConversationOwners(
+      tx,
+      [
+        ...plan.insert.participants.map((row) => row.conversation_id),
+        ...plan.insert.states.map((row) => row.conversation_id),
+        ...plan.insert.contacts.map((row) => row.conversation_id),
+        ...plan.bindings.map((row) => row.conversationId),
+      ],
+      options,
+    );
     // Offline-only, whole-table writer locks cover missing-row races as well as existing rows.
     // No live business port is invoked, so no registration/greeting/AI/outbox is published.
     await tx.query(

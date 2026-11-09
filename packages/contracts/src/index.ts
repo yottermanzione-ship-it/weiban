@@ -17,6 +17,7 @@ export * from './http/billing.js';
 export * from './http/characters.js';
 export * from './http/admin-content.js';
 export * from './http/contacts.js';
+export * from './http/contact-organization.js';
 export * from './http/chat.js';
 export * from './http/sync.js';
 export * from './http/push.js';
@@ -72,3 +73,4 @@ export * from './http/search.js';
 export * from './ports/shared-search.js';
 
 export * from './http/scan-payment.js';
+export * from './http/legacy-persona.js';

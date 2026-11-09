@@ -76,3 +76,4 @@ export * from './time/local-time.js';
 
 export * from './search/search-text.js';
 export * from './search/public-identity.js';
+export * from './migration-preservation.js';

@@ -4,6 +4,8 @@ import {
   customType,
   date,
   index,
+  integer,
+  foreignKey,
   pgSchema,
   primaryKey,
   text,
@@ -88,3 +90,107 @@ export const newFriendState = contactsSchema.table('new_friend_state', {
   userId: uuid('user_id').primaryKey(),
   seenAt: timestamp('seen_at', { withTimezone: true }).notNull(),
 });
+
+/** Full owner snapshot; tag names are encrypted, command receipts contain no restorable body. */
+export const organization = contactsSchema.table(
+  'organization',
+  {
+    userId: uuid('user_id').primaryKey(),
+    revision: integer('revision').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [check('organization_revision_check', sql`${t.revision} BETWEEN 0 AND 2147483647`)],
+);
+export const organizationStars = contactsSchema.table(
+  'organization_stars',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => organization.userId, { onDelete: 'cascade' }),
+    characterId: uuid('character_id').notNull(),
+    contactId: uuid('contact_id')
+      .notNull()
+      .references(() => contacts.id, { onDelete: 'cascade' }),
+    contactEpoch: uuid('contact_epoch').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.characterId] }),
+    index('organization_stars_contact_idx').on(t.contactId),
+  ],
+);
+export const organizationTags = contactsSchema.table(
+  'organization_tags',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => organization.userId, { onDelete: 'cascade' }),
+    tagId: uuid('tag_id').notNull(),
+    nameCiphertext: bytes('name_ciphertext').notNull(),
+    sortOrder: integer('sort_order').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.tagId] }),
+    uniqueIndex('organization_tags_user_id_sort_order_key').on(t.userId, t.sortOrder),
+    check('organization_tags_sort_order_check', sql`${t.sortOrder} BETWEEN 0 AND 99`),
+  ],
+);
+export const organizationTagMembers = contactsSchema.table(
+  'organization_tag_members',
+  {
+    userId: uuid('user_id').notNull(),
+    tagId: uuid('tag_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    contactId: uuid('contact_id')
+      .notNull()
+      .references(() => contacts.id, { onDelete: 'cascade' }),
+    contactEpoch: uuid('contact_epoch').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.tagId, t.characterId] }),
+    foreignKey({
+      columns: [t.userId, t.tagId],
+      foreignColumns: [organizationTags.userId, organizationTags.tagId],
+    }).onDelete('cascade'),
+    index('organization_members_contact_idx').on(t.contactId),
+  ],
+);
+export const organizationCommands = contactsSchema.table(
+  'organization_commands',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => organization.userId, { onDelete: 'cascade' }),
+    commandId: uuid('command_id').notNull(),
+    requestDigest: text('request_digest').notNull(),
+    appliedRevision: integer('applied_revision').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.commandId] }),
+    check('organization_commands_request_digest_check', sql`${t.requestDigest} ~ '^[a-f0-9]{64}$'`),
+    check('organization_commands_applied_revision_check', sql`${t.appliedRevision}>0`),
+  ],
+);
+export const organizationImportReceipts = contactsSchema.table(
+  'organization_import_receipts',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => organization.userId, { onDelete: 'cascade' }),
+    sourceDigest: text('source_digest').notNull(),
+    payloadDigest: text('payload_digest').notNull(),
+    appliedRevision: integer('applied_revision').notNull(),
+    importedAt: timestamp('imported_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.sourceDigest] }),
+    check(
+      'organization_import_receipts_source_digest_check',
+      sql`${t.sourceDigest} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      'organization_import_receipts_payload_digest_check',
+      sql`${t.payloadDigest} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check('organization_import_receipts_applied_revision_check', sql`${t.appliedRevision}>0`),
+  ],
+);

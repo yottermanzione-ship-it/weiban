@@ -29,7 +29,13 @@ function fixture() {
       return { synthetic: true };
     },
   };
-  return { database, service, calls, imports: () => imports };
+  return {
+    database,
+    service,
+    calls,
+    input: { sourceAccountId: 'synthetic-fixture-owner' },
+    imports: () => imports,
+  };
 }
 test('default CLI is planning only; execution flags are rejected', () => {
   assert.equal(sharedGroupMemoryPreparation().productionExecutable, false);

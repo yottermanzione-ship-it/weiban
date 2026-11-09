@@ -321,7 +321,8 @@ export class ReplyContext {
     if (voiceCall && conversation.contentScope !== 'normal') return null;
     // 旧卡角色：世界书 / 示例对话来自旧库附属表；新卡角色保持现有逻辑。
     const legacyContext = role.legacyCard
-      ? await this.characters.getLegacyContext?.(row.characterId).catch(() => null)
+      ? (role.legacyContext ??
+        (await this.characters.getLegacyContext?.(row.characterId).catch(() => null)))
       : null;
     const view = characterView(role, legacyContext);
     const participant = conversation.participants.find(
@@ -1230,7 +1231,8 @@ export class ReplyContext {
     );
     if (!participant) return null;
     const legacyContext = role.legacyCard
-      ? await this.characters.getLegacyContext?.(row.characterId).catch(() => null)
+      ? (role.legacyContext ??
+        (await this.characters.getLegacyContext?.(row.characterId).catch(() => null)))
       : null;
     const view = characterView(role, legacyContext);
     const history = await withoutBlocked(

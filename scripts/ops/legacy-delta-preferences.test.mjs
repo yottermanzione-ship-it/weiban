@@ -436,7 +436,10 @@ test('malformed/version-regressed source is blocked and public summaries contain
 
 const url = process.env.MIGRATION_PREFERENCES_DATABASE_URL;
 invariant(
-  url === 'postgres://postgres@127.0.0.1:56389/codex_migration_preferences_1109',
+  [
+    'postgres://postgres@127.0.0.1:56389/codex_migration_preferences_1109',
+    'postgres://postgres@127.0.0.1:56389/codex_migration_preservation_1109',
+  ].includes(url),
   'EXPLICIT_PREFERENCE_FIXTURE_URL_REQUIRED',
 );
 let lab;
@@ -690,7 +693,10 @@ test('fixture guard rejects production, wrong database, mismatched connection an
       ...lab,
       plan,
       maintenance,
-      target: { ...lab.target, url: url.replace('preferences', 'relations') },
+      target: {
+        ...lab.target,
+        url: url.replace(/codex_migration_[a-z0-9_]+$/, 'codex_migration_wrong_domain_1109'),
+      },
     }),
     /DEDICATED_PREFERENCE_FIXTURE_REQUIRED/,
   );

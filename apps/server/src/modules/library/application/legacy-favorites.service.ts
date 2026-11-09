@@ -21,6 +21,7 @@ import {
   ENVELOPE_CRYPTO,
   newId,
   parseContract,
+  isLegacyMigrationOwnerPreserved,
   type Clock,
   type Database,
   type DbTx,
@@ -124,7 +125,13 @@ export class LegacyFavoritesService {
     if (rows.length > 8) throw new AppError('conflict', '旧账号来源需要重新核对');
     return rows.map((row) => row.account_key);
   }
-  async source(userId: string) {
+  async source(userId: string, extraPreservedOwnerDigests: readonly string[] = []) {
+    if (isLegacyMigrationOwnerPreserved(userId, extraPreservedOwnerDigests))
+      return LegacyFavoritesEndpoints.source.response.parse({
+        userId,
+        legacyAccountKeys: [],
+        available: false,
+      });
     return this.database.transaction(async (tx) => {
       await this.active(tx, userId);
       const legacyAccountKeys = await this.accountKeys(tx, userId);
@@ -135,7 +142,9 @@ export class LegacyFavoritesService {
       });
     });
   }
-  async import(userId: string, input: unknown) {
+  async import(userId: string, input: unknown, extraPreservedOwnerDigests: readonly string[] = []) {
+    if (isLegacyMigrationOwnerPreserved(userId, extraPreservedOwnerDigests))
+      throw new AppError('forbidden', '此账号保留新版资料，不承接旧收藏');
     const body = parseContract(LegacyFavoriteImportRequest, input);
     for (const item of body.items) {
       if (legacyFavoriteItemKey(item.favorite) !== item.itemKey)

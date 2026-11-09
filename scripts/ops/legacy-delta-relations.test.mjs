@@ -363,7 +363,7 @@ test('an owner who left an existing group is not rejoined when a missing histori
 const url = process.env.MIGRATION_RELATIONS_DATABASE_URL;
 invariant(url, 'MIGRATION_RELATIONS_DATABASE_URL_REQUIRED_NO_SHARED_DEFAULT');
 invariant(
-  /^codex_migration_relations_[a-z0-9_]+$/.test(
+  /^(?:codex_migration_relations_[a-z0-9_]+|codex_migration_preservation_1109)$/.test(
     assertIsolatedTarget({
       kind: 'isolated-fixture',
       synthetic: true,

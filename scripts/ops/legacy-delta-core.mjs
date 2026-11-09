@@ -5,6 +5,12 @@
  */
 import { createHash } from 'node:crypto';
 import { legacyId, legacyMessageContents, deletedLegacyMessage } from './legacy-content-rules.mjs';
+import {
+  assertMigrationOwnersAllowed,
+  migrationOwnersOf,
+  isMigrationOwnerPreserved,
+  preservedOwnerSkip,
+} from './legacy-migration-owner-guards.mjs';
 
 export function invariant(value, category) {
   if (!value) throw new Error(category);
@@ -60,6 +66,7 @@ export function prepareLegacyChatRows({
   cutoff,
   mediaReady = new Map(),
   validateContent,
+  options = {},
 }) {
   invariant(['chat_history', 'group_messages'].includes(table), 'UNSUPPORTED_SOURCE_TABLE');
   invariant(typeof validateContent === 'function', 'CONTRACT_VALIDATOR_REQUIRED');
@@ -67,10 +74,23 @@ export function prepareLegacyChatRows({
   const result = [],
     excluded = [];
   for (const row of rows) {
+    if (row.user_id != null && isMigrationOwnerPreserved(String(row.user_id), options)) {
+      excluded.push(preservedOwnerSkip(String(row.user_id)));
+      continue;
+    }
     const sourceId = String(row.id);
     invariant(/^[0-9]+$/.test(sourceId), 'SOURCE_ID_REQUIRED');
     const binding = mapping(row);
     invariant(binding && binding.ownerUserId && binding.conversationId, 'UNRESOLVED_CONVERSATION');
+    const sourceOwner =
+      row.user_id ?? binding.legacyOwnerUserId ?? binding.sourceOwnerUserId ?? binding.ownerUserId;
+    const protectedOwner = [sourceOwner, ...migrationOwnersOf(binding, binding.ownerUserId)].find(
+      (owner) => isMigrationOwnerPreserved(owner, options),
+    );
+    if (protectedOwner) {
+      excluded.push(preservedOwnerSkip(protectedOwner));
+      continue;
+    }
     if (deletedLegacyMessage(row)) {
       excluded.push({ table, sourceId, reason: 'source_deleted' });
       continue;
@@ -124,6 +144,7 @@ export function prepareLegacyChatRows({
         client_msg_id: legacyId('client-message', table, sourceId, part),
         conversation_id: binding.conversationId,
         owner_user_id: binding.ownerUserId,
+        source_owner_user_id: sourceOwner,
         sender_participant_id: participantId,
         sender_kind: kind,
         created_at: createdAt,
@@ -166,7 +187,15 @@ export function planConversationDelta({
   deletedSource = [],
   protection,
   newConversationReadCursor,
+  options = {},
 }) {
+  assertMigrationOwnersAllowed(
+    [
+      target?.conversation?.owner_user_id,
+      ...incoming.flatMap((row) => migrationOwnersOf(row, row.owner_user_id)),
+    ],
+    options,
+  );
   invariant(protection?.inventoryComplete === true, 'DELETION_INVENTORY_REQUIRED');
   const start = utc(initialCutoff),
     end = utc(cutoff);
@@ -374,6 +403,8 @@ export function planProtectedRecords({
   baseline,
   tombstones = [],
   inventoryComplete,
+  ownerUserId,
+  options = {},
 }) {
   invariant(inventoryComplete === true, 'DOMAIN_INVENTORY_REQUIRED');
   invariant(
@@ -386,6 +417,14 @@ export function planProtectedRecords({
     seen = new Set(),
     actions = [];
   for (const row of source) {
+    const owner = row.ownerUserId ?? row.user_id ?? ownerUserId;
+    const protectedOwner = migrationOwnersOf(row, owner).find((value) =>
+      isMigrationOwnerPreserved(value, options),
+    );
+    if (protectedOwner) {
+      actions.push({ ...preservedOwnerSkip(protectedOwner), action: 'preserve_owner' });
+      continue;
+    }
     invariant(!seen.has(row.key), 'DUPLICATE_DOMAIN_SOURCE');
     seen.add(row.key);
     const was = old.get(row.key),
@@ -409,6 +448,7 @@ export function planAccounts({
   deletedIds = [],
   aliases = [],
   inventoryComplete,
+  options = {},
 }) {
   invariant(inventoryComplete === true, 'ACCOUNT_DELETION_INVENTORY_REQUIRED');
   const existing = new Map(target.map((row) => [row.id, row]));
@@ -420,6 +460,10 @@ export function planAccounts({
   ]);
   const seen = new Set();
   return source.map((row) => {
+    const protectedOwner = migrationOwnersOf(row, row.id).find((owner) =>
+      isMigrationOwnerPreserved(owner, options),
+    );
+    if (protectedOwner) return { ...preservedOwnerSkip(protectedOwner), action: 'preserve_owner' };
     invariant(!seen.has(row.id), 'DUPLICATE_SOURCE_ACCOUNT');
     seen.add(row.id);
     const now = existing.get(row.id),
@@ -448,10 +492,18 @@ export function deletionImpact({
   targetById,
   dependents = [],
   sourceFragments = new Map(),
+  ownerUserId,
+  options = {},
 }) {
   const affected = [];
+  const preserved = [];
   let unresolved = 0;
   for (const row of sourceRows.filter(deletedLegacyMessage)) {
+    const owner = row.owner_user_id ?? row.user_id ?? ownerUserId;
+    if (isMigrationOwnerPreserved(owner, options)) {
+      preserved.push(preservedOwnerSkip(owner));
+      continue;
+    }
     // Media split shape depends on whether the first import had a valid media reference.
     // Its mapping is authoritative; current missing files cannot reconstruct that shape.
     let fragments = sourceFragments.get(table + ':' + String(row.id));
@@ -464,14 +516,18 @@ export function deletionImpact({
     );
     for (const id of fragments) {
       if (targetById.has(id))
-        affected.push({
-          id,
-          dependentCount: dependents.filter((item) => item.messageId === id).length,
-        });
+        if (isMigrationOwnerPreserved(targetById.get(id).owner_user_id ?? owner, options))
+          preserved.push(preservedOwnerSkip(targetById.get(id).owner_user_id ?? owner));
+        else
+          affected.push({
+            id,
+            dependentCount: dependents.filter((item) => item.messageId === id).length,
+          });
     }
   }
   return {
     action: 'review_only',
+    ...(preserved.length ? { preserved } : {}),
     affected,
     summary: {
       messages: affected.length,

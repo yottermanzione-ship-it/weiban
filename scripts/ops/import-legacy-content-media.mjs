@@ -1,6 +1,11 @@
 #!/usr/bin/env node
 /** Encrypt snapshot media with deterministic per-user identity. Only pinned public image hosts may download. */
 import 'reflect-metadata';
+import {
+  assertMigrationOwnersAllowed,
+  migrationOwnersOf,
+  assertMigrationConversationOwners,
+} from './legacy-migration-owner-guards.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -35,6 +40,14 @@ const crypto = new EnvelopeCrypto(db, clock, ring),
 const root = path.resolve(args.get('--root')),
   reportPath = args.get('--report');
 const plan = JSON.parse(fs.readFileSync(args.get('--plan'), 'utf8'));
+assertMigrationOwnersAllowed(
+  plan.objects.flatMap((object) => migrationOwnersOf(object, object.ownerUserId)),
+);
+assertMigrationOwnersAllowed(
+  (plan.avatarBindings ?? [])
+    .filter((binding) => binding.table === 'identity.profiles')
+    .map((binding) => binding.userId),
+);
 const cacheRoot = path.join(path.dirname(reportPath), 'external-media-cache');
 fs.mkdirSync(cacheRoot, { recursive: true, mode: 0o700 });
 const stats = {
@@ -228,6 +241,10 @@ async function main() {
     ).rows.length
   )
     throw new Error('ACTIVE_ADMIN_REQUIRED');
+  await assertMigrationConversationOwners(
+    db,
+    (plan.avatarBindings ?? []).map((binding) => binding.conversationId),
+  );
   const media = createImportMediaService({
     database: db,
     config,
@@ -253,6 +270,7 @@ async function main() {
       )
     ).rows.map((r) => [r.id, r]),
   );
+  assertMigrationOwnersAllowed([...existing.values()].map((row) => row.owner_id));
   async function worker() {
     while (next < plan.objects.length) {
       const object = plan.objects[next++];

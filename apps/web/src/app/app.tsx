@@ -108,6 +108,9 @@ import { ShareEditorPage } from '../features/share.js';
 import { ImportListPage, ImportPage } from '../features/import.js';
 import { SupplementPage } from '../features/supplement.js';
 import { CharacterPersonaPage } from '../features/character-persona.js';
+import { LegacyPersonaPage, LegacyPersonasPage } from '../features/legacy-personas.js';
+import { ContactOrganizationPage } from '../features/contact-organization.js';
+import { ContactOrganizationProvider } from '../data/stars.js';
 import { AccountDeletionPage } from '../features/account-deletion.js';
 import { AdoptPage, PetPage, PetWithPage, PetsPage } from '../features/pets.js';
 import {
@@ -146,6 +149,9 @@ const ownHeader = [
   /^\/(sticker-store|support)(\/|$)/,
   /^\/me\/status$/,
   /^\/settings\/plugins$/,
+  /^\/settings\/legacy-personas$/,
+  /^\/contacts\/organization$/,
+  /^\/characters\/[^/]+\/legacy-persona$/,
   /^\/characters\/[^/]+\/(timeline|anniversaries|moments|relations|voice|cards|supplement|memories|murmurs)$/,
   /^\/(imports|pets|plaza|play|roles|role-requests)(\/|$)/,
   /^\/settings\/delete-account$/,
@@ -375,6 +381,12 @@ function Shell() {
                   <Route path="/profile/alias" element={<AliasInfoPage />} />
                   <Route path="/profile/alias/edit" element={<AliasEditPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="/settings/legacy-personas" element={<LegacyPersonasPage />} />
+                  <Route path="/contacts/organization" element={<ContactOrganizationPage />} />
+                  <Route
+                    path="/characters/:characterId/legacy-persona"
+                    element={<LegacyPersonaPage />}
+                  />
                   <Route path="/help/guide" element={<OnboardingGuidePage />} />
                   <Route path="/services" element={<ServicesPage />} />
                   <Route path="/wallet" element={<WalletPage />} />
@@ -546,10 +558,12 @@ export function App() {
   const bootDone = useCallback(() => setBooting(false), []);
   return (
     <AuthProvider>
-      <ChatProvider>
-        <Shell />
-        {booting && <BootSplash onDone={bootDone} />}
-      </ChatProvider>
+      <ContactOrganizationProvider>
+        <ChatProvider>
+          <Shell />
+          {booting && <BootSplash onDone={bootDone} />}
+        </ChatProvider>
+      </ContactOrganizationProvider>
     </AuthProvider>
   );
 }

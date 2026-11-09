@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /** One-time operator migration. No app bootstrap, AI jobs, notifications or historical re-billing. */
 import 'reflect-metadata';
+import { assertLegacySnapshotOwnersAllowed } from './legacy-migration-owner-guards.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
@@ -122,6 +123,7 @@ async function main() {
   ).rows;
   if (!admin.length) throw new Error('ACTIVE_ADMIN_REQUIRED');
   const data = await loadSnapshot(options.get('--input'));
+  assertLegacySnapshotOwnersAllowed(data);
   const capturedAt = data.get('_snapshot')[0].capturedAt;
   const manifest = readJson(options.get('--manifest'));
   // Additional local built-in stickers may be packaged separately without changing the snapshot.

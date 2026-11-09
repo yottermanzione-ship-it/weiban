@@ -35,14 +35,14 @@ export interface CharacterView {
 const DEFAULT_MOMENTS_PER_WEEK: [number, number] = [2, 4];
 
 export function characterView(
-  role: Pick<CharacterForRuntime, 'card' | 'legacyCard'>,
+  role: Pick<CharacterForRuntime, 'card' | 'legacyCard' | 'legacyContext'>,
   context?: { lorebook?: LegacyKnowledgeEntry[]; examples?: LegacyDialogueExample[] } | null,
 ): CharacterView {
   return {
     card: role.card?.data ?? null,
     legacy: role.legacyCard ? parseLegacyCard(role.legacyCard) : null,
-    lorebook: context?.lorebook ?? [],
-    examples: context?.examples ?? [],
+    lorebook: role.legacyContext?.lorebook ?? context?.lorebook ?? [],
+    examples: role.legacyContext?.examples ?? context?.examples ?? [],
   };
 }
 

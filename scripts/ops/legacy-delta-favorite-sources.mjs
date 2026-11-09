@@ -3,13 +3,21 @@
 import { createHash } from 'node:crypto';
 import { fingerprint, invariant, utc } from './legacy-delta-core.mjs';
 import { assertFixtureDatabase } from './legacy-delta-db.mjs';
+import {
+  assertMigrationOwnersAllowed,
+  assertMigrationMediaOwners,
+  partitionMigrationOwners,
+  isMigrationOwnerPreserved,
+} from './legacy-migration-owner-guards.mjs';
 
 const sha = (value) => createHash('sha256').update(value, 'utf8').digest('hex');
 export const legacyFavoriteReferenceHash = sha;
 
-export async function readFavoriteSourceBaseline({ database, target, userIds }) {
+export async function readFavoriteSourceBaseline({ database, target, userIds, options = {} }) {
   await assertFixtureDatabase(database, target);
-  const ids = [...new Set(userIds)].sort();
+  const ids = [
+    ...new Set(userIds.filter((owner) => !isMigrationOwnerPreserved(owner, options))),
+  ].sort();
   const users = (
     await database.query(
       'SELECT id,status,username FROM identity.users WHERE id=ANY($1::uuid[]) ORDER BY id',
@@ -40,7 +48,27 @@ export function planFavoriteSources({
   cutoff,
   deletedUserIds = [],
   inventoryComplete,
+  options = {},
 }) {
+  const preservation = partitionMigrationOwners(
+    sourceAccounts,
+    (row) => [row.sourceUserId, row.userId],
+    options,
+  );
+  sourceAccounts = preservation.allowed;
+  const preservedMedia = partitionMigrationOwners(
+    mediaBindings,
+    (row) => [row.userId, ...(row.ready?.ownerUserId ? [row.ready.ownerUserId] : [])],
+    options,
+  );
+  mediaBindings = preservedMedia.allowed;
+  const allowedIds = baseline.userIds.filter((owner) => !isMigrationOwnerPreserved(owner, options));
+  baseline = {
+    ...baseline,
+    userIds: allowedIds,
+    users: baseline.users.filter((row) => allowedIds.includes(row.id)),
+    media: baseline.media.filter((row) => allowedIds.includes(row.user_id)),
+  };
   invariant(inventoryComplete === true, 'FAVORITE_SOURCE_INVENTORY_REQUIRED');
   invariant(/^[a-f0-9]{64}$/.test(sourceSnapshotDigest ?? ''), 'VERIFIED_SNAPSHOT_DIGEST_REQUIRED');
   invariant(
@@ -136,6 +164,7 @@ export function planFavoriteSources({
     insert,
     links,
     conflicts,
+    preserved: [...preservation.skipped, ...preservedMedia.skipped],
   };
   return {
     ...payload,
@@ -144,13 +173,34 @@ export function planFavoriteSources({
       sourcePartitions: insert.length,
       mediaLinks: links.length,
       conflicts: conflicts.length,
+      preserved: preservation.skipped.length + preservedMedia.skipped.length,
     },
   };
 }
 
-export async function applyFavoriteSources({ database, target, plan, maintenance, mediaPort }) {
+export async function applyFavoriteSources({
+  database,
+  target,
+  plan,
+  maintenance,
+  mediaPort,
+  options = {},
+}) {
+  assertMigrationOwnersAllowed(
+    [
+      ...plan.userIds,
+      ...plan.insert.flatMap((row) => [row.userId, row.sourceUserId]),
+      ...plan.links.map((row) => row.userId),
+    ],
+    options,
+  );
   await assertFixtureDatabase(database, target);
   invariant(maintenance?.writersStopped === true, 'MAINTENANCE_REQUIRED');
+  await assertMigrationMediaOwners(
+    database,
+    plan.links.map((row) => row.mediaId),
+    options,
+  );
   const { digest, summary: _summary, ...payload } = plan;
   invariant(
     fingerprint(payload) === digest && plan.conflicts.length === 0,

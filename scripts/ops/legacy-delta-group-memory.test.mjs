@@ -194,7 +194,11 @@ describe('actual group memory schema, EnvelopeCrypto and protected states', { sk
   let lab, helpers;
   const maintenance = { writersStopped: true, notificationsCaptured: true };
   before(async () => {
-    assert.equal(new URL(url).pathname, '/codex_migration_group_memory_1109');
+    assert.ok(
+      ['/codex_migration_group_memory_1109', '/codex_migration_preservation_1109'].includes(
+        new URL(url).pathname,
+      ),
+    );
     helpers = await import('./legacy-delta-lab.mjs');
     lab = await helpers.openLab(url);
     await initializeGroupMemoryFixture(lab.database, lab.target);
@@ -338,6 +342,18 @@ describe('actual group memory schema, EnvelopeCrypto and protected states', { sk
     await assert.rejects(g.apply(changed), /GROUP_MEMORY_PLAN_BLOCKED/u);
   });
   test('native target memory remains byte-identical and no billing/outbox/jobs are produced', async () => {
+    const effects = {};
+    for (const table of ['platform.outbox', 'billing.ledger_entries'])
+      effects[table] = Number(
+        (await lab.database.query(`SELECT count(*) AS n FROM ${table}`)).rows[0].n,
+      );
+    const pendingBefore = Number(
+      (
+        await lab.database.query(
+          'SELECT sum(pending_count) AS n FROM ai_runtime.group_memory_states',
+        )
+      ).rows[0].n,
+    );
     const f = await fixture(),
       id = randomUUID();
     const payload = validatePayload({
@@ -376,7 +392,7 @@ describe('actual group memory schema, EnvelopeCrypto and protected states', { sk
     for (const table of ['platform.outbox', 'billing.ledger_entries']) {
       assert.equal(
         Number((await lab.database.query(`SELECT count(*) AS n FROM ${table}`)).rows[0].n),
-        0,
+        effects[table],
       );
     }
     assert.equal(
@@ -387,7 +403,7 @@ describe('actual group memory schema, EnvelopeCrypto and protected states', { sk
           )
         ).rows[0].n,
       ),
-      0,
+      pendingBefore,
     );
   });
 });

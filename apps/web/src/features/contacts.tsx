@@ -29,6 +29,8 @@ import { CharacterStatus } from './character-status.js';
 import { ContactAvatarEditor } from './contact-avatar-editor.js';
 import { FamiliarityLine } from './growth.js';
 import { PersonaUpdateBadge } from './supplement.js';
+import { LegacyPersonaEntry } from './legacy-personas.js';
+import { OrganizationSyncNotice } from './contact-organization.js';
 import { RecentRow } from './timeline.js';
 import { RelationsRow } from './relations.js';
 import { useNewFriendsDot } from './new-friends.js';
@@ -231,11 +233,20 @@ export function ContactsPage() {
   const newFriendsDot = useNewFriendsDot();
   const stars = useStars();
   const [query, setQuery] = useState('');
+  const [tagFilter, setTagFilter] = useState('');
   const contactIds = state.contacts.map((contact) => contact.characterId);
   const names = stableNames(contactIds, useCharacterNames(contactIds));
   const label = (c: (typeof state.contacts)[number]) => c.remark || names[c.characterId] || '';
   const contacts = [...state.contacts]
     .filter((c) => !query.trim() || label(c).includes(query.trim()))
+    .filter(
+      (c) =>
+        !tagFilter ||
+        !stars.snapshot?.tags.some((tag) => tag.tagId === tagFilter) ||
+        stars.snapshot.tags
+          .find((tag) => tag.tagId === tagFilter)!
+          .characterIds.includes(c.characterId),
+    )
     .sort((a, b) => collator.compare(label(a), label(b)));
   const groups = new Map<string, typeof contacts>();
   for (const c of contacts) {
@@ -311,6 +322,14 @@ export function ContactsPage() {
             />
             <ComingSoonRow id="chatOnly" iconSize={40} chevron={false} />
             <MenuRow
+              to="/contacts/organization"
+              icon="wechat/tag"
+              tint="blue"
+              tile
+              label="标签"
+              chevron={false}
+            />
+            <MenuRow
               to="/contacts/groups"
               icon="wechat/chat_pair"
               tint="green"
@@ -328,6 +347,24 @@ export function ContactsPage() {
             <ComingSoonRow id="workContacts" iconSize={40} tile chevron={false} />
           </MenuGroup>
         </>
+      )}
+      <OrganizationSyncNotice />
+      {stars.ready && (stars.snapshot?.tags.length ?? 0) > 0 && (
+        <label className="organization-filter">
+          <span>按标签查看</span>
+          <select
+            aria-label="按标签查看"
+            value={stars.snapshot?.tags.some((tag) => tag.tagId === tagFilter) ? tagFilter : ''}
+            onChange={(event) => setTagFilter(event.target.value)}
+          >
+            <option value="">全部朋友</option>
+            {stars.snapshot!.tags.map((tag) => (
+              <option key={tag.tagId} value={tag.tagId}>
+                {tag.name}
+              </option>
+            ))}
+          </select>
+        </label>
       )}
       {sections.map(([letter, list]) => (
         <section key={letter} id={`letter-${letter === '☆' ? 'star' : letter}`}>
@@ -849,6 +886,7 @@ export function CharacterPage({
                 className={`star-toggle ${starred ? 'on' : ''}`}
                 aria-label={starred ? '取消星标' : '设为星标朋友'}
                 aria-pressed={starred}
+                disabled={!active || !stars.ready || stars.busy || !!stars.pendingOperation}
                 onClick={() => stars.toggle(characterId)}
               >
                 <OldIcon name={starred ? 'wechat/star_filled' : 'wechat/star'} size={22} />
@@ -874,6 +912,7 @@ export function CharacterPage({
           {error || profile.error}
         </p>
       )}
+      {!onboarding && <OrganizationSyncNotice />}
       {contact && !onboarding && (
         <MenuGroup>
           <MenuRow label="设置备注和头像" to={`/characters/${characterId}/remark`} />
@@ -893,6 +932,7 @@ export function CharacterPage({
       )}
       <MenuGroup>
         {!onboarding && active && <MenuRow to={`/characters/${characterId}/cards`} label="卡册" />}
+        {!onboarding && <LegacyPersonaEntry characterId={characterId} />}
         {/* U4：「简介」弹层 → 整页人设卡「TA 的人设」（引导页里不离开当前页，仍用弹层） */}
         {onboarding ? (
           <MenuRow
@@ -1028,6 +1068,7 @@ export function CharacterPage({
             },
             {
               label: starred ? '取消星标朋友' : '设为星标朋友',
+              disabled: !active || !stars.ready || stars.busy || !!stars.pendingOperation,
               onClick: () => stars.toggle(characterId),
             },
             ...(contact.conversationId
