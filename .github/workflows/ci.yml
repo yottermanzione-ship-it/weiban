@@ -110,6 +110,7 @@ jobs:
           pnpm exec playwright install --with-deps chromium
           pnpm web:e2e
           pnpm admin:e2e
+          pnpm exec playwright test --config apps/web/test/legacy-favorites.playwright.config.ts
 
       - name: 保存失败浏览器的截图与请求轨迹
         if: failure() && steps.browser_tests.outcome == 'failure'
