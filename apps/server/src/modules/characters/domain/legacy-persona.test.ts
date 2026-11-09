@@ -11,6 +11,26 @@ import {
 } from './legacy-persona.js';
 
 describe('旧专属人设结构兼容', () => {
+  it('旧基础卡的声音授权布尔标记保留，不能借同名字段夹带凭据或修改声音权限', () => {
+    expect(() =>
+      assertSafePersonaJson({
+        soulspec: { voice: { requires_authorization: true } },
+        voice_requires_authorization: 1,
+      }),
+    ).not.toThrow();
+    for (const value of [
+      { requires_authorization: 'synthetic-token' },
+      { voice_requires_authorization: '1' },
+      { authorization: 'synthetic-token' },
+      { access_token: 'synthetic-token' },
+    ])
+      expect(() => assertSafePersonaJson(value)).toThrow('LEGACY_PERSONA_UNSAFE_FIELD');
+    expect(
+      personaPatchReason({
+        raw_persona: { soulspec: { voice: { requires_authorization: false } } },
+      }),
+    ).toBe('restricted_identity_change');
+  });
   it('结构数值及中英文儿童线索只收紧，空年龄不冒充0岁', () => {
     expect(personaChildFeatures({ age: null, other: { age: '' } })).toBe(false);
     expect(personaChildFeatures({ age: false })).toBe(false);

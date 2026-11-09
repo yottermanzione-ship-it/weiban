@@ -62,6 +62,13 @@ export const LegacyPersonaImport = z.strictObject({
     classificationReviewed: z.boolean(),
   }),
   reviewedClassification: CharacterClassificationInput.nullable(),
+  /** Trusted migration-only repair of the old String(object) artifact; never an HTTP input. */
+  importedSupplementPlaceholder: z
+    .strictObject({
+      ciphertextSha256: HEX,
+      updatedAt: z.iso.datetime(),
+    })
+    .optional(),
 });
 export type LegacyPersonaImport = z.infer<typeof LegacyPersonaImport>;
 export const isObject = (value: unknown): value is JsonObject =>
@@ -118,9 +125,18 @@ export function assertSafePersonaJson(value: unknown): void {
     }
     if (isObject(item))
       for (const [key, child] of Object.entries(item)) {
+        // Old rowToCard includes a voice-consent BOOLEAN, not a credential.
+        // Keep the authorization requirement; strings and credential fields still fail closed.
+        const consentFlag =
+          (key === 'requires_authorization' && typeof child === 'boolean') ||
+          (key === 'voice_requires_authorization' &&
+            (typeof child === 'boolean' || child === 0 || child === 1));
         if (
           UNSAFE.has(key) ||
-          /(?:password|passwd|secret|access.?token|api.?key|authorization|credential)/iu.test(key)
+          (!consentFlag &&
+            /(?:password|passwd|secret|access.?token|api.?key|authorization|credential)/iu.test(
+              key,
+            ))
         )
           throw new Error('LEGACY_PERSONA_UNSAFE_FIELD');
         visit(child, depth + 1);

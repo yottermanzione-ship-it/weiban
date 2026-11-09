@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { INestApplication } from '@nestjs/common';
@@ -451,6 +451,116 @@ describeDb('旧专属人设：真实HTTP/PG、个人结构、公共版本与rese
         )
       ).rows[0]!.text_ciphertext,
     ).toEqual(cipher);
+  });
+  async function importedPlaceholder(
+    f: Awaited<ReturnType<typeof fixture>>,
+    text = '[object Object]',
+    at = before,
+  ) {
+    const cipher = await crypto.seal(
+      f.owner.id,
+      `characters:supplement:${f.owner.id}:${f.characterId}`,
+      text,
+    );
+    await db.query(
+      "INSERT INTO characters.user_supplements(user_id,character_id,text_ciphertext,conflicts,updated_at) VALUES($1,$2,$3,'[]',$4)",
+      [f.owner.id, f.characterId, cipher, at],
+    );
+    f.input.expectedTargetDigest = (await service.targetSnapshot(f.owner.id, f.characterId)).digest;
+    f.input.importedSupplementPlaceholder = {
+      ciphertextSha256: createHash('sha256').update(cipher).digest('hex'),
+      updatedAt: at,
+    };
+    return cipher;
+  }
+  it('已核实旧占位记录与完整人设在同一事务替换，重试不删除后来的真正新设定', async () => {
+    const f = await fixture();
+    await importedPlaceholder(f);
+    expect((await service.importBatch(f.owner.id, [f.input])).active).toBe(1);
+    expect(
+      (await db.query('SELECT 1 FROM characters.user_supplements WHERE user_id=$1', [f.owner.id]))
+        .rows,
+    ).toHaveLength(0);
+    expect(JSON.stringify(await f.runtime())).toContain('PRIVATE_SYNTHETIC_PERSONALITY');
+    const later = await crypto.seal(
+      f.owner.id,
+      `characters:supplement:${f.owner.id}:${f.characterId}`,
+      'REAL_NEW_SETTING',
+    );
+    await db.query(
+      "INSERT INTO characters.user_supplements(user_id,character_id,text_ciphertext,conflicts,updated_at) VALUES($1,$2,$3,'[]',$4)",
+      [f.owner.id, f.characterId, later, now],
+    );
+    expect((await service.importBatch(f.owner.id, [f.input])).existing).toBe(1);
+    expect(
+      (
+        await db.query('SELECT text_ciphertext FROM characters.user_supplements WHERE user_id=$1', [
+          f.owner.id,
+        ])
+      ).rows[0]!.text_ciphertext,
+    ).toEqual(later);
+  });
+  it('没有修复证明、较新的记录、真正文字和错误摘要都不能删除新版设定', async () => {
+    for (const mode of ['no-proof', 'new-date', 'real-text', 'wrong-hash'] as const) {
+      const f = await fixture();
+      const original = await importedPlaceholder(
+        f,
+        mode === 'real-text' ? 'ACTUAL_OWNER_TEXT' : '[object Object]',
+        mode === 'new-date' ? now : before,
+      );
+      if (mode === 'no-proof') delete f.input.importedSupplementPlaceholder;
+      if (mode === 'wrong-hash')
+        f.input.importedSupplementPlaceholder!.ciphertextSha256 = '0'.repeat(64);
+      if (mode === 'no-proof')
+        expect((await service.importBatch(f.owner.id, [f.input])).blocked).toBe(1);
+      else
+        await expect(service.importBatch(f.owner.id, [f.input])).rejects.toMatchObject({
+          code: 'conflict',
+        });
+      expect(
+        (
+          await db.query(
+            'SELECT text_ciphertext FROM characters.user_supplements WHERE user_id=$1',
+            [f.owner.id],
+          )
+        ).rows[0]!.text_ciphertext,
+      ).toEqual(original);
+    }
+  });
+  it('不支持的旧来源保留占位原件，后续批次失败也撤销先前的替换', async () => {
+    const blocked = await fixture({ raw_persona: { unknown_field: 'SYNTHETIC' } });
+    const kept = await importedPlaceholder(blocked);
+    expect((await service.importBatch(blocked.owner.id, [blocked.input])).blocked).toBe(1);
+    expect(
+      (
+        await db.query('SELECT text_ciphertext FROM characters.user_supplements WHERE user_id=$1', [
+          blocked.owner.id,
+        ])
+      ).rows[0]!.text_ciphertext,
+    ).toEqual(kept);
+    const f = await fixture(),
+      g = await fixture();
+    const original = await importedPlaceholder(f);
+    await expect(
+      service.importBatch(f.owner.id, [
+        f.input,
+        { ...g.input, sourceAccountId: f.owner.id, expectedTargetDigest: '0'.repeat(64) },
+      ]),
+    ).rejects.toMatchObject({ code: 'conflict' });
+    expect(
+      (
+        await db.query('SELECT text_ciphertext FROM characters.user_supplements WHERE user_id=$1', [
+          f.owner.id,
+        ])
+      ).rows[0]!.text_ciphertext,
+    ).toEqual(original);
+    expect(
+      (
+        await db.query('SELECT 1 FROM characters.legacy_persona_overrides WHERE user_id=$1', [
+          f.owner.id,
+        ])
+      ).rows,
+    ).toHaveLength(0);
   });
   it('统一保留账号在服务入口就拒绝，额外合成排除不能导致任何新增或覆盖', async () => {
     const f = await fixture(),

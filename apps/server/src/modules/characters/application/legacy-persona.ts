@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import {
   LegacyPersonaDetail,
@@ -238,6 +239,47 @@ export class LegacyPersonaService {
     }
     return { reason, patch };
   }
+  private async reviewedPlaceholder(input: LegacyPersonaImport, userId: string, tx: DbTx) {
+    const proof = input.importedSupplementPlaceholder;
+    if (!proof) return false;
+    const row = (
+      await tx.query<{
+        text_ciphertext: Buffer;
+        updated_at: Date;
+        conflicts: unknown;
+        plaza_source: unknown;
+      }>(
+        'SELECT text_ciphertext,updated_at,conflicts,plaza_source FROM characters.user_supplements WHERE user_id=$1 AND character_id=$2 FOR UPDATE',
+        [userId, input.characterId],
+      )
+    ).rows[0];
+    const conflict = () => new AppError('conflict', '旧导入占位记录已变化，不能替换');
+    if (
+      !row ||
+      row.updated_at.getTime() > Date.parse('2026-10-24T12:02:47.053609Z') ||
+      row.updated_at.toISOString() !== new Date(proof.updatedAt).toISOString() ||
+      createHash('sha256').update(row.text_ciphertext).digest('hex') !== proof.ciphertextSha256 ||
+      !Array.isArray(row.conflicts) ||
+      row.conflicts.length !== 0 ||
+      row.plaza_source !== null
+    )
+      throw conflict();
+    let plaintext: Buffer | undefined;
+    try {
+      plaintext = await this.crypto.open(
+        userId,
+        `characters:supplement:${userId}:${input.characterId}`,
+        row.text_ciphertext,
+        tx,
+      );
+      if (!plaintext.equals(Buffer.from('[object Object]', 'utf8'))) throw conflict();
+    } catch {
+      throw conflict();
+    } finally {
+      plaintext?.fill(0);
+    }
+    return true;
+  }
   /** No public import API. The trusted adapter still must validate target + stopped writers. */
   async importBatch(
     userId: string,
@@ -294,7 +336,12 @@ export class LegacyPersonaService {
         if (current.digest !== input.expectedTargetDigest || current.stored)
           throw new AppError('conflict', '本人设定已变化，不能覆盖');
         const publicRows = await this.contextRows(input.characterId, tx);
-        const inspected = this.inspect(input, current.target, current.supplement);
+        const replacePlaceholder = await this.reviewedPlaceholder(input, userId, tx);
+        const inspected = this.inspect(
+          input,
+          current.target,
+          current.supplement && !replacePlaceholder,
+        );
         let reason = inspected.reason,
           child = false;
         if (input.source.state === 'customized' && !reason) {
@@ -315,6 +362,16 @@ export class LegacyPersonaService {
           }
         }
         const state = input.source.state === 'reset' ? 'reset' : reason ? 'blocked' : 'active';
+        // Only after the full source is accepted. A blocked source retains its original target.
+        // The row remains locked until both this removal and the new personal override commit.
+        if (replacePlaceholder && state !== 'blocked') {
+          const removed = await tx.query(
+            'DELETE FROM characters.user_supplements WHERE user_id=$1 AND character_id=$2 RETURNING character_id',
+            [userId, input.characterId],
+          );
+          if (removed.rowCount !== 1)
+            throw new AppError('conflict', '旧导入占位记录已变化，不能替换');
+        }
         const now = this.clock.now(),
           version = 1;
         const ciphertext =
