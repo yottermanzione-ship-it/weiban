@@ -46,6 +46,7 @@ class ShellActivity : ComponentActivity() {
     private val files = ShellFilePicker(this) { currentUrl() }
     private val downloads = ShellDownloads(this) { currentUrl() }
     private val notices = ShellNoticeBridge(this) { currentUrl() }
+    private val legacyFavorites = ShellLegacyFavoritesBridge(this) { currentUrl() }
     private lateinit var root: FrameLayout
     private val device by lazy { ShellDeviceBridge(this, { currentUrl() }, { dark, surface -> applySystemTheme(dark, surface) }) }
     private var lastPage = ShellPolicy.START_URL
@@ -125,6 +126,7 @@ class ShellActivity : ComponentActivity() {
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false)
         downloads.attach(webView)
         notices.attach(webView)
+        legacyFavorites.attach(webView)
         device.attach(webView)
         webView.webViewClient = navigationClient()
         webView.webChromeClient = chromeClient()
@@ -153,6 +155,7 @@ class ShellActivity : ComponentActivity() {
                 files.cancel()
                 downloads.cancel()
                 device.reset()
+                legacyFavorites.reset()
                 if (!ShellPolicy.trusted(url)) {
                     view.stopLoading()
                     return
@@ -302,6 +305,7 @@ class ShellActivity : ComponentActivity() {
 
     override fun onDestroy() {
         notices.close()
+        legacyFavorites.close()
         microphone.cancel()
         files.cancel()
         downloads.close()

@@ -36,6 +36,7 @@ export * from './http/calls.js';
 export * from './http/growth-cards.js';
 export * from './http/pets.js';
 export * from './http/library.js';
+export * from './http/legacy-favorites.js';
 export * from './http/importer.js';
 export * from './http/plaza.js';
 export * from './http/role-requests.js';

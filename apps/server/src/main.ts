@@ -47,6 +47,15 @@ export function configureHttpApp(app: INestApplication, config: AppConfig): void
       qrJson(req, res, next);
     },
   );
+  // The native migration bridge supplies a bounded page of owned legacy favorites.
+  // Keep this parser path-scoped; all other requests retain their current size limit.
+  const legacyFavoritesJson = json({ limit: '512kb' });
+  app.use(
+    '/api/v1/library/legacy-favorites/import',
+    function legacyFavoriteJson(req: Request, res: Response, next: NextFunction) {
+      legacyFavoritesJson(req, res, next);
+    },
+  );
   const express = app.getHttpAdapter().getInstance() as {
     disable(name: string): void;
     set(name: string, value: unknown): void;

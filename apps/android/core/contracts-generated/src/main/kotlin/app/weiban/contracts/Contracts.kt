@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 7.8. Regenerate: pnpm android:generate
+// Contract 7.9. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "7.8"
+const val CONTRACT_VERSION: String = "7.9"
 
 @Serializable
 data class AccountAlias(
@@ -6580,6 +6580,102 @@ data class LedgerEntry(
 typealias LedgerEntryType = String
 
 @Serializable
+data class LegacyFavorite(
+    @SerialName("favoriteId") val `favoriteId`: Id,
+    @SerialName("accountKey") val `accountKey`: LegacyFavoriteAccountKey,
+    @SerialName("itemKey") val `itemKey`: LegacyFavoriteItemKey,
+    @SerialName("chatTitle") val `chatTitle`: String,
+    @SerialName("savedAt") val `savedAt`: Timestamp,
+    @SerialName("importedAt") val `importedAt`: Timestamp,
+    @SerialName("message") val `message`: LegacyFavoriteMessage,
+    @SerialName("media") val `media`: LegacyFavoriteMedia?,
+    @SerialName("mediaStatus") val `mediaStatus`: String,
+    @SerialName("mediaIssue") val `mediaIssue`: LegacyFavoriteMediaIssue?,
+)
+
+typealias LegacyFavoriteAccountKey = String
+
+@Serializable
+data class LegacyFavoriteImportItem(
+    @SerialName("accountKey") val `accountKey`: LegacyFavoriteAccountKey,
+    @SerialName("itemKey") val `itemKey`: LegacyFavoriteItemKey,
+    @SerialName("favorite") val `favorite`: LegacyFavoriteSnapshot,
+    @SerialName("mediaId") val `mediaId`: Id? = null,
+    @SerialName("mediaIssue") val `mediaIssue`: LegacyFavoriteMediaIssue? = null,
+)
+
+@Serializable
+data class LegacyFavoriteImportRequest(
+    @SerialName("items") val `items`: List<LegacyFavoriteImportItem>,
+)
+
+typealias LegacyFavoriteItemKey = String
+
+typealias LegacyFavoriteMediaIssue = String
+
+@Serializable
+data class LegacyFavoriteMessageSnapshot(
+    @SerialName("author") val `author`: String? = null,
+    @SerialName("avatar") val `avatar`: String? = null,
+    @SerialName("content") val `content`: String? = null,
+    @SerialName("isMine") val `isMine`: Boolean? = null,
+    @SerialName("type") val `type`: String? = null,
+    @SerialName("duration") val `duration`: Double? = null,
+    @SerialName("imageUrl") val `imageUrl`: String? = null,
+    @SerialName("isLocal") val `isLocal`: Boolean? = null,
+    @SerialName("mentionMe") val `mentionMe`: Boolean? = null,
+    @SerialName("quotedAuthor") val `quotedAuthor`: String? = null,
+    @SerialName("quotedContent") val `quotedContent`: String? = null,
+    @SerialName("timestamp") val `timestamp`: LegacyFavoriteMessageSnapshotTimestamp? = null,
+    @SerialName("audioPath") val `audioPath`: String? = null,
+    @SerialName("serverJobId") val `serverJobId`: LegacyFavoriteMessageSnapshotServerJobId? = null,
+    @SerialName("serverSeq") val `serverSeq`: LegacyFavoriteMessageSnapshotServerSeq? = null,
+    @SerialName("clientMessageId") val `clientMessageId`: String? = null,
+    @SerialName("stickerId") val `stickerId`: LegacyFavoriteMessageSnapshotStickerId? = null,
+    @SerialName("sendState") val `sendState`: String? = null,
+)
+
+@Serializable
+data class LegacyFavoriteSnapshot(
+    @SerialName("chatKey") val `chatKey`: String,
+    @SerialName("chatTitle") val `chatTitle`: String,
+    @SerialName("savedAt") val `savedAt`: Long,
+    @SerialName("message") val `message`: LegacyFavoriteMessageSnapshot,
+)
+
+@Serializable
+data class LegacyFavoritesEndpointsImportResponse(
+    @SerialName("imported") val `imported`: Long,
+    @SerialName("existing") val `existing`: Long,
+    @SerialName("removed") val `removed`: Long,
+    @SerialName("items") val `items`: List<LegacyFavoritesEndpointsImportResponseItemsItem>,
+)
+
+@Serializable
+data class LegacyFavoritesEndpointsListQuery(
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
+@Serializable
+data class LegacyFavoritesEndpointsListResponse(
+    @SerialName("items") val `items`: List<LegacyFavorite>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class LegacyFavoritesEndpointsRemoveParams(
+    @SerialName("favoriteId") val `favoriteId`: Id,
+)
+
+@Serializable
+data class LegacyFavoritesEndpointsSourceResponse(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("legacyAccountKeys") val `legacyAccountKeys`: List<LegacyFavoriteAccountKey>,
+    @SerialName("available") val `available`: Boolean,
+)
+
+@Serializable
 data class Letter(
     @SerialName("letterId") val `letterId`: Id,
     @SerialName("characterId") val `characterId`: Id,
@@ -12924,6 +13020,8 @@ typealias SharedSchema3 = JsonElement
 
 typealias SharedSchema4 = JsonElement
 
+typealias SharedSchema5 = JsonElement
+
 @Serializable
 data class AchievementProgress(
     @SerialName("current") val `current`: Long,
@@ -14630,6 +14728,41 @@ data class LeaderboardSnapshotStatusUnmatchedItem(
     @SerialName("displayName") val `displayName`: String,
     @SerialName("arenaModelName") val `arenaModelName`: String?,
     @SerialName("suggestions") val `suggestions`: List<LeaderboardSnapshotStatusUnmatchedItemSuggestionsItem>? = null,
+)
+
+@Serializable
+data class LegacyFavoriteMessage(
+    @SerialName("author") val `author`: String,
+    @SerialName("type") val `type`: String,
+    @SerialName("content") val `content`: String,
+    @SerialName("isMine") val `isMine`: Boolean,
+    @SerialName("timestamp") val `timestamp`: String?,
+    @SerialName("duration") val `duration`: Double?,
+    @SerialName("quotedAuthor") val `quotedAuthor`: String?,
+    @SerialName("quotedContent") val `quotedContent`: String?,
+)
+
+@Serializable
+data class LegacyFavoriteMedia(
+    @SerialName("kind") val `kind`: String,
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("durationMs") val `durationMs`: Long?,
+)
+
+typealias LegacyFavoriteMessageSnapshotTimestamp = JsonElement
+
+typealias LegacyFavoriteMessageSnapshotServerJobId = JsonElement
+
+typealias LegacyFavoriteMessageSnapshotServerSeq = JsonElement
+
+typealias LegacyFavoriteMessageSnapshotStickerId = JsonElement
+
+@Serializable
+data class LegacyFavoritesEndpointsImportResponseItemsItem(
+    @SerialName("accountKey") val `accountKey`: LegacyFavoriteAccountKey,
+    @SerialName("itemKey") val `itemKey`: LegacyFavoriteItemKey,
+    @SerialName("status") val `status`: String,
+    @SerialName("mediaStatus") val `mediaStatus`: String,
 )
 
 @Serializable
