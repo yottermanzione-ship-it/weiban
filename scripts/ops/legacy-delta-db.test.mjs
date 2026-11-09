@@ -77,12 +77,7 @@ test('完整当前表结构的序号字段清单与迁移映射一致', async ()
       'channels.qq_sessions.reply_seq',
     ])
     .sort();
-  assert.deepEqual(
-    rows
-      .map((row) => row.tbl + '.' + row.col)
-      .sort(),
-    expected,
-  );
+  assert.deepEqual(rows.map((row) => row.tbl + '.' + row.col).sort(), expected);
 });
 
 test('真实数据库交错合并、密文解密、隐藏/清空、引用和重跑幂等', async () => {
