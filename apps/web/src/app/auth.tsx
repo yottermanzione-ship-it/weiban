@@ -11,6 +11,10 @@ import { IdentityEndpoints, type AuthResponse } from '@weiban/contracts';
 import { pausePush } from '../notifications/client.js';
 import { api, localStore } from '../data/client.js';
 import { currentDevice } from '../data/device-info.js';
+import {
+  cancelLegacyFavoritesTransfer,
+  startLegacyFavoritesTransfer,
+} from '../data/legacy-favorites-transfer.js';
 interface AuthState {
   session: AuthResponse | null;
   loading: boolean;
@@ -87,6 +91,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const auth = latest.current;
       latest.current = null;
       if (auth)
+        cancelLegacyFavoritesTransfer({
+          userId: auth.user.userId,
+          sessionId: auth.session.sessionId,
+        });
+      if (auth)
         void pausePush({ userId: auth.user.userId, sessionId: auth.session.sessionId }).catch(
           () => {},
         );
@@ -100,6 +109,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
   const userId = session?.user.userId;
   const sessionId = session?.session.sessionId;
+  const sessionToken = session?.session.token;
+  useEffect(() => {
+    const auth = latest.current;
+    if (
+      !auth ||
+      auth.user.userId !== userId ||
+      auth.session.sessionId !== sessionId ||
+      auth.session.token !== sessionToken
+    )
+      return;
+    return startLegacyFavoritesTransfer(auth);
+  }, [userId, sessionId, sessionToken]);
   useEffect(() => {
     if (!userId || !sessionId) return;
     let active = true;
@@ -139,6 +160,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         accept: async (auth) => {
           const previous = latest.current;
           if (previous)
+            cancelLegacyFavoritesTransfer({
+              userId: previous.user.userId,
+              sessionId: previous.session.sessionId,
+            });
+          if (previous)
             await pausePush({
               userId: previous.user.userId,
               sessionId: previous.session.sessionId,
@@ -160,6 +186,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         },
         logout: async () => {
           const captured = latest.current;
+          if (captured)
+            cancelLegacyFavoritesTransfer({
+              userId: captured.user.userId,
+              sessionId: captured.session.sessionId,
+            });
           const paused = captured
             ? pausePush({
                 userId: captured.user.userId,

@@ -32,6 +32,7 @@ export function legacyCoreText(card: LegacyCharacterCard): string {
     line('情绪基调', card.soulEmotionalTone),
     line('关系模式', card.soulRelationshipMode),
     line('关系设定', card.relationshipMode),
+    card.personalNotes,
   ]);
 }
 
@@ -48,6 +49,7 @@ export function legacySpeechText(card: LegacyCharacterCard): string {
 /** 群聊/朋友圈等较小的提示里需要的人设与说话风格（旧字段原文，截断到 max）。 */
 export function legacyPersonaSpeechText(card: LegacyCharacterCard, max = 6000): string {
   return [
+    card.personalNotes,
     `核心人设：${card.corePersona}`,
     card.soulPersonality ? `性格：${card.soulPersonality}` : '',
     card.soulEmotionalTone ? `情绪基调：${card.soulEmotionalTone}` : '',

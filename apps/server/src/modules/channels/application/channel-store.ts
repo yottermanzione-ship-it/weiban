@@ -8,7 +8,7 @@
  * - 解绑保留 tombstone 行，但清空凭据、游标与账号字段，并丢弃该绑定的排队消息。
  */
 import { Inject, Injectable } from '@nestjs/common';
-import type { ChannelId, ChannelBindingStatus } from '@weiban/contracts';
+import { WeiboSlotId, type ChannelId, type ChannelBindingStatus } from '@weiban/contracts';
 import { DATABASE, AppError, newId, type Database, type DbTx } from '../../../platform/index.js';
 import type { InboundOutcomeValue, OutboundStatusValue } from '../infra/db/schema.js';
 
@@ -16,6 +16,9 @@ export interface BindingRow {
   id: string;
   user_id: string;
   channel: ChannelId;
+  slot: WeiboSlotId;
+  reply_conversation_id: string | null;
+  reply_after_seq: string | null;
   status: ChannelBindingStatus;
   character_id: string | null;
   character_name: string | null;
@@ -63,7 +66,7 @@ export interface OutboundRow {
   last_error: string | null;
 }
 
-const BINDING_COLUMNS = `id,user_id,channel,status,character_id,character_name,account_id,account_name,
+const BINDING_COLUMNS = `id,user_id,channel,slot,reply_conversation_id,reply_after_seq,status,character_id,character_name,account_id,account_name,
   bot_id,base_url,cursor,bot_token_sealed,weibo_app_id_sealed,weibo_app_secret_sealed,
   context_token_sealed,generation,bound_at,last_event_at,last_poll_at,last_error`;
 
@@ -91,7 +94,80 @@ export class ChannelStore {
       `SELECT ${BINDING_COLUMNS} FROM channels.bindings WHERE user_id=$1 AND channel=$2`,
       [userId, channel],
     );
+    if (channel === 'weibo' && rows.length > 1)
+      throw new AppError('conflict', '此账号有多个微博槽位，请使用微博多槽位管理');
     return rows[0] ?? null;
+  }
+
+  async lockWeiboUser(tx: DbTx, userId: string): Promise<void> {
+    await tx.query("SELECT pg_advisory_xact_lock(hashtextextended('weibo-user:' || $1,0))", [
+      userId,
+    ]);
+  }
+
+  async singleWeiboBinding(tx: DbTx, userId: string): Promise<BindingRow | null> {
+    const result = await tx.query<BindingRow>(
+      `SELECT ${BINDING_COLUMNS} FROM channels.bindings WHERE user_id=$1 AND channel='weibo' FOR UPDATE`,
+      [userId],
+    );
+    if (result.rows.length > 1)
+      throw new AppError('conflict', '此账号有多个微博槽位，请使用微博多槽位管理');
+    return result.rows[0] ?? null;
+  }
+
+  async weiboBindingAt(userId: string, slot: WeiboSlotId, tx?: DbTx): Promise<BindingRow | null> {
+    const result = await (tx ?? this.db).query<BindingRow>(
+      `SELECT ${BINDING_COLUMNS} FROM channels.bindings WHERE user_id=$1 AND channel='weibo' AND slot=$2${tx ? ' FOR UPDATE' : ''}`,
+      [userId, slot],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  async ownWeiboBinding(userId: string, bindingId: string, tx?: DbTx): Promise<BindingRow | null> {
+    const result = await (tx ?? this.db).query<BindingRow>(
+      `SELECT ${BINDING_COLUMNS} FROM channels.bindings WHERE id=$1 AND user_id=$2 AND channel='weibo'${tx ? ' FOR UPDATE' : ''}`,
+      [bindingId, userId],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  private async assertWeiboCharacter(
+    tx: DbTx,
+    userId: string,
+    characterId: string,
+    bindingId: string,
+  ): Promise<void> {
+    const result = await tx.query(
+      `SELECT id FROM channels.bindings WHERE user_id=$1 AND channel='weibo' AND status='active' AND character_id=$2 AND id<>$3`,
+      [userId, characterId, bindingId],
+    );
+    if (result.rows.length)
+      throw new AppError('conflict', '这个角色已连接其他微博槽位，请选择不同好友');
+  }
+
+  async prepareWeiboBinding(
+    tx: DbTx,
+    userId: string,
+    slot: WeiboSlotId,
+    characterId: string,
+    accountId: string,
+    legacy = false,
+  ): Promise<BindingRow | null> {
+    await this.lockWeiboUser(tx, userId);
+    if (legacy) await this.singleWeiboBinding(tx, userId);
+    const existing = await this.weiboBindingAt(userId, slot, tx);
+    await this.assertWeiboCharacter(tx, userId, characterId, existing?.id ?? newId());
+    await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [accountId]);
+    const occupied = await tx.query<{ id: string }>(
+      "SELECT id FROM channels.bindings WHERE channel='weibo' AND account_id=$1 AND status='active' AND ($2::uuid IS NULL OR id<>$2)",
+      [accountId, existing?.id ?? null],
+    );
+    if (occupied.rows.length)
+      throw new AppError(
+        'conflict',
+        '这份微博助手凭据已连接其他账号或槽位，不会自动解除或挪用原连接',
+      );
+    return existing;
   }
 
   async bindingById(id: string): Promise<BindingRow | null> {
@@ -210,6 +286,14 @@ export class ChannelStore {
     return rows;
   }
 
+  async activeWeiboPage(afterId: string | null, limit = 200): Promise<BindingRow[]> {
+    const result = await this.db.query<BindingRow>(
+      `SELECT ${BINDING_COLUMNS} FROM channels.bindings WHERE channel='weibo' AND status='active' AND ($1::uuid IS NULL OR id>$1) ORDER BY id LIMIT $2`,
+      [afterId, limit],
+    );
+    return result.rows;
+  }
+
   /**
    * 保存（或重建）绑定：同一个对面账号先解除别人的旧绑定，再 upsert 自己这一行。
    * 行 id 由调用方给（密文的 AAD 与 id 绑定）：重建时必须复用已有的 id，否则旧密文解不开。
@@ -220,6 +304,8 @@ export class ChannelStore {
       id: string;
       userId: string;
       channel: ChannelId;
+      slot?: WeiboSlotId;
+      replyBoundary?: { conversationId: string; afterSeq: number };
       characterId: string;
       characterName: string;
       accountId: string;
@@ -233,18 +319,20 @@ export class ChannelStore {
     },
   ): Promise<BindingRow> {
     const id = input.id;
+    const slot = WeiboSlotId.parse(input.slot ?? 'main');
+    if (input.channel !== 'weibo' && slot !== 'main')
+      throw new AppError('bad_request', '此渠道只支持单绑定');
     // 相同助手凭据不能悄悄夺走另一站内账号的绑定；跨库迁移另行授权处理。
     if (input.channel === 'weibo') {
-      await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [input.accountId]);
-      const occupied = await tx.query<{ id: string }>(
-        "SELECT id FROM channels.bindings WHERE channel='weibo' AND account_id=$1 AND status='active' AND user_id<>$2",
-        [input.accountId, input.userId],
+      const existing = await this.prepareWeiboBinding(
+        tx,
+        input.userId,
+        slot,
+        input.characterId,
+        input.accountId,
       );
-      if (occupied.rows.length)
-        throw new AppError(
-          'conflict',
-          '这份微博助手凭据已有绑定，请先核对，不会自动解除其他账号的连接',
-        );
+      if (existing && existing.id !== id)
+        throw new AppError('conflict', '微博槽位已变化，请刷新后重试');
     }
     await tx.query(
       `UPDATE channels.bindings
@@ -259,9 +347,9 @@ export class ChannelStore {
       `INSERT INTO channels.bindings
          (id,user_id,channel,status,character_id,character_name,account_id,account_name,bot_id,base_url,
           cursor,generation,bot_token_sealed,weibo_app_id_sealed,weibo_app_secret_sealed,bound_at,
-          unbound_at,last_poll_at,last_error,created_at,updated_at)
-       VALUES($1,$2,$3,'active',$4,$5,$6,$7,$8,$9,'',1,$10,$11,$12,$13,NULL,NULL,NULL,$13,$13)
-       ON CONFLICT (user_id,channel) DO UPDATE SET
+          unbound_at,last_poll_at,last_error,created_at,updated_at,slot,reply_conversation_id,reply_after_seq)
+       VALUES($1,$2,$3,'active',$4,$5,$6,$7,$8,$9,'',1,$10,$11,$12,$13,NULL,NULL,NULL,$13,$13,$14,$15,$16)
+       ON CONFLICT (user_id,channel,slot) DO UPDATE SET
          status='active', character_id=excluded.character_id, character_name=excluded.character_name,
          account_id=excluded.account_id, account_name=excluded.account_name, bot_id=excluded.bot_id,
          base_url=excluded.base_url, cursor='',
@@ -269,6 +357,7 @@ export class ChannelStore {
          bot_token_sealed=excluded.bot_token_sealed,
          weibo_app_id_sealed=excluded.weibo_app_id_sealed,
          weibo_app_secret_sealed=excluded.weibo_app_secret_sealed,
+         reply_conversation_id=excluded.reply_conversation_id,reply_after_seq=excluded.reply_after_seq,
          context_token_sealed=NULL, bound_at=excluded.bound_at, unbound_at=NULL,
          last_poll_at=NULL, last_error=NULL, updated_at=excluded.updated_at
        RETURNING ${BINDING_COLUMNS}`,
@@ -286,6 +375,9 @@ export class ChannelStore {
         input.weiboAppIdSealed,
         input.weiboAppSecretSealed,
         input.now,
+        slot,
+        input.replyBoundary?.conversationId ?? null,
+        input.replyBoundary?.afterSeq ?? null,
       ],
     );
     await tx.query(
@@ -311,8 +403,12 @@ export class ChannelStore {
     return result.rows[0]?.context_token_sealed ?? null;
   }
 
-  async activeBindingsForCharacter(userId: string, characterId: string): Promise<BindingRow[]> {
-    const result = await this.db.query<BindingRow>(
+  async activeBindingsForCharacter(
+    userId: string,
+    characterId: string,
+    tx?: DbTx,
+  ): Promise<BindingRow[]> {
+    const result = await (tx ?? this.db).query<BindingRow>(
       `SELECT ${BINDING_COLUMNS} FROM channels.bindings WHERE user_id=$1 AND character_id=$2 AND status='active'`,
       [userId, characterId],
     );
@@ -333,6 +429,49 @@ export class ChannelStore {
     return result.rows[0]?.current === true;
   }
 
+  /** 与改角色/重绑共用行锁；先锁本模块，再让聊天端口在同一事务写消息。 */
+  async withCurrentWeiboBinding<T>(
+    binding: BindingRow,
+    work: (tx: DbTx) => Promise<T>,
+  ): Promise<T | null> {
+    return this.db.transaction(async (tx) => {
+      if (!(await this.lockCurrentWeiboBinding(tx, binding))) return null;
+      return work(tx);
+    });
+  }
+
+  async lockCurrentWeiboBinding(tx: DbTx, binding: BindingRow): Promise<boolean> {
+    const { rows } = await tx.query(
+      `SELECT id FROM channels.bindings WHERE id=$1 AND user_id=$2 AND channel='weibo'
+       AND status='active' AND generation=$3 AND character_id=$4 FOR UPDATE`,
+      [binding.id, binding.user_id, binding.generation, binding.character_id],
+    );
+    return rows.length === 1;
+  }
+
+  /** 仅把已解密文字同步交给本地 WebSocket 缓冲，不在持锁期间等待外部响应。 */
+  async handoffWeiboOutbound(
+    binding: BindingRow,
+    outboundId: string,
+    send: () => Promise<boolean>,
+    now: Date,
+  ): Promise<boolean | null> {
+    return this.withCurrentWeiboBinding(binding, async (tx) => {
+      const { rows } = await tx.query(
+        "SELECT id FROM channels.outbound_messages WHERE id=$1 AND binding_id=$2 AND status='sending' FOR UPDATE",
+        [outboundId, binding.id],
+      );
+      if (!rows.length) return null;
+      const sent = await send();
+      if (sent)
+        await tx.query(
+          "UPDATE channels.outbound_messages SET status='sent',sent_at=$2,last_error=NULL,updated_at=$2 WHERE id=$1 AND status='sending'",
+          [outboundId, now],
+        );
+      return sent;
+    });
+  }
+
   async setCharacter(
     tx: DbTx,
     userId: string,
@@ -340,7 +479,36 @@ export class ChannelStore {
     characterId: string,
     characterName: string,
     now: Date,
+    bindingId?: string,
+    replyBoundary?: { conversationId: string; afterSeq: number },
   ): Promise<void> {
+    if (channel === 'weibo') {
+      await this.lockWeiboUser(tx, userId);
+      const binding = bindingId
+        ? await this.ownWeiboBinding(userId, bindingId, tx)
+        : await this.singleWeiboBinding(tx, userId);
+      if (!binding) throw new AppError('not_found', '没有找到这个微博绑定');
+      if (binding.status !== 'active') throw new AppError('conflict', '此微博槽位尚未连接');
+      await this.assertWeiboCharacter(tx, userId, characterId, binding.id);
+      if (binding.character_id === characterId) return;
+      await tx.query(
+        "UPDATE channels.bindings SET character_id=$3,character_name=$4,generation=generation+1,updated_at=$5,reply_conversation_id=$6,reply_after_seq=$7,last_error=NULL WHERE id=$1 AND user_id=$2 AND channel='weibo'",
+        [
+          binding.id,
+          userId,
+          characterId,
+          characterName,
+          now,
+          replyBoundary?.conversationId ?? null,
+          replyBoundary?.afterSeq ?? null,
+        ],
+      );
+      await tx.query(
+        "UPDATE channels.outbound_messages SET status='skipped',last_error='出口角色已更换',updated_at=$2 WHERE binding_id=$1 AND status IN ('pending','retry','sending')",
+        [binding.id, now],
+      );
+      return;
+    }
     await tx.query(
       `UPDATE channels.bindings
           SET character_id=$3, character_name=$4, updated_at=$5
@@ -350,32 +518,57 @@ export class ChannelStore {
   }
 
   /** 解绑：清空凭据与账号（tombstone），丢掉排队消息；待扫码会话一并作废。 */
-  async unbind(tx: DbTx, userId: string, channel: ChannelId, now: Date): Promise<void> {
+  async unbind(
+    tx: DbTx,
+    userId: string,
+    channel: ChannelId,
+    now: Date,
+    bindingId?: string,
+  ): Promise<void> {
+    let targetId: string | null = null;
+    if (channel === 'weibo') {
+      await this.lockWeiboUser(tx, userId);
+      const binding = bindingId
+        ? await this.ownWeiboBinding(userId, bindingId, tx)
+        : await this.singleWeiboBinding(tx, userId);
+      if (!binding) {
+        if (bindingId) throw new AppError('not_found', '没有找到这个微博绑定');
+        return;
+      }
+      targetId = binding.id;
+      // Same binding -> queue lock order as send handoff and role switch.
+      await tx.query('SELECT id FROM channels.bindings WHERE id=$1 AND user_id=$2 FOR UPDATE', [
+        targetId,
+        userId,
+      ]);
+    }
     if (channel === 'qq')
       await tx.query(
         "DELETE FROM channels.qq_sessions WHERE binding_id IN (SELECT id FROM channels.bindings WHERE user_id=$1 AND channel='qq')",
         [userId],
       );
-    await tx.query(
-      `UPDATE channels.bind_attempts
+    if (channel !== 'weibo')
+      await tx.query(
+        `UPDATE channels.bind_attempts
           SET status='expired', last_error='已解除绑定', updated_at=$3
         WHERE user_id=$1 AND channel=$2 AND status IN ('creating','wait','scanned')`,
-      [userId, channel, now],
-    );
+        [userId, channel, now],
+      );
     await tx.query(
       `UPDATE channels.outbound_messages
           SET status='skipped', last_error='已解除绑定', updated_at=$3
-        WHERE user_id=$1 AND channel=$2 AND status IN ('pending','retry','sending')`,
-      [userId, channel, now],
+        WHERE user_id=$1 AND channel=$2 AND status IN ('pending','retry','sending') AND ($4::uuid IS NULL OR binding_id=$4)`,
+      [userId, channel, now, targetId],
     );
     await tx.query(
       `UPDATE channels.bindings
           SET status='unbound', account_id=NULL, account_name=NULL, bot_id=NULL, base_url='',
               cursor='', bot_token_sealed=NULL, weibo_app_id_sealed=NULL,
               weibo_app_secret_sealed=NULL, context_token_sealed=NULL,
+              reply_conversation_id=NULL,reply_after_seq=NULL,
               generation=generation+1, bound_at=NULL, unbound_at=$3, last_error=NULL, updated_at=$3
-        WHERE user_id=$1 AND channel=$2 AND (status<>'unbound' OR channel='qq')`,
-      [userId, channel, now],
+        WHERE user_id=$1 AND channel=$2 AND (status<>'unbound' OR channel='qq') AND ($4::uuid IS NULL OR id=$4)`,
+      [userId, channel, now, targetId],
     );
   }
 
@@ -558,6 +751,7 @@ export class ChannelStore {
       status: OutboundStatusValue;
       lastError?: string | null;
       nextAttemptAt?: Date;
+      onlyIfSending?: boolean;
       now: Date;
     },
   ): Promise<void> {
@@ -568,13 +762,14 @@ export class ChannelStore {
               next_attempt_at=COALESCE($4,next_attempt_at),
               sent_at=CASE WHEN $2='sent' THEN $5 ELSE sent_at END,
               updated_at=$5
-        WHERE id=$1`,
+        WHERE id=$1 AND ($6::boolean=false OR status='sending')`,
       [
         id,
         patch.status,
         patch.lastError?.slice(0, 200) ?? null,
         patch.nextAttemptAt ?? null,
         patch.now,
+        patch.onlyIfSending ?? false,
       ],
     );
   }

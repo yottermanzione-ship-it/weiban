@@ -182,7 +182,8 @@ test('微博凭据、说明和 AppID 输入都有统一内边距，不发生横�
   await page.setViewportSize({ width: 339, height: 755 });
   await page.goto(fixture + '?channel=weibo');
   await page.getByRole('button', { name: '微博接入', exact: false }).click();
-  const dialog = page.getByRole('dialog', { name: '微博接入' });
+  await page.getByRole('button', { name: '主号 · 微博龙虾助手', exact: false }).click();
+  const dialog = page.getByRole('dialog', { name: '微博 · 主号' });
   const box = (await dialog.boundingBox())!;
   for (const selector of [
     '.wx-auth-field--credentials > span',

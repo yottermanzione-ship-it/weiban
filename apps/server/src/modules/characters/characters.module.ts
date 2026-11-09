@@ -32,6 +32,8 @@ import { CharacterWorkLinkService } from './application/work-links.js';
 import { WorkLinkAdminController } from './http/work-links.controller.js';
 import { CharacterSupplementService } from './application/supplements.js';
 import { CharacterSupplementController } from './http/supplements.controller.js';
+import { LegacyPersonaController } from './http/legacy-persona.controller.js';
+import { LegacyPersonaService } from './application/legacy-persona.js';
 import {
   CHARACTER_READ_PORT,
   SCENARIO_MODE_READ_PORT,
@@ -57,6 +59,7 @@ import {
     CustomCharacterController,
     CustomCharacterOriginController,
     CharacterSupplementController,
+    LegacyPersonaController,
     CharacterController,
     CharacterAdminController,
     ScenarioModeAdminController,
@@ -71,6 +74,7 @@ import {
     WeiboPublication,
     { provide: WEIBO_PUBLICATION_PORT, useExisting: WeiboPublication },
     CharacterSupplementService,
+    LegacyPersonaService,
     { provide: CHARACTER_SUPPLEMENT_PORT, useExisting: CharacterSupplementService },
     { provide: CHARACTER_SUPPLEMENT_CONFLICTS, useExisting: CharacterSupplementService },
     CharacterService,

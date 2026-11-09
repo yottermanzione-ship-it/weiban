@@ -34,11 +34,29 @@ export interface ReadMessagesInput {
  * - **调用方拿着事务时必须传**（docs/backend/kernel.md「事务与端口」）。不传时 chat 另开一条连接、自己开事务读，
  *   如果调用方事务已经锁过 / 改过同一会话行，外层等内层返回、内层等外层提交，数据库看不出来，整站卡死
  *   （2026-11-04 事故）。
- * - 传 tx 时在调用方事务里执行，除 getParticipants 外都会锁会话行（FOR UPDATE）到调用方事务结束，
+ * - 传 tx 时在调用方事务里执行，除 getParticipants、默认只读的 getGroupMemoryAccess 外都会锁会话行（FOR UPDATE）到调用方事务结束，
  *   所以要在本模块自己的锁（咨询锁、联系人行等）之后再调，顺序见 kernel.md。
  * - 不传 tx 时行为与 5.6 相同。
  */
 export interface ChatReadPort {
+  /** Internal read-only metadata for group-scoped legacy memory; never includes message text.
+   * No new transaction or missing state is created. lockForWrite requires tx and locks the chat row;
+   * callers acquire owner/contact locks first, before the same-tx final check and post. */
+  getGroupMemoryAccess?(
+    userId: string,
+    conversationId: string,
+    tx?: Tx,
+    lockForWrite?: boolean,
+  ): Promise<{
+    ownerUserId: string;
+    conversationId: string;
+    scope: ContentScope;
+    archived: boolean;
+    hidden: boolean;
+    clearedThroughSeq: number;
+    lastSeq: number;
+    participants: Array<{ participantId: string; kind: string; refId: string; joinedAt: string }>;
+  } | null>;
   /** 传 tx：锁会话行（FOR UPDATE）。 */
   getConversation(conversationId: string, tx?: Tx): Promise<Conversation | null>;
   /**
@@ -296,6 +314,8 @@ export interface ChatUserPort {
     userId: string,
     conversationId: string,
     input: SendMessageRequest,
+    /** 渠道等调用方持有代际锁时，必须复用事务，防止换角色与写消息交错。 */
+    tx?: Tx,
   ): Promise<MessageAck>;
 }
 

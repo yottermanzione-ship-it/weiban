@@ -67,6 +67,7 @@ import {
 } from '../tokens.js';
 import type { CharacterEvaluator } from './evaluator.js';
 import { CharacterSupplementService } from './supplements.js';
+import { LegacyPersonaService } from './legacy-persona.js';
 type Row = typeof characters.$inferSelect;
 /** 旧卡名字直接进新库 name（≤32）；旧卡原文仍留在 legacy_card，不改。 */
 function legacyName(legacy: LegacyCharacterCard): string {
@@ -108,6 +109,9 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     @Optional()
     @Inject(CHARACTER_PERSONA_SUMMARIZER)
     private readonly summarizer: PersonaUpdateSummarizerPort | null,
+    @Optional()
+    @Inject(LegacyPersonaService)
+    private readonly legacyPersonas?: LegacyPersonaService,
   ) {}
 
   /**
@@ -867,19 +871,30 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       row.kind === 'preset' && !row.childFeaturesDetected && this.supplements
         ? await this.supplements.variantChildFeaturesDetected(userId, row.id)
         : false;
-    const classification = this.classify(
+    let classification = this.classify(
       variantChild ? { ...row, childFeaturesDetected: true } : row,
     );
     // 旧卡就是运行格式：直接给旧卡整行，运行时读旧字段；这时没有 WeibanCardData。
     const legacy = this.legacyOf(row);
     if (legacy) {
+      const personal = await this.legacyPersonas?.runtime(userId, id, row.legacyCard!);
+      if (personal?.childFeaturesDetected)
+        classification = deriveClassification(
+          classification,
+          row.kind as 'preset' | 'custom',
+          true,
+        );
+      const effectiveCard = personal?.active ? personal.legacyCard : row.legacyCard!;
+      const effective = parseLegacyCard(effectiveCard)!;
       return {
-        profile: await this.legacyProfile(userId, row, legacy),
+        profile: { ...(await this.legacyProfile(userId, row, legacy)), classification },
         classification,
         card: null,
-        legacyCard: row.legacyCard,
+        legacyCard: effectiveCard,
+        ...(personal ? { legacyPersonaVersion: personal.version } : {}),
+        ...(personal?.context ? { legacyContext: personal.context } : {}),
         personaVersion: row.personaVersion,
-        fallbackGreetings: legacy.openingMessages
+        fallbackGreetings: effective.openingMessages
           .map((text) => text.slice(0, 200))
           .filter(Boolean)
           .slice(0, 3),
@@ -1002,7 +1017,8 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       .where(eq(characters.ownerId, userId))
       .returning({ id: characters.id });
     const extra = (await this.supplements?.purgeUser(userId)) ?? 0;
-    return removed.length + relationRows.length + trials.length + extra;
+    const legacy = (await this.legacyPersonas?.purgeUser(userId)) ?? 0;
+    return removed.length + relationRows.length + trials.length + extra + legacy;
   }
   async countUserData(userId: string): Promise<number> {
     const [trials] = await this.database.db
@@ -1018,7 +1034,8 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       .from(relations)
       .where(eq(relations.ownerUserId, userId));
     const extra = (await this.supplements?.countUserData(userId)) ?? 0;
-    return (row?.n ?? 0) + (rel?.n ?? 0) + (trials?.n ?? 0) + extra;
+    const legacy = (await this.legacyPersonas?.countUserData(userId)) ?? 0;
+    return (row?.n ?? 0) + (rel?.n ?? 0) + (trials?.n ?? 0) + extra + legacy;
   }
   async listPersonaVersions(
     adminId: string,

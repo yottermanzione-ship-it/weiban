@@ -17,6 +17,7 @@ import {
 } from '../../../platform/index.js';
 import { contacts } from '../infra/db/schema.js';
 import { ContactCardRecommendationService } from './recommendations.js';
+import { ContactOrganizationService } from './organization.js';
 import {
   ACCEPT_CONTACT_JOB,
   PURGE_CONTACT_JOB,
@@ -35,6 +36,7 @@ export class ContactsLifecycle implements OnModuleInit {
     @Inject(ContactsCommands) private readonly commands: ContactsCommands,
     @Inject(ContactCardRecommendationService)
     private readonly recommendations: ContactCardRecommendationService,
+    @Inject(ContactOrganizationService) private readonly organization: ContactOrganizationService,
   ) {}
   async onModuleInit(): Promise<void> {
     this.registry.register({
@@ -106,6 +108,7 @@ export class ContactsLifecycle implements OnModuleInit {
   }
 
   async purgeCharacter(tx: DbTx, characterId: string): Promise<void> {
+    await this.organization.purgeCharacter(tx, characterId);
     await tx.query('DELETE FROM contacts.card_dismissals WHERE character_id = $1', [characterId]);
     await tx.query(
       'DELETE FROM contacts.card_recommendations WHERE character_id = $1 OR recommender_character_id = $1',
@@ -119,9 +122,11 @@ export class ContactsLifecycle implements OnModuleInit {
   }
 
   async purgeUser(userId: string): Promise<number> {
+    const organization = await this.organization.purgeUser(userId);
     const ledger = await this.recommendations.purgeUser(userId);
     return (
       ledger +
+      organization +
       (
         await this.db.db
           .delete(contacts)
@@ -135,6 +140,10 @@ export class ContactsLifecycle implements OnModuleInit {
       .select({ n: count() })
       .from(contacts)
       .where(eq(contacts.userId, userId));
-    return (row?.n ?? 0) + (await this.recommendations.countUserData(userId));
+    return (
+      (row?.n ?? 0) +
+      (await this.recommendations.countUserData(userId)) +
+      (await this.organization.countUserData(userId))
+    );
   }
 }

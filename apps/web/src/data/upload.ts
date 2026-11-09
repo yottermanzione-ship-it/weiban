@@ -8,40 +8,77 @@ import {
   ImportJob,
   type UserMediaPurpose,
 } from '@weiban/contracts';
-import { localStore } from './client.js';
+import { api, localStore } from './client.js';
 
 /*
  * 聊天图片 / 语音上传。ApiClient 的上传不支持进度和额外表单字段（语音要带 durationMs），
  * 这里用 XMLHttpRequest 直接调 POST /media（契约 MediaEndpoints.upload），响应仍按契约解析。
  */
 
-async function token(): Promise<string> {
+type UploadOwner = { userId: string; sessionId: string; token: string };
+const cancelledUpload = () => new ApiFailure('request_cancelled', '请求已取消', 0);
+async function token(owner?: UploadOwner): Promise<string> {
   const parsed = AuthResponse.safeParse(await localStore.get('session'));
   if (!parsed.success) throw new ApiFailure('unauthenticated', '请先登录', 401);
-  return parsed.data.session.token;
+  if (
+    owner &&
+    (parsed.data.user.userId !== owner.userId ||
+      parsed.data.session.sessionId !== owner.sessionId ||
+      parsed.data.session.token !== owner.token ||
+      !api.owns(owner))
+  )
+    throw cancelledUpload();
+  return owner?.token ?? parsed.data.session.token;
 }
 
 export async function uploadMedia(
   purpose: z.infer<typeof UserMediaPurpose>,
   file: Blob,
-  options: { durationMs?: number; onProgress?(percent: number): void; signal?: AbortSignal } = {},
+  options: {
+    durationMs?: number;
+    onProgress?(percent: number): void;
+    signal?: AbortSignal;
+    owner?: UploadOwner;
+  } = {},
 ): Promise<MediaObject> {
-  const bearer = await token();
+  const owner = options.owner ? { ...options.owner } : undefined;
+  if (options.signal?.aborted) throw cancelledUpload();
+  const bearer = await token(owner);
+  if (options.signal?.aborted || (owner && !api.owns(owner))) throw cancelledUpload();
   const form = new FormData();
   form.set('file', file, purpose);
   if (options.durationMs !== undefined)
     form.set('durationMs', String(Math.round(options.durationMs)));
   return new Promise<MediaObject>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
+    let settled = false;
+    const abort = () => xhr.abort();
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      options.signal?.removeEventListener('abort', abort);
+      reject(error);
+    };
+    const succeed = (media: MediaObject) => {
+      if (settled) return;
+      settled = true;
+      options.signal?.removeEventListener('abort', abort);
+      resolve(media);
+    };
     xhr.open('POST', `${API_PREFIX}/media?purpose=${encodeURIComponent(purpose)}`);
     xhr.setRequestHeader('Authorization', `Bearer ${bearer}`);
     xhr.setRequestHeader('Accept', 'application/json');
     xhr.timeout = 60_000;
     xhr.upload.onprogress = (event) => {
+      if (options.signal?.aborted || (owner && !api.owns(owner))) return;
       if (event.lengthComputable && options.onProgress)
         options.onProgress(Math.min(99, Math.round((event.loaded / event.total) * 100)));
     };
     xhr.onload = () => {
+      if (options.signal?.aborted || (owner && !api.owns(owner))) {
+        fail(cancelledUpload());
+        return;
+      }
       let raw: unknown;
       try {
         raw = JSON.parse(xhr.responseText);
@@ -52,12 +89,12 @@ export async function uploadMedia(
         const parsed = MediaObject.safeParse(raw);
         if (parsed.success) {
           options.onProgress?.(100);
-          resolve(parsed.data);
-        } else reject(new ApiFailure('unsupported', '上传结果无法识别', xhr.status));
+          succeed(parsed.data);
+        } else fail(new ApiFailure('unsupported', '上传结果无法识别', xhr.status));
         return;
       }
       const error = ApiError.safeParse(raw);
-      reject(
+      fail(
         new ApiFailure(
           error.success ? error.data.error.code : 'unsupported',
           error.success ? error.data.error.message : '上传失败，请稍后重试',
@@ -65,11 +102,19 @@ export async function uploadMedia(
         ),
       );
     };
-    xhr.onerror = () => reject(new ApiFailure('network_error', '网络暂不可用，请稍后重试', 0));
+    xhr.onerror = () => fail(new ApiFailure('network_error', '网络暂不可用，请稍后重试', 0));
     xhr.ontimeout = xhr.onerror;
-    options.signal?.addEventListener('abort', () => xhr.abort());
-    xhr.onabort = () => reject(new ApiFailure('request_cancelled', '请求已取消', 0));
-    xhr.send(form);
+    options.signal?.addEventListener('abort', abort, { once: true });
+    xhr.onabort = () => fail(cancelledUpload());
+    if (options.signal?.aborted || (owner && !api.owns(owner))) {
+      fail(cancelledUpload());
+      return;
+    }
+    try {
+      xhr.send(form);
+    } catch {
+      fail(new ApiFailure('network_error', '网络暂不可用，请稍后重试', 0));
+    }
   });
 }
 

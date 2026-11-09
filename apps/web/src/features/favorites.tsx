@@ -18,6 +18,7 @@ import { shareText } from './share-render.js';
 import { Lightbox } from './lightbox.js';
 import { EmptyState, NavBar } from './shell-kit.js';
 import { showSnackbar, showToast } from './toast.js';
+import { LegacyFavoritesSection } from './legacy-favorites.js';
 
 function FavoriteVoice({ mediaId, transcript }: { mediaId: string; transcript?: string | null }) {
   const media = useRemote(MediaEndpoints.getMedia, { params: { mediaId } });
@@ -251,6 +252,13 @@ export function FavoritesPage() {
           {pending ? '正在读取…' : '加载更多'}
         </button>
       )}
+      <LegacyFavoritesSection
+        key={
+          auth.session
+            ? `${auth.session.user.userId}:${auth.session.session.sessionId}`
+            : 'signed-out'
+        }
+      />
     </main>
   );
 }

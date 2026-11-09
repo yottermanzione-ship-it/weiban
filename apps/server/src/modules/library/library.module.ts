@@ -8,12 +8,15 @@ import { ChatModule } from '../chat/index.js';
 import { CharactersModule } from '../characters/index.js';
 import { MediaModule } from '../media/index.js';
 import { RealtimeModule } from '../realtime/index.js';
+import { IdentityModule } from '../identity/index.js';
 import { LibraryService } from './application/library.service.js';
 import { LibraryController } from './http/library.controller.js';
+import { LegacyFavoritesService } from './application/legacy-favorites.service.js';
+import { LegacyFavoritesController } from './http/legacy-favorites.controller.js';
 
 @Module({
-  imports: [ChatModule, RealtimeModule, CharactersModule, MediaModule],
-  controllers: [LibraryController],
-  providers: [LibraryService],
+  imports: [ChatModule, RealtimeModule, CharactersModule, MediaModule, IdentityModule],
+  controllers: [LibraryController, LegacyFavoritesController],
+  providers: [LibraryService, LegacyFavoritesService],
 })
 export class LibraryModule {}

@@ -1,0 +1,25 @@
+{
+  "kind": "synthetic-local-rehearsal",
+  "productionTouched": false,
+  "users": 580,
+  "conversations": 820,
+  "oldMessages": 300000,
+  "newMessages": 46000,
+  "backupBytes": 175603204,
+  "resumedUnits": 410,
+  "protectedAccountsUnchanged": true,
+  "allNewMessagesDecrypted": true,
+  "baselineRestoreVerified": true,
+  "milliseconds": {
+    "schema": 2359,
+    "seed": 83452,
+    "backup": 12464,
+    "plan": 36407,
+    "partialApplyWithFailure": 47427,
+    "resumeIncludingIdempotentHalf": 52309,
+    "reconcileAndDecryptAllNew": 28250,
+    "restore": 17705,
+    "verifyRestoredBaseline": 3665,
+    "total": 289403
+  }
+}

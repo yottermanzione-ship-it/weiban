@@ -1,0 +1,473 @@
+{
+  "observedAt": "2026-11-09T04:26:26.464Z",
+  "source": "legacy-production-read-only",
+  "mode": "schema-and-counts-only",
+  "privateContentRead": false,
+  "writes": false,
+  "consistentCutoverSnapshot": false,
+  "tableCount": 112,
+  "excludedInternalTables": 1,
+  "limitations": [
+    "Business stayed running; these are observed counts, not final migration quantities.",
+    "Row counts across domains are not unique users or messages and must not be added as a migration total.",
+    "Only table structure and counts were queried; private content and code/token values were not read."
+  ],
+  "onlyLiveComparedWithLocalSource": [
+    "chat_messages",
+    "licenses",
+    "cdks"
+  ],
+  "onlyLocalSourceComparedWithLive": [
+    "chat_groups_dynamic_migration"
+  ],
+  "tables": [
+    {
+      "table": "personas",
+      "rows": 3
+    },
+    {
+      "table": "chat_history",
+      "rows": 334483
+    },
+    {
+      "table": "chat_messages",
+      "rows": 0
+    },
+    {
+      "table": "request_stats",
+      "rows": 845
+    },
+    {
+      "table": "licenses",
+      "rows": 0
+    },
+    {
+      "table": "app_users",
+      "rows": 581
+    },
+    {
+      "table": "user_friends",
+      "rows": 3796
+    },
+    {
+      "table": "risk_events",
+      "rows": 100
+    },
+    {
+      "table": "system_settings",
+      "rows": 19
+    },
+    {
+      "table": "persona_packages",
+      "rows": 846
+    },
+    {
+      "table": "character_assets",
+      "rows": 299
+    },
+    {
+      "table": "schema_migrations",
+      "rows": 108
+    },
+    {
+      "table": "characters_v2",
+      "rows": 699
+    },
+    {
+      "table": "character_lorebook_entries",
+      "rows": 17748
+    },
+    {
+      "table": "character_example_dialogues",
+      "rows": 36517
+    },
+    {
+      "table": "conversation_summaries",
+      "rows": 1008
+    },
+    {
+      "table": "user_memories",
+      "rows": 14202
+    },
+    {
+      "table": "chat_group_members",
+      "rows": 390
+    },
+    {
+      "table": "group_messages",
+      "rows": 20298
+    },
+    {
+      "table": "group_agent_edges",
+      "rows": 5946
+    },
+    {
+      "table": "group_handoff_logs",
+      "rows": 4727
+    },
+    {
+      "table": "group_memories",
+      "rows": 11877
+    },
+    {
+      "table": "group_turn_jobs",
+      "rows": 4725
+    },
+    {
+      "table": "request_outcome_stats",
+      "rows": 1869
+    },
+    {
+      "table": "ops_action_audit",
+      "rows": 4918
+    },
+    {
+      "table": "friend_requests",
+      "rows": 866
+    },
+    {
+      "table": "chat_groups",
+      "rows": 91
+    },
+    {
+      "table": "proactive_messages",
+      "rows": 5214
+    },
+    {
+      "table": "moments",
+      "rows": 5835
+    },
+    {
+      "table": "moment_interactions",
+      "rows": 39441
+    },
+    {
+      "table": "user_feedback",
+      "rows": 22
+    },
+    {
+      "table": "users",
+      "rows": 0
+    },
+    {
+      "table": "cdks",
+      "rows": 3
+    },
+    {
+      "table": "registration_guard",
+      "rows": 1251
+    },
+    {
+      "table": "usage_counters",
+      "rows": 5178
+    },
+    {
+      "table": "public_files",
+      "rows": 10
+    },
+    {
+      "table": "moment_interaction_jobs",
+      "rows": 31137
+    },
+    {
+      "table": "voice_quota_charges",
+      "rows": 749
+    },
+    {
+      "table": "persona_overlays",
+      "rows": 0
+    },
+    {
+      "table": "relationship_states",
+      "rows": 2771
+    },
+    {
+      "table": "persona_base_versions",
+      "rows": 1878
+    },
+    {
+      "table": "persona_sync_ops",
+      "rows": 0
+    },
+    {
+      "table": "persona_memory_tombstones",
+      "rows": 1128
+    },
+    {
+      "table": "relationship_interaction_events",
+      "rows": 110770
+    },
+    {
+      "table": "chat_reply_effects",
+      "rows": 99156
+    },
+    {
+      "table": "memory_extraction_events",
+      "rows": 16586
+    },
+    {
+      "table": "group_scenes",
+      "rows": 1654
+    },
+    {
+      "table": "group_scene_steps",
+      "rows": 5870
+    },
+    {
+      "table": "group_notification_outbox",
+      "rows": 1653
+    },
+    {
+      "table": "assistant_settings",
+      "rows": 2
+    },
+    {
+      "table": "assistant_knowledge_entries",
+      "rows": 46
+    },
+    {
+      "table": "official_welcome_receipts",
+      "rows": 573
+    },
+    {
+      "table": "official_announcements",
+      "rows": 16
+    },
+    {
+      "table": "official_announcement_recipients",
+      "rows": 1613
+    },
+    {
+      "table": "support_sessions",
+      "rows": 33
+    },
+    {
+      "table": "support_session_feedback",
+      "rows": 12
+    },
+    {
+      "table": "user_persona_backups",
+      "rows": 61
+    },
+    {
+      "table": "user_client_prefs",
+      "rows": 313
+    },
+    {
+      "table": "ai_endpoints",
+      "rows": 26
+    },
+    {
+      "table": "ai_providers",
+      "rows": 8
+    },
+    {
+      "table": "wechat_bindings",
+      "rows": 32
+    },
+    {
+      "table": "wechat_deliveries",
+      "rows": 7446
+    },
+    {
+      "table": "wechat_inbox",
+      "rows": 9766
+    },
+    {
+      "table": "invite_codes",
+      "rows": 177
+    },
+    {
+      "table": "invite_relations",
+      "rows": 3
+    },
+    {
+      "table": "invite_rewards",
+      "rows": 0
+    },
+    {
+      "table": "order_fulfillments",
+      "rows": 79
+    },
+    {
+      "table": "daily_activity_snapshot",
+      "rows": 91
+    },
+    {
+      "table": "admin_sessions",
+      "rows": 1
+    },
+    {
+      "table": "device_bindings",
+      "rows": 754
+    },
+    {
+      "table": "auth_login_attempts",
+      "rows": 138
+    },
+    {
+      "table": "group_turn_reply_slots",
+      "rows": 8818
+    },
+    {
+      "table": "group_voice_command_charges",
+      "rows": 3
+    },
+    {
+      "table": "moment_commands",
+      "rows": 12375
+    },
+    {
+      "table": "moment_publish_jobs",
+      "rows": 4071
+    },
+    {
+      "table": "persona_customizations",
+      "rows": 130
+    },
+    {
+      "table": "persona_customization_commands",
+      "rows": 171
+    },
+    {
+      "table": "persona_state_changes",
+      "rows": 27209
+    },
+    {
+      "table": "membership_orders",
+      "rows": 144
+    },
+    {
+      "table": "payment_notifications",
+      "rows": 94
+    },
+    {
+      "table": "media_send_commands",
+      "rows": 11314
+    },
+    {
+      "table": "friend_add_commands",
+      "rows": 4339
+    },
+    {
+      "table": "user_uid_sequence",
+      "rows": 1
+    },
+    {
+      "table": "wechat_binding_attempts",
+      "rows": 1
+    },
+    {
+      "table": "scheduler_leases",
+      "rows": 15
+    },
+    {
+      "table": "character_rename_events",
+      "rows": 0
+    },
+    {
+      "table": "character_voice_bindings",
+      "rows": 753
+    },
+    {
+      "table": "chat_context_snapshots",
+      "rows": 117263
+    },
+    {
+      "table": "chat_model_attempts",
+      "rows": 181783
+    },
+    {
+      "table": "ai_scene_routes",
+      "rows": 5
+    },
+    {
+      "table": "sticker_catalog",
+      "rows": 231
+    },
+    {
+      "table": "user_stickers",
+      "rows": 339
+    },
+    {
+      "table": "realtime_call_policies",
+      "rows": 3
+    },
+    {
+      "table": "realtime_call_sessions",
+      "rows": 278
+    },
+    {
+      "table": "realtime_call_transcript_turns",
+      "rows": 3458
+    },
+    {
+      "table": "realtime_call_usage",
+      "rows": 268
+    },
+    {
+      "table": "chat_user_visible_events",
+      "rows": 1389
+    },
+    {
+      "table": "weibo_bindings",
+      "rows": 58
+    },
+    {
+      "table": "weibo_binding_codes",
+      "rows": 4
+    },
+    {
+      "table": "weibo_inbox",
+      "rows": 91
+    },
+    {
+      "table": "weibo_deliveries",
+      "rows": 82
+    },
+    {
+      "table": "qq_bindings",
+      "rows": 1
+    },
+    {
+      "table": "qq_binding_codes",
+      "rows": 0
+    },
+    {
+      "table": "qq_inbox",
+      "rows": 46
+    },
+    {
+      "table": "qq_deliveries",
+      "rows": 100
+    },
+    {
+      "table": "user_sticker_pack_pins",
+      "rows": 159
+    },
+    {
+      "table": "membership_intro_grants",
+      "rows": 63
+    },
+    {
+      "table": "user_character_voice_styles",
+      "rows": 59
+    },
+    {
+      "table": "chat_read_cursors",
+      "rows": 3314
+    },
+    {
+      "table": "web_push_subscriptions",
+      "rows": 47
+    },
+    {
+      "table": "chat_reply_jobs",
+      "rows": 104102
+    },
+    {
+      "table": "agent_api_keys",
+      "rows": 1
+    }
+  ]
+}

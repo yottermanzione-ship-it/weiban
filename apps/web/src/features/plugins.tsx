@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ChannelEndpoints,
+  WeiboBindingsEndpoints,
+  type WeiboBindingState,
+  type WeiboSlotId,
   type ChannelCharacter,
   type ChannelId,
   type ChannelState,
@@ -8,6 +11,7 @@ import {
   type QqPairing,
 } from '@weiban/contracts';
 import { api } from '../data/client.js';
+import { useAuth } from '../app/auth.js';
 import { friendlyError } from '../data/use-remote.js';
 import { AlertDialog, showToast } from './toast.js';
 import { GroupHeader, MenuGroup, MenuRow, NavBar, Sheet } from './shell-kit.js';
@@ -47,6 +51,7 @@ function statusText(state: ChannelState | null): string {
 }
 
 function subtitleOf(state: ChannelState): string {
+  if (state.multipleBindings) return `已连接 ${state.bindingCount ?? 0} 个微博助手，按槽位管理`;
   if (state.status === 'active') {
     const who = state.characterName ?? state.accountMasked ?? '已绑定';
     return `${who} · ${state.channel === 'wechat' ? '微信' : state.channel === 'qq' ? 'QQ' : '微博'}`;
@@ -66,25 +71,31 @@ function timeText(value: string | null | undefined): string {
 }
 
 export function PluginsPage() {
+  const { session } = useAuth();
   const [items, setItems] = useState<ChannelState[] | null>(null);
   const [characters, setCharacters] = useState<ChannelCharacter[]>([]);
   const [error, setError] = useState('');
   const [open, setOpen] = useState<ChannelId | null>(null);
 
   const load = useCallback(async () => {
+    const owner = api.ownerKey();
     try {
       const data = await api.call(ChannelEndpoints.list);
+      if (api.ownerKey() !== owner) return;
       setItems(data.items);
       setCharacters(data.characters);
       setError('');
     } catch (e) {
-      setError(friendlyError(e));
+      if (api.ownerKey() === owner) setError(friendlyError(e));
     }
   }, []);
 
   useEffect(() => {
+    setItems(null);
+    setCharacters([]);
+    setOpen(null);
     void load();
-  }, [load]);
+  }, [load, session?.session.sessionId]);
 
   const current = open ? (items?.find((item) => item.channel === open) ?? null) : null;
 
@@ -128,9 +139,16 @@ export function PluginsPage() {
       <p className="page-note">
         微信接入用微信扫一扫把角色接到微信里；微博接入用龙虾助手私信发放的 AppID / AppSecret。 QQ
         接入请使用自己的官方机器人，填写凭据后在QQ私聊里发送一次性绑定码。
-        旧版微伴的绑定不会自动同步，请在这里分别完成绑定；角色回复按现有积分规则计费。
+        微博每个助手使用独立凭据，请按对应槽位操作，勿把一格的凭据填到另一格；角色回复按现有积分规则计费。
       </p>
-      {open && current && (
+      {open === 'weibo' && (
+        <WeiboSlotsSheet
+          key={session?.session.sessionId ?? 'public'}
+          onClose={() => setOpen(null)}
+          onChanged={load}
+        />
+      )}
+      {open && open !== 'weibo' && current && (
         <ChannelSheet
           key={current.channel}
           state={current}
@@ -143,13 +161,94 @@ export function PluginsPage() {
   );
 }
 
+function WeiboSlotsSheet({ onClose, onChanged }: { onClose(): void; onChanged(): Promise<void> }) {
+  const [data, setData] = useState<{
+    items: WeiboBindingState[];
+    characters: ChannelCharacter[];
+  } | null>(null);
+  const [selected, setSelected] = useState<WeiboSlotId | null>(null);
+  const [error, setError] = useState('');
+  const active = useRef(true);
+  const load = useCallback(async () => {
+    const owner = api.ownerKey();
+    try {
+      const result = await api.call(WeiboBindingsEndpoints.list, { networkOnly: true });
+      if (active.current && api.ownerKey() === owner) {
+        setData(result);
+        setError('');
+      }
+    } catch (failure) {
+      if (active.current && api.ownerKey() === owner) setError(friendlyError(failure));
+    }
+  }, []);
+  useEffect(() => {
+    active.current = true;
+    void load();
+    return () => {
+      active.current = false;
+    };
+  }, [load]);
+  const binding = data?.items.find((item) => item.slot === selected);
+  const otherCharacters = new Set(
+    data?.items
+      .filter((item) => item.slot !== selected && item.status === 'active')
+      .map((item) => item.characterId),
+  );
+  return (
+    <>
+      <Sheet title="微博助手 · 五个槽位" onClose={onClose}>
+        <p className="page-note">
+          主号、小蓝、小白、小粉、小黄各连接一个不同角色，使用对应助手发放的独立凭据。修改或断开一格不会影响其他格。
+        </p>
+        <MenuGroup>
+          {data?.items.map((item) => (
+            <MenuRow
+              key={item.slot}
+              label={`${item.slotLabel} · ${item.assistantName}`}
+              subtitle={item.characterName ?? '尚未选择角色'}
+              value={statusText(item)}
+              onClick={() => setSelected(item.slot)}
+            />
+          ))}
+        </MenuGroup>
+        {!data && !error && <p className="page-note">正在读取微博槽位…</p>}
+        {error && (
+          <p role="alert" className="page-note">
+            {error}
+            <button type="button" className="text-button" onClick={() => void load()}>
+              重试
+            </button>
+          </p>
+        )}
+      </Sheet>
+      {binding && data && (
+        <ChannelSheet
+          key={`${binding.slot}:${binding.bindingId ?? 'empty'}:${binding.status}`}
+          state={{ ...binding, name: `微博 · ${binding.slotLabel}` }}
+          weiboBinding={binding}
+          characters={data.characters.filter(
+            (character) => !otherCharacters.has(character.characterId),
+          )}
+          onClose={() => setSelected(null)}
+          onChanged={async () => {
+            await load();
+            await onChanged();
+          }}
+        />
+      )}
+    </>
+  );
+}
+
 function ChannelSheet({
   state,
+  weiboBinding,
   characters,
   onClose,
   onChanged,
 }: {
   state: ChannelState;
+  weiboBinding?: WeiboBindingState;
   characters: ChannelCharacter[];
   onClose(): void;
   onChanged(): Promise<void>;
@@ -283,12 +382,21 @@ function ChannelSheet({
     if (!characterId || !channel) return;
     setBusy(true);
     setError('');
+    const owner = api.ownerKey();
     try {
-      await api.call(ChannelEndpoints.setCharacter, {
-        params: { channel },
-        body: { characterId },
-      });
+      if (weiboBinding?.bindingId)
+        await api.call(WeiboBindingsEndpoints.setCharacter, {
+          params: { bindingId: weiboBinding.bindingId },
+          body: { characterId },
+        });
+      else
+        await api.call(ChannelEndpoints.setCharacter, {
+          params: { channel },
+          body: { characterId },
+        });
+      if (api.ownerKey() !== owner) return;
       await onChanged();
+      if (api.ownerKey() !== owner) return;
       showToast('出口角色已切换', 2000, 'success');
     } catch (e) {
       setError(friendlyError(e));
@@ -307,14 +415,27 @@ function ChannelSheet({
     }
     setBusy(true);
     setError('');
+    const owner = api.ownerKey();
     try {
-      await api.call(ChannelEndpoints.weiboConnect, {
-        body: { characterId, appId: parsed.appId, appSecret: parsed.appSecret },
-      });
+      if (weiboBinding)
+        await api.call(WeiboBindingsEndpoints.connect, {
+          body: {
+            slot: weiboBinding.slot,
+            characterId,
+            appId: parsed.appId,
+            appSecret: parsed.appSecret,
+          },
+        });
+      else
+        await api.call(ChannelEndpoints.weiboConnect, {
+          body: { characterId, appId: parsed.appId, appSecret: parsed.appSecret },
+        });
+      if (api.ownerKey() !== owner) return;
       setAppSecret('');
       setAppId('');
       setCredentials('');
       await onChanged();
+      if (api.ownerKey() !== owner) return;
       showToast('微博凭据已保存', 2000, 'success');
     } catch (e) {
       setError(friendlyError(e));
@@ -327,9 +448,16 @@ function ChannelSheet({
     if (!channel) return;
     setBusy(true);
     setError('');
+    const owner = api.ownerKey();
     try {
-      await api.call(ChannelEndpoints.unbind, { params: { channel } });
+      if (weiboBinding?.bindingId)
+        await api.call(WeiboBindingsEndpoints.unbind, {
+          params: { bindingId: weiboBinding.bindingId },
+        });
+      else await api.call(ChannelEndpoints.unbind, { params: { channel } });
+      if (api.ownerKey() !== owner) return;
       await onChanged();
+      if (api.ownerKey() !== owner) return;
       showToast('已解除绑定', 2000, 'success');
       onClose();
     } catch (e) {
@@ -374,7 +502,7 @@ function ChannelSheet({
                 disabled={busy}
                 onClick={() => setConfirming(true)}
               >
-                解除新站绑定
+                {weiboBinding ? '解除此槽位绑定' : '解除新站绑定'}
               </button>
             </div>
             {live && (
@@ -639,8 +767,8 @@ function ChannelSheet({
         ) : (
           <>
             <p className="page-note">
-              在微博私信「微博龙虾助手」，发送“连接龙虾”，把助手返回的整段 AppID / AppSecret
-              粘贴到下面。 不需要个人微博
+              在微博私信「{weiboBinding?.assistantName ?? '微博龙虾助手'}
+              」，发送“连接龙虾”，把助手返回的整段 AppID / AppSecret 粘贴到下面。 不需要个人微博
               UID，也不用注册普通开放平台应用；服务器校验后加密保存凭据。
             </p>
             {live ? (
@@ -730,7 +858,7 @@ function ChannelSheet({
       {confirming && (
         <AlertDialog
           title="解除绑定？"
-          message={`只解除当前新站的${channelLabel}连接，不操作旧版服务器或旧绑定。之后可以${channel === 'wechat' ? '重新生成二维码扫码' : channel === 'qq' ? '重新填写QQ凭据并发送绑定码' : '重新填写助手凭据'}，再次测试绑定。`}
+          message={`只解除当前新站的${channelLabel}${weiboBinding ? ` · ${weiboBinding.slotLabel}槽位` : ''}连接，不影响其他槽位，也不操作旧版服务器。之后可以${channel === 'wechat' ? '重新生成二维码扫码' : channel === 'qq' ? '重新填写QQ凭据并发送绑定码' : '重新填写对应助手凭据'}。`}
           confirmLabel="解除绑定"
           onCancel={() => setConfirming(false)}
           onConfirm={() => void unbind()}

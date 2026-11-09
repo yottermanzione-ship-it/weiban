@@ -47,6 +47,23 @@ export function configureHttpApp(app: INestApplication, config: AppConfig): void
       qrJson(req, res, next);
     },
   );
+  // The native migration bridge supplies a bounded page of owned legacy favorites.
+  // Keep this parser path-scoped; all other requests retain their current size limit.
+  const legacyFavoritesJson = json({ limit: '512kb' });
+  app.use(
+    '/api/v1/library/legacy-favorites/import',
+    function legacyFavoriteJson(req: Request, res: Response, next: NextFunction) {
+      legacyFavoritesJson(req, res, next);
+    },
+  );
+  // A complete personal tag list can contain the same contact in several tags.
+  // Match both the method and complete path; unrelated requests keep the default limit.
+  const contactOrganizationJson = json({ limit: '8mb' });
+  app.use(function boundedContactOrganizationJson(req: Request, res: Response, next: NextFunction) {
+    if (req.method === 'PUT' && /^\/api\/v1\/contacts\/organization\/?$/.test(req.path))
+      contactOrganizationJson(req, res, next);
+    else next();
+  });
   const express = app.getHttpAdapter().getInstance() as {
     disable(name: string): void;
     set(name: string, value: unknown): void;

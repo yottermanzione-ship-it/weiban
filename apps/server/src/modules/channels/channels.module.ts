@@ -19,7 +19,7 @@ import { ChannelStore } from './application/channel-store.js';
 import { ChannelsService } from './application/channels.service.js';
 import { ChannelsWorker } from './application/channels.worker.js';
 import { WechatRuntime } from './application/wechat-runtime.js';
-import { WeiboRuntime } from './application/weibo-runtime.js';
+import { WeiboRuntime, WEIBO_WS_FACTORY } from './application/weibo-runtime.js';
 import { ChannelsController } from './http/channels.controller.js';
 import { PluginsController } from './http/plugins.controller.js';
 
@@ -31,6 +31,7 @@ import { PluginsController } from './http/plugins.controller.js';
     QqSessionStore,
     QqRuntime,
     { provide: QQ_CLIENT_FACTORY, useValue: createQqClient },
+    { provide: WEIBO_WS_FACTORY, useValue: (url: string) => new WebSocket(url) },
     {
       provide: QQ_WS_FACTORY,
       useValue: (url: string) =>

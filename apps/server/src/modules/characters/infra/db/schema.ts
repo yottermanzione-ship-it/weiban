@@ -97,6 +97,59 @@ export const characters = charactersSchema.table(
     index('characters_plaza_idx').on(t.status, t.categoryId),
   ],
 );
+/** 0166: complete personal sources stay encrypted; reset retains only replay protection. */
+export const legacyPersonaOverrides = charactersSchema.table(
+  'legacy_persona_overrides',
+  {
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id')
+      .notNull()
+      .references(() => characters.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    state: text('state').$type<'active' | 'blocked' | 'reset'>().notNull(),
+    sourceKey: text('source_key'),
+    sourceVersion: integer('source_version'),
+    sourceDigest: text('source_digest'),
+    sourceUpdatedAt: timestamp('source_updated_at', { withTimezone: true }),
+    ciphertext: bytea('ciphertext'),
+    blockedReason: text('blocked_reason'),
+    childFeaturesDetected: boolean('child_features_detected').notNull().default(false),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.characterId] }),
+    uniqueIndex().on(t.userId, t.sourceKey),
+  ],
+);
+export const legacyPersonaSources = charactersSchema.table(
+  'legacy_persona_sources',
+  {
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id')
+      .notNull()
+      .references(() => characters.id, { onDelete: 'cascade' }),
+    sourceKey: text('source_key').notNull(),
+    sourceVersion: integer('source_version').notNull(),
+    sourceDigest: text('source_digest').notNull(),
+    resultVersion: integer('result_version').notNull(),
+    importedAt: timestamp('imported_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.sourceKey, t.sourceVersion] })],
+);
+export const legacyPersonaCommands = charactersSchema.table(
+  'legacy_persona_commands',
+  {
+    userId: uuid('user_id').notNull(),
+    commandId: uuid('command_id').notNull(),
+    characterId: uuid('character_id')
+      .notNull()
+      .references(() => characters.id, { onDelete: 'cascade' }),
+    requestDigest: text('request_digest').notNull(),
+    resultVersion: integer('result_version').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.commandId] })],
+);
 /** 3.25（迁移 0121）：角色资格人工标注的修改记录（谁、何时、原因）。 */ export const eligibilityChanges =
   charactersSchema.table(
     'eligibility_changes',

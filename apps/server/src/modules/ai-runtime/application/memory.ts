@@ -50,6 +50,7 @@ import { POLICY_PORT } from '../../policy/index.js';
 import { SYNC_PORT } from '../../realtime/index.js';
 import { MEDIA_TRANSCRIPT_PORT } from '../../media/index.js';
 import { memories, memoryStates, replyPlans } from '../infra/db/schema.js';
+import { LegacyGroupMemoryService } from './legacy-group-memory.js';
 import {
   MemoryPayload,
   ExtractedMemory,
@@ -166,6 +167,9 @@ export class MemoryService {
     @Optional() @Inject(ImageCaptionStore) readonly captions?: ImageCaptionStore,
     @Optional() @Inject(ChatSummaryService) readonly chatSummaries?: ChatSummaryService,
     @Optional() @Inject(MEDIA_TRANSCRIPT_PORT) readonly transcripts?: MediaTranscriptPort,
+    @Optional()
+    @Inject(LegacyGroupMemoryService)
+    readonly legacyGroupMemory?: LegacyGroupMemoryService,
   ) {}
   /** T-066：记忆页「谁知道」（MEM-07 第 5 条）。由 SocialService 注入，避免循环依赖。 */
   private knownByResolver:
@@ -626,6 +630,7 @@ export class MemoryService {
   }
   private async changed(tx: DbTx, job: MemoryJob, forget: boolean, barrierSeq: number) {
     if (forget) {
+      await this.legacyGroupMemory?.excludeCharacter(tx, job.userId, job.characterId);
       await tx.query(
         'UPDATE ai_runtime.group_memory_states SET cursor_seq=greatest(cursor_seq,last_user_seq),pending_count=0,lease_id=NULL,lease_until=NULL,prepared_ciphertext=NULL,result_ciphertext=NULL,generation=generation+1 WHERE user_id=$1',
         [job.userId],

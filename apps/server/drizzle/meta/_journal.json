@@ -1059,6 +1059,48 @@
       "when": 1794100000000,
       "tag": "0162_scan_payments",
       "breakpoints": true
+    },
+    {
+      "idx": 163,
+      "version": "7",
+      "when": 1794182400000,
+      "tag": "0163_legacy_local_favorites",
+      "breakpoints": true
+    },
+    {
+      "idx": 164,
+      "version": "7",
+      "when": 1794186000000,
+      "tag": "0164_legacy_group_memories",
+      "breakpoints": true
+    },
+    {
+      "idx": 165,
+      "version": "7",
+      "when": 1794189600000,
+      "tag": "0165_weibo_slots",
+      "breakpoints": true
+    },
+    {
+      "idx": 166,
+      "version": "7",
+      "when": 1794193200000,
+      "tag": "0166_legacy_persona_overrides",
+      "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1794196800000,
+      "tag": "0167_contact_organization",
+      "breakpoints": true
+    },
+    {
+      "idx": 168,
+      "version": "7",
+      "when": 1794200400000,
+      "tag": "0168_legacy_migration_runs",
+      "breakpoints": true
     }
   ]
 }

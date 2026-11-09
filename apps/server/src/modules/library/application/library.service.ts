@@ -56,6 +56,7 @@ import { MEDIA_SYSTEM_PORT } from '../../media/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
 import { SYNC_PORT } from '../../realtime/index.js';
 import { favorites, shareGenerations, sharePreferences } from '../infra/db/schema.js';
+import { LegacyFavoritesService } from './legacy-favorites.service.js';
 import {
   LIBRARY_CARD_LOOKUP,
   LIBRARY_MOMENTS_READ,
@@ -139,6 +140,7 @@ export class LibraryService implements OnModuleInit {
     @Inject(EVENT_BUS) private readonly bus: EventBus,
     @Optional() @Inject(LIBRARY_MOMENTS_READ) private readonly moments?: LibraryMomentsRead,
     @Optional() @Inject(LIBRARY_CARD_LOOKUP) private readonly cards?: LibraryCardLookup,
+    @Optional() @Inject(LegacyFavoritesService) private readonly legacy?: LegacyFavoritesService,
   ) {}
 
   onModuleInit(): void {
@@ -789,6 +791,7 @@ export class LibraryService implements OnModuleInit {
         const r = await tx.db.delete(table).where(eq(table.userId, userId));
         n += r.rowCount ?? 0;
       }
+      n += (await this.legacy?.purgeUser(userId, tx)) ?? 0;
       return n;
     });
   }
@@ -802,6 +805,7 @@ export class LibraryService implements OnModuleInit {
         .where(eq(table.userId, userId));
       n += r?.n ?? 0;
     }
+    n += (await this.legacy?.countUserData(userId)) ?? 0;
     return n;
   }
 }

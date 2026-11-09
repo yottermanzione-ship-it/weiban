@@ -1,4 +1,11 @@
-import { Inject, Injectable, type OnModuleInit, type OnApplicationBootstrap } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Optional,
+  type OnModuleInit,
+  type OnApplicationBootstrap,
+} from '@nestjs/common';
+import { LegacyGroupMemoryService } from './legacy-group-memory.js';
 import { and, eq, inArray } from 'drizzle-orm';
 import { type ChatReadPort, type ContactsReadPort } from '@weiban/contracts';
 import {
@@ -127,6 +134,9 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
     @Inject(EcologySettingsService) readonly ecologySettings: EcologySettingsService,
     @Inject(PrivateDigestService) readonly privateDigest: PrivateDigestService,
     @Inject(ImageCaptionStore) readonly captions: ImageCaptionStore,
+    @Optional()
+    @Inject(LegacyGroupMemoryService)
+    readonly legacyGroupMemory?: LegacyGroupMemoryService,
   ) {}
   async onApplicationBootstrap(): Promise<void> {
     if (this.jobs.isReady)
@@ -527,6 +537,12 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       consumer: 'ai.group_dissolved',
       eventType: 'chat.group_dissolved',
       handle: async (event, tx) => {
+        await this.store.lock(tx, event.payload.ownerUserId);
+        await this.legacyGroupMemory?.onDissolved(
+          tx,
+          event.payload.ownerUserId,
+          event.payload.conversationId,
+        );
         await this.groupChat.onDissolved(tx, event.payload);
       },
     });
@@ -740,7 +756,8 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       eventType: 'contacts.contact_purged',
       handle: async (event, tx) => {
         const { userId, characterId, conversationId } = event.payload;
-        await this.store.lock(tx, userId);
+        const active = await this.store.lock(tx, userId);
+        if (active) await this.legacyGroupMemory?.excludeCharacter(tx, userId, characterId);
         // H3：这个会话里的图片描述一并删除。
         if (conversationId) await this.captions.deleteByConversation(tx, userId, conversationId);
         // T-20261103j：这个会话「不再发给模型」的登记一并删除。
@@ -821,7 +838,8 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
         // 重置角色：与 contact_purged 同一套清理，但联系人行保留 active，
         // 不得复用 purged 的“无 active 联系人”守卫（守卫会跳过清理）。
         const { userId, characterId, conversationId } = event.payload;
-        await this.store.lock(tx, userId);
+        const active = await this.store.lock(tx, userId);
+        if (active) await this.legacyGroupMemory?.excludeCharacter(tx, userId, characterId);
         if (conversationId) await this.captions.deleteByConversation(tx, userId, conversationId);
         if (conversationId) {
           await tx.db

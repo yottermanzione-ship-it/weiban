@@ -2,7 +2,7 @@
  * channels 模块的表（3.42，迁移 0139；2026-10-25 按真实旧协议重做）。
  *
  * 四张表：
- * - bindings         一个用户一个渠道最多一条；凭据与 context_token 都是该用户 DEK 加密的 bytea。
+ * - bindings         微博每用户最多五槽，其他渠道单槽；凭据与 context_token 均按用户 DEK 加密。
  * - bind_attempts    微信扫码会话（qrcode 能换 bot_token，所以加密）；bind_url 可直接下发客户端画二维码。
  * - inbound_messages 入站流水，(binding_id, external_message_id) 唯一做幂等；client_msg_id 是投递聊天的固定幂等键。
  * - outbound_messages 出站队列，(binding_id, chat_message_id) 唯一；失败按 next_attempt_at 重试。
@@ -12,6 +12,8 @@
 import { sql } from 'drizzle-orm';
 import {
   customType,
+  bigint,
+  check,
   index,
   integer,
   pgSchema,
@@ -34,8 +36,12 @@ export const bindings = channelsSchema.table(
   {
     id: uuid('id').primaryKey(),
     userId: uuid('user_id').notNull(),
-    /** wechat / weibo */
+    /** wechat / weibo / qq */
     channel: text('channel').notNull(),
+    slot: text('slot').notNull().default('main'),
+    /** Bind/rebind/role-switch boundary in the selected direct conversation, never a wall clock. */
+    replyConversationId: uuid('reply_conversation_id'),
+    replyAfterSeq: bigint('reply_after_seq', { mode: 'number' }),
     status: text('status').$type<BindingStatusValue>().notNull().default('unbound'),
     /** 出口角色（用户选的通讯录好友）。 */
     characterId: uuid('character_id'),
@@ -56,7 +62,7 @@ export const bindings = channelsSchema.table(
     weiboAppSecretSealed: bytea('weibo_app_secret_sealed'),
     /** 加密传输上下文：微信 context_token；微博固定回信 peer（不同 AAD），均为用户 DEK 加密。 */
     contextTokenSealed: bytea('context_token_sealed'),
-    /** 重绑计数：后台轮询任务带 generation，重建绑定后旧任务自动作废。 */
+    /** 重绑/微博切角色代际：后台任务与迟到事件必须匹配当前 generation。 */
     generation: integer('generation').notNull().default(1),
     boundAt: tz('bound_at'),
     unboundAt: tz('unbound_at'),
@@ -67,7 +73,16 @@ export const bindings = channelsSchema.table(
     updatedAt: tz('updated_at').notNull(),
   },
   (t) => [
-    uniqueIndex('bindings_user_channel_key').on(t.userId, t.channel),
+    uniqueIndex('bindings_user_channel_slot_key').on(t.userId, t.channel, t.slot),
+    uniqueIndex('bindings_weibo_character_key')
+      .on(t.userId, t.characterId)
+      .where(sql`channel='weibo' AND status='active' AND character_id IS NOT NULL`),
+    check('bindings_slot_check', sql`${t.slot} IN ('main','blue','white','pink','yellow')`),
+    check('bindings_non_weibo_slot_check', sql`${t.channel}='weibo' OR ${t.slot}='main'`),
+    check(
+      'bindings_reply_boundary_check',
+      sql`(${t.replyConversationId} IS NULL AND ${t.replyAfterSeq} IS NULL) OR (${t.replyConversationId} IS NOT NULL AND ${t.replyAfterSeq} IS NOT NULL AND ${t.replyAfterSeq} BETWEEN 0 AND 9007199254740991)`,
+    ),
     uniqueIndex('bindings_active_account_key')
       .on(t.channel, t.accountId)
       .where(sql`status = 'active' AND account_id IS NOT NULL`),

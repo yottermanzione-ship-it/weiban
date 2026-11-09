@@ -3,7 +3,7 @@ export { ChannelStore, type BindingRow, type OutboundRow } from './application/c
 export { ChannelsService } from './application/channels.service.js';
 export { ChannelBridge } from './application/channel-bridge.js';
 export { ChannelsWorker } from './application/channels.worker.js';
-export { WeiboRuntime } from './application/weibo-runtime.js';
+export { WeiboRuntime, WEIBO_WS_FACTORY } from './application/weibo-runtime.js';
 
 export { QqSessionStore } from './application/qq-session-store.js';
 export { QqRuntime } from './application/qq-runtime.js';

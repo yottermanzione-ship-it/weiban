@@ -1,7 +1,9 @@
 /**
  * library 模块的表（T-078，迁移 0053）：收藏快照、分享图偏好、分享图生成次数。
  */
+import { sql } from 'drizzle-orm';
 import {
+  check,
   customType,
   index,
   integer,
@@ -71,4 +73,71 @@ export const shareGenerations = librarySchema.table(
     updatedAt: time('updated_at').notNull(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.template] })],
+);
+
+/** 0163: verified source mapping; never populated from a client-supplied username. */
+export const legacyFavoriteSources = librarySchema.table(
+  'legacy_favorite_sources',
+  {
+    userId: uuid('user_id').notNull(),
+    accountKey: text('account_key').notNull(),
+    sourceUserId: uuid('source_user_id').notNull(),
+    sourceBatch: text('source_batch').notNull(),
+    verifiedAt: time('verified_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.accountKey] }),
+    uniqueIndex('legacy_favorite_sources_account_key_key').on(t.accountKey),
+    check('legacy_favorite_sources_account_key_check', sql`${t.accountKey} ~ '^[a-z0-9]{4,20}$'`),
+    check('legacy_favorite_sources_source_user_id_check', sql`${t.sourceUserId}=${t.userId}`),
+  ],
+);
+
+/** Full JSON is encrypted. Removed records retain only the stable source key/timestamps. */
+export const legacyFavorites = librarySchema.table(
+  'legacy_favorites',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    accountKey: text('account_key').notNull(),
+    itemKey: text('item_key').notNull(),
+    snapshotCiphertext: bytes('snapshot_ciphertext'),
+    savedAt: time('saved_at').notNull(),
+    importedAt: time('imported_at').notNull(),
+    deletedAt: time('deleted_at'),
+  },
+  (t) => [
+    uniqueIndex('legacy_favorites_user_id_account_key_item_key_key').on(
+      t.userId,
+      t.accountKey,
+      t.itemKey,
+    ),
+    index('legacy_favorites_user_time_idx')
+      .on(t.userId, t.savedAt.desc(), t.id.desc())
+      .where(sql`${t.deletedAt} IS NULL`),
+    check('legacy_favorites_item_key_check', sql`${t.itemKey} ~ '^[a-f0-9]{64}$'`),
+    check(
+      'legacy_favorite_payload',
+      sql`(${t.deletedAt} IS NULL AND ${t.snapshotCiphertext} IS NOT NULL) OR (${t.deletedAt} IS NOT NULL AND ${t.snapshotCiphertext} IS NULL)`,
+    ),
+  ],
+);
+
+export const legacyFavoriteMediaLinks = librarySchema.table(
+  'legacy_favorite_media_links',
+  {
+    userId: uuid('user_id').notNull(),
+    referenceHash: text('reference_hash').notNull(),
+    kind: text('kind').notNull(),
+    mediaId: uuid('media_id').notNull(),
+    sourceBatch: text('source_batch').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.referenceHash, t.kind] }),
+    check(
+      'legacy_favorite_media_links_reference_hash_check',
+      sql`${t.referenceHash} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check('legacy_favorite_media_links_kind_check', sql`${t.kind} IN ('image','voice')`),
+  ],
 );

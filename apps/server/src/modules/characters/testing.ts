@@ -1,4 +1,15 @@
 export { CharacterService } from './application/characters.js';
+export { LegacyPersonaService } from './application/legacy-persona.js';
+export {
+  LegacyPersonaImport,
+  personaDigest,
+  bytesDigest,
+  targetPersonaPackage,
+  editablePersonaDocument,
+  applyPersonaMergePatch,
+  materializePersonaCard,
+  projectPersonalPersona,
+} from './domain/legacy-persona.js';
 export { ScenarioModeService } from './application/scenario-modes.js';
 export { CustomCharacterService } from './application/custom-character.js';
 export { GatewayCharacterEvaluator, type CharacterEvaluator } from './application/evaluator.js';

@@ -17,6 +17,66 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 export const aiRuntimeSchema = pgSchema('ai_runtime');
+/** 0164: original group-scoped source records, separate from private character memories. */
+export const legacyGroupMemorySources = aiRuntimeSchema.table(
+  'legacy_group_memory_sources',
+  {
+    userId: uuid('user_id').notNull(),
+    sourceAccountId: uuid('source_account_id').notNull(),
+    sourceGroupId: text('source_group_id').notNull(),
+    conversationId: uuid('conversation_id').notNull(),
+    sourceArchived: boolean('source_archived').notNull(),
+    activationAllowed: boolean('activation_allowed').notNull().default(false),
+    reviewDigest: text('review_digest').notNull(),
+    targetDigest: text('target_digest').notNull(),
+    generation: integer('generation').notNull(),
+    sourceBatch: text('source_batch').notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.sourceGroupId] }),
+    unique().on(t.userId, t.conversationId),
+    check(
+      'legacy_group_memory_sources_source_account_id_check',
+      sql`${t.sourceAccountId}=${t.userId}`,
+    ),
+  ],
+);
+export const legacyGroupMemories = aiRuntimeSchema.table(
+  'legacy_group_memories',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    sourceGroupId: text('source_group_id').notNull(),
+    sourceMemoryId: text('source_memory_id').notNull(),
+    sourceDigest: text('source_digest').notNull(),
+    conversationId: uuid('conversation_id').notNull(),
+    sourceEnabled: boolean('source_enabled').notNull(),
+    activationAllowed: boolean('activation_allowed').notNull().default(false),
+    blockedReason: text('blocked_reason'),
+    encodedBytes: integer('encoded_bytes').notNull(),
+    ciphertext: customType<{ data: Buffer }>({ dataType: () => 'bytea' })('ciphertext'),
+    sourceCreatedAt: timestamp('source_created_at', { withTimezone: true }).notNull(),
+    importedAt: timestamp('imported_at', { withTimezone: true }).notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    unique().on(t.userId, t.sourceGroupId, t.sourceMemoryId),
+    index('legacy_group_memories_read_idx')
+      .on(t.userId, t.conversationId, t.sourceCreatedAt.desc(), t.sourceMemoryId.desc())
+      .where(sql`${t.deletedAt} IS NULL AND ${t.sourceEnabled} AND ${t.activationAllowed}`),
+  ],
+);
+export const legacyGroupMemoryExclusions = aiRuntimeSchema.table(
+  'legacy_group_memory_exclusions',
+  {
+    userId: uuid('user_id').notNull(),
+    characterId: uuid('character_id').notNull(),
+    blockedAt: timestamp('blocked_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.characterId] })],
+);
 /** 群回复持久恢复状态；计划、当前输入和已生成结果按用户密钥加密。 */
 export const groupReplyPlans = aiRuntimeSchema.table(
   'group_reply_plans',

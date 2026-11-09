@@ -91,6 +91,7 @@ android {
         versionName = legacyIdentity.getProperty("versionName")
         minSdk = 24
         targetSdk = 36
+        testInstrumentationRunner = "app.weiban.shell.LegacyFavoritesOsInstrumentation"
     }
     signingConfigs {
         create("legacyRelease") {

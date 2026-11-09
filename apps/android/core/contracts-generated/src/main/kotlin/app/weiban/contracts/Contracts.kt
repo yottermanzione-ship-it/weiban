@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 7.8. Regenerate: pnpm android:generate
+// Contract 7.12. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "7.8"
+const val CONTRACT_VERSION: String = "7.12"
 
 @Serializable
 data class AccountAlias(
@@ -2125,6 +2125,8 @@ data class ChannelState(
     @SerialName("lastEventAt") val `lastEventAt`: Timestamp?,
     @SerialName("lastError") val `lastError`: String?,
     @SerialName("pendingExpiresAt") val `pendingExpiresAt`: Timestamp?,
+    @SerialName("bindingCount") val `bindingCount`: Long? = null,
+    @SerialName("multipleBindings") val `multipleBindings`: Boolean? = null,
 )
 
 @Serializable
@@ -3261,6 +3263,34 @@ data class ContactCardContent(
 @Serializable
 data class ContactCardEndpointsDismissRecommendationParams(
     @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class ContactOrganizationEndpointsSaveResponse(
+    @SerialName("snapshot") val `snapshot`: ContactOrganizationSnapshot,
+    @SerialName("replayed") val `replayed`: Boolean,
+)
+
+@Serializable
+data class ContactOrganizationSnapshot(
+    @SerialName("revision") val `revision`: Long,
+    @SerialName("starredCharacterIds") val `starredCharacterIds`: List<Id>,
+    @SerialName("tags") val `tags`: List<ContactOrganizationTag>,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp?,
+)
+
+@Serializable
+data class ContactOrganizationTag(
+    @SerialName("tagId") val `tagId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("characterIds") val `characterIds`: List<Id>,
+)
+
+@Serializable
+data class ContactOrganizationTagInput(
+    @SerialName("tagId") val `tagId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("characterIds") val `characterIds`: List<Id>,
 )
 
 typealias ContactStatus = String
@@ -6578,6 +6608,165 @@ data class LedgerEntry(
 )
 
 typealias LedgerEntryType = String
+
+@Serializable
+data class LegacyFavorite(
+    @SerialName("favoriteId") val `favoriteId`: Id,
+    @SerialName("accountKey") val `accountKey`: LegacyFavoriteAccountKey,
+    @SerialName("itemKey") val `itemKey`: LegacyFavoriteItemKey,
+    @SerialName("chatTitle") val `chatTitle`: String,
+    @SerialName("savedAt") val `savedAt`: Timestamp,
+    @SerialName("importedAt") val `importedAt`: Timestamp,
+    @SerialName("message") val `message`: LegacyFavoriteMessage,
+    @SerialName("media") val `media`: LegacyFavoriteMedia?,
+    @SerialName("mediaStatus") val `mediaStatus`: String,
+    @SerialName("mediaIssue") val `mediaIssue`: LegacyFavoriteMediaIssue?,
+)
+
+typealias LegacyFavoriteAccountKey = String
+
+@Serializable
+data class LegacyFavoriteImportItem(
+    @SerialName("accountKey") val `accountKey`: LegacyFavoriteAccountKey,
+    @SerialName("itemKey") val `itemKey`: LegacyFavoriteItemKey,
+    @SerialName("favorite") val `favorite`: LegacyFavoriteSnapshot,
+    @SerialName("mediaId") val `mediaId`: Id? = null,
+    @SerialName("mediaIssue") val `mediaIssue`: LegacyFavoriteMediaIssue? = null,
+)
+
+@Serializable
+data class LegacyFavoriteImportRequest(
+    @SerialName("items") val `items`: List<LegacyFavoriteImportItem>,
+)
+
+typealias LegacyFavoriteItemKey = String
+
+typealias LegacyFavoriteMediaIssue = String
+
+@Serializable
+data class LegacyFavoriteMessageSnapshot(
+    @SerialName("author") val `author`: String? = null,
+    @SerialName("avatar") val `avatar`: String? = null,
+    @SerialName("content") val `content`: String? = null,
+    @SerialName("isMine") val `isMine`: Boolean? = null,
+    @SerialName("type") val `type`: String? = null,
+    @SerialName("duration") val `duration`: Double? = null,
+    @SerialName("imageUrl") val `imageUrl`: String? = null,
+    @SerialName("isLocal") val `isLocal`: Boolean? = null,
+    @SerialName("mentionMe") val `mentionMe`: Boolean? = null,
+    @SerialName("quotedAuthor") val `quotedAuthor`: String? = null,
+    @SerialName("quotedContent") val `quotedContent`: String? = null,
+    @SerialName("timestamp") val `timestamp`: LegacyFavoriteMessageSnapshotTimestamp? = null,
+    @SerialName("audioPath") val `audioPath`: String? = null,
+    @SerialName("serverJobId") val `serverJobId`: LegacyFavoriteMessageSnapshotServerJobId? = null,
+    @SerialName("serverSeq") val `serverSeq`: LegacyFavoriteMessageSnapshotServerSeq? = null,
+    @SerialName("clientMessageId") val `clientMessageId`: String? = null,
+    @SerialName("stickerId") val `stickerId`: LegacyFavoriteMessageSnapshotStickerId? = null,
+    @SerialName("sendState") val `sendState`: String? = null,
+)
+
+@Serializable
+data class LegacyFavoriteSnapshot(
+    @SerialName("chatKey") val `chatKey`: String,
+    @SerialName("chatTitle") val `chatTitle`: String,
+    @SerialName("savedAt") val `savedAt`: Long,
+    @SerialName("message") val `message`: LegacyFavoriteMessageSnapshot,
+)
+
+@Serializable
+data class LegacyFavoritesEndpointsImportResponse(
+    @SerialName("imported") val `imported`: Long,
+    @SerialName("existing") val `existing`: Long,
+    @SerialName("removed") val `removed`: Long,
+    @SerialName("items") val `items`: List<LegacyFavoritesEndpointsImportResponseItemsItem>,
+)
+
+@Serializable
+data class LegacyFavoritesEndpointsListQuery(
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
+@Serializable
+data class LegacyFavoritesEndpointsListResponse(
+    @SerialName("items") val `items`: List<LegacyFavorite>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class LegacyFavoritesEndpointsRemoveParams(
+    @SerialName("favoriteId") val `favoriteId`: Id,
+)
+
+@Serializable
+data class LegacyFavoritesEndpointsSourceResponse(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("legacyAccountKeys") val `legacyAccountKeys`: List<LegacyFavoriteAccountKey>,
+    @SerialName("available") val `available`: Boolean,
+)
+
+typealias LegacyPersonaBlockedReason = String
+
+@Serializable
+data class LegacyPersonaDetail(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("characterName") val `characterName`: String,
+    @SerialName("state") val `state`: String,
+    @SerialName("version") val `version`: Long,
+    @SerialName("sourceVersion") val `sourceVersion`: Long?,
+    @SerialName("sourceUpdatedAt") val `sourceUpdatedAt`: Timestamp?,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+    @SerialName("blockedReason") val `blockedReason`: LegacyPersonaBlockedReason?,
+    @SerialName("sections") val `sections`: List<LegacyPersonaSection>,
+    @SerialName("resetAllowed") val `resetAllowed`: Boolean,
+    @SerialName("originalRetained") val `originalRetained`: Boolean,
+)
+
+@Serializable
+data class LegacyPersonaEndpointsGetParams(
+    @SerialName("characterId") val `characterId`: Id,
+)
+
+@Serializable
+data class LegacyPersonaEndpointsGetResponse(
+    @SerialName("item") val `item`: LegacyPersonaDetail?,
+)
+
+@Serializable
+data class LegacyPersonaEndpointsListResponse(
+    @SerialName("items") val `items`: List<LegacyPersonaSummary>,
+)
+
+@Serializable
+data class LegacyPersonaEndpointsResetResponse(
+    @SerialName("item") val `item`: LegacyPersonaDetail,
+    @SerialName("replayed") val `replayed`: Boolean,
+)
+
+@Serializable
+data class LegacyPersonaReset(
+    @SerialName("clientCommandId") val `clientCommandId`: Id,
+    @SerialName("expectedVersion") val `expectedVersion`: Long,
+)
+
+@Serializable
+data class LegacyPersonaSection(
+    @SerialName("key") val `key`: String,
+    @SerialName("title") val `title`: String,
+    @SerialName("fields") val `fields`: List<LegacyPersonaSectionFieldsItem>,
+)
+
+@Serializable
+data class LegacyPersonaSummary(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("characterName") val `characterName`: String,
+    @SerialName("state") val `state`: String,
+    @SerialName("version") val `version`: Long,
+    @SerialName("sourceVersion") val `sourceVersion`: Long?,
+    @SerialName("sourceUpdatedAt") val `sourceUpdatedAt`: Timestamp?,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+    @SerialName("blockedReason") val `blockedReason`: LegacyPersonaBlockedReason?,
+)
 
 @Serializable
 data class Letter(
@@ -10103,6 +10292,22 @@ data class RouteBillingBoundsInput(
     @SerialName("realtime") val `realtime`: RouteBillingBoundsInputRealtime? = null,
 )
 
+@Serializable
+data class SaveContactOrganizationRequest(
+    @SerialName("clientCommandId") val `clientCommandId`: Id,
+    @SerialName("expectedRevision") val `expectedRevision`: Long,
+    @SerialName("starredCharacterIds") val `starredCharacterIds`: List<Id>,
+    @SerialName("tags") val `tags`: List<ContactOrganizationTag>,
+)
+
+@Serializable
+data class SaveContactOrganizationRequestInput(
+    @SerialName("clientCommandId") val `clientCommandId`: Id,
+    @SerialName("expectedRevision") val `expectedRevision`: Long,
+    @SerialName("starredCharacterIds") val `starredCharacterIds`: List<Id>,
+    @SerialName("tags") val `tags`: List<ContactOrganizationTagInput>,
+)
+
 typealias ScanChannel = String
 
 @Serializable
@@ -12742,6 +12947,40 @@ data class WeibanCardData(
 )
 
 @Serializable
+data class WeiboBindingState(
+    @SerialName("channel") val `channel`: String,
+    @SerialName("name") val `name`: String,
+    @SerialName("description") val `description`: String,
+    @SerialName("status") val `status`: String,
+    @SerialName("integration") val `integration`: String,
+    @SerialName("characterId") val `characterId`: Id?,
+    @SerialName("characterName") val `characterName`: String?,
+    @SerialName("accountName") val `accountName`: String?,
+    @SerialName("accountMasked") val `accountMasked`: String?,
+    @SerialName("boundAt") val `boundAt`: Timestamp?,
+    @SerialName("lastEventAt") val `lastEventAt`: Timestamp?,
+    @SerialName("lastError") val `lastError`: String?,
+    @SerialName("pendingExpiresAt") val `pendingExpiresAt`: Timestamp?,
+    @SerialName("bindingCount") val `bindingCount`: Long? = null,
+    @SerialName("multipleBindings") val `multipleBindings`: Boolean? = null,
+    @SerialName("bindingId") val `bindingId`: Id?,
+    @SerialName("slot") val `slot`: WeiboSlotId,
+    @SerialName("slotLabel") val `slotLabel`: String,
+    @SerialName("assistantName") val `assistantName`: String,
+)
+
+@Serializable
+data class WeiboBindingsEndpointsListResponse(
+    @SerialName("items") val `items`: List<WeiboBindingState>,
+    @SerialName("characters") val `characters`: List<ChannelCharacter>,
+)
+
+@Serializable
+data class WeiboBindingsEndpointsSetCharacterParams(
+    @SerialName("bindingId") val `bindingId`: Id,
+)
+
+@Serializable
 data class WeiboConnectRequest(
     @SerialName("characterId") val `characterId`: Id,
     @SerialName("appId") val `appId`: String,
@@ -12754,6 +12993,24 @@ data class WeiboConnectRequestInput(
     @SerialName("appId") val `appId`: String,
     @SerialName("appSecret") val `appSecret`: String,
 )
+
+@Serializable
+data class WeiboSlotConnectRequest(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("appId") val `appId`: String,
+    @SerialName("appSecret") val `appSecret`: String,
+    @SerialName("slot") val `slot`: WeiboSlotId,
+)
+
+@Serializable
+data class WeiboSlotConnectRequestInput(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("appId") val `appId`: String,
+    @SerialName("appSecret") val `appSecret`: String,
+    @SerialName("slot") val `slot`: WeiboSlotId,
+)
+
+typealias WeiboSlotId = String
 
 @Serializable
 data class WishlistEndpointsAddItemBody(
@@ -12923,6 +13180,8 @@ typealias SharedSchema2 = JsonElement
 typealias SharedSchema3 = JsonElement
 
 typealias SharedSchema4 = JsonElement
+
+typealias SharedSchema5 = JsonElement
 
 @Serializable
 data class AchievementProgress(
@@ -14630,6 +14889,47 @@ data class LeaderboardSnapshotStatusUnmatchedItem(
     @SerialName("displayName") val `displayName`: String,
     @SerialName("arenaModelName") val `arenaModelName`: String?,
     @SerialName("suggestions") val `suggestions`: List<LeaderboardSnapshotStatusUnmatchedItemSuggestionsItem>? = null,
+)
+
+@Serializable
+data class LegacyFavoriteMessage(
+    @SerialName("author") val `author`: String,
+    @SerialName("type") val `type`: String,
+    @SerialName("content") val `content`: String,
+    @SerialName("isMine") val `isMine`: Boolean,
+    @SerialName("timestamp") val `timestamp`: String?,
+    @SerialName("duration") val `duration`: Double?,
+    @SerialName("quotedAuthor") val `quotedAuthor`: String?,
+    @SerialName("quotedContent") val `quotedContent`: String?,
+)
+
+@Serializable
+data class LegacyFavoriteMedia(
+    @SerialName("kind") val `kind`: String,
+    @SerialName("mediaId") val `mediaId`: Id,
+    @SerialName("durationMs") val `durationMs`: Long?,
+)
+
+typealias LegacyFavoriteMessageSnapshotTimestamp = JsonElement
+
+typealias LegacyFavoriteMessageSnapshotServerJobId = JsonElement
+
+typealias LegacyFavoriteMessageSnapshotServerSeq = JsonElement
+
+typealias LegacyFavoriteMessageSnapshotStickerId = JsonElement
+
+@Serializable
+data class LegacyFavoritesEndpointsImportResponseItemsItem(
+    @SerialName("accountKey") val `accountKey`: LegacyFavoriteAccountKey,
+    @SerialName("itemKey") val `itemKey`: LegacyFavoriteItemKey,
+    @SerialName("status") val `status`: String,
+    @SerialName("mediaStatus") val `mediaStatus`: String,
+)
+
+@Serializable
+data class LegacyPersonaSectionFieldsItem(
+    @SerialName("label") val `label`: String,
+    @SerialName("value") val `value`: String,
 )
 
 @Serializable

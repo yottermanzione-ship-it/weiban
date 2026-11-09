@@ -144,6 +144,44 @@ export class ChatReadService implements ChatReadPort {
     };
     return input ? read(asDbTx(input)) : this.db.transaction(read);
   }
+  async getGroupMemoryAccess(
+    userId: string,
+    conversationId: string,
+    input?: Tx,
+    lockForWrite = false,
+  ) {
+    parseContract(Id, userId);
+    parseContract(Id, conversationId);
+    if (lockForWrite) {
+      if (!input) throw new AppError('bad_request', '写入前群记忆门禁必须传入事务');
+      // The caller acquires owner/contact locks first; this is the same row lock used by clear/post.
+      await this.store.load(asDbTx(input), conversationId, userId);
+    }
+    const reader = input ? asDbTx(input) : this.db;
+    const result = await reader.query<{
+      ownerUserId: string;
+      conversationId: string;
+      scope: 'normal' | 'adult';
+      archived: boolean;
+      hidden: boolean;
+      clearedThroughSeq: string;
+      lastSeq: string;
+      participants: Array<{ participantId: string; kind: string; refId: string; joinedAt: string }>;
+    }>(
+      `SELECT c.owner_user_id AS "ownerUserId",c.id AS "conversationId",c.content_scope AS scope,
+      (c.archived_at IS NOT NULL) AS archived,coalesce(s.hidden,true) AS hidden,
+      coalesce(s.cleared_through_seq,0)::text AS "clearedThroughSeq",c.last_seq::text AS "lastSeq",
+      coalesce((SELECT jsonb_agg(jsonb_build_object('participantId',p.id,'kind',p.kind,'refId',p.ref_id,'joinedAt',p.joined_at) ORDER BY p.id)
+        FROM chat.participants p WHERE p.conversation_id=c.id AND p.left_at IS NULL),'[]'::jsonb) AS participants
+      FROM chat.conversations c LEFT JOIN chat.user_conversation_states s ON s.conversation_id=c.id AND s.user_id=$1
+      WHERE c.id=$2 AND c.owner_user_id=$1 AND c.type='group'`,
+      [userId, conversationId],
+    );
+    const row = result.rows[0];
+    return row
+      ? { ...row, clearedThroughSeq: Number(row.clearedThroughSeq), lastSeq: Number(row.lastSeq) }
+      : null;
+  }
   /**
    * 不传 tx：同 getConversation（独立事务）。
    * 传 tx（5.7）：在调用方事务里读，**不锁会话行**——订阅者多半只想知道「对面是谁」，随后才拿本模块的咨询锁；
