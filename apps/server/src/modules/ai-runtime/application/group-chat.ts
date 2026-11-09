@@ -201,6 +201,7 @@ function relevance(text: string, topics: string[]): number {
 
 import { EcologySettingsService } from './ecology-settings.js';
 import { ScenarioCatalog, type RuntimeScenario } from './scenario-catalog.js';
+import { LegacyGroupMemoryService } from './legacy-group-memory.js';
 
 @Injectable()
 export class GroupChatService {
@@ -240,6 +241,9 @@ export class GroupChatService {
     /** T-20261103g：群聊发言也能带表情包（同一套标记与挑图，群聊另有防刷屏规则）。 */
     @Optional() @Inject(MediaAiService) private readonly mediaAi?: MediaAiService,
     @Optional() @Inject(ScenarioCatalog) private readonly catalog?: ScenarioCatalog,
+    @Optional()
+    @Inject(LegacyGroupMemoryService)
+    private readonly legacyGroupMemory?: LegacyGroupMemoryService,
   ) {}
 
   // =========================================================================
@@ -1002,6 +1006,12 @@ export class GroupChatService {
       scenarioPrompt: presetPrompt ?? undefined,
     });
     if (!brain) return null;
+    const legacy = await this.legacyGroupMemory?.context(
+      input.userId,
+      conversation.conversationId,
+      speaker.characterId,
+      input.purpose,
+    );
     const task =
       input.reason === 'starter'
         ? `你在群里主动起个话题，素材是你今天的经历：「${input.topic ?? ''}」。像微信群闲聊，一两句。`
@@ -1025,7 +1035,8 @@ export class GroupChatService {
     };
     const stickerHint =
       (await this.mediaAi?.groupStickerPrompt(stickerRules).catch(() => '')) ?? '';
-    let request: GenerateTextInput = {
+    let request: GenerateTextInput & { legacyGroupMemoryStamp?: string } = {
+      ...(legacy?.stamp ? { legacyGroupMemoryStamp: legacy.stamp } : {}),
       userId: input.userId,
       characterId: speaker.characterId,
       conversationId: conversation.conversationId,
@@ -1047,6 +1058,7 @@ export class GroupChatService {
           content: `${GROUP_MEMORY_BOUNDARY}\n群聊风格：${roleGroup(characterView(role)).style || '自然'}\n群成员关系：\n${relationLines.join('\n') || '（群里只有你和用户）'}\n用户：${profile?.nickname ?? '用户'}（与你的好感度：${stageLabel(speaker.familiarity)}）`,
         },
         ...brainTail(brain),
+        ...(legacy?.text ? [{ role: 'user' as const, content: legacy.text }] : []),
         {
           role: 'user',
           content: `群聊记录：\n${transcript || '（还没有消息）'}\n\n【系统提示】${task}${imageNote ? `\n${imageNote.replace('回复正文写完后', '群消息正文写完后')}` : ''}${stickerHint ? `\n${stickerHint}` : ''}`,
@@ -1063,7 +1075,7 @@ export class GroupChatService {
       },
     };
     if (input.durable) {
-      const frozen = await this.replies.open<GenerateTextInput>(input.durable, 'input');
+      const frozen = await this.replies.open<typeof request>(input.durable, 'input');
       if (frozen) request = frozen;
       if (request.modelRole === 'adult' || request.meta?.scenarioMode === 'adult') return null;
       request = {
@@ -1077,6 +1089,19 @@ export class GroupChatService {
       )
         return null;
     }
+    const legacyReader = this.legacyGroupMemory;
+    const legacyStamp = request.legacyGroupMemoryStamp;
+    const legacyCurrent = () =>
+      !legacyStamp
+        ? Promise.resolve(true)
+        : input.purpose !== 'chat_reply' || !legacyReader
+          ? Promise.resolve(false)
+          : legacyReader.isCurrent(
+              input.userId,
+              conversation.conversationId,
+              speaker.characterId,
+              legacyStamp,
+            );
     const cached = input.durable
       ? await this.replies.open<{ text: string; stopChain: boolean; sticker?: MessageContent }>(
           input.durable,
@@ -1093,6 +1118,7 @@ export class GroupChatService {
       ))
     )
       return null;
+    if (!(await legacyCurrent())) return null;
     let generated = cached ? null : await this.adultBoundary.generate(request, adult);
     if (generated && this.imageSearch)
       generated = await this.imageSearch.refine(
@@ -1100,6 +1126,7 @@ export class GroupChatService {
         generated,
         (next) => this.adultBoundary.generate(next, false),
         async () => {
+          if (!(await legacyCurrent())) return false;
           if (
             !(await this.stillActive(
               conversation,
@@ -1128,6 +1155,7 @@ export class GroupChatService {
       result.error === 'capability_missing' &&
       request.messages.some((m) => m.images?.length)
     ) {
+      if (!(await legacyCurrent())) return null;
       sawImages = false;
       result = await this.adultBoundary.generate(
         {
@@ -1147,6 +1175,7 @@ export class GroupChatService {
         adult,
       );
     }
+    if (!(await legacyCurrent())) return null;
     if (!result.ok && !(adult && result.error === 'content_rejected')) return null;
     const stopChain = cached?.stopChain ?? !result.ok;
     // v3.3（积分制）：群聊发言消耗的积分记在消息上（重放缓存时已扣过费，不重复记）。
@@ -1284,7 +1313,7 @@ export class GroupChatService {
           )
             break;
         }
-        const posted = await this.writer.postMessage({
+        const postInput: Parameters<ChatParticipantPort['postMessage']>[0] = {
           conversationId: conversation.conversationId,
           senderParticipantId: speaker.participantId,
           content,
@@ -1297,8 +1326,26 @@ export class GroupChatService {
           expectedScope: conversation.contentScope,
           ...(input.labels.length ? { labels: input.labels } : {}),
           ...(index === 0 && charge && charge.chargedMicros > 0 ? { charge } : {}),
-        });
-        if (!posted.ok) {
+        };
+        const posted =
+          legacyStamp && legacyReader
+            ? await this.db.transaction(async (tx) => {
+                if (!(await this.replies.lockOwner(tx, input.userId, conversation.conversationId)))
+                  return null;
+                if (
+                  !(await legacyReader.isCurrent(
+                    input.userId,
+                    conversation.conversationId,
+                    speaker.characterId,
+                    legacyStamp,
+                    tx,
+                  ))
+                )
+                  return null;
+                return this.writer.postMessage(postInput, tx);
+              })
+            : await this.writer.postMessage(postInput);
+        if (!posted?.ok) {
           if (index === 0) return null;
           break;
         }

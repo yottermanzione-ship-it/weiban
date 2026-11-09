@@ -21,6 +21,7 @@ const directReferences = [
   ['ai_runtime.model_blocked_messages', ['seq']],
 ];
 const extraReferences = [
+  ['channels.bindings', ['reply_after_seq'], 'reply_conversation_id=$1'],
   [
     'ai_runtime.chat_summary_states',
     ['covered_seq', 'target_seq'],
@@ -114,6 +115,15 @@ async function assertDrained(tx, id) {
     [id],
   );
   invariant(Number(pending.rows[0].n) === 0, 'MEMORY_WORK_MUST_DRAIN');
+  const channels = await tx.query(
+    `SELECT
+    (SELECT count(*) FROM channels.outbound_messages o JOIN chat.messages m ON m.id=o.chat_message_id
+      WHERE m.conversation_id=$1 AND o.status IN ('pending','retry','sending')) +
+    (SELECT count(*) FROM platform.outbox WHERE event_type='chat.message_created' AND dispatched_at IS NULL
+      AND event->'payload'->>'conversationId'=$1::text) AS n`,
+    [id],
+  );
+  invariant(Number(channels.rows[0].n) === 0, 'CHANNEL_DELIVERY_MUST_DRAIN');
 }
 
 async function insertMessageBatch(tx, rows, crypto, owner) {
@@ -187,6 +197,15 @@ export async function applyConversationDelta({
     ]);
     await tx.query(
       "SELECT pg_advisory_xact_lock(hashtextextended('ai_runtime:conversation:' || $1,0))",
+      [plan.conversationId],
+    );
+    // The live Weibo routing path locks binding before chat. Match that order even
+    // though a real maintenance window must already have stopped all writers.
+    await tx.query("SELECT pg_advisory_xact_lock(hashtextextended('weibo-user:' || $1,0))", [
+      plan.ownerUserId,
+    ]);
+    await tx.query(
+      'SELECT id FROM channels.bindings WHERE reply_conversation_id=$1 ORDER BY id FOR UPDATE',
       [plan.conversationId],
     );
     await tx.query('SELECT id FROM chat.conversations WHERE id=$1 FOR UPDATE', [
@@ -276,6 +295,19 @@ export async function applyConversationDelta({
           offset,
         ]);
         for (const row of rows) {
+          if (table === 'channels.bindings')
+            invariant(
+              row.user_id === plan.ownerUserId &&
+                row.channel === 'weibo' &&
+                baseline.conversation.type === 'direct' &&
+                row.character_id === baseline.conversation.character_id &&
+                row.reply_conversation_id === plan.conversationId &&
+                row.reply_after_seq !== null &&
+                Number.isSafeInteger(Number(row.reply_after_seq)) &&
+                Number(row.reply_after_seq) >= 0 &&
+                Number(row.reply_after_seq) <= Number(baseline.conversation.last_seq),
+              'CHANNEL_REPLY_BOUNDARY_REQUIRES_REVIEW',
+            );
           const mapped = row.message_id
             ? exactReference(row, 'message_id', row.seq)
             : oldSeq.get(Number(row.seq));
@@ -294,7 +326,7 @@ export async function applyConversationDelta({
               'MEMORY_BARRIER_GAP_REQUIRES_REVIEW',
             );
           await tx.query(
-            `UPDATE ${table} SET ${columns.map((column, index) => `${column}=$${index + 2}`).join(',')} WHERE id=$1`,
+            `UPDATE ${table} SET ${columns.map((column, index) => `${column}=$${index + 2}`).join(',')}${table === 'channels.bindings' ? ',generation=generation+1' : ''} WHERE id=$1`,
             [
               row.id,
               ...columns.map((column) =>

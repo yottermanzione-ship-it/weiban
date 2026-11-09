@@ -87,6 +87,9 @@ const T066_TABLES = [
   'shared_episodes',
   'call_memory_jobs',
   'group_memory_states',
+  'legacy_group_memories',
+  'legacy_group_memory_sources',
+  'legacy_group_memory_exclusions',
   // T-20261103j（迁移 0156）：被上游安全策略拦过、不再发给模型的消息登记
   'model_blocked_messages',
 ] as const;

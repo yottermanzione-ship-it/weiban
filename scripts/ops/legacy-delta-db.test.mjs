@@ -59,7 +59,7 @@ const apply = (plan, extra = {}) =>
 test('完整当前表结构的序号字段清单与迁移映射一致', async () => {
   const rows = (
     await lab.database.query(
-      "SELECT table_schema||'.'||table_name AS tbl,column_name AS col FROM information_schema.columns WHERE table_schema IN ('chat','ai_runtime','library') AND column_name ~ '(^seq$|_seq$)' ORDER BY 1,2",
+      "SELECT table_schema||'.'||table_name AS tbl,column_name AS col FROM information_schema.columns WHERE table_schema IN ('chat','ai_runtime','library','channels') AND column_name ~ '(^seq$|_seq$)' ORDER BY 1,2",
     )
   ).rows;
   const expected = sequenceReferenceRegistry
@@ -70,13 +70,16 @@ test('完整当前表结构的序号字段清单与迁移映射一致', async ()
       'chat.participants.read_seq',
       'chat.user_conversation_states.read_seq',
       'chat.user_conversation_states.cleared_through_seq',
+      // Explicit non-chat ordinals: daily activity order, and the QQ provider's
+      // per-inbound-message reply counter (qq-session-store.ts claimReply resets/increments it).
+      'ai_runtime.daily_events.seq',
+      'channels.outbound_messages.qq_reply_seq',
+      'channels.qq_sessions.reply_seq',
     ])
     .sort();
-  // daily_events.seq is a per-day activity ordinal, not a conversation/message boundary.
   assert.deepEqual(
     rows
       .map((row) => row.tbl + '.' + row.col)
-      .filter((name) => name !== 'ai_runtime.daily_events.seq')
       .sort(),
     expected,
   );
@@ -134,6 +137,147 @@ test('真实数据库交错合并、密文解密、隐藏/清空、引用和重�
   assert.equal((await apply(plan)).status, 'already_applied');
   assert.equal(fingerprint(await readConversationBaseline(lab.database, f.id)), digest);
   assert.equal((await apply(await fixturePlan(lab, f, incoming))).status, 'unchanged');
+});
+
+async function addWeiboBoundary(fixture, slot, boundary) {
+  const bindingId = randomUUID();
+  const peer = await lab.crypto.seal(
+    fixture.owner,
+    `synthetic:weibo-peer:${bindingId}`,
+    'synthetic-peer',
+  );
+  await lab.database.query(
+    `INSERT INTO channels.bindings(id,user_id,channel,slot,status,character_id,character_name,
+      generation,context_token_sealed,reply_conversation_id,reply_after_seq,created_at,updated_at)
+      VALUES($1,$2,'weibo',$3,'active',$4,'合成角色',4,$5,$6,$7,$8,$8)`,
+    [
+      bindingId,
+      fixture.owner,
+      slot,
+      fixture.peer,
+      peer,
+      boundary === null ? null : fixture.id,
+      boundary,
+      cutoff,
+    ],
+  );
+  return bindingId;
+}
+
+test('微博回复边界随历史重排并使旧代际失效，边界两侧身份、其他槽及密文保持', async () => {
+  const owner = (await addFixtureUser(lab)).id;
+  const f = await addFixtureConversation(lab, { owner, seed: 17000 });
+  const other = await addFixtureConversation(lab, { owner, seed: 18000 });
+  const bindingId = await addWeiboBoundary(f, 'main', 2);
+  const otherId = await addWeiboBoundary(other, 'blue', 1);
+  const unconfiguredId = await addWeiboBoundary(
+    await addFixtureConversation(lab, { owner, seed: 19000 }),
+    'white',
+    null,
+  );
+  const bindingsBefore = (
+    await lab.database.query('SELECT * FROM channels.bindings WHERE user_id=$1 ORDER BY id', [
+      owner,
+    ])
+  ).rows;
+  const before = await readConversationBaseline(lab.database, f.id);
+  const eligibleIds = before.messages
+    .filter((m) => Number(m.seq) > 2)
+    .map((m) => m.id)
+    .sort();
+  const plan = await fixturePlan(lab, f);
+  await apply(plan);
+  const after = await readConversationBaseline(lab.database, f.id);
+  const bindingsAfter = (
+    await lab.database.query('SELECT * FROM channels.bindings WHERE user_id=$1 ORDER BY id', [
+      owner,
+    ])
+  ).rows;
+  const current = bindingsAfter.find((row) => row.id === bindingId);
+  assert.equal(Number(current.reply_after_seq), 4);
+  assert.deepEqual(
+    after.messages
+      .filter(
+        (m) =>
+          before.messages.some((old) => old.id === m.id) &&
+          Number(m.seq) > Number(current.reply_after_seq),
+      )
+      .map((m) => m.id)
+      .sort(),
+    eligibleIds,
+  );
+  const previous = bindingsBefore.find((row) => row.id === bindingId);
+  assert.equal(current.generation, previous.generation + 1);
+  assert.deepEqual(
+    { ...current, reply_after_seq: previous.reply_after_seq, generation: previous.generation },
+    previous,
+  );
+  for (const id of [otherId, unconfiguredId])
+    assert.deepEqual(
+      bindingsAfter.find((row) => row.id === id),
+      bindingsBefore.find((row) => row.id === id),
+    );
+  assert.equal((await apply(plan)).status, 'already_applied');
+  assert.equal(
+    (await lab.database.query('SELECT generation FROM channels.bindings WHERE id=$1', [bindingId]))
+      .rows[0].generation,
+    current.generation,
+  );
+});
+
+test('渠道既有排队与尚未消费的消息事件必须排空，边界改变使旧迁移计划拒绝', async () => {
+  const owner = (await addFixtureUser(lab)).id;
+  const f = await addFixtureConversation(lab, { owner, seed: 20000 });
+  const bindingId = await addWeiboBoundary(f, 'main', 2);
+  const before = await readConversationBaseline(lab.database, f.id);
+  const plan = await fixturePlan(lab, f);
+  const queuedId = randomUUID();
+  await lab.database.query(
+    `INSERT INTO channels.outbound_messages(id,binding_id,user_id,channel,chat_message_id,text_sealed,
+      status,next_attempt_at,created_at,updated_at) VALUES($1,$2,$3,'weibo',$4,$5,'pending',$6,$6,$6)`,
+    [
+      queuedId,
+      bindingId,
+      owner,
+      before.messages[0].id,
+      await lab.crypto.seal(owner, `synthetic:outbound:${queuedId}`, 'synthetic-outbound'),
+      cutoff,
+    ],
+  );
+  await assert.rejects(apply(plan), /CHANNEL_DELIVERY_MUST_DRAIN/);
+  assert.equal(
+    fingerprint(await readConversationBaseline(lab.database, f.id)),
+    fingerprint(before),
+  );
+  await lab.database.query("UPDATE channels.outbound_messages SET status='sent' WHERE id=$1", [
+    queuedId,
+  ]);
+  const eventId = randomUUID();
+  await lab.database.query(
+    `INSERT INTO platform.outbox(id,event_type,producer,event,occurred_at,created_at,next_attempt_at)
+      VALUES($1,'chat.message_created','chat',$2,$3,$3,$3)`,
+    [eventId, { payload: { conversationId: f.id, messageId: before.messages[0].id } }, cutoff],
+  );
+  await assert.rejects(apply(plan), /CHANNEL_DELIVERY_MUST_DRAIN/);
+  assert.equal(
+    fingerprint(await readConversationBaseline(lab.database, f.id)),
+    fingerprint(before),
+  );
+  await lab.database.query('UPDATE platform.outbox SET dispatched_at=$2 WHERE id=$1', [
+    eventId,
+    cutoff,
+  ]);
+  await lab.database.query('UPDATE channels.bindings SET generation=generation+1 WHERE id=$1', [
+    bindingId,
+  ]);
+  await assert.rejects(apply(plan), /TARGET_CHANGED_REPLAN_REQUIRED/);
+  const revised = await fixturePlan(lab, f);
+  await apply(revised);
+  assert.equal(
+    (await lab.database.query('SELECT generation FROM channels.bindings WHERE id=$1', [bindingId]))
+      .rows[0].generation,
+    6,
+  );
 });
 
 test('两处断点故障全部回滚，目标并发变化使旧计划失效', async () => {

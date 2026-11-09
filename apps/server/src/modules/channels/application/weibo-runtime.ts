@@ -36,6 +36,8 @@ import {
 
 const RECONNECT_MS = 5_000;
 const PING_MS = 30_000;
+export const WEIBO_WS_FACTORY = Symbol('WEIBO_WS_FACTORY');
+export type WeiboWebSocketFactory = (url: string) => WebSocket;
 
 interface Connection {
   binding: BindingRow;
@@ -58,13 +60,21 @@ export class WeiboRuntime implements OnApplicationShutdown {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(LOGGER) private readonly logger: Logger,
+    @Inject(WEIBO_WS_FACTORY) private readonly websocket: WeiboWebSocketFactory,
   ) {}
 
   /** 按 active 绑定对齐连接（ChannelsWorker 每分钟调一次，绑定 / 解绑后也会调）。 */
   async reconcile(): Promise<void> {
     if (this.stopping) return;
     if (channelRuntimeConfig(this.config, 'weibo').integration !== 'live') return;
-    const rows = await this.store.activeBindings('weibo', 200).catch(() => [] as BindingRow[]);
+    const rows: BindingRow[] = [];
+    let cursor: string | null = null;
+    for (;;) {
+      const page = await this.store.activeWeiboPage(cursor, 200);
+      rows.push(...page);
+      if (page.length < 200) break;
+      cursor = page.at(-1)!.id;
+    }
     const alive = new Set<string>();
     for (const binding of rows) {
       if (!isChannelUserAllowed(this.config, 'weibo', binding.user_id)) continue;
@@ -165,7 +175,7 @@ export class WeiboRuntime implements OnApplicationShutdown {
     connection.botUid = token.uid;
     let socket: WebSocket;
     try {
-      socket = new WebSocket(
+      socket = this.websocket(
         weiboStreamUrl({
           appId: credentials.appId,
           token: token.token,

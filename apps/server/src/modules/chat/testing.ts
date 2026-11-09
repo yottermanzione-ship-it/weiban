@@ -2,6 +2,8 @@ import type { Database } from '../../platform/index.js';
 export { ChatAdminService } from './application/admin.js';
 export { ChatLifecycle } from './application/lifecycle.js';
 export { ChatStore } from './application/store.js';
+export { ChatUserService } from './application/user.js';
+export { ChatReadService } from './application/read.js';
 export { ChatGroupService } from './application/groups.js';
 export class ChatTestQueries {
   constructor(private readonly db: Database) {}

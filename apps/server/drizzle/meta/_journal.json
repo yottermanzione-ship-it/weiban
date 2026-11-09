@@ -1066,6 +1066,20 @@
       "when": 1794182400000,
       "tag": "0163_legacy_local_favorites",
       "breakpoints": true
+    },
+    {
+      "idx": 164,
+      "version": "7",
+      "when": 1794186000000,
+      "tag": "0164_legacy_group_memories",
+      "breakpoints": true
+    },
+    {
+      "idx": 165,
+      "version": "7",
+      "when": 1794189600000,
+      "tag": "0165_weibo_slots",
+      "breakpoints": true
     }
   ]
 }

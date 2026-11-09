@@ -88,11 +88,14 @@ describeDb('龙虾助手原凭据流程：假鉴权上游，真实 SQL / DEK / �
       .overrideProvider(CHAT_READ_PORT)
       .useValue({
         findDirectConversation: async () => ({
-          conversationId: 'test-conversation',
+          conversationId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
           contentScope: scope,
+          lastSeq: 0,
         }),
         getMessage: async (id: string) => ({
           messageId: id,
+          conversationId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+          seq: 1,
           content: { type: 'text', text: '测试回复' },
         }),
       })
@@ -176,7 +179,13 @@ describeDb('龙虾助手原凭据流程：假鉴权上游，真实 SQL / DEK / �
     const read = module.get(CHAT_READ_PORT);
     const find = vi.spyOn(read, 'findDirectConversation');
     try {
-      expect(await bridge.ingest(binding, input())).toBe('accepted');
+      expect(await bridge.ingest(binding, input())).toBe('rejected');
+      expect(find).not.toHaveBeenCalled();
+      const current = (await store.bindingById(binding.id))!;
+      expect(current.generation).toBe(binding.generation + 1);
+      expect(await bridge.ingest(current, input('sender-from-helper', current.generation))).toBe(
+        'accepted',
+      );
       expect(find).toHaveBeenCalledWith(OWNER, updatedCharacter);
     } finally {
       find.mockRestore();
@@ -214,7 +223,7 @@ describeDb('龙虾助手原凭据流程：假鉴权上游，真实 SQL / DEK / �
       }),
     );
     const event = {
-      conversationId: 'test-conversation',
+      conversationId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
       conversationType: 'direct' as const,
       messageId: newId(),
       senderKind: 'character' as const,

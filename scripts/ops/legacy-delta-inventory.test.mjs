@@ -139,6 +139,40 @@ function blocked(input, code) {
   return plan;
 }
 
+// Entirely synthetic metadata; no real code, user identifier or database read.
+const retiredSql = `
+CREATE TABLE chat_messages (id INTEGER PRIMARY KEY, user_id INTEGER, chat_name TEXT, content TEXT, timestamp TEXT, is_me INTEGER, created_at TEXT);
+CREATE TABLE licenses (id TEXT PRIMARY KEY, user_id TEXT, plan TEXT, starts_at TEXT, expires_at TEXT, max_friends INTEGER, voice_enabled INTEGER, group_chat_enabled INTEGER, early_access INTEGER, source_cdk TEXT, status TEXT, created_at TEXT);
+CREATE TABLE cdks (id INTEGER PRIMARY KEY, code TEXT UNIQUE, type TEXT, used_by INTEGER, used_at TEXT, created_at TEXT);
+`;
+function retiredFixture() {
+  const input = fixture(syntheticSchema(sql + retiredSql));
+  input.retiredTableObservations = {};
+  for (const name of ['chat_messages', 'licenses', 'cdks']) {
+    const table = input.schema.tables.find((entry) => entry.name === name);
+    const decision = input.decisions[name];
+    for (const mapping of Object.values(decision.columns)) {
+      mapping.action = 'retain-encrypted';
+      delete mapping.target;
+    }
+    const observation = {
+      schemaDigest: input.schema.digest,
+      tableDigest: table.digest,
+      sourceFinalDigest: input.window.sourceFinalDigest,
+      observedAt: input.window.to,
+      rowCount: name === 'cdks' ? 3 : 0,
+      ...(name === 'cdks' ? { unusedRows: 3, usageMarkedRows: 0 } : {}),
+      consumerSourceCommit: 'a'.repeat(40),
+      consumerSourceDigest: proof('synthetic-consumer-source-tree'),
+      consumerScanDigest: decision.proofs['no-runtime-business-consumers'],
+      businessConsumerCount: 0,
+    };
+    input.retiredTableObservations[name] = observation;
+    decision.retirementReview = { observationDigest: inventoryDigest(observation) };
+  }
+  return input;
+}
+
 test('source scanning parses JS without evaluation and ignores comments, regex text and SQL value strings', () => {
   const source =
     "throw new Error('must never execute');\n// CREATE TABLE imagined (id TEXT);\nconst regex = /[\"']/g;\ndb.exec(`CREATE TABLE group_memories (id TEXT PRIMARY KEY, note TEXT DEFAULT 'CREATE TABLE fake (id TEXT)');`);";
@@ -477,4 +511,198 @@ test('the same paid order cannot grant uncredited benefits twice under different
   );
   stamp(input.events.entitlements);
   blocked(input, 'DUPLICATE_ENTITLEMENT_ORDER');
+});
+
+test('each retired runtime table has its own encrypted-history-only rule, even when empty', () => {
+  const input = retiredFixture();
+  const plan = planMigrationInventory(input);
+  assert.equal(plan.status, 'planned-for-synthetic-rehearsal');
+  assert.equal(plan.productionReady, false);
+  for (const name of ['chat_messages', 'licenses', 'cdks']) {
+    const rule = migrationDomainRule(name);
+    assert.equal(rule.domain, `retired_${name}`);
+    assert.deepEqual(rule.actions, ['retain-encrypted-history']);
+    const row = plan.inventory.find((entry) => entry.table === name);
+    assert.equal(row.exportCovered, false);
+    assert.equal(row.status, 'planned');
+    for (const operation of [
+      'restore-business',
+      'redeem-code',
+      'grant-entitlement',
+      'replay',
+      'delete-original',
+      'drop-table',
+      'discard-as-seed',
+    ])
+      assert.ok(row.prohibitedOperations.includes(operation));
+  }
+});
+
+test('zero-row retired tables still need current schema/count/consumer and preservation evidence', () => {
+  for (const name of ['chat_messages', 'licenses', 'cdks']) {
+    const missing = retiredFixture();
+    delete missing.retiredTableObservations[name];
+    blocked(missing, 'RETIRED_TABLE_OBSERVATION_REQUIRED');
+    for (const key of migrationDomainRule(name).requires) {
+      const input = retiredFixture();
+      delete input.decisions[name].proofs[key];
+      blocked(input, 'DOMAIN_EVIDENCE_REQUIRED');
+    }
+    const unreviewed = retiredFixture();
+    delete unreviewed.decisions[name].productDecisionDigest;
+    blocked(unreviewed, 'REVIEWED_DISPOSITION_DECISION_REQUIRED');
+  }
+});
+
+test('retired data cannot be mapped, excluded, restored, redeemed, replayed or discarded as seeds', () => {
+  for (const name of ['chat_messages', 'licenses', 'cdks']) {
+    for (const action of [
+      'map-protected',
+      'exclude-reviewed',
+      'retain-reviewed',
+      'restore-business',
+      'redeem-code',
+      'grant-entitlement',
+      'replay',
+      'discard-as-seed',
+    ]) {
+      const input = retiredFixture();
+      input.decisions[name].action = action;
+      blocked(input, 'DISPOSITION_NOT_ALLOWED');
+    }
+    for (const action of ['map', 'protect-target', 'exclude-reviewed']) {
+      const input = retiredFixture();
+      Object.assign(input.decisions[name].columns.id, { action, target: 'ordinary.records.id' });
+      blocked(input, 'RETIRED_FIELD_ENCRYPTED_RETENTION_REQUIRED');
+    }
+    const target = retiredFixture();
+    target.decisions[name].columns.id.target = 'ordinary.records.id';
+    blocked(target, 'RETIRED_FIELD_ENCRYPTED_RETENTION_REQUIRED');
+  }
+});
+
+test('old CDK values and license source codes are explicitly sensitive and cannot be copied', () => {
+  for (const [name, column] of [
+    ['cdks', 'code'],
+    ['licenses', 'source_cdk'],
+  ]) {
+    const input = retiredFixture();
+    Object.assign(input.decisions[name].columns[column], {
+      action: 'map',
+      target: 'ordinary.activation.code',
+    });
+    const plan = blocked(input, 'SENSITIVE_FIELD_DIRECT_COPY_FORBIDDEN');
+    assert.ok(codes(plan).has('RETIRED_FIELD_ENCRYPTED_RETENTION_REQUIRED'));
+    assert.ok(plan.inventory.find((row) => row.table === name).sensitiveColumns.includes(column));
+  }
+});
+
+test('wildcard and explicit ordinary exports block retired data, with specific sensitive-code diagnostics', () => {
+  for (const [name, column] of [
+    ['cdks', 'code'],
+    ['licenses', 'source_cdk'],
+    ['chat_messages', 'content'],
+  ]) {
+    for (const projection of ['*', column, 'id']) {
+      const input = retiredFixture();
+      input.exporter = readExportWhitelist(
+        python.replace('}', `'${name}': 'SELECT ${projection} FROM ${name}',\n}`),
+      );
+      const plan = blocked(input, 'RETIRED_TABLE_ORDINARY_EXPORT_FORBIDDEN');
+      assert.equal(
+        codes(plan).has('SENSITIVE_RETIRED_FIELD_EXPORTED'),
+        name !== 'chat_messages' && projection !== 'id',
+      );
+    }
+  }
+});
+
+test('retired observations reject missing, invalid and inconsistent aggregate counts', () => {
+  for (const rowCount of [undefined, -1, 0.5, Number.MAX_SAFE_INTEGER + 1, '0']) {
+    const input = retiredFixture();
+    input.retiredTableObservations.chat_messages.rowCount = rowCount;
+    blocked(input, 'RETIRED_CURRENT_ROW_COUNTS_REQUIRED');
+  }
+  for (const change of [
+    { unusedRows: undefined },
+    { usageMarkedRows: -1 },
+    { unusedRows: 2 },
+    { usageMarkedRows: 1 },
+  ]) {
+    const input = retiredFixture();
+    Object.assign(input.retiredTableObservations.cdks, change);
+    blocked(input, 'RETIRED_CURRENT_ROW_COUNTS_REQUIRED');
+  }
+});
+
+test('row-count or use-state changes cannot reuse an old zero-row or unused-code review', () => {
+  for (const name of ['chat_messages', 'licenses', 'cdks']) {
+    const input = retiredFixture();
+    const observation = input.retiredTableObservations[name];
+    observation.rowCount++;
+    if (name === 'cdks') observation.unusedRows++;
+    blocked(input, 'RETIRED_REVIEW_OBSERVATION_MISMATCH');
+    input.decisions[name].retirementReview.observationDigest = inventoryDigest(observation);
+    assert.equal(planMigrationInventory(input).status, 'planned-for-synthetic-rehearsal');
+  }
+  const marked = retiredFixture();
+  marked.retiredTableObservations.cdks.unusedRows = 2;
+  marked.retiredTableObservations.cdks.usageMarkedRows = 1;
+  blocked(marked, 'RETIRED_REVIEW_OBSERVATION_MISMATCH');
+});
+
+test('schema drift and changed snapshot/time/source proof invalidate retired reviews', () => {
+  const schemaChange = retiredFixture();
+  schemaChange.schema = syntheticSchema(
+    sql + retiredSql.replace('code TEXT UNIQUE', 'code BLOB UNIQUE'),
+  );
+  const plan = blocked(schemaChange, 'SCHEMA_COLUMN_CHANGED');
+  assert.ok(codes(plan).has('RETIRED_OBSERVATION_BASELINE_MISMATCH'));
+  for (const [key, value] of [
+    ['sourceFinalDigest', proof('later-snapshot')],
+    ['observedAt', '2026-11-08T23:59:59.000Z'],
+    ['consumerSourceCommit', 'b'.repeat(40)],
+    ['consumerSourceDigest', proof('changed-consumer-source')],
+  ]) {
+    const input = retiredFixture();
+    input.retiredTableObservations.cdks[key] = value;
+    blocked(input, 'RETIRED_REVIEW_OBSERVATION_MISMATCH');
+  }
+  const stale = retiredFixture();
+  stale.window = { ...stale.window, sourceFinalDigest: proof('new-window-snapshot') };
+  blocked(stale, 'RETIRED_OBSERVATION_BASELINE_MISMATCH');
+});
+
+test('consumer evidence must pin source and prove no business consumer, including for empty tables', () => {
+  for (const change of [
+    { businessConsumerCount: 1 },
+    { businessConsumerCount: false },
+    { consumerSourceCommit: undefined },
+    { consumerSourceDigest: undefined },
+    { consumerScanDigest: proof('unreviewed-scan') },
+  ]) {
+    const input = retiredFixture();
+    Object.assign(input.retiredTableObservations.licenses, change);
+    blocked(input, 'RETIRED_NO_BUSINESS_CONSUMERS_PROOF_REQUIRED');
+  }
+});
+
+test('retired inventory rejects and never prints raw codes, rows, user values or arbitrary review metadata', () => {
+  const input = retiredFixture();
+  const sentinel = 'synthetic-sensitive-sentinel-never-print';
+  Object.assign(input.retiredTableObservations.cdks, {
+    code: sentinel,
+    rows: [{ used_by: sentinel }],
+  });
+  input.decisions.licenses.retirementReview.source_cdk = sentinel;
+  input.decisions.cdks.columns.code.target = sentinel;
+  const plan = blocked(input, 'UNEXPECTED_RETIRED_OBSERVATION_FIELD');
+  assert.ok(codes(plan).has('RETIRED_REVIEW_OBSERVATION_MISMATCH'));
+  assert.equal(JSON.stringify(plan).includes(sentinel), false);
+});
+
+test('adding known retired rules never permits a similarly named unknown table', () => {
+  const input = fixture(syntheticSchema(sql + retiredSql + 'CREATE TABLE cdks_old (code TEXT);'));
+  input.decisions.cdks_old = { action: 'retain-encrypted-history', rowCount: 0 };
+  blocked(input, 'UNCLASSIFIED_TABLE');
 });

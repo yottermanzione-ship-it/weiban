@@ -15,6 +15,31 @@ const EVIDENCE = [
   'deletion-barriers',
   'no-history-side-effects',
 ];
+// Runtime-only legacy tables reviewed against old-weiban 2c5632e2; these are
+// archive obligations, never substitutes for current chat or membership models.
+const RETIRED_TABLES = {
+  chat_messages: { domain: 'retired_chat_messages', sensitiveColumns: [] },
+  licenses: { domain: 'retired_licenses', sensitiveColumns: ['source_cdk'] },
+  cdks: { domain: 'retired_cdks', sensitiveColumns: ['code'] },
+};
+const RETIRED_EVIDENCE = [
+  'recoverable-encrypted-archive',
+  'original-database-preservation',
+  'matching-backup-preservation',
+  'no-runtime-business-consumers',
+  'no-business-redemption-entitlement-or-replay',
+  'no-deletion-without-explicit-instruction',
+];
+const RETIRED_PROHIBITIONS = [
+  'restore-business',
+  'redeem-code',
+  'grant-entitlement',
+  'replay',
+  'discard-as-seed',
+  'delete-original',
+  'drop-table',
+  'export-plaintext',
+];
 const RULES = [
   [
     'accounts',
@@ -271,6 +296,17 @@ function sourceDigest(text) {
 }
 
 export function migrationDomainRule(table) {
+  if (Object.hasOwn(RETIRED_TABLES, table))
+    return {
+      domain: RETIRED_TABLES[table].domain,
+      actions: ['retain-encrypted-history'],
+      requires: [
+        ...RETIRED_EVIDENCE,
+        ...(table === 'cdks'
+          ? ['unused-codes-preserved-without-seed-assumption', 'no-numeric-owner-id-guess']
+          : []),
+      ],
+    };
   const hit = RULES.find(([, tables]) => tables.split(' ').includes(table));
   return hit ? { domain: hit[0], actions: [...hit[2]], requires: [...hit[3]] } : null;
 }
@@ -505,6 +541,64 @@ function isDigest(value) {
   return typeof value === 'string' && HEX.test(value);
 }
 
+function retiredTableProblems(table, observation, decision, schema, window, add) {
+  // Metadata only. Never accept rows, code values, paths or free-form remarks.
+  const fields = new Set([
+    'schemaDigest',
+    'tableDigest',
+    'sourceFinalDigest',
+    'observedAt',
+    'rowCount',
+    'consumerSourceCommit',
+    'consumerSourceDigest',
+    'consumerScanDigest',
+    'businessConsumerCount',
+    ...(table.name === 'cdks' ? ['unusedRows', 'usageMarkedRows'] : []),
+  ]);
+  if (!observation || typeof observation !== 'object' || Array.isArray(observation)) {
+    add('RETIRED_TABLE_OBSERVATION_REQUIRED', table.name);
+    return;
+  }
+  if (Object.keys(observation).some((key) => !fields.has(key)))
+    add('UNEXPECTED_RETIRED_OBSERVATION_FIELD', table.name);
+  if (
+    observation.schemaDigest !== schema.digest ||
+    observation.tableDigest !== table.digest ||
+    !isDigest(observation.sourceFinalDigest) ||
+    observation.sourceFinalDigest !== window?.sourceFinalDigest ||
+    !utc(observation.observedAt) ||
+    !utc(window?.from) ||
+    !utc(window?.to) ||
+    Date.parse(observation.observedAt) < Date.parse(window.from) ||
+    Date.parse(observation.observedAt) > Date.parse(window.to)
+  )
+    add('RETIRED_OBSERVATION_BASELINE_MISMATCH', table.name);
+  const count = (value) => Number.isSafeInteger(value) && value >= 0;
+  if (
+    !count(observation.rowCount) ||
+    (table.name === 'cdks' &&
+      (!count(observation.unusedRows) ||
+        !count(observation.usageMarkedRows) ||
+        observation.unusedRows + observation.usageMarkedRows !== observation.rowCount))
+  )
+    add('RETIRED_CURRENT_ROW_COUNTS_REQUIRED', table.name);
+  if (
+    typeof observation.consumerSourceCommit !== 'string' ||
+    !/^[a-f0-9]{40}$/u.test(observation.consumerSourceCommit) ||
+    !isDigest(observation.consumerSourceDigest) ||
+    !isDigest(observation.consumerScanDigest) ||
+    observation.consumerScanDigest !== decision?.proofs?.['no-runtime-business-consumers'] ||
+    observation.businessConsumerCount !== 0
+  )
+    add('RETIRED_NO_BUSINESS_CONSUMERS_PROOF_REQUIRED', table.name);
+  if (
+    !decision?.retirementReview ||
+    Object.keys(decision.retirementReview).some((key) => key !== 'observationDigest') ||
+    decision.retirementReview.observationDigest !== inventoryDigest(observation)
+  )
+    add('RETIRED_REVIEW_OBSERVATION_MISMATCH', table.name);
+}
+
 function eventProblems(kind, stream, context, add) {
   if (!stream || !Array.isArray(stream.items)) {
     add('EVENT_LEDGER_REQUIRED', kind);
@@ -677,6 +771,7 @@ export function planMigrationInventory({
   window,
   decisions = {},
   events = {},
+  retiredTableObservations = {},
 }) {
   requireValue(intactSchema(schema), 'INVALID_SCHEMA_DIGEST');
   const { digest: exporterDigest, ...exportPayload } = exporter ?? {};
@@ -708,6 +803,7 @@ export function planMigrationInventory({
 
   const decide = (table, rule, omittedColumns, virtual = false) => {
     const decision = decisions[table.name];
+    const retired = Object.hasOwn(RETIRED_TABLES, table.name);
     const required = [...rule.requires];
     const row = {
       table: table.name,
@@ -718,9 +814,24 @@ export function planMigrationInventory({
       allowedActions: rule.actions,
       requiredEvidence: required,
       selectedAction: rule.actions.includes(decision?.action) ? decision.action : null,
+      ...(retired
+        ? {
+            sensitiveColumns: [...RETIRED_TABLES[table.name].sensitiveColumns],
+            prohibitedOperations: [...RETIRED_PROHIBITIONS],
+          }
+        : {}),
       status: 'blocked',
     };
     const initial = blockers.length;
+    if (retired)
+      retiredTableProblems(
+        table,
+        retiredTableObservations?.[table.name],
+        decision,
+        schema,
+        window,
+        add,
+      );
     if (!decision)
       add(
         virtual
@@ -741,7 +852,12 @@ export function planMigrationInventory({
       for (const key of required)
         if (!isDigest(decision.proofs?.[key])) add('DOMAIN_EVIDENCE_REQUIRED', table.name, key);
       if (
-        ['retain-reviewed', 'rebind-reviewed', 'exclude-reviewed'].includes(decision.action) &&
+        [
+          'retain-reviewed',
+          'rebind-reviewed',
+          'exclude-reviewed',
+          'retain-encrypted-history',
+        ].includes(decision.action) &&
         (!isDigest(decision.productDecisionDigest) ||
           !isDigest(decision.proofs?.['user-or-operator-instructions']))
       )
@@ -770,10 +886,13 @@ export function planMigrationInventory({
         )
           add('COLUMN_TARGET_REQUIRED', table.name, column.name);
         if (
-          /(?:password|recovery_code|token|secret|cookie)/u.test(column.name) &&
+          (/(?:password|recovery_code|token|secret|cookie)/u.test(column.name) ||
+            (retired && RETIRED_TABLES[table.name].sensitiveColumns.includes(column.name))) &&
           mapping.action === 'map'
         )
           add('SENSITIVE_FIELD_DIRECT_COPY_FORBIDDEN', table.name, column.name);
+        if (retired && (mapping.action !== 'retain-encrypted' || mapping.target !== undefined))
+          add('RETIRED_FIELD_ENCRYPTED_RETENTION_REQUIRED', table.name, column.name);
         if (column.name === 'recovery_code_hash' && mapping.action !== 'exclude-reviewed')
           add('RECOVERY_CODE_RETIREMENT_REQUIRED', table.name, column.name);
         if (mapping.action === 'exclude-reviewed' && !isDigest(mapping.decisionDigest))
@@ -817,6 +936,12 @@ export function planMigrationInventory({
       continue;
     }
     const projection = exported.get(table.name);
+    if (Object.hasOwn(RETIRED_TABLES, table.name) && projection) {
+      add('RETIRED_TABLE_ORDINARY_EXPORT_FORBIDDEN', table.name);
+      for (const column of RETIRED_TABLES[table.name].sensitiveColumns)
+        if (projection === '*' || projection.includes(column))
+          add('SENSITIVE_RETIRED_FIELD_EXPORTED', table.name, column);
+    }
     if (
       table.columns.some((column) => column.name === 'recovery_code_hash') &&
       (projection === '*' || projection?.includes('recovery_code_hash'))

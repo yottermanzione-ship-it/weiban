@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 7.9. Regenerate: pnpm android:generate
+// Contract 7.10. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "7.9"
+const val CONTRACT_VERSION: String = "7.10"
 
 @Serializable
 data class AccountAlias(
@@ -2125,6 +2125,8 @@ data class ChannelState(
     @SerialName("lastEventAt") val `lastEventAt`: Timestamp?,
     @SerialName("lastError") val `lastError`: String?,
     @SerialName("pendingExpiresAt") val `pendingExpiresAt`: Timestamp?,
+    @SerialName("bindingCount") val `bindingCount`: Long? = null,
+    @SerialName("multipleBindings") val `multipleBindings`: Boolean? = null,
 )
 
 @Serializable
@@ -12838,6 +12840,40 @@ data class WeibanCardData(
 )
 
 @Serializable
+data class WeiboBindingState(
+    @SerialName("channel") val `channel`: String,
+    @SerialName("name") val `name`: String,
+    @SerialName("description") val `description`: String,
+    @SerialName("status") val `status`: String,
+    @SerialName("integration") val `integration`: String,
+    @SerialName("characterId") val `characterId`: Id?,
+    @SerialName("characterName") val `characterName`: String?,
+    @SerialName("accountName") val `accountName`: String?,
+    @SerialName("accountMasked") val `accountMasked`: String?,
+    @SerialName("boundAt") val `boundAt`: Timestamp?,
+    @SerialName("lastEventAt") val `lastEventAt`: Timestamp?,
+    @SerialName("lastError") val `lastError`: String?,
+    @SerialName("pendingExpiresAt") val `pendingExpiresAt`: Timestamp?,
+    @SerialName("bindingCount") val `bindingCount`: Long? = null,
+    @SerialName("multipleBindings") val `multipleBindings`: Boolean? = null,
+    @SerialName("bindingId") val `bindingId`: Id?,
+    @SerialName("slot") val `slot`: WeiboSlotId,
+    @SerialName("slotLabel") val `slotLabel`: String,
+    @SerialName("assistantName") val `assistantName`: String,
+)
+
+@Serializable
+data class WeiboBindingsEndpointsListResponse(
+    @SerialName("items") val `items`: List<WeiboBindingState>,
+    @SerialName("characters") val `characters`: List<ChannelCharacter>,
+)
+
+@Serializable
+data class WeiboBindingsEndpointsSetCharacterParams(
+    @SerialName("bindingId") val `bindingId`: Id,
+)
+
+@Serializable
 data class WeiboConnectRequest(
     @SerialName("characterId") val `characterId`: Id,
     @SerialName("appId") val `appId`: String,
@@ -12850,6 +12886,24 @@ data class WeiboConnectRequestInput(
     @SerialName("appId") val `appId`: String,
     @SerialName("appSecret") val `appSecret`: String,
 )
+
+@Serializable
+data class WeiboSlotConnectRequest(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("appId") val `appId`: String,
+    @SerialName("appSecret") val `appSecret`: String,
+    @SerialName("slot") val `slot`: WeiboSlotId,
+)
+
+@Serializable
+data class WeiboSlotConnectRequestInput(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("appId") val `appId`: String,
+    @SerialName("appSecret") val `appSecret`: String,
+    @SerialName("slot") val `slot`: WeiboSlotId,
+)
+
+typealias WeiboSlotId = String
 
 @Serializable
 data class WishlistEndpointsAddItemBody(

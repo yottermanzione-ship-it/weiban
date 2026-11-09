@@ -20,6 +20,10 @@ import {
 } from '../../apps/server/src/modules/ai-runtime/domain/vector-embed.ts';
 import { createMediaVoiceImportService } from '../../apps/server/src/modules/media/application/voice-import.ts';
 import { legacyId, legacyTime, legacyNameIndex, splitLegacyText } from './legacy-content-rules.mjs';
+import {
+  legacyTextSupplement,
+  preflightLegacyTextSupplements,
+} from './legacy-customization-shape.mjs';
 const args = new Map();
 for (let i = 2; i < process.argv.length; i++) {
   const key = process.argv[i];
@@ -86,6 +90,7 @@ async function main() {
     throw new Error('ACTIVE_ADMIN_REQUIRED');
   const data = await dataset(),
     capturedAt = data.get('_snapshot')[0].capturedAt;
+  preflightLegacyTextSupplements(data.get('persona_customizations') ?? []);
   const users = new Set(
     (await db.query("SELECT id FROM identity.users WHERE status='active'")).rows.map((r) => r.id),
   );
@@ -295,22 +300,8 @@ async function main() {
       stats.unmappedArchivedOnly++;
       continue;
     }
-    let patch;
-    try {
-      patch = JSON.parse(row.patch_json);
-    } catch {
-      issues.push({
-        table: 'persona_customizations',
-        id: legacyId('customization', row.user_id, row.persona_name),
-        reason: 'invalid_patch_archived',
-      });
-      continue;
-    }
-    const text = String(patch.raw_persona ?? '')
-      .replaceAll('\u0000', '')
-      .trim();
+    const text = legacyTextSupplement(row);
     if (!text) continue;
-    if (text.length > 5000) throw new Error('LEGACY_SUPPLEMENT_TOO_LONG');
     const sealed = await crypto.seal(
       who.owner,
       `characters:supplement:${who.owner}:${who.cid}`,

@@ -170,3 +170,50 @@ pnpm exec eslint scripts/ops/legacy-delta-inventory.mjs scripts/ops/legacy-delta
 最终54项检查全部通过、0失败/0跳过：28项清单与事件规则检查（含最新恢复码停止承接、消息收藏必须保留）＋14项分发检查＋12项原升级工具检查。四个脚本ESLint及Prettier均退出0。真实正式127包在改为内存TLS签发后完成HTTP/HTTPS各19类核验，仍为原SHA-256。本机源码CLI按预期返回阻断及退出码2；未开启线上检查、读取真实SQLite/私有导出或写入任何迁移结果。文件未提交，交主会话统一集成。
 
 给收藏实现分工的现有源码指针：`C:/wb-ref/old-weiban/src/lib/services/favorite_store.dart:9`的`FavoriteItem`为`chatKey/chatTitle/savedAt/message`四项快照，群聊chatKey为`group:<id>`；30–35行去重身份包含会话、消息时间、类型及**正文**，不可直接进入公开日志；57–71行序列化保留四项，savedAt缺失会回退当前时间，迁移不能无声重写原时间；7–8行约定源消息删除/撤回后收藏快照仍保留。95–135行是本机账号键、无云同步及旧无账号键迁移逻辑，138–166行是去重写入。该定位不读取任何设备收藏，不与主会话/媒体分工重复实现。
+
+## 11-09 追加：微博五槽兼容候选（开发自测）
+
+本节更新上方“新版微博单绑定”的历史缺口结论。基线 `35f510f1ecfbe9b7ced2e0d3e1655ed9c1716981`，候选仍在独立副本 `C:/wb-dev/wb-migration-rehearsal-1109` 的未提交工作树。按总经理保留旧功能的决定补齐微博五槽；微信与QQ继续单绑定。主会话提供的旧聚合为微博58行/50用户、5用户多行、active56/unbound2，微信32行、QQ1行；本分工没有读取这些真实行、任何旧SQLite、配置秘密、导出正文或设备数据，也未独立核验这些聚合。
+
+### 源语义与候选承接
+
+旧 `server/lib/weibo/slots.js:3` 定义主号/小蓝/小白/小粉/小黄与各自助手名。`migrations_registry.js:3405` 增加AppID/AppSecret，3413为active AppID唯一索引，3421–3439改为用户+槽及用户+角色唯一。`weibo/inbound_service.js:62` 的回信对象来自已鉴权连接消息 `fromUserId`，154–177把binding/slot/generation交给回复任务；`weibo/channel_runner.js:8`、60/88按binding与真实来信对象发送。旧 `routes/weibo.js:192` 初次连接会把bot UID写入weiboUid，因此单独一列 `weibo_uid` 不能证明真实用户回信peer，迁移不得猜测。
+
+候选入口在 `packages/contracts/src/http/channels.ts:46/146/250`：契约7.10新增 `WeiboBindingsEndpoints` 的五槽列表、按slot连接、按bindingId换角色/解绑。已有端点保留；旧客户端无bindingId遇到多条持久绑定明确409，列表只返回聚合状态，不随意取首行或让Map覆盖。所有新操作的用户来自认证主体，跨账号bindingId返回404。
+
+`0165_weibo_slots.sql` 给现有行补main，不改变ID、generation、密文或peer，加入用户/渠道/槽唯一、active用户/角色唯一和非微博仅main限制。另加 `reply_conversation_id` 与 `reply_after_seq` 配对边界；既有active按本人角色的唯一未归档私聊初始化lastSeq，无法关联时保留凭据并写明确待核原因，不普遍要求重绑。已有AppID指纹唯一约束保留；应用同时用用户锁与AppID锁处理并发。原槽重绑保持ID，按用户DEK及binding AAD重新密封，旧任务代际失效。回滚脚本遇到任何非main历史行直接阻断，不能通过降级丢弃多槽。journal仅在0164群记忆之后追加0165。
+
+换角色仅处理目标binding：generation加一、取消pending/retry/sending、安排runtime reconcile；保留同助手已验证peer与凭据。最后入站代际核验与真实聊天写入共用数据库事务；`ChatUserPort.sendMessage`仅新增可选Tx，旧调用兼容。渠道先锁自身绑定再锁聊天会话，不在持锁期间另借连接。出站排队重新核验并锁代际；同步交给本地WebSocket缓冲前也核验目标binding和sending行，迟到重试不能复活取消队列。其他槽的角色、peer、凭据、代际和任务不受影响。runtime按bindingId维护连接，分页扫描所有active微博绑定，分别重连/回复，保留消息去重。
+
+独立交叉审查发现“旧回复已生成、outbox尚未首次消费”的额外改道路径后，候选补为会话序号边界：每次连接/重绑/切角色，在binding→conversation同事务锁序下读取目标lastSeq；首次消费事件必须来自该会话且原消息seq严格大于边界。不能用updated_at或毫秒时间判断。真实ChatParticipantPort写入的旧A回复，在主槽A→C、蓝槽B→A后首次消费不入队；换凭据后首次消费的旧回复同样不入队，新回复正常。正式窗口先排空旧出站及未派发事件，再应用边界；历史消息重排须按reply_conversation_id翻译此游标并更新相关代际，主会话负责`legacy-delta-db`登记及回归，本分工未修改该执行器。
+
+网页仍沿现有插件/Sheet设计展示五槽及状态，每格仅列未被其他active槽占用的角色；换角色与解绑使用该格bindingId，连接携带明确slot。账号变化清空旧摘要与弹层，丢弃迟到回包。没有新建上传服务、修改Android运行代码或操作当前真机。
+
+### 绑定迁移准备仍是候选
+
+新增 `scripts/ops/legacy-weibo-slots.mjs` 纯元数据规划器及7项合成检查，无文件读取/写入、SQL、网络或执行入口。它按明确旧bindingID、账号/角色映射及五槽保留每个来源，不从counts推断迁入；拒绝未知槽、私密附加字段、歧义目标基线、角色/槽/AppID冲突。旧unbound/revoked只留所属账号历史；已有新版绑定和解绑墓碑一律保护，不能覆盖或复活。
+
+仅当凭据保管证据和鉴权来信peer证据都绑定相同来源binding、旧用户、AppID指纹时，返回“受保护候选”：将来获准的执行器应只在内存解封并按目标用户DEK/binding AAD重密封。只有bot UID、证据缺失或借用其他用户/槽证据都保持停用候选，需要补来源证据或本人重新授权。所有结果均为 `productionReady:false`、`execute:false`、`activate:false`；摘要本身不证明证据真实性，不能据此启动真实消费者。
+
+正式窗口仍需在获准的受保护环境核实逐行映射、凭据是否可解密、peer来源、目标基线、旧消费者停止及在途去重回执，再进行明确授权的承接/启用。确需重授权只针对凭据失效/来源无法证明的具体绑定；五槽本身现在已有候选承接能力，不能将多槽功能当作“不支持所以只留一行”。本轮没有迁入真实凭据、重放真实消息、启动线上微博连接或改变公开入口。
+
+### 验证与限制
+
+- 专用数据库仅 `postgres://postgres@127.0.0.1:56389/codex_migration_weibo_1109`，专属容器 `codex-migration-chat-1109`；检查精确库名/回环端口及synthetic标记后才重建。未触碰共享weiban_test或其他库。CI仅另允许带GitHub Actions作业标记的既有独占测试服务。
+- 新五槽服务端12项＋旧微博8项＋QQ11项，最终31/31通过。覆盖真实HTTP认证/授权、真实PG/DEK、0165升级/回滚门禁与既有active边界初始化、稳定ID、满五槽WSS同时连接、两槽独立peer/相同事件ID去重/回信/4002重连、跨用户与并发唯一性、单槽解绑、unbound不复活、旧单槽兼容、多槽409、切角色期间旧入站及旧sending失效、回复生成后首次延迟消费不能改道。
+- 新增真实 `ChatUserService → ChatWriteService → 加密消息/同步日志/outbox` 回归，预先占住除1条以外所有可借池连接后仍成功写入1条合成文字。实时LISTEN客户端本身常驻1条连接，所以不能把整个App设poolMax=1作为同一条件；最初夹具因此超时，已改为扣除常驻连接后保留1条可用连接。未调模型或产生付费请求。
+- 网页五槽2项、原微信/QQ及窄屏9项，使用真实组件与本机内存API夹具；不将这组浏览器测试和服务端合成链路拼成一次真实平台/设备端到端验收。凭据、令牌及TLS私钥均为合成内存材料；本机WSS使用证书与主机名校验，没有关闭TLS校验。
+- 原channels内存/协议/DI回归5文件62项通过。server/web/contracts类型检查、定向ESLint/Prettier、契约7项版本回归、规划器7项、网页构建通过。契约generate输出7.10、1362定义、530接口、420路径；Android生成与候选打包由主会话统一进行。
+
+复现命令（仅指定专用合成库）：
+
+```powershell
+$env:TEST_DATABASE_URL='postgres://postgres@127.0.0.1:56389/codex_migration_weibo_1109'
+pnpm exec vitest run --project server apps/server/test/channels-weibo-slots.test.ts apps/server/test/channels-helper.test.ts apps/server/test/channels-qq.test.ts
+pnpm exec playwright test --config apps/web/test/web-feedback.playwright.config.ts weibo-slots.spec.ts wechat-binding.spec.ts qq-binding.spec.ts
+node --test scripts/ops/legacy-weibo-slots.test.mjs
+```
+
+以上为开发自测，未自签独立验收。真实微博平台、正式配置启用、迁移凭据承接和最终真实设备使用仍未验证；本轮不部署、不提交、不发布安装包、不自动切站。
+
+收尾记录：最终31项集成回归与server类型检查再次退出0。按主会话指令核对容器ID/`weiban.fixture=migration-1109`、该专库synthetic标记及0个剩余应用连接后，仅删除 `codex_migration_weibo_1109`；查询pg_database结果为0。保留容器与其他库，回环浏览器夹具已退出，无遗留应用服务。复跑上述数据库测试前须先在同一受控本机容器重新创建这个明确专库及 `public.codex_weibo_fixture(synthetic boolean PRIMARY KEY CHECK(synthetic))` 的唯一true标记；测试会拒绝缺失标记的本机库。后续最终增量游标验证由主会话使用自己的新专库执行。

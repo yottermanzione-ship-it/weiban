@@ -78,6 +78,10 @@ function bridgeFor(channel: ChannelId, scope = 'normal') {
     finishInbound: vi.fn(async () => {}),
     touchEvent: vi.fn(async () => {}),
     pinWeiboPeer: vi.fn(async () => Buffer.from('owner-peer')),
+    withCurrentWeiboBinding: vi.fn(
+      async (_binding: unknown, work: (tx: unknown) => Promise<unknown>) =>
+        work({ __brand: 'weiban.tx' }),
+    ),
   };
   const qq = { setReply: vi.fn(async () => true), consume: vi.fn(async () => true) };
   const membership = { isProPlus: vi.fn(async () => false) };
@@ -118,11 +122,12 @@ describe('公开模式仍隔离本人消息、角色和私密范围（全为内�
     it(`${channel}：免费账号日常文字仍交给原聊天计费入口`, async () => {
       const t = bridgeFor(channel);
       expect(await t.bridge.ingest(t.binding, t.input)).toBe('accepted');
-      expect(t.chat.sendMessage).toHaveBeenCalledWith(
+      expect(t.chat.sendMessage.mock.calls[0]).toEqual([
         OWNER,
         'direct-test',
         expect.objectContaining({ content: { type: 'text', text: '普通测试文字' } }),
-      );
+        ...(channel === 'weibo' ? [expect.objectContaining({ __brand: 'weiban.tx' })] : []),
+      ]);
       expect(t.chatRead.findDirectConversation).toHaveBeenCalledWith(OWNER, CHARACTER);
       expect(t.membership.isProPlus).not.toHaveBeenCalled();
     });

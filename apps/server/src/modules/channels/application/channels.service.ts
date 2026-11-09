@@ -17,14 +17,19 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
   CHANNEL_QR_TTL_MS,
+  WEIBO_SLOTS,
   type ChannelCharacter,
   type ChannelId,
   type ChannelState,
   type WechatQrAttempt,
   type WeiboConnectRequest,
+  type WeiboSlotConnectRequest,
+  type WeiboBindingState,
+  type WeiboSlotId,
   type Plugin,
   type QqConnectRequest,
   type QqPairing,
+  type ChatReadPort,
 } from '@weiban/contracts';
 import {
   APP_CONFIG,
@@ -38,6 +43,7 @@ import {
   type AppConfig,
   type Clock,
   type Database,
+  type DbTx,
   type EnvelopeCrypto,
   type JobQueue,
   type Logger,
@@ -45,6 +51,7 @@ import {
 import { CHARACTER_NAME_READ_PORT } from '../../characters/index.js';
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { IDENTITY_MEMBERSHIP_READ_PORT } from '../../identity/index.js';
+import { CHAT_READ_PORT } from '../../chat/index.js';
 import type {
   CharacterNameReadPort,
   ContactsReadPort,
@@ -118,6 +125,7 @@ export class ChannelsService {
     @Inject(IDENTITY_MEMBERSHIP_READ_PORT) private readonly membership: IdentityMembershipReadPort,
     @Inject(CONTACTS_READ_PORT) private readonly contacts: ContactsReadPort,
     @Inject(CHARACTER_NAME_READ_PORT) private readonly names: CharacterNameReadPort,
+    @Inject(CHAT_READ_PORT) private readonly chatRead: ChatReadPort,
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
   ) {}
 
@@ -162,10 +170,22 @@ export class ChannelsService {
       this.availableCharacters(userId),
     ]);
     const now = this.clock.now();
-    const byChannel = new Map(bindings.map((row) => [row.channel, row]));
     const items: ChannelState[] = [];
     for (const channel of CHANNEL_ORDER) {
-      const binding = byChannel.get(channel) ?? null;
+      const rows = bindings.filter((row) => row.channel === channel);
+      if (channel === 'weibo' && rows.length > 1) {
+        const summary = this.toState('weibo', null, null, userId);
+        const count = rows.filter((row) => row.status === 'active').length;
+        items.push({
+          ...summary,
+          status: count ? 'active' : 'unbound',
+          description: '按五个微博助手槽位分别管理角色与连接',
+          bindingCount: count,
+          multipleBindings: true,
+        });
+        continue;
+      }
+      const binding = rows[0] ?? null;
       const attempt = channel === 'wechat' ? await this.pendingAttempt(userId, channel, now) : null;
       items.push(
         this.toState(
@@ -191,6 +211,101 @@ export class ChannelsService {
       attempt,
       userId,
       channel === 'qq' && binding ? await this.qqStore.get(binding.id) : null,
+    );
+  }
+
+  private weiboState(
+    userId: string,
+    slot: WeiboSlotId,
+    binding: BindingRow | null,
+  ): WeiboBindingState {
+    const metadata = WEIBO_SLOTS.find((item) => item.slot === slot)!;
+    return {
+      ...this.toState('weibo', binding, null, userId),
+      bindingId: binding?.id ?? null,
+      slot,
+      slotLabel: metadata.label,
+      assistantName: metadata.assistantName,
+    };
+  }
+
+  async listWeiboBindings(
+    userId: string,
+  ): Promise<{ items: WeiboBindingState[]; characters: ChannelCharacter[] }> {
+    const [bindings, characters] = await Promise.all([
+      this.store.bindingsOf(userId),
+      this.availableCharacters(userId),
+    ]);
+    return {
+      items: WEIBO_SLOTS.map((metadata) =>
+        this.weiboState(
+          userId,
+          metadata.slot,
+          bindings.find((row) => row.channel === 'weibo' && row.slot === metadata.slot) ?? null,
+        ),
+      ),
+      characters,
+    };
+  }
+
+  async setWeiboCharacter(
+    userId: string,
+    bindingId: string,
+    characterId: string,
+  ): Promise<WeiboBindingState> {
+    const binding = await this.store.ownWeiboBinding(userId, bindingId);
+    if (!binding) throw new AppError('not_found', '没有找到这个微博绑定');
+    this.assertLive(this.runtime('weibo', userId));
+    await assertChannelAccess(this.config, 'weibo', this.membership, userId, 'switch_character');
+    const character = await this.resolveCharacter(userId, characterId);
+    await this.db.transaction(async (tx) => {
+      await this.store.lockWeiboUser(tx, userId);
+      const current = await this.store.ownWeiboBinding(userId, bindingId, tx);
+      if (!current || current.status !== 'active')
+        throw new AppError('conflict', '此微博槽位尚未连接');
+      const boundary = await this.weiboReplyBoundary(tx, userId, characterId);
+      await this.store.setCharacter(
+        tx,
+        userId,
+        'weibo',
+        characterId,
+        character.name,
+        this.clock.now(),
+        bindingId,
+        boundary,
+      );
+    });
+    await this.safeSend(CHANNELS_RECONCILE_JOB, { reason: 'switch_character' });
+    return this.weiboState(
+      userId,
+      binding.slot,
+      await this.store.ownWeiboBinding(userId, bindingId),
+    );
+  }
+
+  private async weiboReplyBoundary(tx: DbTx, userId: string, characterId: string) {
+    const conversation = await this.chatRead.findDirectConversation(userId, characterId, tx);
+    if (
+      !conversation ||
+      conversation.contentScope !== 'normal' ||
+      !Number.isSafeInteger(conversation.lastSeq) ||
+      conversation.lastSeq < 0
+    )
+      throw new AppError('conflict', '请先确认这个角色的日常私聊可用，再连接微博槽位');
+    return { conversationId: conversation.conversationId, afterSeq: conversation.lastSeq };
+  }
+
+  async unbindWeibo(userId: string, bindingId: string): Promise<WeiboBindingState> {
+    const binding = await this.store.ownWeiboBinding(userId, bindingId);
+    if (!binding) throw new AppError('not_found', '没有找到这个微博绑定');
+    await this.db.transaction((tx) =>
+      this.store.unbind(tx, userId, 'weibo', this.clock.now(), bindingId),
+    );
+    await this.safeSend(CHANNELS_RECONCILE_JOB, { reason: 'unbind' });
+    return this.weiboState(
+      userId,
+      binding.slot,
+      await this.store.ownWeiboBinding(userId, bindingId),
     );
   }
 
@@ -511,6 +626,7 @@ export class ChannelsService {
     const binding = await this.store.bindingOf(userId, channel);
     if (!binding || binding.status !== 'active')
       throw new AppError('conflict', `还没有绑定${CHANNEL_INFO[channel].name.replace('接入', '')}`);
+    if (channel === 'weibo') return this.setWeiboCharacter(userId, binding.id, characterId);
     const character = await this.resolveCharacter(userId, characterId);
     await this.db.transaction((tx) =>
       this.store.setCharacter(
@@ -526,6 +642,22 @@ export class ChannelsService {
   }
 
   async weiboConnect(userId: string, input: WeiboConnectRequest): Promise<ChannelState> {
+    const existing = await this.store.bindingOf(userId, 'weibo');
+    return this.connectWeiboSlot(userId, { ...input, slot: existing?.slot ?? 'main' }, true);
+  }
+
+  async weiboSlotConnect(
+    userId: string,
+    input: WeiboSlotConnectRequest,
+  ): Promise<WeiboBindingState> {
+    return this.connectWeiboSlot(userId, input);
+  }
+
+  private async connectWeiboSlot(
+    userId: string,
+    input: WeiboSlotConnectRequest,
+    legacy = false,
+  ): Promise<WeiboBindingState> {
     const cfg = this.runtime('weibo', userId);
     this.assertLive(cfg);
     await assertChannelAccess(this.config, 'weibo', this.membership, userId, 'bind');
@@ -551,8 +683,16 @@ export class ChannelsService {
     }
     const now = this.clock.now();
     const binding = await this.db.transaction(async (tx) => {
-      const existing = await this.store.bindingOf(userId, 'weibo');
+      const existing = await this.store.prepareWeiboBinding(
+        tx,
+        userId,
+        input.slot,
+        input.characterId,
+        weiboBindingAccountId(input.appId),
+        legacy,
+      );
       const bindingId = existing?.id ?? newId();
+      const replyBoundary = await this.weiboReplyBoundary(tx, userId, input.characterId);
       const appIdSealed = await this.crypto.seal(
         userId,
         `channels:binding:${bindingId}:app_id`,
@@ -569,10 +709,12 @@ export class ChannelsService {
         id: bindingId,
         userId,
         channel: 'weibo',
+        slot: input.slot,
+        replyBoundary,
         characterId: character.characterId,
         characterName: character.name,
         accountId: weiboBindingAccountId(input.appId),
-        accountName: '微博龙虾助手',
+        accountName: WEIBO_SLOTS.find((item) => item.slot === input.slot)!.assistantName,
         botId: token.uid || null,
         baseUrl: '',
         botTokenSealed: null,
@@ -582,7 +724,7 @@ export class ChannelsService {
       });
     });
     await this.safeSend(CHANNELS_RECONCILE_JOB, { reason: 'bind' });
-    return this.toState('weibo', binding, null, userId);
+    return this.weiboState(userId, input.slot, binding);
   }
 
   async qqConnect(userId: string, input: QqConnectRequest): Promise<QqPairing> {

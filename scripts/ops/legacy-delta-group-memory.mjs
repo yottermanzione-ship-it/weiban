@@ -1,4 +1,6 @@
-/** Narrow, reviewed group-memory candidate. No model calls or production adapter. */
+/** Narrow, reviewed ROLE-SPECIFIC candidate only. This cannot import the real shared group source.
+ * Shared rows must use the dedicated group-scoped compatibility importer, never fan out to private memories.
+ * No model calls or production adapter. */
 import { fingerprint, invariant, utc } from './legacy-delta-core.mjs';
 import { assertFixtureDatabase } from './legacy-delta-db.mjs';
 import { legacyId } from './legacy-content-rules.mjs';

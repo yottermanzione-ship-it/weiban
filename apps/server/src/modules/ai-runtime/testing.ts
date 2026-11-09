@@ -13,6 +13,12 @@ export { PrivateDigestService, PRIVATE_DIGEST_JOB } from './application/private-
 export { memories, memoryStates } from './infra/db/schema.js';
 export { ReplyContext } from './application/reply-context.js';
 export { ConversationMemoryService } from './application/conversation-memory.js';
+export { LegacyGroupMemoryService } from './application/legacy-group-memory.js';
+export {
+  LegacySharedGroupBatch,
+  LEGACY_GROUP_CONTEXT_MAX_BYTES,
+} from './domain/legacy-group-memory.js';
+export { GroupChatService } from './application/group-chat.js';
 export {
   blockedSeqs,
   recordBlocked,

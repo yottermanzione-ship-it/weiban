@@ -10,6 +10,7 @@ import {
   type MediaSystemPort,
   type Message,
   type SyncPort,
+  type Tx,
 } from '@weiban/contracts';
 import {
   AppError,
@@ -18,8 +19,10 @@ import {
   OUTBOX,
   P23_RECALL_WINDOW_MS,
   parseContract,
+  asDbTx,
   type Clock,
   type Database,
+  type DbTx,
   type Outbox,
 } from '../../../platform/index.js';
 import { SYNC_PORT } from '../../realtime/index.js';
@@ -53,9 +56,10 @@ export class ChatUserService implements ChatUserPort {
     userId: string,
     conversationId: string,
     input: SendMessageRequest,
+    transaction?: Tx,
   ): Promise<MessageAck> {
     const body = parseContract(SendMessageRequest, input);
-    const result = await this.db.transaction(async (tx) => {
+    const write = async (tx: DbTx) => {
       const row = await this.store.load(tx, conversationId, userId);
       // 10-25：群聊发言是 PRO+ 权益（403 membership_required）。历史消息仍可读，用户仍能打开这个群。
       if (row.type === 'group')
@@ -78,7 +82,10 @@ export class ChatUserService implements ChatUserPort {
         idempotencyKey: body.clientMsgId,
         ...(body.quoteMessageId ? { quoteMessageId: body.quoteMessageId } : {}),
       });
-    });
+    };
+    const result = transaction
+      ? await write(asDbTx(transaction))
+      : await this.db.transaction(write);
     if (!result.ok)
       throw new AppError(
         result.error === 'not_conversation_member'

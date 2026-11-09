@@ -72,7 +72,7 @@ export class ChannelBridge {
    * 失败不抛：返回结果由 worker 记日志。重复投递返回 duplicate，不会产生两条聊天消息。
    */
   async ingest(candidate: BindingRow, input: InboundInput): Promise<IngestOutcome> {
-    // 长连接无需因换角色重建；每次入站读取当前选择，同时拒绝旧凭据代际的迟到事件。
+    // 换角色/重绑都推进代际；旧连接和处理中旧快照均不能投递到新选择。
     const binding =
       candidate.channel === 'weibo' || candidate.channel === 'qq'
         ? await this.store.bindingById(candidate.id)
@@ -207,10 +207,17 @@ export class ChannelBridge {
         return reject('stale_binding');
     }
     try {
-      const ack = await this.chatUser.sendMessage(binding.user_id, conversation.conversationId, {
-        clientMsgId: row.clientMsgId,
-        content: { type: 'text', text },
-      });
+      const send = (tx?: DbTx) => {
+        const body = { clientMsgId: row.clientMsgId, content: { type: 'text' as const, text } };
+        return tx
+          ? this.chatUser.sendMessage(binding.user_id, conversation.conversationId, body, tx)
+          : this.chatUser.sendMessage(binding.user_id, conversation.conversationId, body);
+      };
+      const ack =
+        binding.channel === 'weibo'
+          ? await this.store.withCurrentWeiboBinding(binding, send)
+          : await send();
+      if (!ack) return reject('stale_binding');
       await this.store.finishInbound(
         row.id,
         'accepted',
@@ -306,16 +313,32 @@ export class ChannelBridge {
     if (!event.senderRefId) return null;
     const userId = event.userRecipientIds[0];
     if (!userId) return null;
-    const bindings = await this.store.activeBindingsForCharacter(userId, event.senderRefId);
-    const message = await this.chatRead.getMessage(event.messageId, ['normal']);
+    const bindings = await this.store.activeBindingsForCharacter(userId, event.senderRefId, tx);
+    // 本模块锁先于聊天会话锁；旧快照不能在角色切换完成后补入新队列。
+    const currentBindings: BindingRow[] = [];
+    for (const binding of bindings.sort((a, b) => a.id.localeCompare(b.id))) {
+      if (binding.channel !== 'weibo' || (await this.store.lockCurrentWeiboBinding(tx, binding)))
+        currentBindings.push(binding);
+    }
+    const message = await this.chatRead.getMessage(event.messageId, ['normal'], tx);
     if (!message || message.content?.type !== 'text') return null;
     const text = String(message.content.text ?? '').trim();
     if (!text) return null;
     let first: { outboundId: string; bindingId: string } | null = null;
-    for (const binding of bindings) {
+    for (const binding of currentBindings) {
       if (
         binding.status !== 'active' ||
         channelRuntimeConfig(this.config, binding.channel, userId).integration !== 'live'
+      )
+        continue;
+      if (
+        binding.channel === 'weibo' &&
+        (!binding.reply_conversation_id ||
+          binding.reply_after_seq == null ||
+          binding.reply_conversation_id !== event.conversationId ||
+          message.conversationId !== binding.reply_conversation_id ||
+          !Number.isSafeInteger(message.seq) ||
+          message.seq <= Number(binding.reply_after_seq))
       )
         continue;
       const textSealed = await this.crypto.seal(

@@ -40,6 +40,17 @@ export const WECHAT_BIND_URL_HOST = 'liteapp.weixin.qq.com';
 export const ChannelId = z.enum(['wechat', 'weibo', 'qq']);
 export type ChannelId = z.infer<typeof ChannelId>;
 
+/** 7.10：旧微博助手矩阵的五个独立凭据/角色槽位。 */
+export const WeiboSlotId = z.enum(['main', 'blue', 'white', 'pink', 'yellow']);
+export type WeiboSlotId = z.infer<typeof WeiboSlotId>;
+export const WEIBO_SLOTS = [
+  { slot: 'main', label: '主号', assistantName: '微博龙虾助手' },
+  { slot: 'blue', label: '小蓝', assistantName: '微博龙虾助手小蓝' },
+  { slot: 'white', label: '小白', assistantName: '微博龙虾助手小白' },
+  { slot: 'pink', label: '小粉', assistantName: '微博龙虾助手小粉' },
+  { slot: 'yellow', label: '小黄', assistantName: '微博龙虾助手小黄' },
+] as const;
+
 /** unbound 未绑定；pending 等对方确认（微信已出码 / 微博凭据已保存）；active 已绑定；revoked 被外部解除或账号改绑。 */
 export const ChannelBindingStatus = z.enum(['unbound', 'pending', 'active', 'revoked']);
 export type ChannelBindingStatus = z.infer<typeof ChannelBindingStatus>;
@@ -73,6 +84,9 @@ export const ChannelState = z.object({
   lastError: z.string().max(200).nullable(),
   /** 待确认状态的过期时间（微信二维码）；没有待确认的为 null。 */
   pendingExpiresAt: Timestamp.nullable(),
+  /** 多槽位时旧列表只返回汇总，旧的单绑定写接口明确拒绝歧义。 */
+  bindingCount: z.number().int().nonnegative().max(5).optional(),
+  multipleBindings: z.boolean().optional(),
 });
 export type ChannelState = z.infer<typeof ChannelState>;
 
@@ -126,6 +140,16 @@ export const WeiboConnectRequest = z.object({
   appSecret: z.string().trim().min(8).max(256),
 });
 export type WeiboConnectRequest = z.infer<typeof WeiboConnectRequest>;
+
+export const WeiboSlotConnectRequest = WeiboConnectRequest.extend({ slot: WeiboSlotId });
+export type WeiboSlotConnectRequest = z.infer<typeof WeiboSlotConnectRequest>;
+export const WeiboBindingState = ChannelState.extend({
+  bindingId: Id.nullable(),
+  slot: WeiboSlotId,
+  slotLabel: z.string().max(8),
+  assistantName: z.string().max(40),
+});
+export type WeiboBindingState = z.infer<typeof WeiboBindingState>;
 
 /** QQ 官方机器人：凭据只由本人通过 HTTPS 表单提交，不接收个人 QQ 密码或 Cookie。 */
 export const QqConnectRequest = z.object({
@@ -219,6 +243,45 @@ export const ChannelEndpoints = {
     params: channelParams,
     response: ChannelState,
     summary: '3.42：解除绑定（幂等；清空对面账号与全部加密凭据；不需要 PRO+）',
+  }),
+} as const;
+
+const weiboBindingParams = z.object({ bindingId: Id });
+export const WeiboBindingsEndpoints = {
+  list: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/channels/weibo/bindings`,
+    auth: 'user',
+    response: z.object({
+      items: z.array(WeiboBindingState).length(5),
+      characters: z.array(ChannelCharacter),
+    }),
+    summary: '按五个助手槽位返回本人绑定；不返回凭据或完整外部peer',
+  }),
+  connect: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/channels/weibo/bindings`,
+    auth: 'user',
+    body: WeiboSlotConnectRequest,
+    response: WeiboBindingState,
+    summary: '验证本人提供的微博凭据后只连接指定槽位，原绑定ID稳定',
+  }),
+  setCharacter: defineEndpoint({
+    method: 'PATCH',
+    path: `${API_PREFIX}/channels/weibo/bindings/:bindingId`,
+    auth: 'user',
+    params: weiboBindingParams,
+    body: ChannelCharacterRequest,
+    response: WeiboBindingState,
+    summary: '仅修改本人指定微博绑定的出口角色，同用户不同槽位角色不得重复',
+  }),
+  unbind: defineEndpoint({
+    method: 'DELETE',
+    path: `${API_PREFIX}/channels/weibo/bindings/:bindingId`,
+    auth: 'user',
+    params: weiboBindingParams,
+    response: WeiboBindingState,
+    summary: '只解绑本人指定槽位并取消该绑定待发队列；其他槽位不变',
   }),
 } as const;
 

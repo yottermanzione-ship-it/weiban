@@ -12,10 +12,12 @@ import {
 } from '@nestjs/common';
 import {
   ChannelEndpoints as E,
+  WeiboBindingsEndpoints as W,
   type ChannelId,
   type ChannelCharacterRequest,
   type WechatQrRequest,
   type WeiboConnectRequest,
+  type WeiboSlotConnectRequest,
   type QqConnectRequest,
 } from '@weiban/contracts';
 import {
@@ -32,6 +34,8 @@ const qrBody = new ContractPipe(E.wechatQr.body!);
 const characterBody = new ContractPipe(E.setCharacter.body!);
 const qqBody = new ContractPipe(E.qqConnect.body!);
 const weiboBody = new ContractPipe(E.weiboConnect.body!);
+const weiboSlotBody = new ContractPipe(W.connect.body!);
+const weiboBindingParams = new ContractPipe(W.unbind.params!);
 
 @Controller('api/v1/channels')
 @RequireAuth('user')
@@ -70,6 +74,37 @@ export class ChannelsController {
   @HttpCode(200)
   weiboConnect(@CurrentPrincipal() p: AuthPrincipal, @Body(weiboBody) body: WeiboConnectRequest) {
     return this.channels.weiboConnect(p.userId, body);
+  }
+
+  @Get('weibo/bindings')
+  listWeiboBindings(@CurrentPrincipal() p: AuthPrincipal) {
+    return this.channels.listWeiboBindings(p.userId);
+  }
+
+  @Post('weibo/bindings')
+  @HttpCode(200)
+  connectWeiboSlot(
+    @CurrentPrincipal() p: AuthPrincipal,
+    @Body(weiboSlotBody) body: WeiboSlotConnectRequest,
+  ) {
+    return this.channels.weiboSlotConnect(p.userId, body);
+  }
+
+  @Patch('weibo/bindings/:bindingId')
+  setWeiboCharacter(
+    @CurrentPrincipal() p: AuthPrincipal,
+    @Param(weiboBindingParams) params: { bindingId: string },
+    @Body(characterBody) body: ChannelCharacterRequest,
+  ) {
+    return this.channels.setWeiboCharacter(p.userId, params.bindingId, body.characterId);
+  }
+
+  @Delete('weibo/bindings/:bindingId')
+  unbindWeibo(
+    @CurrentPrincipal() p: AuthPrincipal,
+    @Param(weiboBindingParams) params: { bindingId: string },
+  ) {
+    return this.channels.unbindWeibo(p.userId, params.bindingId);
   }
 
   @Post('qq/binding')

@@ -209,18 +209,18 @@ export class ChannelsWorker implements OnModuleInit, UserDataOwner {
       if (!(await this.store.isOutboundCurrent(row.id, binding.id, binding.generation))) return;
       const peer = await this.channels.weiboReplyPeer(binding);
       if (!peer) {
-        await this.retryOrFail(row, '请先在微博给龙虾助手发一句话，建立回信目标');
+        if (await this.store.isOutboundCurrent(row.id, binding.id, binding.generation))
+          await this.retryOrFail(row, '请先在微博给龙虾助手发一句话，建立回信目标');
         return;
       }
-      const ok = await this.weibo.send(
-        row.binding_id,
-        peer,
-        text,
-        binding.generation,
-        `out-${row.id}`,
+      const ok = await this.store.handoffWeiboOutbound(
+        binding,
+        row.id,
+        () => this.weibo.send(row.binding_id, peer, text, binding.generation, `out-${row.id}`),
+        this.clock.now(),
       );
+      if (ok === null) return;
       if (ok) {
-        await this.store.finishOutbound(row.id, { status: 'sent', now: this.clock.now() });
         await this.store.touchEvent(binding.id, this.clock.now());
       } else {
         await this.retryOrFail(row, '微博长连未就绪');
@@ -314,6 +314,7 @@ export class ChannelsWorker implements OnModuleInit, UserDataOwner {
       await this.store.finishOutbound(row.id, {
         status: 'failed',
         lastError: reason,
+        onlyIfSending: true,
         now,
       });
       return;
@@ -321,6 +322,7 @@ export class ChannelsWorker implements OnModuleInit, UserDataOwner {
     await this.store.finishOutbound(row.id, {
       status: 'retry',
       lastError: reason,
+      onlyIfSending: true,
       nextAttemptAt: new Date(now.getTime() + (delayMs ?? retryDelayMs(row.attempts))),
       now,
     });
