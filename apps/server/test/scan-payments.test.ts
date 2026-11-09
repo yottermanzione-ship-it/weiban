@@ -456,7 +456,7 @@ describeDb('扫码支付：真实数据库、设备签名、并发与用户隔�
     expect((await service.get(u2.id, o2.id)).status).toBe('expired');
     expect((await q.ledgerOf(u2.id)).filter((e) => e.purpose === 'scan_recharge')).toHaveLength(0);
   });
-  it('会员按下单快照开通与赠送，续期接在到期日后，首次价只用一次', async () => {
+  it('会员按快照开通，月季年首次价独立，重复同档才按原价', async () => {
     const u = await user();
     const first = await service.create(u.id, {
       clientOrderId: randomUUID(),
@@ -473,20 +473,44 @@ describeDb('扫码支付：真实数据库、设备签名、并发与用户隔�
     await service.report(await receipt(first));
     await svc.updateSettings(adminId, original);
     expect(Number((await q.account(u.id))?.bonus_balance_micros)).toBe(3000 * 10000);
+    expect((await svc.offer(u.id)).firstPurchaseAvailableByPlan).toEqual({
+      month: false,
+      quarter: true,
+      year: true,
+    });
     const second = await service.create(u.id, {
       clientOrderId: randomUUID(),
       channel: 'alipay',
       purchase: { kind: 'membership', planId: 'quarter' },
     });
-    expect(second.baseFen).toBe(5800);
+    expect(second.baseFen).toBe(3990);
     await service.report(await receipt(second));
+    const third = await service.create(u.id, {
+      clientOrderId: randomUUID(),
+      channel: 'wechat',
+      purchase: { kind: 'membership', planId: 'year' },
+    });
+    expect(third.baseFen).toBe(15990);
+    await service.report(await receipt(third));
+    const repeat = await service.create(u.id, {
+      clientOrderId: randomUUID(),
+      channel: 'alipay',
+      purchase: { kind: 'membership', planId: 'quarter' },
+    });
+    expect(repeat.baseFen).toBe(5800);
+    await service.report(await receipt(repeat));
     const rows = (await svc.listOrders({ userId: u.id, limit: 10 })).items;
-    expect(rows).toHaveLength(2);
-    expect(rows.filter((r) => r.firstPurchase)).toHaveLength(1);
-    const initial = rows.find((r) => r.firstPurchase)!,
-      renewal = rows.find((r) => !r.firstPurchase)!;
+    expect(rows).toHaveLength(4);
+    expect(rows.filter((r) => r.firstPurchase)).toHaveLength(3);
+    const initial = rows.find((r) => r.planId === 'month')!,
+      renewal = rows.find((r) => r.planId === 'quarter' && r.firstPurchase)!;
     expect(renewal.startsAt).toBe(initial.endsAt);
     expect(renewal.bonusPoints).toBe(9000);
+    expect((await svc.offer(u.id)).firstPurchaseAvailableByPlan).toEqual({
+      month: false,
+      quarter: false,
+      year: false,
+    });
   });
   it('会员优惠被后台开通占用时不重复优惠，保留到账待核对', async () => {
     const u = await user(),
@@ -500,6 +524,80 @@ describeDb('扫码支付：真实数据库、设备签名、并发与用户隔�
       .createOrder(adminId, { clientOrderId: randomUUID(), userId: u.id, planId: 'month' });
     expect((await service.report(await receipt(o))).status).toBe('review');
     expect((await service.get(u.id, o.id)).status).toBe('review');
+  });
+  it('迁移前首次价订单保留，三档并发各一次且重复同订单不重发积分', async () => {
+    const u = await user(),
+      orders = app.get(MembershipOrderService);
+    const legacy = await orders.createOrder(adminId, {
+      userId: u.id,
+      clientOrderId: randomUUID(),
+      planId: 'month',
+    });
+    await database.query(
+      "UPDATE billing.membership_orders SET first_purchase_campaign='legacy' WHERE id=$1",
+      [legacy.order.orderId],
+    );
+    expect((await orders.offer(u.id)).firstPurchaseAvailableByPlan).toEqual({
+      month: true,
+      quarter: true,
+      year: true,
+    });
+    const monthKey = randomUUID();
+    const current = await Promise.all(
+      (['month', 'month', 'quarter', 'year'] as const).map((planId) =>
+        orders.createOrder(adminId, {
+          userId: u.id,
+          clientOrderId: planId === 'month' ? monthKey : randomUUID(),
+          planId,
+        }),
+      ),
+    );
+    expect(current.every((result) => result.order.firstPurchase)).toBe(true);
+    expect(current[0]!.order.orderId).toBe(current[1]!.order.orderId);
+    expect((await orders.offer(u.id)).firstPurchaseAvailableByPlan).toEqual({
+      month: false,
+      quarter: false,
+      year: false,
+    });
+    const history = await orders.listOrders({ userId: u.id, limit: 10 });
+    expect(history.items).toHaveLength(4);
+    expect(history.items.find((item) => item.orderId === legacy.order.orderId)).toEqual(
+      legacy.order,
+    );
+    expect(
+      (await q.ledgerOf(u.id)).filter((entry) => entry.purpose === 'membership_bonus'),
+    ).toHaveLength(4);
+  });
+  it('迁移前的待付快照按原报价兑现且不占用迁移后的同档首次价', async () => {
+    const u = await user();
+    const old = await service.create(u.id, {
+      clientOrderId: randomUUID(),
+      channel: 'wechat',
+      purchase: { kind: 'membership', planId: 'month' },
+    });
+    await database.query(
+      "UPDATE billing.scan_orders SET snapshot=snapshot-'firstPurchaseCampaign' WHERE id=$1",
+      [old.id],
+    );
+    expect((await service.report(await receipt(old))).status).toBe('matched');
+    expect(
+      (await app.get(MembershipOrderService).offer(u.id)).firstPurchaseAvailableByPlan,
+    ).toEqual({
+      month: true,
+      quarter: true,
+      year: true,
+    });
+    const current = await service.create(u.id, {
+      clientOrderId: randomUUID(),
+      channel: 'alipay',
+      purchase: { kind: 'membership', planId: 'month' },
+    });
+    expect(current.baseFen).toBe(1290);
+    expect((await service.report(await receipt(current))).status).toBe('matched');
+    const rows = (await app.get(MembershipOrderService).listOrders({ userId: u.id, limit: 10 }))
+      .items;
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => row.firstPurchase)).toBe(true);
   });
   it('写流水失败整笔回滚，设备重试后只入账一次', async () => {
     const u = await user(),

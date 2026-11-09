@@ -59,7 +59,7 @@ export const MembershipPlan = z.object({
   months: z.number().int().min(1).max(36),
   /** 原价（分）。 */
   priceFen: z.number().int().min(0).max(10_000_000),
-  /** 首次开通价（分）；每人限一次，任一档用过就不再有。 */
+  /** 首次开通价（分）；每人每档一次，月/季/年分别计算。 */
   firstPriceFen: z.number().int().min(0).max(10_000_000),
   /** 开通即一次性赠送的积分（永久有效，扣费先扣赠送）。首次价同样送足额。 */
   bonusPoints: z.number().int().min(0).max(10_000_000),
@@ -81,6 +81,10 @@ export type MembershipSettings = z.infer<typeof MembershipSettings>;
 export const MembershipOffer = z.object({
   plans: z.array(MembershipPlan),
   firstPurchaseAvailable: z.boolean(),
+  /** 2026-11-09：迁移后逐档重置；旧客户端可继续读取上方保守汇总开关。 */
+  firstPurchaseAvailableByPlan: z
+    .object({ month: z.boolean(), quarter: z.boolean(), year: z.boolean() })
+    .optional(),
   paymentEnabled: z.literal(false),
   contactHint: z.string(),
   membership: Membership,
@@ -114,7 +118,7 @@ export const CreateMembershipOrder = z
     clientOrderId: Id,
     userId: Id,
     planId: MembershipPlanId,
-    /** 默认 true：用户还没用过首次价就按首次价；false = 按原价（例：用户已线下按原价付款）。 */
+    /** 默认 true：用户本轮还没用过该档首次价就按首次价；false = 按原价。 */
     useFirstPrice: z.boolean().optional(),
     note: z.string().trim().max(200).optional(),
   })
@@ -131,6 +135,14 @@ export const MembershipOfferEndpoints = {
 } as const;
 
 export const MembershipOrderAdminEndpoints = {
+  getOffer: defineEndpoint({
+    method: 'GET',
+    path: API_PREFIX + '/admin/membership/users/:userId/offer',
+    auth: 'admin',
+    params: z.object({ userId: Id }),
+    response: MembershipOffer,
+    summary: '查询指定用户的各档首次价可用状态与会员报价',
+  }),
   getSettings: defineEndpoint({
     method: 'GET',
     path: API_PREFIX + '/admin/membership/settings',

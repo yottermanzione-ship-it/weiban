@@ -96,7 +96,10 @@ services:
       ADMIN_PUBLIC_ORIGIN: ${ADMIN_PUBLIC_ORIGIN:?Set full public admin HTTPS origin}
       NO_PROXY: app,postgres,localhost,127.0.0.1
     ports: ['80:80', '443:443', '443:443/udp']
-    volumes: [caddy_data:/data, caddy_config:/config]
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+      - ${DOWNLOADS_ROOT:-/var/lib/weiban-downloads}:/srv/downloads:ro
     depends_on:
       app:
         condition: service_healthy

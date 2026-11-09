@@ -192,17 +192,21 @@ function MembershipPanel({
   const toast = useToast();
   const confirm = useDangerConfirm();
   const settings = useRemote(MembershipOrderAdminEndpoints.getSettings);
+  const offer = useRemote(MembershipOrderAdminEndpoints.getOffer, {
+    params: { userId: user.userId },
+  });
   const records = useAsync(`sub:${user.userId}`, () => loadUserSubRecords(user.userId));
   const [drawer, setDrawer] = useState<'open' | 'adjust' | null>(null);
   const [selected, setSelected] = useState<SubRecord | null>(null);
   const [error, setError] = useState('');
   const isPro = user.membership.tier === 'pro_plus';
   const left = daysLeft(user.membership.expiresAt);
-  const firstUsed = (records.data ?? []).some((r) => r.order?.firstPurchase);
+  const firstAvailable = offer.data?.firstPurchaseAvailableByPlan;
   const inactive = user.status !== 'active';
 
   function changed() {
     records.refresh();
+    offer.refresh();
     onChanged();
   }
 
@@ -228,7 +232,7 @@ function MembershipPanel({
           <Space>
             <Button
               type="primary"
-              disabled={inactive || !settings.data}
+              disabled={inactive || !settings.data || !firstAvailable}
               onClick={() => setDrawer('open')}
             >
               {isPro ? '续期' : '开通'}
@@ -253,11 +257,11 @@ function MembershipPanel({
           </Space>
         }
       >
-        {(error || settings.error) && (
+        {(error || settings.error || offer.error) && (
           <Alert
             type="error"
             showIcon
-            message={error || settings.error}
+            message={error || settings.error || offer.error}
             style={{ marginBottom: 12 }}
           />
         )}
@@ -279,11 +283,16 @@ function MembershipPanel({
           <div>
             <span className="detail-label">首次价</span>
             <span>
-              {records.loading
+              {offer.loading
                 ? '…'
-                : firstUsed
-                  ? '已用过（之后按原价）'
-                  : '还没用过（开通自动按首次价）'}
+                : !firstAvailable
+                  ? '未取得报价'
+                  : settings.data?.plans
+                      .map(
+                        (plan) =>
+                          `${plan.name}：${firstAvailable?.[plan.planId] ? '可用' : '已用'}`,
+                      )
+                      .join(' · ')}
             </span>
           </div>
           <div>
@@ -308,11 +317,11 @@ function MembershipPanel({
         emptyTitle="还没有订阅记录"
         emptyHint="点上面的「开通」给这个用户开通 PRO+。"
       />
-      {drawer === 'open' && settings.data && (
+      {drawer === 'open' && settings.data && firstAvailable && (
         <OpenMembershipDrawer
           row={row}
           settings={settings.data}
-          firstUsed={firstUsed}
+          firstAvailable={firstAvailable}
           onClose={() => setDrawer(null)}
           onDone={() => {
             setDrawer(null);
@@ -363,13 +372,13 @@ interface OpenValues {
 function OpenMembershipDrawer({
   row,
   settings,
-  firstUsed,
+  firstAvailable,
   onClose,
   onDone,
 }: {
   row: UserRow;
   settings: MembershipSettings;
-  firstUsed: boolean;
+  firstAvailable: Record<MembershipPlanId, boolean>;
   onClose: () => void;
   onDone: () => void;
 }) {
@@ -382,7 +391,8 @@ function OpenMembershipDrawer({
   const [error, setError] = useState('');
   // 一次开通一个幂等键：网络重试不会重复开通。
   const orderKey = useRef(crypto.randomUUID());
-  const planId = Form.useWatch('planId', form) ?? 'month';
+  const planId = (Form.useWatch('planId', form) ?? 'month') as MembershipPlanId;
+  const firstUsed = !firstAvailable[planId];
   const useFirst = (Form.useWatch('useFirstPrice', form) ?? true) && !firstUsed;
   const plan = settings.plans.find((p) => p.planId === planId);
   const isPro = user.membership.tier === 'pro_plus';
@@ -446,7 +456,7 @@ function OpenMembershipDrawer({
       <Form<OpenValues>
         form={form}
         layout="vertical"
-        initialValues={{ planId: 'month', useFirstPrice: !firstUsed }}
+        initialValues={{ planId: 'month', useFirstPrice: true }}
       >
         <FormSection title="档位" desc="收到用户付款后再开通" />
         <Form.Item name="planId">
@@ -455,7 +465,7 @@ function OpenMembershipDrawer({
               <Radio.Button key={p.planId} value={p.planId}>
                 <div className="plan-radio-name">{p.name}</div>
                 <div className="plan-radio-price">
-                  {!firstUsed ? (
+                  {firstAvailable[p.planId] ? (
                     <>
                       {yuanFen(p.firstPriceFen)} <s>{yuanFen(p.priceFen)}</s>
                     </>
@@ -474,11 +484,12 @@ function OpenMembershipDrawer({
           name="useFirstPrice"
           label="按首次价"
           valuePropName="checked"
+          getValueProps={(value: boolean) => ({ checked: !firstUsed && value })}
           extra={
             <FieldHelp>
               {firstUsed
-                ? '这个用户已经用过首次价，本次自动按原价。'
-                : '系统识别到这个用户还没用过首次价（每人一次，任一档），默认按首次价；用户已按原价付款时关掉。'}
+                ? '这个用户已用过此档首次价，本次按原价；其他档位单独计算。'
+                : '这个用户还没用过此档首次价（月、季、年各一次），默认按首次价；用户已按原价付款时关掉。'}
             </FieldHelp>
           }
         >

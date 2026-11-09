@@ -165,6 +165,11 @@ export class ChannelsService {
     const byChannel = new Map(bindings.map((row) => [row.channel, row]));
     const items: ChannelState[] = [];
     for (const channel of CHANNEL_ORDER) {
+      const legacy = await this.legacyState(userId, channel);
+      if (legacy) {
+        items.push(legacy);
+        continue;
+      }
       const binding = byChannel.get(channel) ?? null;
       const attempt = channel === 'wechat' ? await this.pendingAttempt(userId, channel, now) : null;
       items.push(
@@ -181,6 +186,8 @@ export class ChannelsService {
   }
 
   private async stateOf(userId: string, channel: ChannelId): Promise<ChannelState> {
+    const legacy = await this.legacyState(userId, channel);
+    if (legacy) return legacy;
     const [binding, attempt] = await Promise.all([
       this.store.bindingOf(userId, channel),
       channel === 'wechat' ? this.pendingAttempt(userId, channel, this.clock.now()) : null,
@@ -192,6 +199,46 @@ export class ChannelsService {
       userId,
       channel === 'qq' && binding ? await this.qqStore.get(binding.id) : null,
     );
+  }
+
+  /** Fixed cutover mappings are visible but cannot be silently replaced by another QR/session. */
+  private async legacyState(userId: string, channel: ChannelId): Promise<ChannelState | null> {
+    const { rows } = await this.db.query<{ character_id: string }>(
+      'SELECT character_id FROM channels.legacy_bindings WHERE user_id=$1 AND channel=$2 AND enabled ORDER BY id',
+      [userId, channel],
+    );
+    if (!rows.length) return null;
+    const first = rows[0]!;
+    return {
+      channel,
+      name: CHANNEL_INFO[channel].name,
+      description: `沿用原有${rows.length}个连接，无需重新绑定。断开将停止本渠道全部原有连接；暂不支持在这里更换角色。`,
+      status: 'active',
+      integration: this.runtime(channel, userId).integration,
+      characterId: rows.length === 1 ? first.character_id : null,
+      characterName:
+        rows.length === 1
+          ? (await this.displayName(userId, first.character_id)).slice(0, 64) || null
+          : `原有${rows.length}个角色连接`,
+      accountName: '原有连接',
+      accountMasked: null,
+      boundAt: null,
+      lastEventAt: null,
+      lastError: null,
+      pendingExpiresAt: null,
+    };
+  }
+
+  private async assertNoLegacyBinding(userId: string, channel: ChannelId): Promise<void> {
+    const found = await this.db.query(
+      'SELECT 1 FROM channels.legacy_bindings WHERE user_id=$1 AND channel=$2 AND enabled LIMIT 1',
+      [userId, channel],
+    );
+    if (found.rowCount)
+      throw new AppError(
+        'conflict',
+        '当前沿用原有连接，无需重复绑定；如需更换，请先断开本渠道原有连接',
+      );
   }
 
   private async pendingAttempt(
@@ -291,6 +338,7 @@ export class ChannelsService {
   // ---------- 微信：扫码绑定 ----------
 
   async wechatQr(userId: string, characterId: string): Promise<WechatQrAttempt> {
+    await this.assertNoLegacyBinding(userId, 'wechat');
     const cfg = this.runtime('wechat', userId);
     this.assertLive(cfg);
     await assertChannelAccess(this.config, 'wechat', this.membership, userId, 'new_qr');
@@ -341,6 +389,7 @@ export class ChannelsService {
 
   /** 查一次扫码状态：上游长轮询，这里最多挂 8 秒就返回 wait（页面 2 秒后再问）。 */
   async wechatQrStatus(userId: string, attemptId: string): Promise<WechatQrAttempt> {
+    await this.assertNoLegacyBinding(userId, 'wechat');
     const attempt = await this.store.attemptOf(userId, attemptId);
     if (!attempt) throw new AppError('not_found', '二维码不存在或已失效');
     if (attempt.status === 'confirmed') {
@@ -505,6 +554,7 @@ export class ChannelsService {
     channel: ChannelId,
     characterId: string,
   ): Promise<ChannelState> {
+    await this.assertNoLegacyBinding(userId, channel);
     const cfg = this.runtime(channel, userId);
     this.assertLive(cfg);
     await assertChannelAccess(this.config, channel, this.membership, userId, 'switch_character');
@@ -526,6 +576,7 @@ export class ChannelsService {
   }
 
   async weiboConnect(userId: string, input: WeiboConnectRequest): Promise<ChannelState> {
+    await this.assertNoLegacyBinding(userId, 'weibo');
     const cfg = this.runtime('weibo', userId);
     this.assertLive(cfg);
     await assertChannelAccess(this.config, 'weibo', this.membership, userId, 'bind');
@@ -586,6 +637,7 @@ export class ChannelsService {
   }
 
   async qqConnect(userId: string, input: QqConnectRequest): Promise<QqPairing> {
+    await this.assertNoLegacyBinding(userId, 'qq');
     this.assertLive(this.runtime('qq', userId));
     await assertChannelAccess(this.config, 'qq', this.membership, userId, 'bind');
     const character = await this.resolveCharacter(userId, input.characterId);
@@ -643,6 +695,7 @@ export class ChannelsService {
   }
 
   async qqPairing(userId: string, characterId: string): Promise<QqPairing> {
+    await this.assertNoLegacyBinding(userId, 'qq');
     this.assertLive(this.runtime('qq', userId));
     await assertChannelAccess(this.config, 'qq', this.membership, userId, 'bind');
     const character = await this.resolveCharacter(userId, characterId);
@@ -714,7 +767,13 @@ export class ChannelsService {
 
   /** 解绑：幂等；清空凭据与账号，停掉后台任务。**不需要 PRO+**（会员到期也必须能解绑）。 */
   async unbind(userId: string, channel: ChannelId): Promise<ChannelState> {
-    await this.db.transaction((tx) => this.store.unbind(tx, userId, channel, this.clock.now()));
+    await this.db.transaction(async (tx) => {
+      await tx.query(
+        'UPDATE channels.legacy_bindings SET enabled=false,user_disabled=true,updated_at=$3 WHERE user_id=$1 AND channel=$2',
+        [userId, channel, this.clock.now()],
+      );
+      await this.store.unbind(tx, userId, channel, this.clock.now());
+    });
     await this.safeSend(CHANNELS_RECONCILE_JOB, { reason: 'unbind' });
     return this.stateOf(userId, channel);
   }
@@ -734,19 +793,19 @@ export class ChannelsService {
         {
           pluginId: 'wechat',
           name: '微信接入',
-          description: '用微信扫一扫，把这个角色接到微信里聊',
+          description: stateOf('wechat')?.description ?? '用微信扫一扫，把这个角色接到微信里聊',
           status: statusOf('wechat'),
         },
         {
           pluginId: 'qq',
           name: 'QQ接入',
-          description: CHANNEL_INFO.qq.description,
+          description: stateOf('qq')?.description ?? CHANNEL_INFO.qq.description,
           status: statusOf('qq'),
         },
         {
           pluginId: 'weibo',
           name: '微博接入',
-          description: '用微博 AppID / AppSecret 接到微博私信',
+          description: stateOf('weibo')?.description ?? '用微博 AppID / AppSecret 接到微博私信',
           status: statusOf('weibo'),
         },
       ],

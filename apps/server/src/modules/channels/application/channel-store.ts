@@ -634,6 +634,7 @@ export class ChannelStore {
       );
       const removed: number[] = [qqRemoved.rowCount ?? 0];
       for (const table of [
+        'channels.legacy_bindings',
         'channels.outbound_messages',
         'channels.inbound_messages',
         'channels.bind_attempts',
@@ -651,6 +652,7 @@ export class ChannelStore {
       `SELECT (
          (SELECT count(*) FROM channels.qq_sessions q JOIN channels.bindings b ON b.id=q.binding_id WHERE b.user_id=$1) +
          (SELECT count(*) FROM channels.bindings WHERE user_id=$1) +
+         (SELECT count(*) FROM channels.legacy_bindings WHERE user_id=$1) +
          (SELECT count(*) FROM channels.bind_attempts WHERE user_id=$1) +
          (SELECT count(*) FROM channels.inbound_messages WHERE user_id=$1) +
          (SELECT count(*) FROM channels.outbound_messages WHERE user_id=$1)

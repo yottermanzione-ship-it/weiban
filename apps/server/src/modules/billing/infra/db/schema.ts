@@ -364,8 +364,10 @@ export const membershipOrders = billingSchema.table(
     priceFen: integer('price_fen').notNull(),
     /** 当时的原价（分）。 */
     listPriceFen: integer('list_price_fen').notNull(),
-    /** 是否按首次价（每人限一次，部分唯一索引保证）。 */
+    /** 是否按首次价（每轮每人每档一次，部分唯一索引保证）。 */
     firstPurchase: boolean('first_purchase').notNull(),
+    /** 旧订单保留 legacy；当前轮次由下单服务明确写入。 */
+    firstPurchaseCampaign: text('first_purchase_campaign').notNull().default('legacy'),
     bonusPoints: integer('bonus_points').notNull(),
     startsAt: tz('starts_at').notNull(),
     endsAt: tz('ends_at').notNull(),
@@ -377,7 +379,7 @@ export const membershipOrders = billingSchema.table(
   (t) => [
     uniqueIndex('membership_orders_client_order_key').on(t.clientOrderId),
     uniqueIndex('membership_orders_first_purchase_key')
-      .on(t.userId)
+      .on(t.userId, t.planId, t.firstPurchaseCampaign)
       .where(sql`${t.firstPurchase}`),
     index('membership_orders_user_idx').on(t.userId, t.createdAt),
     index('membership_orders_created_idx').on(t.createdAt),

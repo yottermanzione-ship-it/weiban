@@ -5,6 +5,8 @@ const tz = (name: string) => timestamp(name, { withTimezone: true });
 export interface PurchaseSnapshot {
   plan: MembershipPlan | null;
   firstPurchase: boolean;
+  /** 旧待付款订单缺省 legacy，不能误占迁移后的首次权益。 */
+  firstPurchaseCampaign?: string;
 }
 export const scanDevices = billingSchema.table('scan_devices', {
   id: uuid('id').primaryKey(),

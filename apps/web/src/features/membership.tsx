@@ -149,7 +149,9 @@ export function MembershipPage() {
       <p className="recharge-section">PRO+ 价格</p>
       <div className="recharge-tiers">
         {data?.plans.map((plan) => {
-          const first = data.firstPurchaseAvailable && plan.firstPriceFen < plan.priceFen;
+          const first =
+            (data.firstPurchaseAvailableByPlan?.[plan.planId] ?? data.firstPurchaseAvailable) &&
+            plan.firstPriceFen < plan.priceFen;
           return (
             <button
               key={plan.planId}
@@ -166,7 +168,7 @@ export function MembershipPage() {
                   ¥{yuan(first ? plan.firstPriceFen : plan.priceFen)}
                 </span>
                 {first && <s className="hint">¥{yuan(plan.priceFen)}</s>}
-                {first && <small className="hint">首次价，每人限一次</small>}
+                {first && <small className="hint">首次价，每档各一次</small>}
               </span>
             </button>
           );

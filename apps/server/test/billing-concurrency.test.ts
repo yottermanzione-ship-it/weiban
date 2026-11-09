@@ -103,7 +103,7 @@ describeDb('资金并发与对账回归', () => {
     return error?.code ?? (error?.cause ? errorCode(error.cause) : (error?.name ?? 'unknown'));
   }
 
-  it('同一会员订单并发重试只赠送一次、只延长一次；不同订单首次价只享受一次', async () => {
+  it('同一会员订单并发重试只赠送一次、只延长一次；同档不同订单首次价只享受一次', async () => {
     const id = await user(),
       key = newId();
     const [a, b] = await Promise.all([order(id, key), order(id, key)]);

@@ -86,7 +86,7 @@ export function PlansPage() {
       )}
       <SectionCard
         title="PRO+ 会员档位"
-        desc="首次价每人一次（任一档）；开通即一次性送积分，计入赠送积分"
+        desc="首次价每人每档各一次（月、季、年独立）；开通即一次性送积分，计入赠送积分"
         extra={
           <Button type="primary" disabled={!s} onClick={() => setEditing('plans')}>
             编辑

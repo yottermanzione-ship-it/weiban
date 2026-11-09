@@ -1,0 +1,7 @@
+{
+  "controlPath": "/tmp/wb-fast-control/old-%C.sock",
+  "knownHostsFile": "/run/wb-fast/known_hosts",
+  "sshAuthSock": "/run/wb-fast-agent.sock",
+  "sourceScriptPath": "/tmp/wb-fast-1109/fast-cutover-media-source.mjs",
+  "sourceRoot": "/opt/weiban-server"
+}
