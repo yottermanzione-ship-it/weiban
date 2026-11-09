@@ -2,7 +2,7 @@
  * 3.17（会员 v5）：PRO+ 价格 / 开通订单 / 会员配置接口，对应契约 MembershipOfferEndpoints / MembershipOrderAdminEndpoints。
  * 实现在 billing（订单要与发赠送积分同一事务）；会员到期时间仍归 identity（经 IdentityMembershipWritePort）。
  */
-import { Body, Controller, Get, Inject, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Param, Post, Put, Query } from '@nestjs/common';
 import {
   MembershipOfferEndpoints as E,
   MembershipOrderAdminEndpoints as A,
@@ -32,6 +32,12 @@ export class MembershipOfferController {
 @Controller('api/v1/admin/membership')
 export class MembershipAdminController {
   constructor(@Inject(MembershipOrderService) private readonly service: MembershipOrderService) {}
+
+  @Get('users/:userId/offer')
+  @RequireAuth(A.getOffer.auth)
+  offer(@Param(new ContractPipe(A.getOffer.params!)) params: { userId: string }) {
+    return this.service.offer(params.userId);
+  }
 
   @Get('settings')
   @RequireAuth(A.getSettings.auth)

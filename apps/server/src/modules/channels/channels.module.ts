@@ -22,11 +22,14 @@ import { WechatRuntime } from './application/wechat-runtime.js';
 import { WeiboRuntime } from './application/weibo-runtime.js';
 import { ChannelsController } from './http/channels.controller.js';
 import { PluginsController } from './http/plugins.controller.js';
+import { LegacyRelayController } from './http/legacy-relay.controller.js';
+import { LegacyRelayService } from './application/legacy-relay.service.js';
 
 @Module({
   imports: [IdentityModule, ChatModule, ContactsModule, CharactersModule],
-  controllers: [ChannelsController, PluginsController],
+  controllers: [ChannelsController, PluginsController, LegacyRelayController],
   providers: [
+    LegacyRelayService,
     ChannelStore,
     QqSessionStore,
     QqRuntime,

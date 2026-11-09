@@ -3,7 +3,7 @@
  *
  * - 现阶段没有真实支付：管理员在后台替用户开通某档，本服务在**同一事务**里：串行同用户订单 → 查幂等 → 判断首次价 →
  *   经 identity 写端口锁用户并叠加到期时间 → 锁钱包 → 记订单 → 发一次性赠送积分（admin_grant，bonusCredit，计入赠送余额）。
- * - 首次价每人限一次（任一档）：部分唯一索引 membership_orders_first_purchase_key 兜底并发。
+ * - 首次价每轮每人每档一次：部分唯一索引 membership_orders_first_purchase_key 兜底并发。
  * - 配置存 billing.settings：membership_settings（三档价格 / 赠送、联系说明、注册赠送积分）。
  * - 注册赠送：identity.user_registered 时按当时配置发一次（幂等键 signup_bonus:{userId}），默认 0 不发。
  */
@@ -36,6 +36,7 @@ import {
   IDENTITY_MEMBERSHIP_WRITE_PORT,
 } from '../../identity/index.js';
 import { billingSettings, membershipOrders } from '../infra/db/schema.js';
+import { FIRST_PURCHASE_CAMPAIGN } from '../domain/first-purchase.js';
 import { Ledger } from './ledger.js';
 
 const KEY = 'membership_settings';
@@ -157,13 +158,26 @@ export class MembershipOrderService {
 
   async offer(userId: string): Promise<MembershipOffer> {
     const settings = await this.getSettings();
-    const [first] = await this.database.db
-      .select({ id: membershipOrders.id })
+    const used = await this.database.db
+      .select({ planId: membershipOrders.planId })
       .from(membershipOrders)
-      .where(and(eq(membershipOrders.userId, userId), eq(membershipOrders.firstPurchase, true)));
+      .where(
+        and(
+          eq(membershipOrders.userId, userId),
+          eq(membershipOrders.firstPurchase, true),
+          eq(membershipOrders.firstPurchaseCampaign, FIRST_PURCHASE_CAMPAIGN),
+        ),
+      );
+    const firstPurchaseAvailableByPlan = {
+      month: !used.some((row) => row.planId === 'month'),
+      quarter: !used.some((row) => row.planId === 'quarter'),
+      year: !used.some((row) => row.planId === 'year'),
+    };
     return {
       plans: settings.plans,
-      firstPurchaseAvailable: !first,
+      // 老客户端只认识一个开关；用过任一档后不再把所有档都标为首次价。
+      firstPurchaseAvailable: used.length === 0,
+      firstPurchaseAvailableByPlan,
       paymentEnabled: false,
       contactHint: settings.contactHint,
       membership: await this.membership.getMembership(userId),
@@ -229,7 +243,12 @@ export class MembershipOrderService {
         .select({ id: membershipOrders.id })
         .from(membershipOrders)
         .where(
-          and(eq(membershipOrders.userId, input.userId), eq(membershipOrders.firstPurchase, true)),
+          and(
+            eq(membershipOrders.userId, input.userId),
+            eq(membershipOrders.planId, input.planId),
+            eq(membershipOrders.firstPurchaseCampaign, FIRST_PURCHASE_CAMPAIGN),
+            eq(membershipOrders.firstPurchase, true),
+          ),
         );
       const firstPurchase = !usedFirst && input.useFirstPrice !== false;
       const period = await this.membershipWrite.extendProPlus(
@@ -262,6 +281,7 @@ export class MembershipOrderService {
           priceFen: firstPurchase ? plan.firstPriceFen : plan.priceFen,
           listPriceFen: plan.priceFen,
           firstPurchase,
+          firstPurchaseCampaign: FIRST_PURCHASE_CAMPAIGN,
           bonusPoints: plan.bonusPoints,
           startsAt: new Date(period.startsAt),
           endsAt: new Date(period.endsAt),

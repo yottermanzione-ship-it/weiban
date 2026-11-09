@@ -39,6 +39,10 @@ import {
 } from '../infra/db/scan-schema.js';
 import { Ledger } from './ledger.js';
 import { MembershipOrderService } from './membership-orders.js';
+import {
+  FIRST_PURCHASE_CAMPAIGN,
+  LEGACY_FIRST_PURCHASE_CAMPAIGN,
+} from '../domain/first-purchase.js';
 
 type OrderRow = typeof scanOrders.$inferSelect;
 type ReceiptRow = typeof scanReceipts.$inferSelect;
@@ -278,10 +282,16 @@ export class ScanPaymentService {
           .select({ id: membershipOrders.id })
           .from(membershipOrders)
           .where(
-            and(eq(membershipOrders.userId, userId), eq(membershipOrders.firstPurchase, true)),
+            and(
+              eq(membershipOrders.userId, userId),
+              eq(membershipOrders.planId, plan.planId),
+              eq(membershipOrders.firstPurchaseCampaign, FIRST_PURCHASE_CAMPAIGN),
+              eq(membershipOrders.firstPurchase, true),
+            ),
           );
         snapshot.plan = plan;
         snapshot.firstPurchase = !first;
+        snapshot.firstPurchaseCampaign = FIRST_PURCHASE_CAMPAIGN;
         baseFen = first ? plan.priceFen : plan.firstPriceFen;
         title = `PRO+ ${plan.name}`;
       } else {
@@ -602,12 +612,20 @@ export class ScanPaymentService {
     )
       return this.review(tx, order, receipt, 'account_unavailable');
     const { plan, firstPurchase } = order.snapshot;
+    const campaign = order.snapshot.firstPurchaseCampaign ?? LEGACY_FIRST_PURCHASE_CAMPAIGN;
     if (plan && firstPurchase) {
       const [first] = await tx.db
         .select({ id: membershipOrders.id })
         .from(membershipOrders)
         .where(
-          and(eq(membershipOrders.userId, order.userId), eq(membershipOrders.firstPurchase, true)),
+          and(
+            eq(membershipOrders.userId, order.userId),
+            campaign === LEGACY_FIRST_PURCHASE_CAMPAIGN
+              ? undefined
+              : eq(membershipOrders.planId, plan.planId),
+            eq(membershipOrders.firstPurchaseCampaign, campaign),
+            eq(membershipOrders.firstPurchase, true),
+          ),
         );
       if (first) return this.review(tx, order, receipt, 'first_price_already_used');
     }
@@ -641,6 +659,7 @@ export class ScanPaymentService {
         priceFen: order.amountFen,
         listPriceFen: plan.priceFen,
         firstPurchase,
+        firstPurchaseCampaign: campaign,
         bonusPoints: plan.bonusPoints,
         startsAt: new Date(period.startsAt),
         endsAt: new Date(period.endsAt),

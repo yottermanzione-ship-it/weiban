@@ -20,6 +20,11 @@
   handle @api {
     reverse_proxy app:3000
   }
+  handle_path /download-assets/* {
+    root * /srv/downloads
+    header Cache-Control "public, max-age=31536000, immutable"
+    file_server
+  }
   handle {
     root * /srv/web
     @fresh path /sw.js /index.html /manifest.webmanifest /workbox-*.js

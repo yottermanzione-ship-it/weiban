@@ -18,7 +18,9 @@ export class PaidHistoryService implements BillingPaidHistoryPort {
          SELECT 1 FROM billing.ledger_entries e
          JOIN billing.accounts a ON a.id = e.account_id
          WHERE a.user_id = $1 AND a.kind = 'user' AND e.type = 'admin_grant'
-           AND (e.purpose IS NULL OR e.purpose NOT IN ('signup_bonus', 'membership_bonus'))
+           AND (e.purpose IS NULL OR e.purpose NOT IN (
+             'signup_bonus', 'membership_bonus', 'migration_member_compensation', 'migration_welcome_bonus'
+           ))
        ) OR EXISTS (
          SELECT 1 FROM billing.membership_orders o WHERE o.user_id = $1
        ) AS paid`,

@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 7.8. Regenerate: pnpm android:generate
+// Contract 7.9. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "7.8"
+const val CONTRACT_VERSION: String = "7.9"
 
 @Serializable
 data class AccountAlias(
@@ -6915,6 +6915,7 @@ data class MembershipChangeAdminEndpointsListChangesResponse(
 data class MembershipOffer(
     @SerialName("plans") val `plans`: List<MembershipPlan>,
     @SerialName("firstPurchaseAvailable") val `firstPurchaseAvailable`: Boolean,
+    @SerialName("firstPurchaseAvailableByPlan") val `firstPurchaseAvailableByPlan`: MembershipOfferFirstPurchaseAvailableByPlan? = null,
     @EncodeDefault
     @SerialName("paymentEnabled") val `paymentEnabled`: Boolean = false,
     @SerialName("contactHint") val `contactHint`: String,
@@ -6942,6 +6943,11 @@ data class MembershipOrder(
 data class MembershipOrderAdminEndpointsCreateOrderResponse(
     @SerialName("order") val `order`: MembershipOrder,
     @SerialName("membership") val `membership`: Membership,
+)
+
+@Serializable
+data class MembershipOrderAdminEndpointsGetOfferParams(
+    @SerialName("userId") val `userId`: Id,
 )
 
 @Serializable
@@ -14630,6 +14636,13 @@ data class LeaderboardSnapshotStatusUnmatchedItem(
     @SerialName("displayName") val `displayName`: String,
     @SerialName("arenaModelName") val `arenaModelName`: String?,
     @SerialName("suggestions") val `suggestions`: List<LeaderboardSnapshotStatusUnmatchedItemSuggestionsItem>? = null,
+)
+
+@Serializable
+data class MembershipOfferFirstPurchaseAvailableByPlan(
+    @SerialName("month") val `month`: Boolean,
+    @SerialName("quarter") val `quarter`: Boolean,
+    @SerialName("year") val `year`: Boolean,
 )
 
 @Serializable
