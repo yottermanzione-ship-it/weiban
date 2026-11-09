@@ -1,6 +1,7 @@
 package app.weiban.shell
 
 import android.content.Context
+import android.os.Build
 import android.system.ErrnoException
 import android.system.Os
 import android.system.OsConstants
@@ -9,6 +10,7 @@ import android.util.Base64
 import org.json.JSONObject
 import java.io.Closeable
 import java.io.File
+import java.io.FileDescriptor
 import java.io.FileInputStream
 import java.net.URI
 import java.security.MessageDigest
@@ -40,11 +42,13 @@ internal interface LegacyMediaFiles {
     fun open(file: File): LegacyMediaHandle
 }
 
-internal class AndroidLegacyMediaFiles : LegacyMediaFiles {
+internal class AndroidLegacyMediaFiles(
+    private val openDescriptor: (String, Int, Int) -> FileDescriptor = Os::open,
+) : LegacyMediaFiles {
     override fun identity(file: File): LegacyMediaIdentity = identity(Os.lstat(file.path), file)
 
     override fun open(file: File): LegacyMediaHandle {
-        val descriptor = Os.open(file.path, OsConstants.O_RDONLY or OsConstants.O_NOFOLLOW or OsConstants.O_CLOEXEC, 0)
+        val descriptor = openDescriptor(file.path, readOnlyFlags(), 0)
         val stream = FileInputStream(descriptor)
         return object : LegacyMediaHandle {
             override fun identity(): LegacyMediaIdentity = identity(Os.fstat(descriptor), file)
@@ -80,6 +84,19 @@ internal class AndroidLegacyMediaFiles : LegacyMediaFiles {
             stat.st_nlink,
             file.lastModified(),
         )
+
+    private fun readOnlyFlags(): Int {
+        // The public Java field starts at API 27, but Android N's Linux UAPI already defines
+        // O_CLOEXEC as octal 02000000. Keep it in open(2), atomically with O_NOFOLLOW;
+        // public Os.fcntlInt is API 30 and cannot serve as an API 24 fallback.
+        // https://android.googlesource.com/platform/bionic/+/android-7.0.0_r1/libc/kernel/uapi/asm-generic/fcntl.h
+        val closeOnExec = if (Build.VERSION.SDK_INT >= 27) OsConstants.O_CLOEXEC else ANDROID_N_CLOSE_ON_EXEC
+        return OsConstants.O_RDONLY or OsConstants.O_NOFOLLOW or closeOnExec
+    }
+
+    companion object {
+        private const val ANDROID_N_CLOSE_ON_EXEC = 0x80000
+    }
 }
 
 internal data class LegacyMediaRange(

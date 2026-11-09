@@ -423,24 +423,37 @@ try {
       parameters.fill(0);
     }
   }
-  const cert = execFileSync(
-    openssl,
-    [
-      'req',
-      '-x509',
-      '-new',
-      '-key',
-      '/dev/stdin',
-      '-days',
-      '1',
-      '-subj',
-      '/CN=127.0.0.1',
-      '-addext',
-      'subjectAltName=IP:127.0.0.1',
-    ],
-    { input: key, stdio: 'pipe', timeout: 30000 },
-  );
-  return { key, cert };
+  try {
+    // Node supplies a socket as child stdin on Linux; OpenSSL cannot reopen that
+    // descriptor via /dev/stdin. cat turns it into a real pipe without writing a key.
+    // The shell program is fixed. The executable/options are separate quoted argv,
+    // and private key bytes exist only in stdin, never in shell text or arguments.
+    const cert = execFileSync(
+      'sh',
+      [
+        '-c',
+        'cat | "$@"',
+        'weiban-loopback-tls',
+        openssl,
+        'req',
+        '-x509',
+        '-new',
+        '-key',
+        '/dev/stdin',
+        '-days',
+        '1',
+        '-subj',
+        '/CN=127.0.0.1',
+        '-addext',
+        'subjectAltName=IP:127.0.0.1',
+      ],
+      { input: key, stdio: 'pipe', timeout: 30000 },
+    );
+    return { key, cert };
+  } catch {
+    key.fill(0);
+    throw new Error('In-memory local certificate signing failed');
+  }
 }
 
 export async function inspectRelease(apk, previousApk, options = {}) {
