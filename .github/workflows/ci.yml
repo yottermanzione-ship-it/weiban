@@ -78,7 +78,7 @@ jobs:
         env:
           TSX_TSCONFIG_PATH: apps/server/tsconfig.json
         run: |
-          node --test scripts/ops/legacy-content-rules.test.mjs scripts/ops/legacy-customization-shape.test.mjs scripts/ops/legacy-delta-core.test.mjs scripts/ops/legacy-delta-entitlements.test.mjs scripts/ops/legacy-delta-inventory.test.mjs scripts/ops/legacy-shared-group-memory.test.mjs scripts/ops/legacy-weibo-slots.test.mjs scripts/ops/migration-maintenance.test.mjs scripts/ops/migration-distribution.test.mjs scripts/ops/legacy-migration-preservation.test.mjs scripts/ops/legacy-persona-import.test.mjs
+          node --test scripts/ops/legacy-content-rules.test.mjs scripts/ops/legacy-customization-shape.test.mjs scripts/ops/legacy-delta-core.test.mjs scripts/ops/legacy-delta-entitlements.test.mjs scripts/ops/legacy-delta-inventory.test.mjs scripts/ops/legacy-shared-group-memory.test.mjs scripts/ops/legacy-weibo-slots.test.mjs scripts/ops/migration-maintenance.test.mjs scripts/ops/migration-distribution.test.mjs scripts/ops/legacy-migration-preservation.test.mjs scripts/ops/legacy-persona-import.test.mjs scripts/ops/legacy-persona-source-counts.test.mjs
           node --import ./apps/server/node_modules/tsx/dist/loader.mjs --test scripts/ops/legacy-delta-media.test.mjs
 
       # 测试数据库：直接用本机开发同一份 docker-compose.yml 启动（T-019）。

@@ -33,7 +33,7 @@ import {
   type Database,
   type EnvelopeCrypto,
 } from '../src/platform/index.js';
-import { Migrator } from '../src/platform/db/migrator.js';
+import { Migrator, readMigrations } from '../src/platform/db/migrator.js';
 import { CONTACTS_READ_PORT } from '../src/modules/contacts/index.js';
 import { IDENTITY_MEMBERSHIP_READ_PORT } from '../src/modules/identity/index.js';
 import {
@@ -302,7 +302,11 @@ describeDb('微博五槽：隔离HTTP / PostgreSQL / DEK / WSS合成链路', () 
       conversation.conversationId,
     ]);
     const migrator = new Migrator(TEST_DATABASE_URL!, MIGRATIONS_DIR);
-    expect(await migrator.down(1)).toEqual(['0165_weibo_slots']);
+    const applied = (await migrator.status()).filter((entry) => entry.applied);
+    const index = applied.findIndex((entry) => entry.tag === '0165_weibo_slots');
+    expect(index).toBeGreaterThanOrEqual(0);
+    const suffix = applied.slice(index).map((entry) => entry.tag);
+    expect(await migrator.down(suffix.length)).toEqual([...suffix].reverse());
     const secret = await crypto.seal(
       u.user.userId,
       `channels:binding:${id}:app_secret`,
@@ -338,7 +342,7 @@ describeDb('微博五槽：隔离HTTP / PostgreSQL / DEK / WSS合成链路', () 
         [oldId, owner.user.userId, CHARACTERS[0], ownSecret, ownPeer],
       );
     }
-    expect(await migrator.up()).toEqual(['0165_weibo_slots']);
+    expect(await migrator.up()).toEqual(suffix);
     const row = (await store.bindingById(id))!;
     expect(row.slot).toBe('main');
     expect(row.generation).toBe(7);
@@ -947,7 +951,13 @@ describeDb('微博五槽：隔离HTTP / PostgreSQL / DEK / WSS合成链路', () 
       ),
     ).rejects.toMatchObject({ code: '23514' });
     const migrator = new Migrator(TEST_DATABASE_URL!, MIGRATIONS_DIR);
-    await expect(migrator.down(1)).rejects.toThrow('WEIBO_MULTI_SLOT_ROLLBACK_BLOCKED');
+    const rollback = readMigrations(MIGRATIONS_DIR).find(
+      (entry) => entry.tag === '0165_weibo_slots',
+    )!.downSql!;
+    // Exercise this migration's actual guard without rolling back unrelated later tables.
+    await expect(db.transaction((tx) => tx.query(rollback))).rejects.toThrow(
+      'WEIBO_MULTI_SLOT_ROLLBACK_BLOCKED',
+    );
     expect(
       (await migrator.status()).find((entry) => entry.tag === '0165_weibo_slots')?.applied,
     ).toBe(true);
