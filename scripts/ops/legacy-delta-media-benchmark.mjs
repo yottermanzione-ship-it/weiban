@@ -12,8 +12,11 @@ const temporary = await fs.realpath(os.tmpdir());
 const root = await fs.mkdtemp(path.join(temporary, 'codex-migration-media-scale-'));
 const sourceRoot = path.join(root, 'source'),
   stagingRoot = path.join(root, 'staging');
-const files = 3228,
-  bytes = 832237435,
+if (process.argv.slice(2).some((arg) => arg !== '--full-source-20261109'))
+  throw new Error('BENCHMARK_ARGUMENT_INVALID');
+const fullSource = process.argv.includes('--full-source-20261109');
+const files = fullSource ? 18625 : 3228,
+  bytes = fullSource ? 4499787458 : 832237435,
   objects = [],
   milliseconds = {};
 try {
@@ -81,6 +84,8 @@ try {
         repeatedTransferVerified: true,
         mediaDecodingMeasured: false,
         networkTransferMeasured: false,
+        temporaryRetained: true,
+        syntheticDirectory: root,
         milliseconds,
       },
       null,
@@ -91,5 +96,5 @@ try {
   const resolved = await fs.realpath(root),
     relative = path.relative(temporary, resolved);
   assert.ok(relative.startsWith('codex-migration-media-scale-') && !relative.includes(path.sep));
-  await fs.rm(resolved, { recursive: true });
+  // Manager explicitly requested keeping this rehearsal's temporary files.
 }

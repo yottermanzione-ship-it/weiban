@@ -1,0 +1,18 @@
+{
+  "kind": "synthetic-local-file-transfer",
+  "productionTouched": false,
+  "sourceFiles": 18625,
+  "sourceBytes": 4499787458,
+  "perOwnerObjects": 19073,
+  "allHashesVerified": true,
+  "repeatedTransferVerified": true,
+  "mediaDecodingMeasured": false,
+  "networkTransferMeasured": false,
+  "temporaryRetained": true,
+  "milliseconds": {
+    "seed": 35125,
+    "planAndHash": 147359,
+    "transferAndVerify": 404815,
+    "resumeAndReverify": 121663
+  }
+}

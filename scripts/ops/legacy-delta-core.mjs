@@ -4,7 +4,12 @@
  * only summarizeDeltaPlan() is suitable for a public receipt.
  */
 import { createHash } from 'node:crypto';
-import { legacyId, legacyMessageContents, deletedLegacyMessage } from './legacy-content-rules.mjs';
+import {
+  legacyId,
+  legacyMessageContents,
+  deletedLegacyMessage,
+  splitLegacyText,
+} from './legacy-content-rules.mjs';
 import {
   assertMigrationOwnersAllowed,
   migrationOwnersOf,
@@ -58,6 +63,79 @@ export function assertIsolatedTarget(target) {
   return url.pathname.slice(1);
 }
 
+const MISSING_MEDIA_FIELDS = [
+  'version',
+  'sourceDigest',
+  'table',
+  'sourceId',
+  'ownerUserId',
+  'sourceRowDigest',
+  'reason',
+  'proofDigest',
+];
+const SHA256 = /^[a-f0-9]{64}$/u;
+
+/** A pure planner can bind a review; only the registered execution reader authenticates its proof. */
+export function assertMissingMediaReview({ review, table, row, ownerUserId, sourceDigest }) {
+  invariant(
+    review &&
+      typeof review === 'object' &&
+      !Array.isArray(review) &&
+      Object.keys(review).length === MISSING_MEDIA_FIELDS.length &&
+      Object.keys(review).every((key) => MISSING_MEDIA_FIELDS.includes(key)) &&
+      review.version === 1 &&
+      ['chat_history', 'group_messages'].includes(review.table) &&
+      typeof review.sourceId === 'string' &&
+      review.sourceId.length > 0 &&
+      typeof review.ownerUserId === 'string' &&
+      review.ownerUserId.trim() &&
+      ['sourceDigest', 'sourceRowDigest', 'proofDigest'].every((key) => SHA256.test(review[key])) &&
+      ['missing_file', 'no_reference'].includes(review.reason),
+    'MISSING_MEDIA_REVIEW_INVALID',
+  );
+  invariant(
+    SHA256.test(sourceDigest) &&
+      review.sourceDigest === sourceDigest &&
+      review.table === table &&
+      review.sourceId === String(row.id) &&
+      review.ownerUserId === ownerUserId &&
+      review.sourceRowDigest === fingerprint(row),
+    'MISSING_MEDIA_REVIEW_SOURCE_MISMATCH',
+  );
+  invariant(
+    ['voice', 'image', 'sticker'].includes(row.message_type),
+    'MISSING_MEDIA_REVIEW_NOT_MEDIA',
+  );
+  const references = [row.media_path, row.audio_url, row.image_url];
+  invariant(
+    references.every((value) => value == null || typeof value === 'string'),
+    'MISSING_MEDIA_REFERENCE_SHAPE_INVALID',
+  );
+  const hasReference = references.some((value) => typeof value === 'string' && value.trim());
+  invariant(
+    review.reason === 'missing_file' ? hasReference : !hasReference,
+    'MISSING_MEDIA_REASON_CONFLICT',
+  );
+  invariant(
+    ['content', 'quoted_content', 'quoted_author'].every(
+      (field) => row[field] == null || typeof row[field] === 'string',
+    ),
+    'MISSING_MEDIA_TEXT_SHAPE_INVALID',
+  );
+}
+
+function unavailableMediaContents(row) {
+  const label = { voice: '语音', image: '图片', sticker: '表情' }[row.message_type];
+  const quote = row.quoted_content
+    ? `↪ ${row.quoted_author || '引用'}：${row.quoted_content}\n`
+    : '';
+  const text = String(row.content ?? '').replaceAll('\u0000', '');
+  return splitLegacyText(`[旧${label}附件不可用] \n${quote}${text}`).map((part) => ({
+    type: 'text',
+    text: part,
+  }));
+}
+
 /** Explicit mapping, never fuzzy-match private role names or guess ownership. */
 export function prepareLegacyChatRows({
   rows,
@@ -65,6 +143,8 @@ export function prepareLegacyChatRows({
   mapping,
   cutoff,
   mediaReady = new Map(),
+  sourceDigest,
+  missingMediaReviews = [],
   validateContent,
   options = {},
 }) {
@@ -73,23 +153,61 @@ export function prepareLegacyChatRows({
   const end = utc(cutoff);
   const result = [],
     excluded = [];
+  invariant(Array.isArray(missingMediaReviews), 'MISSING_MEDIA_REVIEW_LIST_REQUIRED');
+  const reviews = new Map(),
+    usedReviews = new Set();
+  for (const review of missingMediaReviews) {
+    invariant(
+      review && typeof review.table === 'string' && typeof review.sourceId === 'string',
+      'MISSING_MEDIA_REVIEW_INVALID',
+    );
+    const key = `${review.table}:${review.sourceId}`;
+    invariant(!reviews.has(key), 'MISSING_MEDIA_REVIEW_DUPLICATE');
+    reviews.set(key, review);
+  }
   for (const row of rows) {
-    if (row.user_id != null && isMigrationOwnerPreserved(String(row.user_id), options)) {
-      excluded.push(preservedOwnerSkip(String(row.user_id)));
+    invariant(row.user_id == null || typeof row.user_id === 'string', 'SOURCE_OWNER_INVALID');
+    const declaredOwner =
+      typeof row.user_id === 'string' && row.user_id.trim() ? row.user_id : null;
+    if (declaredOwner && isMigrationOwnerPreserved(declaredOwner, options)) {
+      excluded.push(preservedOwnerSkip(declaredOwner));
       continue;
     }
     const sourceId = String(row.id);
-    invariant(/^[0-9]+$/.test(sourceId), 'SOURCE_ID_REQUIRED');
+    // Legacy direct-chat IDs are SQLite integers; group_messages uses generated text IDs.
+    // Preserve the complete opaque group key when deriving the original stable message IDs.
+    invariant(
+      table === 'chat_history'
+        ? /^[0-9]+$/.test(sourceId) && (typeof row.id !== 'number' || Number.isSafeInteger(row.id))
+        : typeof row.id === 'string' &&
+            sourceId.length > 0 &&
+            sourceId.length <= 200 &&
+            sourceId.trim() === sourceId &&
+            [...sourceId].every((char) => char.charCodeAt(0) >= 32 && char.charCodeAt(0) !== 127),
+      'SOURCE_ID_REQUIRED',
+    );
     const binding = mapping(row);
     invariant(binding && binding.ownerUserId && binding.conversationId, 'UNRESOLVED_CONVERSATION');
     const sourceOwner =
-      row.user_id ?? binding.legacyOwnerUserId ?? binding.sourceOwnerUserId ?? binding.ownerUserId;
+      declaredOwner ??
+      binding.legacyOwnerUserId ??
+      binding.sourceOwnerUserId ??
+      binding.ownerUserId;
     const protectedOwner = [sourceOwner, ...migrationOwnersOf(binding, binding.ownerUserId)].find(
       (owner) => isMigrationOwnerPreserved(owner, options),
     );
     if (protectedOwner) {
       excluded.push(preservedOwnerSkip(protectedOwner));
       continue;
+    }
+    if (table === 'group_messages') {
+      const groupOwner = binding.legacyOwnerUserId ?? binding.sourceOwnerUserId;
+      invariant(declaredOwner || groupOwner, 'GROUP_OWNER_PROOF_REQUIRED');
+      if (declaredOwner && groupOwner)
+        invariant(
+          declaredOwner.trim().toLowerCase() === String(groupOwner).trim().toLowerCase(),
+          'GROUP_MESSAGE_OWNER_CONFLICT',
+        );
     }
     if (deletedLegacyMessage(row)) {
       excluded.push({ table, sourceId, reason: 'source_deleted' });
@@ -119,24 +237,38 @@ export function prepareLegacyChatRows({
           : binding.peerParticipantId;
     invariant(participantId, 'PARTICIPANT_REQUIRED');
     let ref = null;
+    const reviewKey = `${table}:${sourceId}`,
+      review = reviews.get(reviewKey);
+    if (review) {
+      assertMissingMediaReview({ review, table, row, ownerUserId: sourceOwner, sourceDigest });
+      invariant(review.ownerUserId === binding.ownerUserId, 'MISSING_MEDIA_REVIEW_OWNER_CONFLICT');
+      // Even a pending/foreign/wrong-purpose mapping is not a missing-file exception.
+      invariant(
+        !binding.mediaId && !mediaReady.get(binding.mediaId),
+        'MISSING_MEDIA_REVIEW_BINDING_CONFLICT',
+      );
+      usedReviews.add(reviewKey);
+    }
     if (['voice', 'image', 'sticker'].includes(row.message_type)) {
       const ready = mediaReady.get(binding.mediaId);
-      invariant(
-        ready && ready.ownerUserId === binding.ownerUserId,
-        'MEDIA_NOT_READY_OR_WRONG_OWNER',
-      );
-      invariant(ready.id === binding.mediaId, 'MEDIA_ID_MISMATCH');
-      invariant(
-        {
-          voice: ['chat_voice', 'generated_voice'],
-          image: ['chat_image'],
-          sticker: ['user_sticker'],
-        }[row.message_type].includes(ready.purpose),
-        'MEDIA_PURPOSE_MISMATCH',
-      );
-      ref = { id: ready.id, stickerId: ready.stickerId ?? null };
+      if (!review) {
+        invariant(
+          ready && ready.ownerUserId === binding.ownerUserId,
+          'MEDIA_NOT_READY_OR_WRONG_OWNER',
+        );
+        invariant(ready.id === binding.mediaId, 'MEDIA_ID_MISMATCH');
+        invariant(
+          {
+            voice: ['chat_voice', 'generated_voice'],
+            image: ['chat_image'],
+            sticker: ['user_sticker'],
+          }[row.message_type].includes(ready.purpose),
+          'MEDIA_PURPOSE_MISMATCH',
+        );
+        ref = { id: ready.id, stickerId: ready.stickerId ?? null };
+      }
     }
-    const contents = legacyMessageContents(row, ref);
+    const contents = review ? unavailableMediaContents(row) : legacyMessageContents(row, ref);
     for (let part = 0; part < contents.length; part++) {
       const content = validateContent(contents[part]);
       result.push({
@@ -150,11 +282,27 @@ export function prepareLegacyChatRows({
         created_at: createdAt,
         scope: binding.scope ?? 'normal',
         quote_message_id: binding.quoteMessageId ?? null,
-        source: { table, id: sourceId, part },
+        source: {
+          table,
+          id: sourceId,
+          part,
+          ...(review
+            ? {
+                mediaUnavailable: {
+                  version: 1,
+                  sourceDigest: review.sourceDigest,
+                  sourceRowDigest: review.sourceRowDigest,
+                  reason: review.reason,
+                  proofDigest: review.proofDigest,
+                },
+              }
+            : {}),
+        },
         content,
       });
     }
   }
+  invariant(usedReviews.size === reviews.size, 'MISSING_MEDIA_REVIEW_UNUSED');
   return { messages: result, excluded };
 }
 
@@ -277,11 +425,13 @@ export function planConversationDelta({
     (a, b) =>
       utc(a.created_at).localeCompare(utc(b.created_at)) ||
       a.source.table.localeCompare(b.source.table) ||
-      (BigInt(a.source.id) < BigInt(b.source.id)
-        ? -1
-        : BigInt(a.source.id) > BigInt(b.source.id)
-          ? 1
-          : 0) ||
+      (a.source.table === 'chat_history'
+        ? BigInt(a.source.id) < BigInt(b.source.id)
+          ? -1
+          : BigInt(a.source.id) > BigInt(b.source.id)
+            ? 1
+            : 0
+        : Buffer.compare(Buffer.from(a.source.id), Buffer.from(b.source.id))) ||
       a.source.part - b.source.part,
   );
   const merged = [];

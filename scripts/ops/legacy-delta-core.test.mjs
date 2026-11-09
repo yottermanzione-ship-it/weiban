@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { randomUUID } from 'node:crypto';
 import { legacyId } from './legacy-content-rules.mjs';
+import { legacyMigrationOwnerDigest } from './legacy-migration-preservation.mjs';
 import {
   assertIsolatedTarget,
   planAccounts,
@@ -77,6 +78,81 @@ test('隔离执行拒绝生产、共享测试库、转发选项和未声明的�
   assert.throws(() => assertIsolatedTarget({ ...valid, synthetic: false }));
 });
 
+test('群聊沿用旧版UUID和文本来源身份，不当作私聊数字编号，也不重建新身份', () => {
+  const owner = randomUUID(),
+    conversationId = randomUUID(),
+    peer = randomUUID();
+  const row = {
+    id: randomUUID(),
+    user_id: owner,
+    sender_type: 'character',
+    message_type: 'text',
+    content: '合成群消息',
+    created_at: '2026-11-08T00:00:00Z',
+  };
+  const input = {
+    rows: [row],
+    table: 'group_messages',
+    cutoff,
+    mapping: () => ({
+      ownerUserId: owner,
+      conversationId,
+      peerKind: 'character',
+      peerParticipantId: peer,
+    }),
+    validateContent: (value) => value,
+  };
+  const first = prepareLegacyChatRows(input);
+  assert.equal(first.messages[0].id, legacyId('message', 'group_messages', row.id, 0));
+  assert.deepEqual(prepareLegacyChatRows(input), first);
+  const withoutSender = {
+    ...input,
+    rows: [{ ...row, user_id: '' }],
+    mapping: () => ({ ...input.mapping(), legacyOwnerUserId: owner }),
+  };
+  assert.equal(prepareLegacyChatRows(withoutSender).messages[0].source_owner_user_id, owner);
+  assert.throws(
+    () => prepareLegacyChatRows({ ...withoutSender, mapping: input.mapping }),
+    /GROUP_OWNER_PROOF_REQUIRED/,
+  );
+  assert.throws(
+    () =>
+      prepareLegacyChatRows({
+        ...input,
+        mapping: () => ({ ...input.mapping(), legacyOwnerUserId: randomUUID() }),
+      }),
+    /GROUP_MESSAGE_OWNER_CONFLICT/,
+  );
+  for (const id of ['a'.repeat(32), 'legacy-group-source-id'])
+    assert.equal(
+      prepareLegacyChatRows({ ...input, rows: [{ ...row, id }] }).messages[0].source.id,
+      id,
+    );
+  for (const id of ['', ' space ', 'bad\nkey', {}, 5])
+    assert.throws(
+      () => prepareLegacyChatRows({ ...input, rows: [{ ...row, id }] }),
+      /SOURCE_ID_REQUIRED/,
+    );
+  assert.throws(
+    () =>
+      prepareLegacyChatRows({
+        ...input,
+        table: 'chat_history',
+        rows: [{ ...row, role: 'assistant' }],
+      }),
+    /SOURCE_ID_REQUIRED/,
+  );
+  assert.throws(
+    () =>
+      prepareLegacyChatRows({
+        ...input,
+        table: 'chat_history',
+        rows: [{ ...row, id: Number.MAX_SAFE_INTEGER + 1, role: 'assistant' }],
+      }),
+    /SOURCE_ID_REQUIRED/,
+  );
+});
+
 test('交错补入保留目标相对顺序、隐藏/已读状态及引用身份', () => {
   const input = fixture();
   input.incoming[1].quote_message_id = input.target.messages[0].id;
@@ -94,6 +170,29 @@ test('交错补入保留目标相对顺序、隐藏/已读状态及引用身份'
     assert.equal(plan.states[0][key], true);
   assert.equal(plan.newMessages[1].quote_message_id, input.target.messages[0].id);
   assert.equal(plan.participants[0].read_seq, 4);
+});
+
+test('同时间群聊文本编号按旧SQLite字节顺序排列，私聊数字仍按数值顺序', () => {
+  for (const [table, ids, expected] of [
+    [
+      'group_messages',
+      ['bbb-source', 'aaa-source', '00000000-0000-4000-8000-000000000001'],
+      ['00000000-0000-4000-8000-000000000001', 'aaa-source', 'bbb-source'],
+    ],
+    ['chat_history', ['10', '2', '1'], ['1', '2', '10']],
+  ]) {
+    const input = fixture();
+    input.incoming.forEach((row, index) => {
+      row.source = { table, id: ids[index], part: 0 };
+      row.id = legacyId('message', table, ids[index], 0);
+      row.client_msg_id = legacyId('client-message', table, ids[index], 0);
+      row.created_at = '2026-11-08T00:01:00Z';
+    });
+    assert.deepEqual(
+      planConversationDelta(input).newMessages.map((row) => row.source.id),
+      expected,
+    );
+  }
 });
 
 test('稀疏历史与尾部删除缺口不压缩、原消息序号只增不减', () => {
@@ -182,6 +281,185 @@ test('小V明确使用官方发送者，媒体按已验证拥有者绑定', () =
   binding.peerKind = 'official';
   row.message_type = 'voice';
   assert.throws(() => prepareLegacyChatRows(options), /MEDIA_NOT_READY/);
+});
+
+function missingMediaCase(kind = 'voice', reason = 'missing_file') {
+  const owner = randomUUID(),
+    sourceDigest = fingerprint('synthetic-fixed-snapshot');
+  const row = {
+    id: 9001,
+    user_id: owner,
+    role: 'assistant',
+    message_type: kind,
+    content: '合成正文',
+    quoted_content: '合成引用',
+    quoted_author: '合成角色',
+    created_at: '2026-11-08 00:00:00',
+    ...(reason === 'missing_file' ? { media_path: '/synthetic/missing-file' } : {}),
+  };
+  const binding = {
+    ownerUserId: owner,
+    conversationId: randomUUID(),
+    peerKind: 'character',
+    peerParticipantId: randomUUID(),
+  };
+  const review = {
+    version: 1,
+    sourceDigest,
+    table: 'chat_history',
+    sourceId: String(row.id),
+    ownerUserId: owner,
+    sourceRowDigest: fingerprint(row),
+    reason,
+    proofDigest: fingerprint('synthetic-reviewed-proof'),
+  };
+  const input = {
+    rows: [row],
+    table: 'chat_history',
+    cutoff,
+    sourceDigest,
+    missingMediaReviews: [review],
+    mapping: () => binding,
+    validateContent: (value) => value,
+  };
+  return { row, binding, review, input };
+}
+
+test('逐条审定缺附件保留语音/图片/无引用的文字与时间，稳定ID重跑一致', () => {
+  for (const [kind, reason] of [
+    ['voice', 'missing_file'],
+    ['image', 'missing_file'],
+    ['image', 'no_reference'],
+    ['sticker', 'no_reference'],
+  ]) {
+    const f = missingMediaCase(kind, reason);
+    const first = prepareLegacyChatRows(f.input);
+    assert.equal(first.messages[0].content.type, 'text');
+    assert.match(first.messages[0].content.text, /附件不可用/);
+    assert(first.messages[0].content.text.includes('↪ 合成角色：合成引用\n合成正文'));
+    assert.equal(first.messages[0].created_at, '2026-11-08T00:00:00.000Z');
+    assert.equal(first.messages[0].id, legacyId('message', 'chat_history', '9001', 0));
+    assert.equal(first.messages[0].source.mediaUnavailable.proofDigest, f.review.proofDigest);
+    assert.deepEqual(prepareLegacyChatRows(f.input), first);
+  }
+});
+
+test('缺附件的完整长文及引用分片不截断，来源原行摘要不能被归一化替换', () => {
+  const f = missingMediaCase('image');
+  f.row.content = '合成正文🙂'.repeat(1300);
+  f.row.quoted_content = '合成引用🙂'.repeat(900);
+  f.review.sourceRowDigest = fingerprint(f.row);
+  const prepared = prepareLegacyChatRows(f.input);
+  assert(prepared.messages.length > 3);
+  assert.equal(
+    prepared.messages.map((row) => row.content.text).join(''),
+    `[旧图片附件不可用] \n↪ 合成角色：${f.row.quoted_content}\n${f.row.content}`,
+  );
+  assert(
+    prepared.messages.every(
+      (row, index) =>
+        row.content.text.length <= 4000 &&
+        row.source.part === index &&
+        row.id === legacyId('message', 'chat_history', '9001', index),
+    ),
+  );
+  f.row.created_at = '2026-11-08T00:00:00Z';
+  assert.throws(() => prepareLegacyChatRows(f.input), /MISSING_MEDIA_REVIEW_SOURCE_MISMATCH/);
+});
+
+test('默认无证明及错误owner/来源/类别/原行/多余证明全部拒绝，不吞失败', () => {
+  const f = missingMediaCase();
+  assert.throws(
+    () => prepareLegacyChatRows({ ...f.input, missingMediaReviews: [] }),
+    /MEDIA_NOT_READY/,
+  );
+  for (const patch of [
+    { ownerUserId: randomUUID() },
+    { sourceRowDigest: fingerprint('different') },
+    { sourceDigest: fingerprint('other-snapshot') },
+    { reason: 'no_reference' },
+    { reason: 'permission_denied' },
+    { proofDigest: 'not-a-digest' },
+  ])
+    assert.throws(
+      () => prepareLegacyChatRows({ ...f.input, missingMediaReviews: [{ ...f.review, ...patch }] }),
+      /MISSING_MEDIA/,
+    );
+  assert.throws(
+    () => prepareLegacyChatRows({ ...f.input, missingMediaReviews: [f.review, f.review] }),
+    /MISSING_MEDIA_REVIEW_DUPLICATE/,
+  );
+  const extra = { ...f.review, sourceId: '9002' };
+  assert.throws(
+    () => prepareLegacyChatRows({ ...f.input, missingMediaReviews: [f.review, extra] }),
+    /MISSING_MEDIA_REVIEW_UNUSED/,
+  );
+  assert.throws(
+    () =>
+      prepareLegacyChatRows({
+        ...f.input,
+        mapping: () => ({ ...f.binding, ownerUserId: randomUUID() }),
+      }),
+    /MISSING_MEDIA_REVIEW_OWNER_CONFLICT/,
+  );
+});
+
+test('已有ready/错误归属/待处理媒体绑定不准降级成缺附件文字', () => {
+  const f = missingMediaCase('image'),
+    id = randomUUID();
+  for (const ready of [
+    undefined,
+    { id, ownerUserId: f.binding.ownerUserId, purpose: 'chat_image' },
+    { id, ownerUserId: randomUUID(), purpose: 'chat_image' },
+  ]) {
+    assert.throws(
+      () =>
+        prepareLegacyChatRows({
+          ...f.input,
+          mapping: () => ({ ...f.binding, mediaId: id }),
+          mediaReady: new Map(ready ? [[id, ready]] : []),
+        }),
+      /MISSING_MEDIA_REVIEW_BINDING_CONFLICT/,
+    );
+  }
+});
+
+test('缺媒体例外不能绕过固定账号保护，群来源摘要绑定原空user_id与实际群owner', () => {
+  const f = missingMediaCase();
+  assert.throws(
+    () =>
+      prepareLegacyChatRows({
+        ...f.input,
+        options: {
+          additionalPreservedOwnerDigests: [legacyMigrationOwnerDigest(f.binding.ownerUserId)],
+        },
+      }),
+    /MISSING_MEDIA_REVIEW_UNUSED/,
+  );
+  f.row.id = randomUUID();
+  f.row.user_id = '';
+  delete f.row.role;
+  f.row.sender_type = 'character';
+  f.review = {
+    ...f.review,
+    table: 'group_messages',
+    sourceId: f.row.id,
+    sourceRowDigest: fingerprint(f.row),
+  };
+  const input = {
+    ...f.input,
+    table: 'group_messages',
+    missingMediaReviews: [f.review],
+    mapping: () => ({ ...f.binding, legacyOwnerUserId: f.binding.ownerUserId }),
+  };
+  assert.equal(
+    prepareLegacyChatRows(input).messages[0].source_owner_user_id,
+    f.binding.ownerUserId,
+  );
+  assert.throws(
+    () => prepareLegacyChatRows({ ...input, rows: [{ ...f.row, user_id: f.binding.ownerUserId }] }),
+    /MISSING_MEDIA_REVIEW_SOURCE_MISMATCH/,
+  );
 });
 
 test('密码算法升级保留；凭据真变、重名、被删除账号有明确分类', () => {

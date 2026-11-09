@@ -1094,6 +1094,13 @@
       "when": 1794196800000,
       "tag": "0167_contact_organization",
       "breakpoints": true
+    },
+    {
+      "idx": 168,
+      "version": "7",
+      "when": 1794200400000,
+      "tag": "0168_legacy_migration_runs",
+      "breakpoints": true
     }
   ]
 }

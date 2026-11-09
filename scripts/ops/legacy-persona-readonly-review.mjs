@@ -69,6 +69,7 @@ export async function collectPersonaReadOnlyReview({
     await readLegacy(
       legacyReadTransaction(`
 SELECT json_object('userId',c.user_id,'personaName',c.persona_name,'version',c.version,'state',c.state,
+'sourceFriendPresent',EXISTS(SELECT 1 FROM user_friends f WHERE f.user_id=c.user_id AND f.persona_name=c.persona_name),
 'baseSignature',c.base_signature,'baseRevision',c.base_revision,'updatedAt',c.updated_at,
 'patchJson',CASE WHEN c.state='customized' THEN c.patch_json ELSE NULL END,
 'baseCount',(SELECT count(*) FROM persona_base_versions b WHERE b.persona_name=c.persona_name AND b.signature=c.base_signature AND coalesce(b.revision,'')=coalesce(c.base_revision,'')),
@@ -153,7 +154,7 @@ FROM sources s JOIN characters.characters c ON c.legacy_card->>'id'=s.legacy_id
       metadata.target_mapping_ambiguous++;
       continue;
     }
-    const target = matching[0].target;
+    const target = { ...matching[0].target, sourceFriendPresent: row.sourceFriendPresent === 1 };
     items.push({
       target,
       input: {
@@ -200,12 +201,19 @@ FROM sources s JOIN characters.characters c ON c.legacy_card->>'id'=s.legacy_id
     contact_deleted: 0,
     contact_pending: 0,
     contact_other: 0,
+    source_friend_present_among_inactive_target: 0,
+    source_friend_absent_among_inactive_target: 0,
   };
   for (const entry of items) {
     if (!entry.target.accountActive) dependencyCounts.account_not_active++;
     else if (!entry.target.contactActive) {
       const key = 'contact_' + entry.target.contactState;
       dependencyCounts[Object.hasOwn(dependencyCounts, key) ? key : 'contact_other']++;
+      dependencyCounts[
+        entry.target.sourceFriendPresent
+          ? 'source_friend_present_among_inactive_target'
+          : 'source_friend_absent_among_inactive_target'
+      ]++;
     }
   }
   // Conversion-only analysis does NOT approve target changes or create a reusable import input.
@@ -423,16 +431,18 @@ function sshRead(site, sql) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     if (
-      process.argv.length !== 4 ||
+      ![4, 5].includes(process.argv.length) ||
       process.argv[2] !== '--read-only' ||
-      process.argv[3] !== '--private-memory-authorized'
+      process.argv[3] !== '--private-memory-authorized' ||
+      (process.argv.length === 5 && process.argv[4] !== '--no-supplement-decrypt')
     )
       throw new Error();
     const result = await collectPersonaReadOnlyReview({
       cutoff: new Date().toISOString(),
       readLegacy: (q) => sshRead('legacy', q),
       readTarget: (q) => sshRead('target', q),
-      readSupplementShapes: readRemoteSupplementShapes,
+      readSupplementShapes:
+        process.argv[4] === '--no-supplement-decrypt' ? undefined : readRemoteSupplementShapes,
     });
     process.stdout.write(JSON.stringify(result) + '\n');
   } catch (error) {
