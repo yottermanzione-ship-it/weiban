@@ -8,12 +8,13 @@ import {
   UploadedFile,
   UseInterceptors,
   Res,
+  Req,
   Inject,
   HttpCode,
   Headers,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import {
   MediaEndpoints,
   MediaAdminEndpoints,
@@ -81,17 +82,39 @@ export class MediaController {
     @Query(new ContractPipe(MediaEndpoints.download.query!)) q: { token: string },
     @Headers('accept') accept: string | undefined,
     @Headers('user-agent') userAgent: string | undefined,
+    @Req() request: Request,
     @Res() res: Response,
   ) {
     const authorized = await this.media.download(p.mediaId, q.token, accept);
     const media = await compatibleBrowserAudio(authorized, userAgent);
     res.setHeader('Content-Type', media.mimeType);
     res.setHeader('Vary', 'Accept, User-Agent');
-    res.setHeader('Content-Length', media.body.length);
     res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Disposition', 'inline');
-    res.end(media.body);
+    let body = media.body;
+    if (media.mimeType.startsWith('audio/')) {
+      res.setHeader('Accept-Ranges', 'bytes');
+      const ranges = /^bytes=/i.test(request.headers.range ?? '')
+        ? request.range(body.length, { combine: true })
+        : undefined;
+      if (ranges === -1) {
+        res.status(416);
+        res.setHeader('Content-Range', `bytes */${body.length}`);
+        res.setHeader('Content-Length', 0);
+        res.end();
+        return;
+      }
+      // 多段或格式不正确的Range按HTTP允许的方式忽略；不返回伪造的分段数据。
+      if (Array.isArray(ranges) && ranges.type.toLowerCase() === 'bytes' && ranges.length === 1) {
+        const { start, end } = ranges[0]!;
+        res.status(206);
+        res.setHeader('Content-Range', `bytes ${start}-${end}/${body.length}`);
+        body = body.subarray(start, end + 1);
+      }
+    }
+    res.setHeader('Content-Length', body.length);
+    res.end(body);
   }
 }
 
