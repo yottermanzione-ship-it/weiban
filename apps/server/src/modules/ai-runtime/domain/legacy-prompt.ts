@@ -10,6 +10,7 @@ import type {
   LegacyKnowledgeEntry,
   ScenarioMode,
 } from '@weiban/contracts';
+import type { PersonaLevel } from './character-prompt.js';
 import { line, lines, takeWithin } from './prompt-assembly.js';
 import { STYLE_TEXT } from './scenario.js';
 import { scenarioText, scenarioToneOverride } from './persona.js';
@@ -182,8 +183,12 @@ export function legacyScenarioNote(
   autoStylePrompt: string | null,
   configuredScenario = false,
   romancePaused = false,
+  personaLevel: PersonaLevel = 'full',
 ): string {
-  const anchor = `继续以{{char}}的身份和口吻回复：${(card.speakingStyle || card.corePersona).slice(0, 60)}。`;
+  const anchor =
+    personaLevel === 'name'
+      ? '继续以{{char}}的身份回应。'
+      : `继续以{{char}}的身份和口吻回复：${(card.speakingStyle || card.corePersona).slice(0, 60)}。`;
   const style =
     scenarioToneOverride(mode, romancePaused) ??
     (mode === 'auto'

@@ -9,10 +9,12 @@ import type {
 } from '@weiban/contracts';
 import {
   characterCoreText,
+  nameOnlyText,
   speechText,
   examplesText,
   pinnedExamples,
   safetyStyleText,
+  type PersonaLevel,
 } from './character-prompt.js';
 import {
   legacyCoreText,
@@ -50,6 +52,8 @@ export interface BrainInput {
   settings: CompanionSettings;
   stage: RelationshipStageInput;
   scope: 'normal' | 'adult';
+  /** Only private chat replies opt into the light card; shared callers retain the full card. */
+  personaLevel?: PersonaLevel;
   nickname: string | null;
   now: Date;
   timeZone: string;
@@ -65,6 +69,7 @@ export interface BrainInput {
 }
 export function brainPrefix(input: BrainInput): PromptSection[] {
   const { card, legacyCard, settings, scope } = input;
+  const light = scope === 'adult' && input.personaLevel === 'name';
   // A stale private setting must not survive a switch back to any normal-scope scene.
   const stage = {
     ...input.stage,
@@ -76,7 +81,7 @@ export function brainPrefix(input: BrainInput): PromptSection[] {
     scope === 'normal' && settings.scenarioMode === 'adult'
       ? 'daily'
       : (settings.scenarioMode ?? 'daily');
-  const exampleModeOff = input.compact || prompting?.exampleMode === 'off';
+  const exampleModeOff = light || input.compact || prompting?.exampleMode === 'off';
   const cardExamples =
     card && !exampleModeOff
       ? pinnedExamples(card.examples, { max: prompting?.exampleCount ?? 6 })
@@ -92,17 +97,19 @@ export function brainPrefix(input: BrainInput): PromptSection[] {
     },
     {
       title: '你正在使用的微伴',
-      text: '你知道自己正在通过微伴这个社交软件与用户相处。微伴有会话、通讯录、发现和我，也有群聊、朋友圈、情景切换与寄信等功能。私聊支持文字、图片、表情和语音消息；平台会把收到的语音转成文字供你理解，也能把合适的回复合成角色音色发送。语音消息与实时语音通话是两种功能，通话要另外满足开通条件。不能因为你本轮输出文字就否认微伴有语音功能。具体能否执行以本轮功能状态为依据；没有成功结果，不说已经发出语音、拨通电话或完成设置。保持角色口吻，用户没问时不主动讲使用手册。',
+      text: `你知道自己正在通过微伴这个社交软件与用户相处。微伴有会话、通讯录、发现和我，也有群聊、朋友圈、情景切换与寄信等功能。私聊支持文字、图片、表情和语音消息；平台会把收到的语音转成文字供你理解，也能把合适的回复合成角色音色发送。语音消息与实时语音通话是两种功能，通话要另外满足开通条件。不能因为你本轮输出文字就否认微伴有语音功能。具体能否执行以本轮功能状态为依据；没有成功结果，不说已经发出语音、拨通电话或完成设置。保持角色${light ? '身份' : '口吻'}，用户没问时不主动讲使用手册。`,
     },
     {
       title: '你是谁',
-      text: card
-        ? characterCoreText(input.name, card.profileExtra.occupation, card)
-        : legacyCoreText(legacyCard!),
+      text: light
+        ? nameOnlyText(input.name, card?.profileExtra.gender ?? legacyCard?.identityGender)
+        : card
+          ? characterCoreText(input.name, card.profileExtra.occupation, card)
+          : legacyCoreText(legacyCard!),
     },
     {
       title: '说话方式',
-      text: card ? speechText(card) : legacySpeechText(legacyCard!),
+      text: light ? '' : card ? speechText(card) : legacySpeechText(legacyCard!),
     },
     {
       title: '说话示例',
@@ -110,13 +117,17 @@ export function brainPrefix(input: BrainInput): PromptSection[] {
     },
     {
       title: '公开资料',
-      text: `只依这里和场景补充里的公开资料，不编造不存在的作品、公开声明。未知时：${
-        card ? card.knowledge.unknownPolicy : legacyUnknownPolicy()
-      }${input.constantKnowledge ? `\n${input.constantKnowledge}` : ''}`,
+      text: light
+        ? ''
+        : `只依这里和场景补充里的公开资料，不编造不存在的作品、公开声明。未知时：${
+            card ? card.knowledge.unknownPolicy : legacyUnknownPolicy()
+          }${input.constantKnowledge ? `\n${input.constantKnowledge}` : ''}`,
     },
     {
       title: '关系与设置',
-      text: `${personaPrompt({ fit: settings.personaFit ?? 3, mode, configuredScenario: !!input.scenarioPrompt, stageText: relationshipStageText(stage), privateTone: stage.romanceAllowed && !stage.romancePaused && toneStage(stage) > stage.level })}\n${userNamingContext(input.nickname)}${card?.modes.modeOverrides?.[mode] ? `\n这个情景下的补充：${card.modes.modeOverrides[mode]}` : ''}`,
+      text: light
+        ? `${userNamingContext(input.nickname)}\n延续已有相处，不自行宣布关系改变。${stage.romancePaused ? '\n对方已暂停亲密表达，这一轮按普通朋友相处。' : ''}`
+        : `${personaPrompt({ fit: settings.personaFit ?? 3, mode, configuredScenario: !!input.scenarioPrompt, stageText: relationshipStageText(stage), privateTone: stage.romanceAllowed && !stage.romancePaused && toneStage(stage) > stage.level })}\n${userNamingContext(input.nickname)}${card?.modes.modeOverrides?.[mode] ? `\n这个情景下的补充：${card.modes.modeOverrides[mode]}` : ''}`,
     },
     {
       title: '需要关怀或岔开话题时',
@@ -125,9 +136,10 @@ export function brainPrefix(input: BrainInput): PromptSection[] {
     { title: '当前情景补充', text: input.scenarioPrompt ?? '' },
     {
       title: '角色作者的写作要求',
-      text: prompting?.systemNote ?? '',
+      text: light ? '' : (prompting?.systemNote ?? ''),
     },
-    { title: '', text: input.supplement.trim() },
+    { title: '', text: light ? '' : input.supplement.trim() },
+    // Reports record what the character previously said, not extra instructions from the card.
     { title: '', text: input.selfReports },
     { title: '记忆', text: input.stableMemory },
     { title: '最近一起经历的', text: input.episodes ?? '' },

@@ -7,6 +7,25 @@ import { scenarioText, scenarioToneOverride } from './persona.js';
 import { STYLE_TEXT } from './scenario.js';
 import { line, lines, takeWithin } from './prompt-assembly.js';
 
+export type PersonaLevel = 'full' | 'name';
+
+const GENDER_LABEL = new Map([
+  ['male', '男'],
+  ['男', '男'],
+  ['男性', '男'],
+  ['female', '女'],
+  ['女', '女'],
+  ['女性', '女'],
+  ['other', '其他'],
+  ['其他', '其他'],
+  ['其它', '其他'],
+]);
+
+export function nameOnlyText(name: string, gender?: string): string {
+  const label = GENDER_LABEL.get(gender?.trim().toLowerCase() ?? '') ?? '未指定';
+  return `你叫${name}。性别：${label}。这是虚构角色扮演，按你们已有的相处来。`;
+}
+
 const TAG: Record<string, string> = {
   tsundere: '傲娇',
   aloof: '高冷',
@@ -178,8 +197,12 @@ export function scenarioNote(
   autoStylePrompt: string | null,
   configuredScenario = false,
   romancePaused = false,
+  personaLevel: PersonaLevel = 'full',
 ): string {
-  const anchor = `继续以{{char}}的身份和口吻回复：${card.speech.tone.slice(0, 60)}；句子${SENTENCE[card.speech.sentenceLength]}。`;
+  const anchor =
+    personaLevel === 'name'
+      ? '继续以{{char}}的身份回应。'
+      : `继续以{{char}}的身份和口吻回复：${card.speech.tone.slice(0, 60)}；句子${SENTENCE[card.speech.sentenceLength]}。`;
   const style =
     scenarioToneOverride(mode, romancePaused) ??
     (mode === 'auto'
