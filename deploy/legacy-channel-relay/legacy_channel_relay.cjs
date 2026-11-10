@@ -98,7 +98,11 @@ function createMaintenanceMiddleware(env = process.env) {
     origin = parsed.origin;
   }
   return (req, res, next) => {
-    const pathname = String(req.originalUrl || req.url || '').split('?')[0];
+    // Express routes are case-insensitive; classification must use the same rule.
+    // This does not rewrite the URL or the case of any route parameter.
+    const pathname = String(req.originalUrl || req.url || '')
+      .split('?')[0]
+      .toLowerCase();
     if (
       origin &&
       ['GET', 'HEAD'].includes(req.method) &&
@@ -120,6 +124,25 @@ function createMaintenanceMiddleware(env = process.env) {
         ['/api/app/config', '/api/download-config'].includes(pathname)
       )
         return next();
+      const adminRoute = pathname.startsWith('/api/admin/') || pathname.startsWith('/api/ops/');
+      const adminSession =
+        req.method === 'POST' && /^\/api\/admin\/(login|logout)\/?$/.test(pathname);
+      if ((adminRoute && ['GET', 'HEAD'].includes(req.method)) || adminSession) {
+        // Only remove the migration gate. Original rate limits, password/session
+        // validation, CSRF checks and each route's requireAdmin still run.
+        res.setHeader('Cache-Control', 'no-store');
+        return next();
+      }
+      if (adminRoute) {
+        res.setHeader('Cache-Control', 'no-store');
+        return res.status(409).json({
+          ok: false,
+          code: 'LEGACY_ADMIN_READ_ONLY',
+          error: '旧后台可查看历史资料；账号、订单和配置修改请在新版后台进行。',
+          message: '旧后台可查看历史资料；账号、订单和配置修改请在新版后台进行。',
+          new_admin_url: 'https://admin.weiban.online/',
+        });
+      }
       res.setHeader('Cache-Control', 'no-store');
       res.setHeader('Retry-After', '60');
       return res.status(503).json({

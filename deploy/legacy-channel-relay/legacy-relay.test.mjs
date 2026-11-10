@@ -364,7 +364,7 @@ test('queue freeze refuses unfinished jobs, preserves ambiguous history, and mar
   );
 });
 
-test('maintenance redirects app without forwarding private query, keeps public download/config/health and blocks old payment callbacks', () => {
+test('maintenance preserves admin login and reads while blocking old business writes and payment callbacks', () => {
   const middleware = createMaintenanceMiddleware({
     LEGACY_WRITES_PAUSED: '1',
     LEGACY_WEB_REDIRECT_ORIGIN: 'https://app.weiban.online',
@@ -407,6 +407,44 @@ test('maintenance redirects app without forwarding private query, keeps public d
   ])
     assert.equal(run('POST', url).status, 503);
   assert.equal(run('GET', '/api/pay/alipay/return').status, 503);
+  for (const url of [
+    '/api/admin/session',
+    '/api/admin/users?page=1',
+    '/api/admin/users/example/usage',
+    '/api/admin/chat/messages',
+    '/api/admin/personas/example',
+    '/api/admin/orders',
+    '/api/admin/channels/bindings',
+    '/api/ops/status',
+    '/api/ops/ai-config',
+    '/api/ops/audit',
+    '/API/ADMIN/USERS',
+  ]) {
+    // Passing next leaves authentication to the original protected router.
+    assert.deepEqual(run('GET', url), { next: true });
+    assert.deepEqual(run('HEAD', url), { next: true });
+  }
+  for (const url of ['/api/admin/login', '/api/admin/logout', '/API/ADMIN/LOGIN/'])
+    assert.deepEqual(run('POST', url), { next: true });
+  for (const [method, url] of [
+    ['PATCH', '/api/admin/users/example'],
+    ['POST', '/api/admin/users/example/reset-password'],
+    ['POST', '/api/admin/orders/example/confirm'],
+    ['POST', '/api/admin/orders/example/alipay-refund'],
+    ['DELETE', '/api/admin/chat/users/example'],
+    ['POST', '/api/ops/service-action'],
+    ['POST', '/api/ops/ai-config/test'],
+    ['POST', '/api/admin/login/extra'],
+    ['POST', '/API/ADMIN/ORDERS/example/confirm'],
+  ]) {
+    const result = run(method, url);
+    assert.equal(result.status, 409);
+    assert.equal(result.body.code, 'LEGACY_ADMIN_READ_ONLY');
+    assert.equal(result.next, undefined);
+  }
+  assert.equal(run('POST', '/API/AUTH/REGISTER').status, 503);
+  assert.equal(run('POST', '/API/PAY/ALIPAY/NOTIFY').status, 503);
+  assert.equal(run('GET', '/api/account/profile').status, 503);
 });
 
 test('old generation hard gates stop recovery and provider callbacks; source patch rejects drift', async () => {
