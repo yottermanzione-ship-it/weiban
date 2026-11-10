@@ -6,6 +6,8 @@
 
 下载入口 `/api/v1/media/:mediaId/content?token=...`：5分钟平台加密访问凭证，绑定媒体ID、发起用户和过期时刻；下载重新验证元数据存在和归属。响应 `private,no-store`、`nosniff`。请求日志不记录查询参数。删除元数据后旧链接立即失效。
 
+2026-11-10 播放兼容：签名及归属检查通过后，iOS浏览器/主屏幕网页与桌面Safari请求Ogg音频时，以内存管道转换为MP3返回，响应Content-Type/Content-Length采用转换结果，Vary含Accept和User-Agent。原加密文件、链接到期及账务不变，不重调模型；新旧消息均适用。其他格式和客户端沿用原下载。转换限制10MB输入、6MB输出、12秒、两个并发，无明文临时文件或音频诊断正文。
+
 存储：`MEDIA_STORAGE=disk`（默认），目录 `MEDIA_DISK_ROOT`（默认`.data/media`）；`s3`使用AWS签名私有桶，不开放桶匿名读取。设置 `MEDIA_S3_BUCKET`、`MEDIA_S3_REGION`、`MEDIA_S3_ENDPOINT`（可选）、`MEDIA_S3_CREDENTIALS_FILE`（JSON含accessKeyId/secretAccessKey）、`MEDIA_S3_FORCE_PATH_STYLE`。凭据不从接口或日志输出。`MEDIA_PUBLIC_BASE_URL`设为客户端访问服务器的HTTPS地址；开发默认http://127.0.0.1:3000。
 
 上传先登记pending再写加密对象，最后ready；失败清理；存储失败不丢掉注销清理位置。每10分钟回收超过10分钟的pending对象。注销删除本人的对象与元数据，可重复；预设角色头像属于平台，不随上传管理员注销删除。

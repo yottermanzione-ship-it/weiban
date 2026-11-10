@@ -30,6 +30,7 @@ import {
 } from '../../../platform/index.js';
 import { MediaService } from '../application/media.js';
 import { LinkPreviewService } from '../application/link-preview.js';
+import { compatibleBrowserAudio } from '../infra/browser-audio.js';
 const params = new ContractPipe(MediaEndpoints.getMedia.params!);
 
 /** multipart 里的可选表单字段 durationMs（语音时长，毫秒）。 */
@@ -79,11 +80,13 @@ export class MediaController {
     @Param(params) p: { mediaId: string },
     @Query(new ContractPipe(MediaEndpoints.download.query!)) q: { token: string },
     @Headers('accept') accept: string | undefined,
+    @Headers('user-agent') userAgent: string | undefined,
     @Res() res: Response,
   ) {
-    const media = await this.media.download(p.mediaId, q.token, accept);
+    const authorized = await this.media.download(p.mediaId, q.token, accept);
+    const media = await compatibleBrowserAudio(authorized, userAgent);
     res.setHeader('Content-Type', media.mimeType);
-    res.setHeader('Vary', 'Accept');
+    res.setHeader('Vary', 'Accept, User-Agent');
     res.setHeader('Content-Length', media.body.length);
     res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
