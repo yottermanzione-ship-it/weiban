@@ -6,6 +6,7 @@
  * （security-and-privacy.md 5.1 第 2 条）；注销时密码错误的返回写明（403 invalid_credentials）。
  */
 import { z } from 'zod';
+import { Password } from '../password.js';
 import { ModuleName } from '../events.js';
 import {
   API_PREFIX,
@@ -27,7 +28,7 @@ export const Username = z
   .regex(/^[A-Za-z0-9_]{4,32}$/, '用户名为 4–32 位字母、数字或下划线');
 
 /** 密码 8–128 位（2026-10-12 总经理调整：原最短 10 位）。 */
-export const Password = z.string().min(8).max(128);
+export { Password } from '../password.js';
 
 /**
  * 登录时只校验“非空即可”：旧版微伴允许 6 位密码，迁移过来的账号在登录时不能再被长度规则挡住。
