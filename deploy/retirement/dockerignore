@@ -1,0 +1,12 @@
+data
+bridge-data
+relay-control
+*.sealed.json
+*.sqlite*
+sites
+retirement/old-host-known-hosts
+retirement/runtime.env
+retirement/ready.json
+source/**/*.bak*
+source/**/*.before-*
+source/public/download-page/*.apk

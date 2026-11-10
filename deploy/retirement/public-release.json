@@ -1,0 +1,13 @@
+{
+  "version": "3.0.0",
+  "versionCode": 127,
+  "minimumVersionCode": 127,
+  "applicationId": "com.weiban.weiban",
+  "sizeBytes": 5392086,
+  "sha256": "5e0918707cdb814d6dae5a32c895fe61eb2e3b78dfdf98961cfa82c108318e87",
+  "certificateSha256": "2eea5e32df600c2eacd709d712cb86d6a18e7cb68faca8f2962694a5f9b3a865",
+  "filename": "weiban-3.0.0-127-5e0918707cdb.apk",
+  "downloadUrl": "https://app.weiban.online/download-assets/weiban-3.0.0-127-5e0918707cdb.apk",
+  "webUrl": "https://app.weiban.online",
+  "notes": "微伴3.0.0正式版。直接覆盖安装，无需卸载；更新后使用原账号登录。网页版入口已统一，会员和积分随账号承接。"
+}

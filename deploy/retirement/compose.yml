@@ -1,0 +1,60 @@
+name: weiban-entry
+services:
+  archive: &archive-runtime
+    image: ${ENTRY_IMAGE:?Set fixed entry image}
+    container_name: weiban-entry
+    restart: unless-stopped
+    read_only: true
+    mem_limit: 768m
+    cpus: 0.75
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ports: ['127.0.0.1:18180:8080']
+    volumes:
+      - /var/lib/weiban-entry/data:/archive-data
+      - /var/lib/weiban-entry/archive.sealed.json:/run/secrets/archive.sealed.json:ro
+      - /srv/weiban/secrets/kek:/run/secrets/kek:ro
+      - /srv/weiban/history-media/generated:/opt/weiban-server/public/generated:ro
+      - /srv/weiban/history-media/chat-media:/opt/weiban-server/private/chat-media:ro
+      - /var/lib/weiban-downloads:/downloads:ro
+    tmpfs:
+      - /tmp
+      - /opt/weiban-server/runtime:uid=1000,gid=1000,mode=0700
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          'fetch("http://127.0.0.1:8080/health").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks:
+      private:
+        aliases: [weiban-entry]
+  relay:
+    <<: *archive-runtime
+    profiles: [relay]
+    container_name: weiban-entry-relay
+    command: ['node', 'retirement/relay-server.cjs']
+    environment:
+      ENTRY_RELAY_ACTIVE: ${ENTRY_RELAY_ACTIVE:-0}
+    mem_limit: 512m
+    ports: []
+    volumes:
+      - /var/lib/weiban-entry/bridge-data:/bridge-data
+      - /var/lib/weiban-entry/archive.sealed.json:/run/secrets/archive.sealed.json:ro
+      - /srv/weiban/secrets/kek:/run/secrets/kek:ro
+      - /var/lib/weiban-entry/relay-control:/run/retirement:ro
+      - /srv/weiban/history-media/generated:/opt/weiban-server/public/generated:ro
+      - /var/lib/weiban-downloads:/downloads:ro
+    networks: [private, outbound]
+networks:
+  private:
+    external: true
+    name: weiban-prod_private
+  outbound:
+    external: true
+    name: weiban-prod_outbound
