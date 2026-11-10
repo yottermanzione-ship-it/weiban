@@ -332,8 +332,9 @@ function MemorySheet({
             />
           </label>
           <small className="hint">{content.length}/1000</small>
+          {/* 选择弹层含多个按钮，不能嵌进 label；否则点蒙层关闭后会默认激活触发器、重新打开。 */}
           {!entry ? (
-            <label>
+            <div className="memory-select-field">
               分类
               <SelectField
                 title="分类"
@@ -347,11 +348,11 @@ function MemorySheet({
                   setId(crypto.randomUUID());
                 }}
               />
-            </label>
+            </div>
           ) : (
             <>
               <p className="hint">{categories[entry.category]}</p>
-              <label>
+              <div className="memory-select-field">
                 状态
                 <SelectField
                   title="状态"
@@ -365,7 +366,7 @@ function MemorySheet({
                     setId(crypto.randomUUID());
                   }}
                 />
-              </label>
+              </div>
               <button type="button" className="danger danger-row" onClick={onDelete}>
                 删除这条记忆
               </button>

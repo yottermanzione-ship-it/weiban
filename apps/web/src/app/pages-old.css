@@ -2019,7 +2019,8 @@ button.primary.wx-auth-submit {
   gap: 16px;
   min-width: 0;
 }
-.memory-form label {
+.memory-form label,
+.memory-form .memory-select-field {
   display: grid;
   gap: 8px;
 }
