@@ -80,7 +80,11 @@ import {
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { GROWTH_SERVICE, type GrowthService } from '../../growth/index.js';
 import { IDENTITY_ACCOUNT_STATUS_PORT, IDENTITY_READ_PORT } from '../../identity/index.js';
-import { MODEL_GATEWAY_PORT, MODEL_PLATFORM_GATEWAY_PORT } from '../../model-access/index.js';
+import {
+  MODEL_GATEWAY_PORT,
+  MODEL_PLATFORM_GATEWAY_PORT,
+  contextTokens,
+} from '../../model-access/index.js';
 import { POLICY_PORT } from '../../policy/index.js';
 import { HOLIDAY_EVENT_PORT } from '../../proactive/index.js';
 import { INITIAL_MODES, modeOption, scenarioText, SELECTABLE_MODES } from '../domain/persona.js';
@@ -111,6 +115,8 @@ import {
 // ---------------------------------------------------------------------------
 /** F1-8：群里一次发言最多拆成几条气泡。 */
 const GROUP_MAX_BUBBLES = 3;
+const GROUP_PROMPT_HISTORY_MESSAGES = 30;
+const GROUP_PROMPT_HISTORY_BLOCK = 8;
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 export const P19_GROUP = { maxResponders: 3, maxConsecutiveCharacterMessages: 6 };
 export const P20_SELF_CHAT = { perGroupPerDay: 1, maxMessages: 10, userActiveWithinDays: 7 };
@@ -957,24 +963,33 @@ export class GroupChatService {
       slots.push(slot);
       return slot;
     };
-    const transcript = history
-      .filter(
-        (m) =>
-          m.senderKind !== 'system' && m.status === 'normal' && !!readableMessageText(m, captions),
+    const visibleHistory = history.flatMap((message) => {
+      if (
+        message.senderKind === 'system' ||
+        message.status !== 'normal' ||
+        message.scope !== 'normal'
       )
-      .slice(-30)
-      .map((m) => {
-        if (m.content?.type === 'nudge')
-          return nudgeText(m.content, m.senderKind, {
-            sender: nameOf(m.senderParticipantId),
-            target: nameOf(m.content.targetParticipantId),
-          });
-        const slot = slotFor(m);
-        if (slot)
-          return `${nameOf(m.senderParticipantId)}：[${slot.sticker ? '表情' : '图片'}〔图${slot.n}〕]`;
-        return `${nameOf(m.senderParticipantId)}：${readableMessageText(m, captions).slice(0, m.content?.type === 'forwarded_record' ? 32_000 : 300)}`;
-      })
-      .join('\n');
+        return [];
+      const text = readableMessageText(message, captions);
+      return text ? [{ message, text }] : [];
+    });
+    const recentHistory = visibleHistory.slice(-GROUP_PROMPT_HISTORY_MESSAGES);
+    const renderLine = (
+      { message, text }: (typeof visibleHistory)[number],
+      slot?: ImageSlot | null,
+    ) => {
+      const sender = nameOf(message.senderParticipantId);
+      if (message.content?.type === 'nudge')
+        return nudgeText(message.content, message.senderKind, {
+          sender,
+          target: nameOf(message.content.targetParticipantId),
+        });
+      if (slot) return `${sender}：[${slot.sticker ? '表情' : '图片'}〔图${slot.n}〕]`;
+      return `${sender}：${text.slice(0, message.content?.type === 'forwarded_record' ? 32_000 : 300)}`;
+    };
+    // Only the original recent messages can supply new image slots or drive memory recall.
+    const recentLines = recentHistory.map((entry) => renderLine(entry, slotFor(entry.message)));
+    const transcript = recentLines.join('\n');
     const selfNames = [role.profile.name, ...role.profile.aliases].filter((n) => n.length >= 2);
     const imageNote = captionInstruction(slots, {
       allowed: selfNames,
@@ -1025,6 +1040,83 @@ export class GroupChatService {
     };
     const stickerHint =
       (await this.mediaAi?.groupStickerPrompt(stickerRules).catch(() => '')) ?? '';
+    const head: GenerateTextInput['messages'] = [
+      ...brainMessages(brain, 'chat'),
+      {
+        role: 'system',
+        content: `你在微伴的一个群聊里以角色身份发言。只输出你要发的这一条群消息的纯文本，不加名字前缀，不输出JSON或括号动作，不超过60字；不编造真人公开声明；儿童不得恋爱或性化。真人=${policy.isRealPerson}，儿童=${policy.isMinor}，允许恋爱=${policy.romanceAllowed}。不做情感操纵。群聊当前情景模式：${presetPrompt ? '遵循前文当前情景预设。' : scenarioText(input.scenarioMode === 'auto' ? 'daily' : input.scenarioMode)}这是日常范围的群聊：不提起、不展开任何私密模式里发生的事。群聊原文是公开现场，私聊资料受下面的群聊隐私边界约束。`,
+      },
+      {
+        role: 'system',
+        content: `${GROUP_MEMORY_BOUNDARY}\n群聊风格：${roleGroup(characterView(role)).style || '自然'}\n群成员关系：\n${relationLines.join('\n') || '（群里只有你和用户）'}\n用户：${profile?.nickname ?? '用户'}（与你的好感度：${stageLabel(speaker.familiarity)}）`,
+      },
+    ];
+    // Completed blocks stay byte-identical while newer messages and recalled facts change.
+    const latestSeq = history.at(-1)?.seq ?? 0;
+    const blockEnd = latestSeq - (latestSeq % GROUP_PROMPT_HISTORY_BLOCK);
+    const attachedIds = new Set(slots.map((slot) => slot.messageId));
+    const tailStart = recentHistory.findIndex(
+      ({ message }) => message.seq > blockEnd || attachedIds.has(message.messageId),
+    );
+    const fixedCount = tailStart === -1 ? recentLines.length : tailStart;
+    const fixedLines = recentLines.slice(0, fixedCount);
+    const liveLines = recentLines.slice(fixedCount);
+    const notes = brainTail(brain);
+    const turnPrompt = `【系统提示】${task}${imageNote ? `\n${imageNote.replace('回复正文写完后', '群消息正文写完后')}` : ''}${stickerHint ? `\n${stickerHint}` : ''}`;
+    const assemble = (olderLines: string[]) => {
+      const stable = [...head];
+      const hasFixedHistory = olderLines.length > 0 || fixedLines.length > 0;
+      if (hasFixedHistory)
+        stable.push({
+          role: 'user',
+          content: `群聊记录：\n${[...olderLines, ...fixedLines].join('\n')}`,
+        });
+      const liveTranscript =
+        hasFixedHistory && !liveLines.length
+          ? ''
+          : `群聊记录${hasFixedHistory ? '（续）' : ''}：\n${liveLines.join('\n') || '（还没有消息）'}\n\n`;
+      const messages: GenerateTextInput['messages'] = [
+        ...stable,
+        ...notes,
+        {
+          role: 'user',
+          content: `${liveTranscript}${turnPrompt}`,
+          ...(slots.length
+            ? { images: slots.map((x) => ({ mediaId: x.mediaId, ownerUserId: x.ownerUserId })) }
+            : {}),
+        },
+      ];
+      return { messages, stablePrefixChars: stable.reduce((n, m) => n + m.content.length, 0) };
+    };
+    const maxOutputTokens = 200 + slots.length * 200;
+    let prompt = assemble([]);
+    // Use up to seven extra messages from the existing read. Keep the original 30 if
+    // capacity is unknown or tight, and don't add large forwarded records as padding.
+    const older = visibleHistory
+      .slice(0, -GROUP_PROMPT_HISTORY_MESSAGES)
+      .filter(({ message }) => message.seq > blockEnd - GROUP_PROMPT_HISTORY_MESSAGES);
+    if (
+      !slots.length &&
+      older.length &&
+      !older.some(({ message }) => message.content?.type === 'forwarded_record')
+    ) {
+      const candidate = assemble(older.map((entry) => renderLine(entry)));
+      const budget = await this.gateway
+        .getContextBudget?.({
+          userId: input.userId,
+          characterId: speaker.characterId,
+          modelRole: 'chat',
+          purpose: input.purpose,
+          maxOutputTokens,
+        })
+        .catch(() => null);
+      if (
+        budget &&
+        contextTokens(candidate.messages) <= budget.inputTokens &&
+        candidate.messages.reduce((n, m) => n + m.content.length, 0) <= 200_000
+      )
+        prompt = candidate;
+    }
     let request: GenerateTextInput = {
       userId: input.userId,
       characterId: speaker.characterId,
@@ -1034,32 +1126,14 @@ export class GroupChatService {
       modelRole: adult ? 'adult' : 'chat',
       ...(input.purpose === 'proactive' ? { countAsBackground: true, ecologyTask: true } : {}),
       responseFormat: 'text',
-      maxOutputTokens: 200 + slots.length * 200,
+      maxOutputTokens,
       idempotencyKey: `ai:${input.idempotencyKey}`,
-      messages: [
-        ...brainMessages(brain, 'chat'),
-        {
-          role: 'system',
-          content: `你在微伴的一个群聊里以角色身份发言。只输出你要发的这一条群消息的纯文本，不加名字前缀，不输出JSON或括号动作，不超过60字；不编造真人公开声明；儿童不得恋爱或性化。真人=${policy.isRealPerson}，儿童=${policy.isMinor}，允许恋爱=${policy.romanceAllowed}。不做情感操纵。群聊当前情景模式：${presetPrompt ? '遵循前文当前情景预设。' : scenarioText(input.scenarioMode === 'auto' ? 'daily' : input.scenarioMode)}这是日常范围的群聊：不提起、不展开任何私密模式里发生的事。群聊原文是公开现场，私聊资料受下面的群聊隐私边界约束。`,
-        },
-        {
-          role: 'system',
-          content: `${GROUP_MEMORY_BOUNDARY}\n群聊风格：${roleGroup(characterView(role)).style || '自然'}\n群成员关系：\n${relationLines.join('\n') || '（群里只有你和用户）'}\n用户：${profile?.nickname ?? '用户'}（与你的好感度：${stageLabel(speaker.familiarity)}）`,
-        },
-        ...brainTail(brain),
-        {
-          role: 'user',
-          content: `群聊记录：\n${transcript || '（还没有消息）'}\n\n【系统提示】${task}${imageNote ? `\n${imageNote.replace('回复正文写完后', '群消息正文写完后')}` : ''}${stickerHint ? `\n${stickerHint}` : ''}`,
-          ...(slots.length
-            ? { images: slots.map((x) => ({ mediaId: x.mediaId, ownerUserId: x.ownerUserId })) }
-            : {}),
-        },
-      ],
+      messages: prompt.messages,
       meta: {
         conversationKind: 'group',
         scenarioMode: input.scenarioMode,
-        stablePrefixChars: brain.prefix.length,
-        promptTemplateVersion: 'brain-v3-platform:group',
+        stablePrefixChars: prompt.stablePrefixChars,
+        promptTemplateVersion: 'brain-v4-stable-history:group',
       },
     };
     if (input.durable) {
