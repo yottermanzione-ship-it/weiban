@@ -297,15 +297,13 @@ describeDb('media 最小版：权限、图片真实性、加密文件、签名�
     wav.writeUInt16LE(16, 34);
     wav.write('data', 36);
     wav.writeUInt32LE(48000, 40);
-    const media = await app
-      .get(MediaService)
-      .putObject({
-        ownerUserId: userId,
-        purpose: 'generated_voice',
-        bytes: wav,
-        mimeType: 'audio/wav',
-        durationMs: 1000,
-      });
+    const media = await app.get(MediaService).putObject({
+      ownerUserId: userId,
+      purpose: 'generated_voice',
+      bytes: wav,
+      mimeType: 'audio/wav',
+      durationMs: 1000,
+    });
     const url = new URL(media.url);
     const path = url.pathname + url.search;
     await http()
