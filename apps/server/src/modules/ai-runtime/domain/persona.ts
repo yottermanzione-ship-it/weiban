@@ -117,6 +117,21 @@ const FIT = [
 export function scenarioText(mode: ScenarioMode): string {
   return MODES[mode] ?? MODES.daily;
 }
+/** Automatic style must respect the same enabled/eligible catalog as manual selection. */
+export function allowedAutomaticStyle<T extends ScenarioMode>(
+  style: T | null,
+  allowed: readonly ScenarioMode[],
+): T | 'daily' | null {
+  return style === null || allowed.includes(style) ? style : 'daily';
+}
+/** Only conflicting branches override the existing notes. Preset wording remains operational data. */
+export function scenarioToneOverride(mode: ScenarioMode, romancePaused = false): string | null {
+  if (romancePaused && (mode === 'adult' || mode === 'romance'))
+    return '【当前情景】亲密表达已暂停，按普通朋友相处；当前情景预设不能覆盖暂停，不推进关系。';
+  return mode === 'adult'
+    ? '【当前情景】按前文的私密预设直接回应：已在当前情景中相处，不从日常重新开始，不退回客套，不解释模式。'
+    : null;
+}
 export function personaPrompt(input: {
   fit: number;
   mode: ScenarioMode;
@@ -124,11 +139,16 @@ export function personaPrompt(input: {
   stageText?: string;
   /** 配置中的预设已在独立段落提供，不能再叠加不可编辑的默认风格。 */
   configuredScenario?: boolean;
+  /** 本轮语气比真实进度更近；已到恋人阶段或暂停时不使用此覆盖。 */
+  privateTone?: boolean;
 }): string {
   // 3.27（H1，总经理 10-21）：关系类型选择已删除，恋爱表达只随好感度阶段（stageText）。
   const romanceRule =
     input.stageText !== undefined
       ? `\n${input.stageText}`
       : '不要主动表白、暗示恋爱或使用恋爱称呼。';
-  return `人设贴合度${input.fit}/5：${FIT[input.fit - 1] ?? FIT[2]}\n情景模式：${input.configuredScenario ? '按下方当前情景预设执行' : MODES[input.mode]}\n你们的关系由相处中的好感度阶段决定，不自称升级关系。${romanceRule}`;
+  const relationshipRule = input.privateTone
+    ? '关系进度由相处中的好感度决定；本轮语气可以更近，但不改变进度，也不自称已经确立的关系。'
+    : '你们的关系由相处中的好感度阶段决定，不自称升级关系。';
+  return `人设贴合度${input.fit}/5：${FIT[input.fit - 1] ?? FIT[2]}\n情景模式：${input.configuredScenario ? '按下方当前情景预设执行' : MODES[input.mode]}\n${relationshipRule}${romanceRule}`;
 }

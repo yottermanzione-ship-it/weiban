@@ -12,7 +12,7 @@ import type {
 } from '@weiban/contracts';
 import { line, lines, takeWithin } from './prompt-assembly.js';
 import { STYLE_TEXT } from './scenario.js';
-import { scenarioText } from './persona.js';
+import { scenarioText, scenarioToneOverride } from './persona.js';
 
 /** 旧卡没有安全风格字段时用的兜底话术（代码层关怀与岔题仍照常执行）。 */
 export const LEGACY_CARE_FALLBACK =
@@ -181,10 +181,12 @@ export function legacyScenarioNote(
   mode: ScenarioMode,
   autoStylePrompt: string | null,
   configuredScenario = false,
+  romancePaused = false,
 ): string {
   const anchor = `继续以{{char}}的身份和口吻回复：${(card.speakingStyle || card.corePersona).slice(0, 60)}。`;
   const style =
-    mode === 'auto'
+    scenarioToneOverride(mode, romancePaused) ??
+    (mode === 'auto'
       ? (autoStylePrompt ?? '')
       : configuredScenario
         ? '【当前情景】遵循前文的当前情景预设，保持角色身份。'
@@ -192,6 +194,6 @@ export function legacyScenarioNote(
           ? `【当前情景】${STYLE_TEXT[mode]}`
           : mode === 'daily'
             ? ''
-            : `【当前情景】${scenarioText(mode)}`;
+            : `【当前情景】${scenarioText(mode)}`);
   return `【写作提示】${anchor}${style ? `\n${style}` : ''}`;
 }

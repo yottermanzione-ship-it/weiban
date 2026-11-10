@@ -22,6 +22,9 @@ const STAGE_PROMPTS: Record<number, string> = {
   5: "你们是恋人：明确的恋爱关系，可以自然使用'宝贝''亲爱的'等恋爱称呼，直接表达爱意和依恋。",
   6: '你们是稳定的长期伴侣：深厚、笃定、有默契的爱，可以聊未来和日常琐碎，像老夫老妻一样自然。',
 };
+const TONE_PROMPTS: Record<number, string> = {
+  5: '按恋人的语气说话：可以直接表达爱意和依恋，称呼可以更亲昵；这是本轮的相处语气，不等于已经确立恋爱关系，不自称男朋友 / 女朋友。',
+};
 
 /** 未成年设定角色：只按朋友相处（不进入暧昧及以上，任何阶段都不涉及恋爱）。 */
 const MINOR_PROMPT =
@@ -58,12 +61,21 @@ export function relationshipStageText(input: RelationshipStageInput): string {
       '不得使用恋爱称呼、表白、占有欲或伴侣身份暗示。只有对方明确表示恢复后才能重新开始。'
     );
   const stage = toneStage(input);
-  const lines = [`【你们的关系阶段：${name}】`, STAGE_PROMPTS[stage] ?? STAGE_PROMPTS[1]!];
+  const raised = stage > input.level;
+  const lines = raised
+    ? [
+        `【关系进度：${name}】`,
+        `【本轮语气】私密相处，按更近的语气说话（${FAMILIARITY_STAGE_NAMES[stage - 1]}）；只调整语气，不改变关系进度，也不自称已经确立恋爱关系。`,
+        TONE_PROMPTS[stage]!,
+      ]
+    : [`【你们的关系阶段：${name}】`, STAGE_PROMPTS[stage] ?? STAGE_PROMPTS[1]!];
   if (stage >= ROMANCE_TITLE_STAGE)
     lines.push(
       input.preferredTitle
         ? `对方希望你叫 TA「${input.preferredTitle}」，自然地这样称呼。`
-        : '对方还没说过想被怎么称呼，先用亲昵中性的称呼（宝贝 / 亲爱的），别自作主张叫老公 / 老婆。',
+        : raised
+          ? '称呼以用户意愿和角色习惯为准，不因为切换情景就强行改称呼。'
+          : '对方还没说过想被怎么称呼，先用亲昵中性的称呼（宝贝 / 亲爱的），别自作主张叫老公 / 老婆。',
     );
   return lines.join('\n');
 }

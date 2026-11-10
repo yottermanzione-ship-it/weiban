@@ -10,6 +10,19 @@
  */
 import { z } from 'zod';
 
+/** Additive slack: retain every message in the previous 600-message policy.
+ * Within a 64-sequence segment, new messages append without sliding the oldest one.
+ * Token/character limits and deletion/scope barriers still apply at the caller.
+ */
+export function stableHistoryReadLimit(beforeSeq?: number): number {
+  return (
+    600 +
+    (beforeSeq !== undefined && Number.isSafeInteger(beforeSeq) && beforeSeq > 0
+      ? (beforeSeq - 1) % 64
+      : 0)
+  );
+}
+
 export interface WindowLimits {
   keepTurns: number;
   triggerTurns: number;

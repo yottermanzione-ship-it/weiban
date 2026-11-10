@@ -1046,7 +1046,8 @@ export class ModelGateway implements ModelGatewayPort {
       i.idempotencyKey.length <= 200 &&
       Array.isArray(i.messages) &&
       i.messages.length > 0 &&
-      i.messages.length <= 500 &&
+      // 663 historical messages + system/depth notes; token and 200k-char guards remain.
+      i.messages.length <= 700 &&
       i.messages.every(
         (m) =>
           m &&

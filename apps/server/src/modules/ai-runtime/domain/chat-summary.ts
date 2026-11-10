@@ -15,7 +15,8 @@ export const SummaryAnswer = z.object({
         sourceIds: z.array(z.string()).min(1).max(100),
       }),
     )
-    .max(24),
+    // Keep the requested target at 24, but accept the existing storage capacity of 30.
+    .max(30),
 });
 
 export function renderChatSummary(items: readonly ChatSummaryItem[], since: string | null): string {
@@ -31,7 +32,9 @@ export function validateSummaryAnswer(
   sources: ReadonlyMap<string, { at: string }>,
 ): Omit<ChatSummaryItem, 'id'>[] {
   const answer = SummaryAnswer.parse(raw);
-  if (answer.items.reduce((n, i) => n + i.text.length, 0) > 1200)
+  // Do not discard an otherwise grounded result merely for a small target overrun.
+  // Whole-result and per-item limits remain; nothing is truncated to fit.
+  if (answer.items.reduce((n, i) => n + i.text.length, 0) > 1600)
     throw new Error('summary_too_long');
   return answer.items.map((item) => {
     const dates = item.sourceIds.map((id) => sources.get(id)?.at);

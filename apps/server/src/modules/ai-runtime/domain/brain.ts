@@ -22,7 +22,11 @@ import {
   legacyUnknownPolicy,
 } from './legacy-prompt.js';
 import { personaPrompt } from './persona.js';
-import { relationshipStageText, type RelationshipStageInput } from './relationship-stage.js';
+import {
+  relationshipStageText,
+  toneStage,
+  type RelationshipStageInput,
+} from './relationship-stage.js';
 import { userNamingContext, userNickname } from './user-naming.js';
 import { todayLine } from './time-sense.js';
 import { KEEP_CHATTING_RULE } from './keep-chatting.js';
@@ -61,6 +65,11 @@ export interface BrainInput {
 }
 export function brainPrefix(input: BrainInput): PromptSection[] {
   const { card, legacyCard, settings, scope } = input;
+  // A stale private setting must not survive a switch back to any normal-scope scene.
+  const stage = {
+    ...input.stage,
+    explicitRomance: scope === 'adult' && input.stage.explicitRomance,
+  };
   if (!card && !legacyCard) throw new Error('brain requires card or legacyCard');
   const prompting = card?.prompting;
   const mode =
@@ -107,7 +116,7 @@ export function brainPrefix(input: BrainInput): PromptSection[] {
     },
     {
       title: '关系与设置',
-      text: `${personaPrompt({ fit: settings.personaFit ?? 3, mode, configuredScenario: !!input.scenarioPrompt, stageText: relationshipStageText(input.stage) })}\n${userNamingContext(input.nickname)}${card?.modes.modeOverrides?.[mode] ? `\n这个情景下的补充：${card.modes.modeOverrides[mode]}` : ''}`,
+      text: `${personaPrompt({ fit: settings.personaFit ?? 3, mode, configuredScenario: !!input.scenarioPrompt, stageText: relationshipStageText(stage), privateTone: stage.romanceAllowed && !stage.romancePaused && toneStage(stage) > stage.level })}\n${userNamingContext(input.nickname)}${card?.modes.modeOverrides?.[mode] ? `\n这个情景下的补充：${card.modes.modeOverrides[mode]}` : ''}`,
     },
     {
       title: '需要关怀或岔开话题时',

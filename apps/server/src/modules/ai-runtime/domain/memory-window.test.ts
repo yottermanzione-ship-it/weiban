@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderStableMemory } from './memory-window.js';
+import { renderStableMemory, stableHistoryReadLimit } from './memory-window.js';
 
 const input = {
   scope: 'normal' as const,
@@ -14,6 +14,23 @@ const input = {
   monthly: [{ period: '2026-10', normal: '混合整月旧事', adult: '' }],
   annual: [{ period: '2026', normal: '混合整年旧事', adult: '' }],
 };
+
+describe('缓存友好的原文读取窗口', () => {
+  const read = (last: number) =>
+    Array.from({ length: last }, (_, i) => i + 1).slice(-stableHistoryReadLimit(last + 1));
+  it('同一段只追加新消息，跨段也至少保留旧策略的全部600条', () => {
+    for (let last = 640; last < 832; last++) {
+      const current = read(last);
+      expect(current.slice(-600)).toEqual(Array.from({ length: 600 }, (_, i) => last - 599 + i));
+      expect(current.length).toBeLessThanOrEqual(663);
+      if (last % 64 !== 63) expect(read(last + 1).slice(0, current.length)).toEqual(current);
+    }
+  });
+  it('短聊天原文一条不少，未指定游标时仍使用既有上限', () => {
+    expect(read(40)).toEqual(Array.from({ length: 40 }, (_, i) => i + 1));
+    expect(stableHistoryReadLimit()).toBe(600);
+  });
+});
 describe('限制天数时的旧摘要回退', () => {
   it('月中截止不带入跨边界的整月/整年摘要，边界当天仍可用', () => {
     const result = renderStableMemory({ ...input, summarySince: '2026-10-14' });

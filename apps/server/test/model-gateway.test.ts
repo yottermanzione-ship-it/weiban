@@ -341,6 +341,20 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
     expect(ledger.rows[0]?.upstream_id).toBe(upstreamId);
     expect(Number(ledger.rows[0]?.amount_micros)).toBe(-330);
   });
+  it('原文窗口的额外缓存空间完整送达上游，超出资源上限仍拒绝', async () => {
+    const messages: GenerateTextInput['messages'] = Array.from({ length: 666 }, (_, i) => ({
+      role: i === 0 ? 'system' : i % 2 ? 'user' : 'assistant',
+      content: `保留消息${i}`,
+    }));
+    expect((await gateway.generateText(input({ messages }))).ok).toBe(true);
+    expect(requests.at(-1)?.messages).toEqual(messages);
+    expect(
+      await gateway.generateText(
+        input({ messages: Array.from({ length: 701 }, () => ({ role: 'user', content: '过量' })) }),
+      ),
+    ).toMatchObject({ ok: false, error: 'bad_request' });
+    expect(calls).toBe(1);
+  });
   async function setOutputModel(upstreamModelId: string, maxOutputTokens: number) {
     await app.get(CatalogService).upsert(admin, modelKey, {
       modelKey,
