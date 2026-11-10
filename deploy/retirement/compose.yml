@@ -14,8 +14,8 @@ services:
       - /var/lib/weiban-entry/data:/archive-data
       - /var/lib/weiban-entry/archive.sealed.json:/run/secrets/archive.sealed.json:ro
       - /srv/weiban/secrets/kek:/run/secrets/kek:ro
-      - /srv/weiban-history-media/generated:/opt/weiban-server/public/generated:ro
-      - /srv/weiban-history-media/chat-media:/opt/weiban-server/private/chat-media:ro
+      - /srv/weiban/history-media/generated:/opt/weiban-server/public/generated:ro
+      - /srv/weiban/history-media/chat-media:/opt/weiban-server/private/chat-media:ro
       - /var/lib/weiban-downloads:/downloads:ro
     tmpfs:
       - /tmp
@@ -48,7 +48,7 @@ services:
       - /var/lib/weiban-entry/archive.sealed.json:/run/secrets/archive.sealed.json:ro
       - /srv/weiban/secrets/kek:/run/secrets/kek:ro
       - /var/lib/weiban-entry/relay-control:/run/retirement:ro
-      - /srv/weiban-history-media/generated:/opt/weiban-server/public/generated:ro
+      - /srv/weiban/history-media/generated:/opt/weiban-server/public/generated:ro
       - /var/lib/weiban-downloads:/downloads:ro
     networks: [private, outbound]
 networks:

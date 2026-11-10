@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 
 const plans = {
   source: {
-    read: "sudo tar --exclude='*.bak*' --exclude='*.before-*' --exclude='public/download-page/*.apk' -C /opt/weiban-server -czf - package.json package-lock.json db.js lib routes public/console public/download-page public/official-assets public/payment-assets public/stickers persona_packages",
+    read: "sudo tar --exclude='*.bak*' --exclude='*.before-*' --exclude='public/download-page/*.apk' -C /opt/weiban-server -czf - package.json package-lock.json db.js server.js lib routes public/console public/download-page public/official-assets public/payment-assets public/stickers persona_packages",
     write:
       'umask 077; mkdir -p /var/lib/weiban-entry/source; tar -C /var/lib/weiban-entry/source --no-same-owner -xzf -',
   },
@@ -18,11 +18,11 @@ const plans = {
   media: {
     read: 'sudo tar -C /opt/weiban-server/public -cf - generated',
     write:
-      'umask 077; mkdir -p /srv/weiban-history-media; tar -C /srv/weiban-history-media --no-same-owner -xf -',
+      'umask 077; mkdir -p /srv/weiban/history-media; tar -C /srv/weiban/history-media --no-same-owner -xf -',
   },
   media_directories: {
     read: "bash -o pipefail -c 'cd /opt/weiban-server/public && sudo find generated -type d -print0 | sudo tar --no-recursion --null -cf - -T -'",
-    write: 'umask 077; tar -C /srv/weiban-history-media --no-same-owner -xf -',
+    write: 'umask 077; tar -C /srv/weiban/history-media --no-same-owner -xf -',
   },
 };
 const name = process.argv[2];

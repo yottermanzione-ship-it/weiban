@@ -42,7 +42,7 @@ try {
     ],
     { ...quiet, input: known, stdio: ['pipe', 'pipe', 'pipe'] },
   );
-  const command = `bash -o pipefail -c 'umask 077; test "$(readlink -f /srv/weiban-history-media)" = /srv/weiban-history-media && ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/var/lib/weiban-entry/retirement/old-host-known-hosts -o ConnectTimeout=15 ubuntu@152.136.111.51 "sudo tar --checkpoint=4096 --checkpoint-action=echo=${kind}-transfer -C ${sourceRoot} -cf - ${sourceDirectory}" | tar -C /srv/weiban-history-media --no-same-owner -xf -'`;
+  const command = `bash -o pipefail -c 'umask 077; test "$(readlink -f /srv/weiban/history-media)" = /srv/weiban/history-media && ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/var/lib/weiban-entry/retirement/old-host-known-hosts -o ConnectTimeout=15 ubuntu@152.136.111.51 "sudo tar --checkpoint=4096 --checkpoint-action=echo=${kind}-transfer -C ${sourceRoot} -cf - ${sourceDirectory}" | tar -C /srv/weiban/history-media --no-same-owner -xf -'`;
   const child = spawn(bin + 'ssh.exe', ['-A', ...ssh, command], {
     env,
     windowsHide: true,
