@@ -43,6 +43,7 @@ it.each([
   ['AbortError', '麦克风暂时无法使用'],
   ['NotSupportedError', '当前浏览器不支持录音'],
   ['UnknownError', '录音没有启动'],
+  ['InvalidStateError', '录音状态尚未恢复'],
   ['EmptyRecordingError', '没有录到声音'],
 ])('distinguishes %s without pretending every failure is a denial', (name, title) => {
   expect(microphoneProblem(new DOMException('synthetic failure', name)).title).toBe(title);

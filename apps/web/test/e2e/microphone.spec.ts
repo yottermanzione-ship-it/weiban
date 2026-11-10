@@ -1,39 +1,51 @@
 import { expect, test, type Page } from './fixtures.js';
 
 /** Real app/recorder, synthetic audio source instead of physical hardware; no paid provider. */
-async function microphone(page: Page, error: string | null = null) {
-  await page.addInitScript((initialError) => {
-    const state = { calls: 0, stopped: 0, error: initialError, delay: false, release: () => {} };
-    Object.assign(window, { microphoneTest: state });
-    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
-      configurable: true,
-      value: async () => {
-        state.calls++;
-        if (state.error) throw new DOMException('synthetic device failure', state.error);
-        if (state.delay)
-          await new Promise<void>((resolve) => {
-            state.release = resolve;
-          });
-        const context = new AudioContext();
-        const destination = context.createMediaStreamDestination();
-        const tone = context.createOscillator();
-        tone.connect(destination);
-        tone.start();
-        await context.resume();
-        const stream = destination.stream;
-        for (const track of stream.getTracks()) {
-          const stop = track.stop.bind(track);
-          track.stop = () => {
-            if (track.readyState !== 'ended') state.stopped++;
-            stop();
-            tone.disconnect();
-            void context.close().catch(() => {});
-          };
-        }
-        return stream;
-      },
-    });
-  }, error);
+async function microphone(
+  page: Page,
+  error: string | null = null,
+  audioSessionRestriction = false,
+) {
+  await page.addInitScript(
+    ({ initialError, restrictSession }) => {
+      const state = { calls: 0, stopped: 0, error: initialError, delay: false, release: () => {} };
+      Object.assign(window, { microphoneTest: state });
+      const session = { type: 'auto' };
+      if (restrictSession)
+        Object.defineProperty(navigator, 'audioSession', { configurable: true, value: session });
+      Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+        configurable: true,
+        value: async () => {
+          state.calls++;
+          if (state.error) throw new DOMException('synthetic device failure', state.error);
+          if (restrictSession && !['auto', 'play-and-record'].includes(session.type))
+            throw new DOMException('synthetic WebKit audio-session conflict', 'InvalidStateError');
+          if (state.delay)
+            await new Promise<void>((resolve) => {
+              state.release = resolve;
+            });
+          const context = new AudioContext();
+          const destination = context.createMediaStreamDestination();
+          const tone = context.createOscillator();
+          tone.connect(destination);
+          tone.start();
+          await context.resume();
+          const stream = destination.stream;
+          for (const track of stream.getTracks()) {
+            const stop = track.stop.bind(track);
+            track.stop = () => {
+              if (track.readyState !== 'ended') state.stopped++;
+              stop();
+              tone.disconnect();
+              void context.close().catch(() => {});
+            };
+          }
+          return stream;
+        },
+      });
+    },
+    { initialError: error, restrictSession: audioSessionRestriction },
+  );
 }
 const counts = (page: Page) =>
   page.evaluate(() => {
@@ -190,6 +202,25 @@ test('连续两条语音均上传并保存，第一条发出后释放设备，�
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.reload();
   await expect(voices).toHaveCount(before + 2);
+});
+
+test('苹果声音模式限制：发送提示音后连续三次录音无需刷新', async ({ page }) => {
+  await microphone(page, null, true);
+  await openChat(page);
+  await page.getByRole('button', { name: '切换到按住说话' }).click();
+  const sessionType = () =>
+    page.evaluate(
+      () => (navigator as Navigator & { audioSession: { type: string } }).audioSession.type,
+    );
+  const ids: string[] = [];
+  for (let index = 0; index < 3; index++) {
+    ids.push(await recordAndSend(page));
+    // 真正的发送成功提示音会把闲置页面设为ambient，下一次按住必须恢复auto。
+    await expect.poll(sessionType).toBe('ambient');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  }
+  expect(new Set(ids).size).toBe(3);
+  await expect.poll(() => counts(page)).toEqual({ calls: 4, stopped: 4 });
 });
 
 test('第二次录音编码器启动失败时换用可用格式，不重复请求麦克风或发送', async ({ page }) => {

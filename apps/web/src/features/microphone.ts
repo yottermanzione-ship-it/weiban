@@ -1,4 +1,4 @@
-import { stopPlaybackForMicrophone } from './audio-playback.js';
+import { beginMicrophoneAccess, stopPlaybackForMicrophone } from './audio-playback.js';
 /** Permission requests stay in the explicit click/pointer call stack; never gate on onboarding. */
 export interface MicrophoneProblem {
   title: string;
@@ -45,6 +45,12 @@ export function microphoneProblem(error: unknown): MicrophoneProblem {
     };
   if (name === 'NotFoundError' || name === 'DevicesNotFoundError')
     return { title: '没有找到麦克风', message: '请检查手机或耳机的麦克风是否可用，再重新尝试。' };
+  if (name === 'InvalidStateError')
+    return {
+      title: '录音状态尚未恢复',
+      message:
+        '浏览器的声音状态暂时不适合录音，请重新尝试。若仍不能录音，可刷新网页恢复；这不是拒绝麦克风授权的提示。',
+    };
   if (name === 'NotReadableError' || name === 'TrackStartError' || name === 'AbortError')
     return {
       title: '麦克风暂时无法使用',
@@ -66,8 +72,16 @@ export async function openMicrophone(
 ): Promise<MediaStream> {
   if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia)
     throw new DOMException('Microphone unavailable', 'NotSupportedError');
-  stopPlaybackForMicrophone();
-  return navigator.mediaDevices.getUserMedia({ audio });
+  const finish = beginMicrophoneAccess();
+  try {
+    stopPlaybackForMicrophone();
+    const stream = await navigator.mediaDevices.getUserMedia({ audio });
+    finish(stream);
+    return stream;
+  } catch (error) {
+    finish();
+    throw error;
+  }
 }
 
 /** Check access without leaving an active recording track behind. */
