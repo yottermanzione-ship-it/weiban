@@ -287,7 +287,8 @@ it('资格事实不再回显给模型作第二套判断，私密口吻和关怀�
   expect(prefix).not.toContain('儿童=');
   expect(prefix).not.toContain('允许恋爱=');
   expect(prefix).not.toContain('所有档位/模式均遵守平台硬边界');
-  expect(prefix).toContain('你们是恋人');
+  expect(prefix).toContain('【本轮语气】');
+  expect(prefix).not.toContain('你们是恋人：明确的恋爱关系');
   expect(prefix).toContain('儿童不得恋爱或性化');
   expect(prefix).not.toContain('若用户有自伤风险');
   expect(prefix).not.toContain('不涉及未成年人或真实存在的人');

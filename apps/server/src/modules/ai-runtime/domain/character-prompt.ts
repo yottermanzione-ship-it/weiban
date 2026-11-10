@@ -3,7 +3,7 @@
  * 纯函数；同一人设版本输出逐字相同，保证前缀缓存。原先整段 JSON 塞入，现在改成「标签：值」短行。
  */
 import type { ScenarioMode, WeibanCardData } from '@weiban/contracts';
-import { scenarioText } from './persona.js';
+import { scenarioText, scenarioToneOverride } from './persona.js';
 import { STYLE_TEXT } from './scenario.js';
 import { line, lines, takeWithin } from './prompt-assembly.js';
 
@@ -177,10 +177,12 @@ export function scenarioNote(
   mode: ScenarioMode,
   autoStylePrompt: string | null,
   configuredScenario = false,
+  romancePaused = false,
 ): string {
   const anchor = `继续以{{char}}的身份和口吻回复：${card.speech.tone.slice(0, 60)}；句子${SENTENCE[card.speech.sentenceLength]}。`;
   const style =
-    mode === 'auto'
+    scenarioToneOverride(mode, romancePaused) ??
+    (mode === 'auto'
       ? (autoStylePrompt ?? '')
       : configuredScenario
         ? '【当前情景】遵循前文的当前情景预设，保持角色身份。'
@@ -188,6 +190,26 @@ export function scenarioNote(
           ? `【当前情景】${STYLE_TEXT[mode]}`
           : mode === 'daily'
             ? ''
-            : `【当前情景】${scenarioText(mode)}`;
+            : `【当前情景】${scenarioText(mode)}`);
   return `【写作提示】${anchor}${style ? `\n${style}` : ''}`;
+}
+
+/** Pure output-format hint; never changes the delivery limits or the saved split setting. */
+export function replySceneInstruction(input: {
+  voiceCall: boolean;
+  splitBubbles: boolean;
+  privateMode: boolean;
+  maxTextBubbles: number;
+}): string {
+  if (input.voiceCall)
+    return '现在以角色口吻和用户语音通话，沿用上面的人设、关系、情景、历史、记忆与安全边界。输出会直接念给用户听：只写自然口语，一次一到三句；不写正文标记、表情、括号动作、列表或网址。电话中听到的内容与文字聊天同属这段对话。';
+  const opening = input.privateMode
+    ? '现在以角色口吻与用户私聊。只输出聊天纯文本，保持连贯表达，不输出JSON或括号动作。'
+    : '现在以角色口吻与用户私聊。只输出聊天纯文本，短句换行，不输出JSON或括号动作。';
+  const bubbles = input.splitBubbles
+    ? input.privateMode
+      ? '正文每一行会单独发成一条消息，一次 2～3 条，每条 10～25 字，连起来是一段完整的话；不要把一句话拆成很多短句。'
+      : `正文每一行会单独发成一条消息，一次最多 ${input.maxTextBubbles} 条；话短就一两条，不要为了凑条数硬拆。`
+    : '';
+  return `${opening}${bubbles}回答前可以先想，想完先单独写一行【正文】，然后只写正文聊天内容；【正文】这行本身不发给用户，正文不能为空。`;
 }

@@ -26,3 +26,5 @@
 - [Cline提示词生成](https://github.com/cline/cline/blob/main/sdk/packages/shared/src/prompt/cline.ts)和[OpenCode历史读取](https://github.com/anomalyco/opencode/blob/dev/packages/core/src/session/history.ts)用于核对提示词与有序历史组织，未复制第三方实现。
 
 源码检查、关联用例、最终提交和发布回执在本次PR说明补齐。真实供应商提升比例未验证；模型过期/路由、图片、用户编辑、真实容量耗尽及未完成整理仍可能产生缓存未命中。后台结构估算仍不是逐轮实测。
+
+窗口缓冲和解除过早的500条裁剪可能比旧发送策略多带一些历史；冷启动输入量会增加，连续请求的复用收益仍取决于供应商。字符与模型容量限制不变，不能将结构改进直接表述为实际省费比例。

@@ -39,6 +39,7 @@ import { userStatusLine } from '../domain/user-status.js';
 import { POLICY_PORT } from '../../policy/index.js';
 import { MemoryService } from './memory.js';
 import { stableHistoryReadLimit, uncoveredHistoryEnd } from '../domain/memory-window.js';
+import { allowedAutomaticStyle } from '../domain/persona.js';
 import { contextTokens } from '../../model-access/index.js';
 import { PlayContinuityStore } from './play-continuity.js';
 import { DEFAULT_LOREBOOK, lorebook, lorebookText } from '../domain/knowledge.js';
@@ -56,6 +57,7 @@ import {
   situationalExample,
   situationalExampleText,
   AUTHOR_NOTE_DEPTH,
+  replySceneInstruction,
   CHARACTER_NOTE_DEPTH,
 } from '../domain/character-prompt.js';
 import {
@@ -497,6 +499,10 @@ export class ReplyContext {
         localHour: localHourIn(this.clock.now(), profile.timeZone),
         tsundereAllowed: allowedModes.some((m) => m.id === 'tsundere'),
       });
+      autoResult = allowedAutomaticStyle(
+        autoResult,
+        allowedModes.map((item) => item.id),
+      );
     }
     const style = inCare ? 'daily' : effectiveStyle(mode, autoResult);
     const autoPreset =
@@ -758,9 +764,21 @@ export class ReplyContext {
     const builtInNote = inCare
       ? null
       : card
-        ? scenarioNote(card, mode, autoStyle?.prompt ?? null, !!scenarioPrompt)
+        ? scenarioNote(
+            card,
+            mode,
+            autoStyle?.prompt ?? null,
+            !!scenarioPrompt,
+            stageInput.romancePaused,
+          )
         : legacy
-          ? legacyScenarioNote(legacy, mode, autoStyle?.prompt ?? null, !!scenarioPrompt)
+          ? legacyScenarioNote(
+              legacy,
+              mode,
+              autoStyle?.prompt ?? null,
+              !!scenarioPrompt,
+              stageInput.romancePaused,
+            )
           : null;
     const styleNote = builtInNote;
     if (styleNote)
@@ -812,13 +830,12 @@ export class ReplyContext {
         title: '私聊场景',
         // T-20261103h（总经理 2026-11-03）：文字气泡上限 4 → 6。开着拆条时告诉模型每行发一条、最多几条，
         // 并强调短话照样一两条（拆几条由内容决定，不为凑条数硬拆）；关着拆条时整段只发一条，不提条数。
-        text: voiceCall
-          ? '现在以角色口吻和用户语音通话，沿用上面的人设、关系、情景、历史、记忆与安全边界。输出会直接念给用户听：只写自然口语，一次一到三句；不写正文标记、表情、括号动作、列表或网址。电话中听到的内容与文字聊天同属这段对话。'
-          : `现在以角色口吻与用户私聊。只输出聊天纯文本，短句换行，不输出JSON或括号动作。${
-              settings.splitBubbles
-                ? `正文每一行会单独发成一条消息，一次最多 ${P02_SPLIT_BUBBLES.maxTextBubbles} 条；话短就一两条，不要为了凑条数硬拆。`
-                : ''
-            }回答前可以先想，想完先单独写一行【正文】，然后只写正文聊天内容；【正文】这行本身不发给用户，正文不能为空。`,
+        text: replySceneInstruction({
+          voiceCall,
+          splitBubbles: settings.splitBubbles,
+          privateMode: privateScope && !inCare,
+          maxTextBubbles: P02_SPLIT_BUBBLES.maxTextBubbles,
+        }),
       },
       { title: '表情包', text: stickerHint },
       { title: '本轮语音能力', text: voiceHint },
@@ -1168,7 +1185,7 @@ export class ReplyContext {
     return retrieveRelevantHistory(candidates, input.query, { max: input.max });
   }
   /**
-   * 从新到旧分页读历史，直到覆盖原文起点 floor（最多 3 页、600 条）。
+   * 从新到旧分页读历史，直到覆盖原文起点 floor（最多 4 页、600～663 条）。
    * T-20261103j：去掉登记为「不再发给模型」的消息（被上游安全策略拦过的用户消息），其余照常。
    */
   private async readHistory(
