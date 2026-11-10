@@ -1,3 +1,9 @@
+{
+  on_demand_tls {
+    ask http://weiban-entry:8080/_tls/allow
+  }
+}
+
 {$WEB_DOMAIN} {
   encode zstd gzip
   header {
@@ -37,6 +43,9 @@
     file_server
   }
 }
+
+# Empty until retirement preparation installs the official-domain entry fragment.
+import /etc/caddy/entry-sites/*.caddy
 {$ADMIN_DOMAIN} {
   encode zstd gzip
   header {

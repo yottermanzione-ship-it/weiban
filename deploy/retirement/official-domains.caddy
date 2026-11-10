@@ -1,0 +1,15 @@
+weiban.online, www.weiban.online, dl.weiban.online {
+  # DNS remains with the manager. Issue certificates only after real traffic
+  # reaches this machine, rather than repeatedly validating the old destination.
+  tls {
+    on_demand
+  }
+  encode zstd gzip
+  header {
+    X-Content-Type-Options nosniff
+    Referrer-Policy no-referrer
+    X-Weiban-Entry hong-kong
+    -Server
+  }
+  reverse_proxy weiban-entry:8080
+}

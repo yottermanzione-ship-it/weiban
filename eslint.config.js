@@ -23,8 +23,12 @@ export default [
     rules: { 'weiban/contracts-source': 'off' },
   },
   {
-    // 由旧版 CommonJS 服务加载的精确迁移适配器，不改变其他代码规则。
-    files: ['deploy/legacy-channel-relay/**/*.cjs', 'deploy/fast-cutover/*.cjs'],
+    // 由旧版 CommonJS 服务加载的迁移适配器及独立历史后台，不改变其他代码规则。
+    files: [
+      'deploy/legacy-channel-relay/**/*.cjs',
+      'deploy/fast-cutover/*.cjs',
+      'deploy/retirement/*.cjs',
+    ],
     rules: { '@typescript-eslint/no-require-imports': 'off' },
   },
 ];
