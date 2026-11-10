@@ -8,7 +8,11 @@
  * 不设置 navigator.mediaSession，不抢媒体会话。开关和音色都是本机设置（同深色模式、字体大小）。
  */
 
-import { registerPlaybackStop, releaseAudioPlayback } from './audio-playback.js';
+import {
+  microphoneCaptureActive,
+  registerPlaybackStop,
+  releaseAudioPlayback,
+} from './audio-playback.js';
 const ENABLED_KEY = 'weiban:message-sound';
 export const NOTICE_SOUND_KEY = 'weiban:notice-sound';
 export const noticeSounds = [
@@ -53,7 +57,9 @@ export function setNoticeSound(value: string): void {
 }
 
 /** 让提示音与正在播放的音乐混在一起，不打断音乐（iOS Safari 16.4+；其他浏览器没有此对象时跳过）。 */
-function mixWithOthers(): void {
+function mixWithOthers(): boolean {
+  // ambient与麦克风捕获互斥；授权等待、录音和通话期间不播放提示音或改声音模式。
+  if (microphoneCaptureActive()) return false;
   const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
   if (session && session.type !== 'ambient') {
     try {
@@ -62,6 +68,7 @@ function mixWithOthers(): void {
       // 个别浏览器只读：忽略
     }
   }
+  return true;
 }
 
 const players = new Map<string, HTMLAudioElement>();
@@ -86,7 +93,7 @@ function playable(file: string): string {
 }
 
 function play(file: string): void {
-  mixWithOthers();
+  if (!mixWithOthers()) return;
   const audio = player(playable(file));
   try {
     audio.currentTime = 0;
@@ -119,7 +126,7 @@ export function playNoticeSound(): void {
 }
 /** 设置页试听：不受开关与防抖影响。 */
 export function previewNoticeSound(value: string): Promise<void> {
-  mixWithOthers();
+  if (!mixWithOthers()) return Promise.resolve();
   const file = noticeSounds.find((s) => s.value === value)?.file;
   if (!file) return Promise.resolve();
   const audio = player(playable(file));
