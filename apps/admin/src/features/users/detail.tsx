@@ -56,6 +56,7 @@ import {
 import { SubRecordDrawer, loadUserSubRecords, subColumns } from './sub-records.js';
 import { modelLabel } from '../model/shared.js';
 import { UserRuntimeLogs } from '../client-logs.js';
+import { ResetPasswordDialog } from './reset-password.js';
 
 type LedgerEntry = z.infer<typeof AdminLedgerEntry>;
 type TabKey = 'profile' | 'membership' | 'points' | 'usage' | 'safety' | 'runtime';
@@ -74,6 +75,7 @@ export function UserDetailDrawer({
   onChanged: () => void;
 }) {
   const [tab, setTab] = useState<TabKey>(initialTab);
+  const [resetPassword, setResetPassword] = useState(false);
   const { user, account } = row;
   return (
     <RecordDrawer
@@ -105,7 +107,16 @@ export function UserDetailDrawer({
           { key: 'runtime', label: '客户端报错' },
         ]}
       />
-      {tab === 'profile' && <ProfilePanel row={row} nameOf={nameOf} />}
+      {tab === 'profile' && (
+        <ProfilePanel row={row} nameOf={nameOf} onResetPassword={() => setResetPassword(true)} />
+      )}
+      {resetPassword && (
+        <ResetPasswordDialog
+          key={user.userId}
+          user={user}
+          onClose={() => setResetPassword(false)}
+        />
+      )}
       {tab === 'membership' && <MembershipPanel row={row} nameOf={nameOf} onChanged={onChanged} />}
       {tab === 'points' && <PointsPanel row={row} nameOf={nameOf} onChanged={onChanged} />}
       {tab === 'usage' && <UsagePanel row={row} />}
@@ -119,7 +130,15 @@ export function UserDetailDrawer({
 
 // ---------- 基本资料 ----------
 
-function ProfilePanel({ row, nameOf }: { row: UserRow; nameOf: (id: string | null) => string }) {
+function ProfilePanel({
+  row,
+  nameOf,
+  onResetPassword,
+}: {
+  row: UserRow;
+  nameOf: (id: string | null) => string;
+  onResetPassword: () => void;
+}) {
   const { user } = row;
   return (
     <div className="detail-grid">
@@ -130,6 +149,16 @@ function ProfilePanel({ row, nameOf }: { row: UserRow; nameOf: (id: string | nul
       <div>
         <span className="detail-label">昵称</span>
         <span>{user.nickname || '还没填资料'}</span>
+      </div>
+      <div>
+        <span className="detail-label">密码</span>
+        <Button
+          onClick={onResetPassword}
+          disabled={user.role === 'admin' || user.status !== 'active'}
+        >
+          重置密码
+        </Button>
+        {user.role === 'admin' && <FieldHelp>管理员账号暂不支持在此重置。</FieldHelp>}
       </div>
       <div>
         <span className="detail-label">用户 ID</span>

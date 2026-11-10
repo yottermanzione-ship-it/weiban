@@ -4,17 +4,21 @@
  */
 import { Inject, Injectable } from '@nestjs/common';
 import type { AdminUserOverview, AdminUserSummary } from '@weiban/contracts';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import {
   AppError,
   AUDIT_LOG,
   CLOCK,
   DATABASE,
   type AuditLog,
+  type AuthPrincipal,
   type Clock,
   type Database,
 } from '../../../platform/index.js';
-import { users } from '../infra/db/schema.js';
+import { loginThrottle, users } from '../infra/db/schema.js';
+import { PasswordHasher } from '../infra/password-hasher.js';
+import { passwordWeakness, throttleKey } from '../domain/rules.js';
+import { PASSWORD_HASHER } from './accounts.js';
 import { SessionService } from './sessions.js';
 
 const DAY_MS = 86_400_000;
@@ -49,6 +53,7 @@ export class AdminUsersService {
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
     @Inject(SessionService) private readonly sessions: SessionService,
+    @Inject(PASSWORD_HASHER) private readonly hasher: PasswordHasher,
   ) {}
 
   private toSummary(r: Row, now: number): AdminUserSummary {
@@ -172,5 +177,69 @@ export class AdminUsersService {
       );
     });
     return this.get(userId);
+  }
+
+  /** 使用既有密码算法和会话吊销流程；登录名可变，写入始终绑定详情里的用户编号。 */
+  async resetPassword(operator: AuthPrincipal, userId: string, password: string) {
+    const passwordHash = await this.hasher.hash(password);
+    return this.database.transaction(async (tx) => {
+      // 散列期间管理员可能退出、过期或被降级；在写入前重查并锁住本次管理身份。
+      const actor = await tx.query(
+        `SELECT u.id FROM identity.users u JOIN identity.sessions s ON s.user_id=u.id
+         WHERE u.id=$1 AND u.role='admin' AND u.status='active' AND u.banned_at IS NULL
+           AND s.id=$2 AND s.kind='admin' AND s.expires_at>$3 FOR SHARE OF u,s`,
+        [operator.userId, operator.sessionId, this.clock.now()],
+      );
+      if (!actor.rows.length) throw new AppError('forbidden', '管理登录已失效，请重新登录');
+      // 不锁定管理员目标，避免两个管理员相互重置造成交叉加锁。
+      const [user] = await tx.db
+        .select()
+        .from(users)
+        .where(and(eq(users.id, userId), eq(users.role, 'user'), eq(users.status, 'active')))
+        .for('update');
+      if (!user) {
+        const [other] = await tx.db
+          .select({ role: users.role })
+          .from(users)
+          .where(eq(users.id, userId));
+        if (other?.role === 'admin') throw new AppError('forbidden', '此入口不支持重置管理员密码');
+        throw new AppError('not_found', '账号不存在或已在注销中');
+      }
+      const aliases = await tx.query<{ alias: string }>(
+        'SELECT alias FROM identity.login_aliases WHERE user_id=$1',
+        [userId],
+      );
+      const names = new Set(
+        [user.username, user.currentAlias, ...aliases.rows.map((r) => r.alias)].filter(
+          (v): v is string => !!v,
+        ),
+      );
+      for (const name of names) {
+        const weakness = passwordWeakness(password, name);
+        if (weakness) throw new AppError('bad_request', weakness);
+      }
+      await tx.db
+        .update(users)
+        .set({ passwordHash, updatedAt: this.clock.now() })
+        .where(eq(users.id, userId));
+      const revokedSessions = await this.sessions.revokeAll(tx, userId, 'revoked');
+      for (const name of names)
+        await tx.db
+          .delete(loginThrottle)
+          .where(eq(loginThrottle.key, throttleKey('username', name)));
+      await this.audit.record(
+        {
+          module: 'identity',
+          action: 'password.reset',
+          actorType: 'admin',
+          actorId: operator.userId,
+          targetType: 'user',
+          targetId: userId,
+          details: { revokedSessions },
+        },
+        tx,
+      );
+      return { revokedSessions };
+    });
   }
 }

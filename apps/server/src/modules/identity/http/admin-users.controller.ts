@@ -51,6 +51,18 @@ export class AdminUsersController {
     return this.service.unban(me.userId, params.userId);
   }
 
+  @Post(':userId/password')
+  @HttpCode(200)
+  @RequireAuth(A.resetPassword.auth)
+  resetPassword(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Param(new ContractPipe(A.resetPassword.params!)) params: { userId: string },
+    @Body(new ContractPipe(A.resetPassword.body!))
+    body: z.output<NonNullable<typeof A.resetPassword.body>>,
+  ) {
+    return this.service.resetPassword(me, params.userId, body.password);
+  }
+
   @Post(':userId/deletion')
   @HttpCode(200)
   @RequireAuth(A.deleteUser.auth)

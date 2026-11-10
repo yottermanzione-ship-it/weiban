@@ -4,6 +4,7 @@
  */
 import { z } from 'zod';
 import { API_PREFIX, Id, Timestamp, defineEndpoint } from '../common.js';
+import { Password } from '../password.js';
 
 /**
  * 后台展示「这是谁」用的最小身份：优先昵称（identity.profiles.nickname），其次登录名；
@@ -60,6 +61,9 @@ export type AdminUserOverview = z.infer<typeof AdminUserOverview>;
 
 export const BanUserRequest = z.object({ reason: z.string().trim().min(2).max(200) }).strict();
 
+/** 管理员输入新密码；响应、审计和客户端草稿均不得保存密码。 */
+export const AdminResetPasswordRequest = z.object({ password: Password }).strict();
+
 export const AdminDeleteUserRequest = z
   .object({
     /** 二次确认：必须填该账号的登录名（不区分大小写）。 */
@@ -100,6 +104,16 @@ export const AdminUsersEndpoints = {
     params: z.object({ userId: Id }),
     response: AdminUserSummary,
     summary: '3.21：解除封禁；写审计',
+  }),
+  resetPassword: defineEndpoint({
+    method: 'POST',
+    path: API_PREFIX + '/admin/users/:userId/password',
+    auth: 'admin',
+    params: z.object({ userId: Id }),
+    body: AdminResetPasswordRequest,
+    response: z.object({ revokedSessions: z.number().int().nonnegative() }),
+    summary:
+      '7.10：管理会话按用户编号重置普通用户密码、退出全部旧登录、清除该用户登录名锁定并写管理员审计；不解封，不返回密码。管理员账号403，注销中或不存在404',
   }),
   deleteUser: defineEndpoint({
     method: 'POST',

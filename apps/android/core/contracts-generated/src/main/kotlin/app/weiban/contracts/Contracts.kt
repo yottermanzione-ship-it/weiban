@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 7.9. Regenerate: pnpm android:generate
+// Contract 7.10. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "7.9"
+const val CONTRACT_VERSION: String = "7.10"
 
 @Serializable
 data class AccountAlias(
@@ -766,6 +766,11 @@ data class AdminReleaseNote(
 )
 
 @Serializable
+data class AdminResetPasswordRequest(
+    @SerialName("password") val `password`: Password,
+)
+
+@Serializable
 data class AdminRoleRequest(
     @SerialName("requestId") val `requestId`: Id,
     @SerialName("roleName") val `roleName`: String,
@@ -1244,6 +1249,16 @@ data class AdminUsersEndpointsDeleteUserResponse(
 @Serializable
 data class AdminUsersEndpointsListUsersResponse(
     @SerialName("items") val `items`: List<AdminUserSummary>,
+)
+
+@Serializable
+data class AdminUsersEndpointsResetPasswordParams(
+    @SerialName("userId") val `userId`: Id,
+)
+
+@Serializable
+data class AdminUsersEndpointsResetPasswordResponse(
+    @SerialName("revokedSessions") val `revokedSessions`: Long,
 )
 
 @Serializable
