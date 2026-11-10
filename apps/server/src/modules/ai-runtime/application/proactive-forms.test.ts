@@ -12,7 +12,12 @@
  */
 import 'reflect-metadata';
 import { describe, expect, it, vi } from 'vitest';
-import type { Message, MessageContent, ModelGatewayMediaPort } from '@weiban/contracts';
+import type {
+  GenerateTextInput,
+  Message,
+  MessageContent,
+  ModelGatewayMediaPort,
+} from '@weiban/contracts';
 import { MediaAiService } from './media-ai.js';
 import type { PlanBatchRequest, PlanResult } from './planner.js';
 import { ProactiveSchedulerService, type EcologySendExtras } from './proactive-scheduler.js';
@@ -130,22 +135,28 @@ function harness(
   } = {},
 ) {
   const media = mediaAi(opts.photos);
+  const warn = vi.fn();
   const posted: Array<{ content: MessageContent; idempotencyKey: string; charge?: unknown }> = [];
-  const generate = vi.fn(async (_req: Record<string, unknown>, _privateModel: boolean) => ({
+  const generate = vi.fn(async (_req: GenerateTextInput, _privateModel: boolean) => ({
     ok: true as const,
     value: { text: opts.text ?? RAW, usageRecordId: 'text-usage', chargedMicros: 100 },
   }));
   const readMessages = vi.fn(async () => opts.history ?? tenTexts());
   const update = () => ({ set: () => ({ where: async () => undefined }) });
   const tx = { query: async () => undefined, db: { update } };
+  const transaction = vi.fn(async (fn: (t: typeof tx) => unknown) => fn(tx));
   const service = Object.create(ProactiveSchedulerService.prototype) as ProactiveSchedulerService;
   Object.assign(service, {
     handlers: [],
     clock: { now: () => new Date('2026-11-03T12:00:00Z'), nowMs: () => 1000 },
-    db: { db: { update }, transaction: async (fn: (t: typeof tx) => unknown) => fn(tx) },
+    db: { db: { update }, transaction },
     contacts: { getActiveContactEpoch: async () => ({ version: 1 }) },
     characters: {
-      getForRuntime: async () => ({ profile: { kind: 'preset' }, card: null, legacyCard: null }),
+      getForRuntime: async () => ({
+        profile: { kind: 'preset', name: '林晚' },
+        card: null,
+        legacyCard: null,
+      }),
     },
     policy: {
       getCharacterPolicy: async () => ({
@@ -183,6 +194,7 @@ function harness(
       }),
     },
     adultBoundary: { generate },
+    logger: { warn },
     accounts: { getAccountStatus: async () => 'active' },
     quota: { recordSent: vi.fn() },
     writer: {
@@ -232,8 +244,63 @@ function harness(
     (
       generate.mock.calls[0]?.[0] as { messages?: Array<{ content: string }> } | undefined
     )?.messages?.at(-1)?.content ?? '';
-  return { ...media, send, posted, generate, hinted, prompt };
+  return { ...media, send, posted, generate, hinted, prompt, transaction, warn };
 }
+
+const META_SAMPLES = [
+  '我们需要回答群聊。需要判断角色。没有指定是谁。',
+  '用户给我发了今天日常的事实底稿，还有个系统提示要我自己主动发起聊天。',
+  'user and assistant chatting in Chinese. Assistant is a persona? Need send...',
+];
+
+describe('主动消息绑定角色并拦截思考', () => {
+  it.each(META_SAMPLES.map((text, index) => ({ text, index: index + 1 })))(
+    '合成样例 $index 重试一次仍拦截，没有发消息或进入写入事务',
+    async ({ text }) => {
+      const h = harness({ text });
+      expect(await h.send()).toMatchObject({ ok: false, reason: 'output_guard' });
+      expect(h.generate).toHaveBeenCalledTimes(2);
+      const [first, retry] = h.generate.mock.calls.map(([request]) => request);
+      expect(retry!.messages.slice(0, -1)).toEqual(first!.messages);
+      expect(retry!.messages.at(-1)).toMatchObject({
+        role: 'system',
+        content: expect.stringContaining('不写分析'),
+      });
+      expect(retry!.idempotencyKey).not.toBe(first!.idempotencyKey);
+      expect(h.posted).toEqual([]);
+      expect(h.transaction).not.toHaveBeenCalled();
+      expect(h.planExtras).not.toHaveBeenCalled();
+      expect(h.warn.mock.calls).toEqual([
+        [
+          {
+            code: 'ai_meta_reasoning_blocked',
+            conversationKind: 'proactive',
+            characterId: CHARACTER,
+          },
+        ],
+      ]);
+    },
+  );
+
+  it.each([false, true])('绑定身份且普通台词原样发送，是否补写 %s', async (retry) => {
+    const text = '行，那我先睡了，明天聊。';
+    const h = harness({ text });
+    h.planExtras.mockResolvedValue(null);
+    if (retry)
+      h.generate.mockResolvedValueOnce({
+        ok: true,
+        value: { text: META_SAMPLES[1]!, usageRecordId: 'first', chargedMicros: 100 },
+      });
+    expect(await h.send()).toMatchObject({ ok: true });
+    const system = h.generate.mock.calls[0]![0].messages.filter((m) => m.role === 'system')
+      .map((m) => m.content)
+      .join('\n');
+    expect(system).toContain('你现在是「林晚」');
+    expect(system).toContain('只输出要发出去的消息正文');
+    expect(h.posted.map((p) => p.content)).toEqual([{ type: 'text', text }]);
+    expect(h.generate).toHaveBeenCalledTimes(retry ? 2 : 1);
+  });
+});
 
 describe('生态主动消息复用聊天回复的形式判断', () => {
   it('形式判断被调用：批准语音和表情包时发语音 + 表情包，按后台消耗计费、费用并进总额', async () => {

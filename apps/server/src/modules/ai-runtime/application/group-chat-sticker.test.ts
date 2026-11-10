@@ -73,6 +73,10 @@ function mediaAi() {
 
 function harness(history: Message[], reply: string, inputTokens = 100_000) {
   const posted: Array<{ content: MessageContent; idempotencyKey: string }> = [];
+  const warn = vi.fn();
+  const checkpoint = vi.fn(
+    async (row: { retryEpoch: number }, _patch: { result?: unknown }) => row,
+  );
   const generate = vi.fn(async (_req: GenerateTextInput) => ({
     ok: true as const,
     value: { text: reply, usageRecordId: 'usage', chargedMicros: 10, modelKey: 'm' },
@@ -110,6 +114,8 @@ function harness(history: Message[], reply: string, inputTokens = 100_000) {
     captions: { forMessages: async () => new Map() },
     gateway: { getContextBudget: async () => ({ inputTokens }) },
     adultBoundary: { generate },
+    logger: { warn },
+    replies: { open: async () => null, checkpoint },
     writer: {
       postMessage: async (input: { content: MessageContent; idempotencyKey: string }) => {
         posted.push(input);
@@ -118,10 +124,10 @@ function harness(history: Message[], reply: string, inputTokens = 100_000) {
     },
     mediaAi: mediaAi(),
   });
-  const speak = (triggerSeq: number) =>
+  const speak = (triggerSeq: number, overrides: Record<string, unknown> = {}) =>
     (
       service as unknown as {
-        speak(input: Record<string, unknown>): Promise<{ text: string } | null>;
+        speak(input: Record<string, unknown>): Promise<{ text: string } | 'skipped' | null>;
       }
     ).speak({
       userId: 'user',
@@ -136,11 +142,76 @@ function harness(history: Message[], reply: string, inputTokens = 100_000) {
       topic: null,
       labels: [],
       triggerSeq,
+      ...overrides,
     });
   const prompt = () => generate.mock.calls[0]?.[0].messages.at(-1)?.content ?? '';
   const requests = () => generate.mock.calls.map(([request]) => request);
-  return { speak, posted, prompt, requests };
+  return { speak, posted, prompt, requests, generate, checkpoint, warn };
 }
+
+const META_SAMPLES = [
+  '我们需要回答群聊。需要判断角色。没有指定是谁。',
+  '用户给我发了今天日常的事实底稿，还有个系统提示要我自己主动发起聊天。',
+  'user and assistant chatting in Chinese. Assistant is a persona? Need send...',
+];
+
+describe('群聊绑定说话人并拦截思考', () => {
+  it.each(META_SAMPLES.map((reply, index) => ({ reply, index: index + 1 })))(
+    '合成样例 $index 重试一次仍拦截，没有待发结果或消息',
+    async ({ reply }) => {
+      const trigger = msg('user', text('@林晚 你来聊聊'), 'user-p');
+      const h = harness([trigger], reply);
+      expect(await h.speak(trigger.seq, { reason: 'mentioned', durable: { retryEpoch: 0 } })).toBe(
+        'skipped',
+      );
+      expect(h.posted).toEqual([]);
+      expect(h.checkpoint.mock.calls.some(([, patch]) => patch.result != null)).toBe(false);
+      expect(h.requests()).toHaveLength(2);
+      const [first, retry] = h.requests() as [GenerateTextInput, GenerateTextInput];
+      expect(retry.messages.slice(0, -1)).toEqual(first.messages);
+      expect(retry.messages.at(-1)).toMatchObject({
+        role: 'system',
+        content: expect.stringContaining('不写分析'),
+      });
+      expect(retry.idempotencyKey).not.toBe(first.idempotencyKey);
+      expect(h.warn.mock.calls).toEqual([
+        [
+          {
+            code: 'ai_meta_reasoning_blocked',
+            conversationKind: 'group',
+            characterId: 'character-a',
+          },
+        ],
+      ]);
+    },
+  );
+
+  it('被点名时写明角色身份与任务，普通台词原样发送', async () => {
+    const trigger = msg('user', text('@林晚 你来聊聊'), 'user-p');
+    const reply = '行，那我先睡了，明天聊。';
+    const h = harness([trigger], reply);
+    await h.speak(trigger.seq, { reason: 'mentioned' });
+    const system = h.requests()[0]!.messages.filter((m) => m.role === 'system');
+    expect(system.map((m) => m.content).join('\n')).toContain('你现在是「林晚」');
+    expect(system.map((m) => m.content).join('\n')).toContain('不写分析');
+    expect(h.prompt()).toContain('有人在群里叫到「林晚」了，用「林晚」的身份直接回一句。');
+    expect(h.posted.map((p) => p.content)).toEqual([text(reply)]);
+    expect(h.generate).toHaveBeenCalledOnce();
+    expect(h.warn).not.toHaveBeenCalled();
+  });
+
+  it('补写成功时只发送补写出的台词', async () => {
+    const reply = '行，那我先睡了，明天聊。';
+    const h = harness([], reply);
+    h.generate.mockResolvedValueOnce({
+      ok: true,
+      value: { text: META_SAMPLES[0]!, usageRecordId: 'first', chargedMicros: 10, modelKey: 'm' },
+    });
+    await h.speak(0);
+    expect(h.generate).toHaveBeenCalledTimes(2);
+    expect(h.posted.map((p) => p.content)).toEqual([text(reply)]);
+  });
+});
 
 describe('群聊发言配表情包', () => {
   it('能配时提示里给群聊说法；标记剥掉，表情包跟在文字后面', async () => {

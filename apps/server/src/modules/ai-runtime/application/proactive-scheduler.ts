@@ -30,6 +30,7 @@ import {
   type Contact,
   type ContactsReadPort,
   type DailyEventPort,
+  type GenerateTextInput,
   type HolidayEventPort,
   type IdentityAccountStatusPort,
   type IdentityReadPort,
@@ -44,12 +45,14 @@ import {
   CLOCK,
   DATABASE,
   JOB_QUEUE,
+  LOGGER,
   newId,
   type AuditLog,
   type Clock,
   type Database,
   type DbTx,
   type JobQueue,
+  type Logger,
 } from '../../../platform/index.js';
 import { BILLING_READ_PORT } from '../../billing/index.js';
 import { CHAT_PARTICIPANT_PORT, CHAT_READ_PORT } from '../../chat/index.js';
@@ -69,7 +72,13 @@ import {
   HOLIDAY_EVENT_PORT,
   PROACTIVE_MESSAGE_PORT,
 } from '../../proactive/index.js';
-import { outputAllowed, splitReply, takeAfterFinalMarker } from '../domain/reply-rules.js';
+import {
+  looksLikeMetaReasoning,
+  metaReasoningRetryInput,
+  outputAllowed,
+  splitReply,
+  takeAfterFinalMarker,
+} from '../domain/reply-rules.js';
 import { takeStickerMarker } from '../domain/sticker-marker.js';
 import { takePhotoMarker } from '../domain/photo-marker.js';
 import {
@@ -370,6 +379,7 @@ export class ProactiveSchedulerService {
     /** T-082 PLAY-02：宠物读取（推演一致、提议领养、宠物照片）与角色照片进相册。 */
     @Optional() @Inject(GROWTH_PET_READ_PORT) private readonly pets?: PetReadPort,
     @Optional() @Inject(GROWTH_PET_ALBUM) private readonly album?: PetAlbum,
+    @Optional() @Inject(LOGGER) private readonly logger?: Logger,
   ) {}
 
   private readonly handlers: Array<{ prefix: string; handle: ProactivePlanHandler }> = [];
@@ -1251,74 +1261,89 @@ export class ProactiveSchedulerService {
           .catch(() => null)
       : null;
     const mediaHint = [stickerHint, photo?.text ?? ''].filter(Boolean).join('\n');
-    const generateWith = (privateModel: boolean, turns: typeof recent) =>
-      this.adultBoundary.generate(
+    const requestFor = (privateModel: boolean, turns: typeof recent): GenerateTextInput => ({
+      userId: ctx.userId,
+      characterId: plan.characterId,
+      conversationId: conversation.conversationId,
+      purpose: care ? 'safety_followup' : 'proactive',
+      billingOwner: 'user',
+      modelRole: privateModel ? 'adult' : 'chat',
+      countAsBackground: !care,
+      ecologyTask: !care,
+      responseFormat: 'text',
+      maxOutputTokens: 300,
+      idempotencyKey: `proactive:${plan.id}${care && adult && !privateModel ? ':care-normal' : ''}`,
+      messages: [
+        ...brainMessages(
+          (privateModel ? privateBrain : normalBrain)!,
+          privateModel ? 'adult' : 'chat',
+        ),
         {
-          userId: ctx.userId,
-          characterId: plan.characterId,
-          conversationId: conversation.conversationId,
-          purpose: care ? 'safety_followup' : 'proactive',
-          billingOwner: 'user',
-          modelRole: privateModel ? 'adult' : 'chat',
-          countAsBackground: !care,
-          ecologyTask: !care,
-          responseFormat: 'text',
-          maxOutputTokens: 300,
-          idempotencyKey: `proactive:${plan.id}${care && adult && !privateModel ? ':care-normal' : ''}`,
-          messages: [
-            ...brainMessages(
-              (privateModel ? privateBrain : normalBrain)!,
-              privateModel ? 'adult' : 'chat',
-            ),
-            {
-              role: 'system',
-              content: `你在微伴里以角色口吻主动给用户发私聊消息。只输出聊天纯文本，短句、口语、可以换行分成 1–3 条气泡；不输出JSON或括号动作；不编造真人公开声明；儿童不得恋爱或性化。真人=${policy.isRealPerson}，儿童=${policy.isMinor}，允许恋爱=${policy.romanceAllowed}。${eco && level >= 3 ? '「在干嘛」「想你了」这类没有具体内容的话可以偶尔说，但别总这样。' : '不要用「在干嘛」「想你了」这类没有内容的开场。'}${eco?.greeting ? '这次是早安或晚安：结合今天的具体情况说，别用套话。' : '不说早安晚安套话。'}不做情感操纵：不制造愧疚、不说一直在等、不追问、不威胁。`,
-            },
-            {
-              role: 'system',
-              content: `${userNamingContext(address)}\n用户当地时间：${ctx.localDate} ${String(ctx.localHour).padStart(2, '0')}点（${ctx.timeZone}）${petBlock ? `\n${petBlock}` : ''}`,
-            },
-            ...turns,
-            ...brainTail((privateModel ? privateBrain : normalBrain)!),
-            {
-              role: 'user',
-              content: `【系统提示，不是用户说的话】现在由你主动发起一次聊天。这次的理由：${care && adult && !privateModel ? '确认对方当前是否平安，不复述先前私密谈话。' : plan.brief}${
-                careNote
-                  ? `
-${careNote}`
-                  : ''
-              }${mediaHint && !privateModel ? `\n${mediaHint}` : ''}`,
-            },
-          ],
-          meta: {
-            stablePrefixChars: (privateModel ? privateBrain : normalBrain)!.prefix.length,
-            promptTemplateVersion: 'brain-v3-platform:proactive',
-            conversationKind: 'direct',
-            scenarioMode: privateModel
-              ? 'adult'
-              : settings.scenarioMode === 'adult'
-                ? 'daily'
-                : (settings.scenarioMode ?? 'daily'),
-          },
+          role: 'system',
+          content: `你在微伴里主动给用户发私聊消息。你现在是「${role.profile.name}」，只以「${role.profile.name}」的身份写这条消息。只输出要发出去的消息正文，不写你在想什么、判断什么、计划什么。不写分析或身份推断。用聊天纯文本，短句、口语、可以换行分成 1–3 条气泡；不输出JSON或括号动作；不编造真人公开声明；儿童不得恋爱或性化。真人=${policy.isRealPerson}，儿童=${policy.isMinor}，允许恋爱=${policy.romanceAllowed}。${eco && level >= 3 ? '「在干嘛」「想你了」这类没有具体内容的话可以偶尔说，但别总这样。' : '不要用「在干嘛」「想你了」这类没有内容的开场。'}${eco?.greeting ? '这次是早安或晚安：结合今天的具体情况说，别用套话。' : '不说早安晚安套话。'}不做情感操纵：不制造愧疚、不说一直在等、不追问、不威胁。`,
         },
-        privateModel,
-      );
-    const first = await generateWith(adult, recent);
-    const careFallback = !first.ok && care && adult;
-    const result = careFallback ? await generateWith(false, recentNormalOnly) : first;
-    const adultUsed = adult && !careFallback;
+        {
+          role: 'system',
+          content: `${userNamingContext(address)}\n用户当地时间：${ctx.localDate} ${String(ctx.localHour).padStart(2, '0')}点（${ctx.timeZone}）${petBlock ? `\n${petBlock}` : ''}`,
+        },
+        ...turns,
+        ...brainTail((privateModel ? privateBrain : normalBrain)!),
+        {
+          role: 'user',
+          content: `【系统提示，不是用户说的话】现在由你主动发起一次聊天。这次的理由：${care && adult && !privateModel ? '确认对方当前是否平安，不复述先前私密谈话。' : plan.brief}${
+            careNote
+              ? `
+${careNote}`
+              : ''
+          }${mediaHint && !privateModel ? `\n${mediaHint}` : ''}`,
+        },
+      ],
+      meta: {
+        stablePrefixChars: (privateModel ? privateBrain : normalBrain)!.prefix.length,
+        promptTemplateVersion: 'brain-v3-platform:proactive',
+        conversationKind: 'direct',
+        scenarioMode: privateModel
+          ? 'adult'
+          : settings.scenarioMode === 'adult'
+            ? 'daily'
+            : (settings.scenarioMode ?? 'daily'),
+      },
+    });
+    let request = requestFor(adult, recent);
+    let result = await this.adultBoundary.generate(request, adult);
+    let adultUsed = adult;
+    if (!result.ok && care && adult) {
+      adultUsed = false;
+      request = requestFor(false, recentNormalOnly);
+      result = await this.adultBoundary.generate(request, adultUsed);
+    }
     if (!result.ok) {
       return this.fail(plan, `model_${result.error}`);
+    }
+    // 先剥掉形式标记再检查完整正文，不能让思考文本进入拆条或语音合成。
+    const prepare = (text: string) => {
+      const photo = takePhotoMarker(takeAfterFinalMarker(text));
+      return { ...takeStickerMarker(photo.text), photo: photo.photo };
+    };
+    let marked = prepare(result.value.text);
+    let textCharged = result.value.chargedMicros;
+    if (looksLikeMetaReasoning(marked.text)) {
+      this.logger?.warn({
+        code: 'ai_meta_reasoning_blocked',
+        conversationKind: 'proactive',
+        characterId: plan.characterId,
+      });
+      result = await this.adultBoundary.generate(metaReasoningRetryInput(request), adultUsed);
+      if (!result.ok) return this.fail(plan, `model_${result.error}`, textCharged);
+      textCharged += result.value.chargedMicros;
+      marked = prepare(result.value.text);
+      if (looksLikeMetaReasoning(marked.text)) return this.fail(plan, 'output_guard', textCharged);
     }
     // v3.3（积分制）：这条主动消息消耗的积分记在第一个气泡上（Message.pointsCost）。
     const charge = {
       usageRecordId: result.value.usageRecordId,
-      chargedMicros: result.value.chargedMicros,
+      chargedMicros: textCharged,
     };
-    // T-20261103d：剥掉模型写的「[表情:…]」标记（任何主动消息都剥，用户绝不能看到），情绪交给形式判断。
-    // T-20261103g：「[照片]」标记同样剥掉；只有提示里给过照片、模型写了标记时才交给形式判断发图。
-    const photoMarked = takePhotoMarker(takeAfterFinalMarker(result.value.text));
-    const marked = takeStickerMarker(photoMarked.text);
     const bubbles = splitReply(marked.text, settings.splitBubbles).slice(0, 3);
     // 关怀跟进的输出按日常范围检查（不放行成人用词）。
     if (!bubbles.length || !bubbles.every((b) => outputAllowed(b, policy, adultUsed && !care))) {
@@ -1352,7 +1377,7 @@ ${careNote}`
           sensitive: healthPrivate(bubbles.join('\n')),
           path: 'proactive',
           stickerMood: marked.mood,
-          photo: photoMarked.photo ? (photo?.offer ?? null) : null,
+          photo: marked.photo ? (photo?.offer ?? null) : null,
           onMediaCharged: (micros) => {
             charged += micros;
           },

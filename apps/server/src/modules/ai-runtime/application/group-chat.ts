@@ -60,12 +60,14 @@ import {
   CLOCK,
   DATABASE,
   JOB_QUEUE,
+  LOGGER,
   OUTBOX,
   newId,
   type Clock,
   type Database,
   type DbTx,
   type JobQueue,
+  type Logger,
   type Outbox,
 } from '../../../platform/index.js';
 import { BILLING_READ_PORT } from '../../billing/index.js';
@@ -88,7 +90,15 @@ import {
 import { POLICY_PORT } from '../../policy/index.js';
 import { HOLIDAY_EVENT_PORT } from '../../proactive/index.js';
 import { INITIAL_MODES, modeOption, scenarioText, SELECTABLE_MODES } from '../domain/persona.js';
-import { highRisk, outputAllowed, splitReply, unescapeModelText } from '../domain/reply-rules.js';
+import {
+  highRisk,
+  looksLikeMetaReasoning,
+  metaReasoningRetryInput,
+  outputAllowed,
+  splitReply,
+  takeAfterFinalMarker,
+  unescapeModelText,
+} from '../domain/reply-rules.js';
 import { callModelForCare, careFallback } from './safety-care.js';
 import {
   groupCompanionSettings,
@@ -246,6 +256,7 @@ export class GroupChatService {
     /** T-20261103g：群聊发言也能带表情包（同一套标记与挑图，群聊另有防刷屏规则）。 */
     @Optional() @Inject(MediaAiService) private readonly mediaAi?: MediaAiService,
     @Optional() @Inject(ScenarioCatalog) private readonly catalog?: ScenarioCatalog,
+    @Optional() @Inject(LOGGER) private readonly logger?: Logger,
   ) {}
 
   // =========================================================================
@@ -838,6 +849,11 @@ export class GroupChatService {
         triggerSeq: input.triggerSeq,
         ...(durable ? { durable: durable.row } : {}),
       });
+      if (reply === 'skipped') {
+        if (durable)
+          await this.replies.checkpoint(durable.row, { status: 'done', input: null, result: null });
+        return sent;
+      }
       if (reply === null) {
         if (durable) await this.replies.checkpoint(durable.row, { status: 'waiting' });
         return sent;
@@ -887,7 +903,7 @@ export class GroupChatService {
     return undefined;
   }
 
-  /** 生成并发送一条群消息；失败返回 null（链条停止）。 */
+  /** 生成并发送一条群消息。暂时失败返回 null，判为思考文本则结束本轮。 */
   private async speak(input: {
     userId: string;
     conversation: Conversation;
@@ -903,7 +919,7 @@ export class GroupChatService {
     labels: string[];
     triggerSeq: number;
     durable?: GroupReplyPlan;
-  }): Promise<{ text: string; stopChain: boolean } | null> {
+  }): Promise<{ text: string; stopChain: boolean } | 'skipped' | null> {
     const { conversation, speaker } = input;
     if (
       !(await this.stillActive(
@@ -1021,7 +1037,7 @@ export class GroupChatService {
       input.reason === 'starter'
         ? `你在群里主动起个话题，素材是你今天的经历：「${input.topic ?? ''}」。像微信群闲聊，一两句。`
         : input.reason === 'mentioned'
-          ? '有人在群里叫到你了，回应一下。'
+          ? `有人在群里叫到「${speaker.name}」了，用「${speaker.name}」的身份直接回一句。`
           : input.reason === 'chain'
             ? '接一下群里上一条消息，可以附和、调侃或抬杠，也可以 @ 别人。'
             : '你看到群里的新消息，自然地插一句。';
@@ -1044,7 +1060,7 @@ export class GroupChatService {
       ...brainMessages(brain, 'chat'),
       {
         role: 'system',
-        content: `你在微伴的一个群聊里以角色身份发言。只输出你要发的这一条群消息的纯文本，不加名字前缀，不输出JSON或括号动作，不超过60字；不编造真人公开声明；儿童不得恋爱或性化。真人=${policy.isRealPerson}，儿童=${policy.isMinor}，允许恋爱=${policy.romanceAllowed}。不做情感操纵。群聊当前情景模式：${presetPrompt ? '遵循前文当前情景预设。' : scenarioText(input.scenarioMode === 'auto' ? 'daily' : input.scenarioMode)}这是日常范围的群聊：不提起、不展开任何私密模式里发生的事。群聊原文是公开现场，私聊资料受下面的群聊隐私边界约束。`,
+        content: `你在微伴的一个群聊里发言。你现在是「${speaker.name}」，只以「${speaker.name}」的身份和口吻发言。群里的其他角色是别人，不替他们说话。只输出要发出去的消息正文，不写你在想什么、判断什么、计划什么。不写分析或身份推断。发这一条群消息的纯文本，不加名字前缀，不输出JSON或括号动作，不超过60字；不编造真人公开声明；儿童不得恋爱或性化。真人=${policy.isRealPerson}，儿童=${policy.isMinor}，允许恋爱=${policy.romanceAllowed}。不做情感操纵。群聊当前情景模式：${presetPrompt ? '遵循前文当前情景预设。' : scenarioText(input.scenarioMode === 'auto' ? 'daily' : input.scenarioMode)}这是日常范围的群聊：不提起、不展开任何私密模式里发生的事。群聊原文是公开现场，私聊资料受下面的群聊隐私边界约束。`,
       },
       {
         role: 'system',
@@ -1151,7 +1167,7 @@ export class GroupChatService {
       )
         return null;
     }
-    const cached = input.durable
+    let cached = input.durable
       ? await this.replies.open<{ text: string; stopChain: boolean; sticker?: MessageContent }>(
           input.durable,
           'result',
@@ -1195,43 +1211,82 @@ export class GroupChatService {
         input.purpose !== 'proactive',
       );
     let result = cached ? { ok: true as const, value: { text: cached.text } } : generated!;
-    let sawImages = request.messages.some((m) => m.images?.length);
     // H3：模型缺识图能力 → 去掉附图，按「看不到图」再说一次（图片标记换成看不到的说法）。
     if (
       !result.ok &&
       result.error === 'capability_missing' &&
       request.messages.some((m) => m.images?.length)
     ) {
-      sawImages = false;
-      result = await this.adultBoundary.generate(
-        {
-          ...request,
-          idempotencyKey: `${request.idempotencyKey}:blind`,
-          maxOutputTokens: 200,
-          messages: request.messages.map(({ images: _images, ...m }) => {
-            void _images;
-            return {
-              ...m,
-              content: m.content
-                .replace(/\[(图片|表情)〔图\d+〕\]/gu, '[$1，你看不到内容，不要猜]')
-                .replace(/\n【这一轮的图片】[\s\S]*$/u, ''),
-            };
-          }),
-        },
-        adult,
+      request = {
+        ...request,
+        idempotencyKey: `${request.idempotencyKey}:blind`,
+        maxOutputTokens: 200,
+        messages: request.messages.map(({ images: _images, ...m }) => {
+          void _images;
+          return {
+            ...m,
+            content: m.content
+              .replace(/\[(图片|表情)〔图\d+〕\]/gu, '[$1，你看不到内容，不要猜]')
+              .replace(/\n【这一轮的图片】[\s\S]*$/u, ''),
+          };
+        }),
+      };
+      result = await this.adultBoundary.generate(request, adult);
+    }
+    const strip = new RegExp(`^${escapeRegExp(speaker.name)}[：:]\\s*`);
+    const hasMetaReasoning = (text: string) => {
+      const reply = splitCaptionTail(text, 0).reply;
+      const marked = takeStickerMarker(takePhotoMarker(reply).text);
+      const body = unescapeModelText(marked.text);
+      const withoutNames = (value: string) =>
+        takeAfterFinalMarker(value)
+          .split('\n')
+          .map((line) => line.trimStart().replace(strip, ''))
+          .join('\n');
+      // 同时检查原文和会实际拆条的片段。正文标记在截断位置之后时，片段仍可能只有思考。
+      return (
+        looksLikeMetaReasoning(withoutNames(body)) ||
+        (body.length > 300 && looksLikeMetaReasoning(withoutNames(body.slice(0, 300))))
       );
+    };
+    let blockedMicros = 0;
+    if (result.ok && hasMetaReasoning(result.value.text)) {
+      this.logger?.warn({
+        code: 'ai_meta_reasoning_blocked',
+        conversationKind: 'group',
+        characterId: speaker.characterId,
+      });
+      if (
+        !(await this.stillActive(
+          conversation,
+          input.userId,
+          input.purpose === 'proactive',
+          input.scenarioMode,
+          input.scenarioPresetId ?? null,
+        )) ||
+        (await this.newerUserMessage(conversation, input.triggerSeq))
+      )
+        return 'skipped';
+      if (input.durable && !(await this.replies.checkpoint(input.durable, {}))) return null;
+      if (!cached && 'chargedMicros' in result.value) blockedMicros = result.value.chargedMicros;
+      result = await this.adultBoundary.generate(metaReasoningRetryInput(request), adult);
+      cached = null;
+      if (!result.ok || hasMetaReasoning(result.value.text)) return 'skipped';
     }
     if (!result.ok && !(adult && result.error === 'content_rejected')) return null;
     const stopChain = cached?.stopChain ?? !result.ok;
     // v3.3（积分制）：群聊发言消耗的积分记在消息上（重放缓存时已扣过费，不重复记）。
     const charge =
       !cached && result.ok && 'chargedMicros' in result.value
-        ? { usageRecordId: result.value.usageRecordId, chargedMicros: result.value.chargedMicros }
+        ? {
+            usageRecordId: result.value.usageRecordId,
+            chargedMicros: blockedMicros + result.value.chargedMicros,
+          }
         : null;
     // H3：剥掉图片描述尾标并存档（重放缓存时已存过）。
     let replyText = result.ok ? result.value.text : '';
     if (result.ok && !cached) {
-      const frozenSlots = (sawImages ? request.messages : [])
+      const frozenSlots = request.messages
         .flatMap((m) => m.images ?? [])
         .map((img) => ({
           mediaId: img.mediaId,
@@ -1275,7 +1330,6 @@ export class GroupChatService {
         ? deflect
         : '这个话题先放一放，好吗？我们聊聊你今天过得怎么样。';
     // F1-8：字面「\n」等转义残留先还原；按拆条规则拆成气泡（群里最多 3 条），每条去掉「名字：」前缀。
-    const strip = new RegExp(`^${escapeRegExp(speaker.name)}[：:]\\s*`);
     const parts = splitReply(unescapeModelText(sourceText).slice(0, 300), true)
       .map((b) => b.replace(strip, '').trim())
       .filter(Boolean);
