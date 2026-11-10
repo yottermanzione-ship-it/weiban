@@ -394,6 +394,10 @@ test('真实HTTP记忆管理：新增、手改、删除确认与人设设置', a
     .getByRole('dialog', { name: '添加记忆', exact: true })
     .getByLabel('记忆内容')
     .fill(text);
+  await page.getByRole('button', { name: '分类：关于我', exact: true }).click();
+  await page.getByRole('radio', { name: '偏好', exact: true }).click();
+  await expect(page.locator('.action-sheet')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '分类：偏好', exact: true })).toBeVisible();
   await page
     .getByRole('dialog', { name: '添加记忆', exact: true })
     .getByRole('button', { name: '完成', exact: true })
@@ -401,10 +405,38 @@ test('真实HTTP记忆管理：新增、手改、删除确认与人设设置', a
   await page.getByRole('button', { name: new RegExp(text) }).click();
   const editor = page.getByRole('dialog', { name: '编辑记忆', exact: true });
   await expect(editor.getByLabel('记忆内容')).toHaveValue(text);
+  const done = editor.getByRole('button', { name: '完成', exact: true });
+  const currentStatus = editor.getByRole('button', { name: '状态：现在', exact: true });
+  await expect(done).toBeDisabled();
+  await currentStatus.click();
+  await page.getByRole('radio', { name: '现在', exact: true }).click();
+  await expect(page.locator('.action-sheet')).toHaveCount(0);
+  await expect(done).toBeDisabled();
+  await currentStatus.click();
+  await page.locator('.action-sheet').getByRole('button', { name: '取消', exact: true }).click();
+  await expect(page.locator('.action-sheet')).toHaveCount(0);
+  await expect(currentStatus).toBeVisible();
+  await currentStatus.click();
+  // 直接点蒙层：label 的默认激活曾在关闭后又点击状态按钮，令弹层原地重开。
+  await page.locator('.action-scrim').click({ position: { x: 16, y: 100 } });
+  await expect(page.locator('.action-sheet')).toHaveCount(0);
+  await expect(editor.getByLabel('记忆内容')).toHaveValue(text);
+  await expect(done).toBeDisabled();
+  await currentStatus.click();
+  await page.getByRole('radio', { name: '过去', exact: true }).click();
+  await expect(page.locator('.action-sheet')).toHaveCount(0);
+  await expect(done).toBeEnabled();
+  await done.click();
+  await expect(editor).toHaveCount(0);
+  await page.getByRole('button', { name: new RegExp(text) }).click();
+  await editor.getByRole('button', { name: '状态：过去', exact: true }).click();
+  await page.getByRole('radio', { name: '现在', exact: true }).click();
+  await expect(page.locator('.action-sheet')).toHaveCount(0);
   await editor.getByLabel('记忆内容').fill('浏览器记忆金丝雀：猫改叫芝麻');
   await editor.getByRole('button', { name: '完成', exact: true }).click();
   await page.getByRole('button', { name: /浏览器记忆金丝雀：猫改叫芝麻/ }).click();
   await expect(editor.getByLabel('记忆内容')).toHaveValue('浏览器记忆金丝雀：猫改叫芝麻');
+  await expect(currentStatus).toBeVisible();
   const cached = await page.evaluate(
     () =>
       new Promise<string>((resolve) => {
