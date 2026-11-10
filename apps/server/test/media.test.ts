@@ -283,6 +283,64 @@ describeDb('media 最小版：权限、图片真实性、加密文件、签名�
     expect(await service.countUserData(userId)).toBe(0);
     expect((await service.getMedia(userId, publicImage.mediaId)).purpose).toBe('character_avatar');
   });
+  it('签名语音支持苹果首段探测、尾段、完整读取及越界拒绝，过期链接不能读片段', async () => {
+    const wav = Buffer.alloc(44 + 48000);
+    wav.write('RIFF');
+    wav.writeUInt32LE(wav.length - 8, 4);
+    wav.write('WAVEfmt ', 8);
+    wav.writeUInt32LE(16, 16);
+    wav.writeUInt16LE(1, 20);
+    wav.writeUInt16LE(1, 22);
+    wav.writeUInt32LE(24000, 24);
+    wav.writeUInt32LE(48000, 28);
+    wav.writeUInt16LE(2, 32);
+    wav.writeUInt16LE(16, 34);
+    wav.write('data', 36);
+    wav.writeUInt32LE(48000, 40);
+    const media = await app.get(MediaService).putObject({
+      ownerUserId: userId,
+      purpose: 'generated_voice',
+      bytes: wav,
+      mimeType: 'audio/wav',
+      durationMs: 1000,
+    });
+    const url = new URL(media.url);
+    const path = url.pathname + url.search;
+    await http()
+      .get(path)
+      .set('User-Agent', 'iPhone')
+      .set('Range', 'bytes=0-1')
+      .expect(206)
+      .expect('Accept-Ranges', 'bytes')
+      .expect('Content-Length', '2')
+      .expect('Content-Range', `bytes 0-1/${wav.length}`);
+    await http()
+      .get(path)
+      .set('Range', 'bytes=-10')
+      .expect(206)
+      .expect('Content-Length', '10')
+      .expect('Content-Range', `bytes ${wav.length - 10}-${wav.length - 1}/${wav.length}`);
+    await http()
+      .get(path)
+      .set('Range', `bytes=${wav.length}-`)
+      .expect(416)
+      .expect('Content-Range', `bytes */${wav.length}`)
+      .expect('Content-Length', '0');
+    for (const range of ['malformed', 'items=0-1', 'bytes=0-1,5-6'])
+      await http()
+        .get(path)
+        .set('Range', range)
+        .expect(200)
+        .expect('Content-Length', String(wav.length));
+    await http().get(path).expect(200).expect('Content-Length', String(wav.length));
+    await http()
+      .get(`/api/v1/media/${media.mediaId}`)
+      .set('Authorization', `Bearer ${otherToken}`)
+      .expect(404);
+    clock.advance(300001);
+    await http().get(path).set('Range', 'bytes=0-1').expect(403);
+    await app.get(MediaService).purgeUser(userId);
+  });
   it('S3兼容实现使用签名请求；可以存取删除加密对象，存储键拒绝路径穿越', async () => {
     const values = new Map<string, Buffer>();
     const server = createServer(async (req, res) => {
