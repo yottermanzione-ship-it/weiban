@@ -922,9 +922,12 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
   });
   it('私密切出登记干净整理、写成日常记忆；私密原文不进日常', async () => {
     const path = `/api/v1/characters/${characterId}/companion-settings`;
+    const catalog = app.get(ScenarioModeService);
+    const fixturePreset = 'PRIVATE_PRESET_CANARY：接住用户此刻的情绪。';
     adultAvailability = null;
     const original = response;
     try {
+      await catalog.update(adminId, 'adult', { presetPrompt: fixturePreset });
       await http()
         .patch(path)
         .set('Authorization', auth())
@@ -938,7 +941,19 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
         }),
       ).rejects.toThrow('私密模式只支持文字和图片');
       const row = await user('PRIVATE_RAW_CANARY 今晚想抱着你');
+      const replyBefore = calls.length;
       await finish(row.id);
+      const reply = calls.slice(replyBefore).find((call) => call.purpose === 'chat_reply');
+      expect(reply).toMatchObject({
+        modelRole: 'adult',
+        meta: { promptTemplateVersion: 'chat-v8-stable-history:private-card-light' },
+      });
+      expect(reply?.messages[0]?.content).toContain(fixturePreset);
+      expect(reply?.messages[0]?.content).toContain('你叫AI role');
+      const assembled = reply?.messages.map((message) => message.content).join('\n');
+      expect(assembled).toContain('PRIVATE_RAW_CANARY');
+      expect(assembled).not.toContain('【说话方式】');
+      expect(assembled).not.toContain('按卡里的说话方式回');
       const summarySource = await user('PRIVATE_SUMMARY_SOURCE 约定一起看晚霞。'.repeat(60));
       response = '__PRIVATE_SUMMARY__';
       const summaryBefore = calls.length;
@@ -1081,6 +1096,7 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
     } finally {
       response = original;
       adultAvailability = 'not_configured';
+      await catalog.update(adminId, 'adult', { presetPrompt: null });
     }
   }, 120000);
   it('儿童继承全局恋爱默认使用日常，不能反复作废正在构建的回复', async () => {

@@ -39,7 +39,7 @@ import { userStatusLine } from '../domain/user-status.js';
 import { POLICY_PORT } from '../../policy/index.js';
 import { MemoryService } from './memory.js';
 import { stableHistoryReadLimit, uncoveredHistoryEnd } from '../domain/memory-window.js';
-import { allowedAutomaticStyle } from '../domain/persona.js';
+import { allowedAutomaticStyle, scenarioText } from '../domain/persona.js';
 import { contextTokens } from '../../model-access/index.js';
 import { PlayContinuityStore } from './play-continuity.js';
 import { DEFAULT_LOREBOOK, lorebook, lorebookText } from '../domain/knowledge.js';
@@ -371,6 +371,7 @@ export class ReplyContext {
     // H2（总经理 10-21 C14，20 号 §2.4 第 2 条）：只有私密模式私聊读 normal + adult；日常范围只读 normal，
     // 私密来源不降为日常；资格收紧后同样不提交成人原文。
     const privateScope = conversation.contentScope === 'adult' && policy.adultModeEligible;
+    const personaLevel = privateScope ? 'name' : 'full';
     // At least the original 600-message tail, plus <=63 messages of additive cache slack.
     const floor = await this.memory
       .windowFloor(row.userId, row.characterId, privateScope ? 'adult' : 'normal')
@@ -530,10 +531,10 @@ export class ReplyContext {
       month: '2-digit',
       day: '2-digit',
     }).format(this.clock.now());
-    const prompting = card?.prompting;
+    const prompting = privateScope ? undefined : card?.prompting;
     const exampleMode = prompting?.exampleMode ?? 'pinned';
     const pinnedCard =
-      card && exampleMode !== 'off'
+      !privateScope && card && exampleMode !== 'off'
         ? pinnedExamples(card.examples, { max: prompting?.exampleCount ?? 6 })
         : [];
     const recentForScan = history
@@ -541,9 +542,9 @@ export class ReplyContext {
       .slice(-(card?.knowledge.scanDepth ?? LORE_SCAN_MESSAGES))
       .map((m) => (m.content?.type === 'text' ? m.content.text : (rendered.get(m.messageId) ?? '')))
       .join('\n');
-    let constantKnowledge: string;
-    let triggeredKnowledge: string;
-    if (card) {
+    let constantKnowledge = '';
+    let triggeredKnowledge = '';
+    if (!privateScope && card) {
       const lore = lorebook(
         card.knowledge.entries,
         `${recentForScan}\n${callTurns.map((turn) => turn.content).join('\n')}\n${userText}`,
@@ -558,7 +559,7 @@ export class ReplyContext {
       );
       constantKnowledge = lorebookText(lore.constant);
       triggeredKnowledge = lorebookText(lore.triggered);
-    } else {
+    } else if (!privateScope) {
       // 旧卡：世界书来自旧库 character_lorebook_entries，原样触发，不按卡片 confidence 过滤。
       const lore = legacyLorebook(
         view.lorebook,
@@ -596,7 +597,8 @@ export class ReplyContext {
     );
     const scenarioPrompt = inCare
       ? undefined
-      : ((await this.settings.scenarioPrompt(settings, conversation.contentScope)) ?? undefined);
+      : ((await this.settings.scenarioPrompt(settings, conversation.contentScope)) ??
+        (privateScope ? scenarioText('adult') : undefined));
     const { head, context: brainContext } = brainPromptParts({
       name: role.profile.name,
       card,
@@ -606,6 +608,7 @@ export class ReplyContext {
       settings,
       stage: stageInput,
       scope: conversation.contentScope,
+      personaLevel,
       nickname: profile.nickname,
       now: this.clock.now(),
       timeZone: profile.timeZone,
@@ -714,7 +717,7 @@ export class ReplyContext {
     // 情境示例：深夜 / 安慰 / 被逗 / 打招呼时在结尾补 1 条不在开头里的示例
     const hour = localHourIn(this.clock.now(), profile.timeZone);
     const extraExample =
-      exampleMode === 'situational' && card
+      !privateScope && exampleMode === 'situational' && card
         ? situationalExample(card.examples, pinnedCard, [
             ...(row.kind === 'greeting' ? ['greeting'] : []),
             ...(inCare || style === 'treehole' ? ['comfort'] : []),
@@ -770,6 +773,7 @@ export class ReplyContext {
             autoStyle?.prompt ?? null,
             !!scenarioPrompt,
             stageInput.romancePaused,
+            personaLevel,
           )
         : legacy
           ? legacyScenarioNote(
@@ -778,6 +782,7 @@ export class ReplyContext {
               autoStyle?.prompt ?? null,
               !!scenarioPrompt,
               stageInput.romancePaused,
+              personaLevel,
             )
           : null;
     const styleNote = builtInNote;
@@ -912,22 +917,31 @@ export class ReplyContext {
         text: prompting?.postHistoryInstructions ?? '',
       },
       // 2026-10-30 双兜底尾部短提醒（正向，不点名任何具体词，离输出最近防衰减）。
-      { title: '', text: '按卡里的说话方式回，每轮换着说法。' },
+      {
+        title: '',
+        text: privateScope
+          ? '按本轮情景回应，每轮换着说法。'
+          : '按卡里的说话方式回，每轮换着说法。',
+      },
     ];
     // 2026-10-30 双兜底：
     // ① 正向版通用提示词（开头第一段，所有角色共用，不写进单个角色卡，不点名具体词）。
     const antiMimicHead: PromptSection[] = [
       {
         title: '',
-        text: '说话方式以角色卡为准，只用卡里写明的口头禅、表情和说话方式。每轮用你自己的说法，换着开头、换着表达，同一轮、连续几轮都用不同的说法。聊天记录只用来参考你们聊过的事，不用来学说话方式。',
+        text: privateScope
+          ? '按本轮情景和你们已有的相处回应；聊天记录只用来参考聊过的事，不用来学说话方式。'
+          : '说话方式以角色卡为准，只用卡里写明的口头禅、表情和说话方式。每轮用你自己的说法，换着开头、换着表达，同一轮、连续几轮都用不同的说法。聊天记录只用来参考你们聊过的事，不用来学说话方式。',
       },
       ...head,
     ];
     // ② 历史清洗：动态检出最近 20 条角色回复里过半出现、卡里没有的习惯词，只在喂给模型的那份原文里清掉，记录本身不删。
-    const habits = detectHabits(
-      chat.filter((m) => m.role === 'assistant').map((m) => m.content),
-      renderSections([...head, ...brainContext]),
-    );
+    const habits = privateScope
+      ? []
+      : detectHabits(
+          chat.filter((m) => m.role === 'assistant').map((m) => m.content),
+          renderSections([...head, ...brainContext]),
+        );
     let cleanedChat: ChatTurnMessage[] = habits.length
       ? chat.map((m) =>
           m.role === 'assistant' ? { ...m, content: stripHabits(m.content, habits) } : m,
@@ -1089,7 +1103,9 @@ export class ReplyContext {
       memoryRevision: remembered.revision,
       scenarioMode: settings.scenarioMode ?? 'daily',
       effectiveStyle: style,
-      promptTemplateVersion: REPLY_TEMPLATE_VERSION,
+      promptTemplateVersion: privateScope
+        ? `${REPLY_TEMPLATE_VERSION}:private-card-light`
+        : REPLY_TEMPLATE_VERSION,
       instantReply: settings.instantReply,
       splitBubbles: settings.splitBubbles,
       highRisk: triggerHigh || risk === 'high',
