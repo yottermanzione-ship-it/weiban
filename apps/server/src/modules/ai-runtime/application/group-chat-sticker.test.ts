@@ -6,7 +6,8 @@
  */
 import 'reflect-metadata';
 import { describe, expect, it, vi } from 'vitest';
-import type { Message, MessageContent } from '@weiban/contracts';
+import type { GenerateTextInput, Message, MessageContent } from '@weiban/contracts';
+import { contextTokens } from '../../model-access/index.js';
 import { GroupChatService } from './group-chat.js';
 import { MediaAiService } from './media-ai.js';
 
@@ -70,9 +71,9 @@ function mediaAi() {
   );
 }
 
-function harness(history: Message[], reply: string) {
+function harness(history: Message[], reply: string, inputTokens = 100_000) {
   const posted: Array<{ content: MessageContent; idempotencyKey: string }> = [];
-  const generate = vi.fn(async (_req: { messages: Array<{ content: string }> }) => ({
+  const generate = vi.fn(async (_req: GenerateTextInput) => ({
     ok: true as const,
     value: { text: reply, usageRecordId: 'usage', chargedMicros: 10, modelKey: 'm' },
   }));
@@ -98,7 +99,16 @@ function harness(history: Message[], reply: string) {
     },
     identity: { getProfile: async () => ({ nickname: '小明' }) },
     relations: { getRelation: async () => null },
-    brain: { build: async () => ({ scope: 'normal', prefix: '人设', recall: '' }) },
+    brain: {
+      build: async () => ({
+        scope: 'normal',
+        prefix: '人设、关系和常驻记忆',
+        recall: `【本轮回想】${history.at(-1)?.seq}`,
+        daily: `【今日近况】${history.length}`,
+      }),
+    },
+    captions: { forMessages: async () => new Map() },
+    gateway: { getContextBudget: async () => ({ inputTokens }) },
     adultBoundary: { generate },
     writer: {
       postMessage: async (input: { content: MessageContent; idempotencyKey: string }) => {
@@ -128,7 +138,8 @@ function harness(history: Message[], reply: string) {
       triggerSeq,
     });
   const prompt = () => generate.mock.calls[0]?.[0].messages.at(-1)?.content ?? '';
-  return { speak, posted, prompt };
+  const requests = () => generate.mock.calls.map(([request]) => request);
+  return { speak, posted, prompt, requests };
 }
 
 describe('群聊发言配表情包', () => {
@@ -178,5 +189,86 @@ describe('群聊发言配表情包', () => {
       expect.objectContaining({ type: 'sticker', stickerId: 'happy' }),
     ]);
     expect(JSON.stringify(h.posted)).not.toContain('[照片]');
+  }, 10_000);
+});
+
+function groupHistory(count: number) {
+  return Array.from({ length: count }, (_, i) => ({
+    ...msg('character', text(`虚构群消息第${i + 1}条。`), 'char-b'),
+    seq: i + 1,
+  }));
+}
+
+function groupTranscript(request: GenerateTextInput) {
+  return request.messages
+    .map(({ content }) => content)
+    .join('\n')
+    .match(/虚构群消息第\d+条。/g);
+}
+
+describe('群聊历史缓存', () => {
+  it('同角色连续发言时保留同一段前缀，新的群消息和回想放在后面', async () => {
+    const history = groupHistory(34);
+    const h = harness(history, '接着聊。');
+    await h.speak(34);
+    history.push({ ...msg('user', text('虚构群消息第35条。'), 'user-p'), seq: 35 });
+    await h.speak(35);
+
+    const [before, after] = h.requests() as [GenerateTextInput, GenerateTextInput];
+    const historyIndex = before.messages.findIndex(({ content }) =>
+      content.startsWith('群聊记录：'),
+    );
+    const prefix = before.messages.slice(0, historyIndex + 1);
+    expect(prefix.at(-1)?.content).toContain('虚构群消息第32条。');
+    expect(after.messages.slice(0, prefix.length)).toEqual(prefix);
+    expect(after.meta?.stablePrefixChars).toBe(prefix.reduce((n, m) => n + m.content.length, 0));
+    expect(before.messages[prefix.length]?.content).toBe('【本轮回想】34');
+    expect(after.messages[prefix.length]?.content).toBe('【本轮回想】35');
+    expect(after.messages.at(-1)?.content).toContain('虚构群消息第35条。');
+    expect(groupTranscript(after)).toEqual(
+      Array.from({ length: 33 }, (_, i) => `虚构群消息第${i + 3}条。`),
+    );
+  }, 10_000);
+
+  it('容量紧时不多带更早的内容，原来会给模型的30条仍按序保留', async () => {
+    const history = groupHistory(35);
+    const baseline = harness(history, '接着聊。', 0);
+    await baseline.speak(35);
+    const h = harness(history, '接着聊。', contextTokens(baseline.requests()[0]!.messages));
+    await h.speak(35);
+
+    expect(groupTranscript(h.requests()[0]!)).toEqual(
+      Array.from({ length: 30 }, (_, i) => `虚构群消息第${i + 6}条。`),
+    );
+  }, 10_000);
+
+  it('群聊已撤回和私密范围消息不进入记录，新图留在当轮提示', async () => {
+    const history = groupHistory(29);
+    history[26] = { ...history[26]!, status: 'recalled' };
+    history[27] = { ...history[27]!, scope: 'adult' };
+    history.push(
+      {
+        ...msg(
+          'user',
+          { type: 'image', mediaId: 'new-image', width: null, height: null },
+          'user-p',
+        ),
+        seq: 30,
+      },
+      { ...msg('user', text('虚构群消息第31条。'), 'user-p'), seq: 31 },
+      { ...msg('user', text('虚构群消息第32条。'), 'user-p'), seq: 32 },
+    );
+    const h = harness(history, '看到啦。');
+    await h.speak(32);
+
+    const [request] = h.requests();
+    const stable = request!.messages.find(({ content }) => content.startsWith('群聊记录：'));
+    const live = request!.messages.at(-1);
+    expect(groupTranscript(request!)).not.toContain('虚构群消息第27条。');
+    expect(groupTranscript(request!)).not.toContain('虚构群消息第28条。');
+    expect(stable?.content).toContain('虚构群消息第29条。');
+    expect(stable?.content).not.toContain('〔图1〕');
+    expect(live?.content).toContain('[图片〔图1〕]');
+    expect(live?.images).toEqual([{ mediaId: 'new-image', ownerUserId: 'user' }]);
   }, 10_000);
 });
