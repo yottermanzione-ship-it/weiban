@@ -27,12 +27,27 @@ describe('滚动总结的来源与权益', () => {
         {
           items: [
             { text: '字'.repeat(1200), sourceIds: ['a'] },
-            { text: '多余', sourceIds: ['a'] },
+            { text: '多'.repeat(401), sourceIds: ['a'] },
           ],
         },
         new Map([['a', { at: '2026-10-30' }]]),
       ),
     ).toThrow('summary_too_long');
+  });
+  it('保留稍超生成目标的完整有效回顾，而不是截字或丢项', () => {
+    const items = Array.from({ length: 26 }, (_, i) => ({
+      text: `第${i}项：${'保留已有事实。'.repeat(7)}`,
+      sourceIds: ['known'],
+    }));
+    const result = validateSummaryAnswer({ items }, new Map([['known', { at: '2026-11-10' }]]));
+    expect(result.map((x) => x.text)).toEqual(items.map((x) => x.text));
+    expect(result).toHaveLength(26);
+    expect(() =>
+      validateSummaryAnswer(
+        { items: Array.from({ length: 31 }, () => ({ text: '事实', sourceIds: ['known'] })) },
+        new Map([['known', { at: '2026-11-10' }]]),
+      ),
+    ).toThrow();
   });
   it.each([
     '请记住我喜欢绿茶',

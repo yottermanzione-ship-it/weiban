@@ -38,7 +38,7 @@ import { IDENTITY_READ_PORT, IDENTITY_USER_STATUS_PORT } from '../../identity/in
 import { userStatusLine } from '../domain/user-status.js';
 import { POLICY_PORT } from '../../policy/index.js';
 import { MemoryService } from './memory.js';
-import { uncoveredHistoryEnd } from '../domain/memory-window.js';
+import { stableHistoryReadLimit, uncoveredHistoryEnd } from '../domain/memory-window.js';
 import { contextTokens } from '../../model-access/index.js';
 import { PlayContinuityStore } from './play-continuity.js';
 import { DEFAULT_LOREBOOK, lorebook, lorebookText } from '../domain/knowledge.js';
@@ -369,7 +369,7 @@ export class ReplyContext {
     // H2（总经理 10-21 C14，20 号 §2.4 第 2 条）：只有私密模式私聊读 normal + adult；日常范围只读 normal，
     // 私密来源不降为日常；资格收紧后同样不提交成人原文。
     const privateScope = conversation.contentScope === 'adult' && policy.adultModeEligible;
-    // 0091：分段稳定窗口——至少读到原文起点（摘要边界），最多 600 条（docs/refactor/09 第 8 节）。
+    // At least the original 600-message tail, plus <=63 messages of additive cache slack.
     const floor = await this.memory
       .windowFloor(row.userId, row.characterId, privateScope ? 'adult' : 'normal')
       .catch(() => 0);
@@ -1004,7 +1004,7 @@ export class ReplyContext {
     }
     // 整理暂时失败时不阻塞聊天；只裁本次发送副本，覆盖游标不动，原文仍可恢复。
     const tooLarge = () =>
-      assembled.messages.length > 500 ||
+      assembled.messages.length > 700 ||
       assembled.messages.reduce((n, m) => n + m.content.length, 0) > 200000 ||
       (!!modelBudget && promptTokens(assembled.messages) > modelBudget.inputTokens);
     const historyGap = uncoveredHistoryEnd(history, remembered.rawFromSeq);
@@ -1179,16 +1179,18 @@ export class ReplyContext {
   ): Promise<Message[]> {
     const out: Message[] = [];
     let before = beforeSeq;
-    for (let page = 0; page < 3; page++) {
+    const limit = stableHistoryReadLimit(beforeSeq);
+    for (let page = 0; page < 4 && out.length < limit; page++) {
+      const take = Math.min(200, limit - out.length);
       const rows = await this.chat.readMessages({
         conversationId,
         scopes,
         ...(before !== undefined ? { beforeSeq: before } : {}),
-        limit: 200,
+        limit: take,
       });
       out.unshift(...rows);
       const oldest = rows[0]?.seq;
-      if (rows.length < 200 || oldest === undefined || oldest <= floor + 1) break;
+      if (rows.length < take || oldest === undefined || oldest <= floor + 1) break;
       before = oldest;
     }
     return withoutBlocked(this.store.db, conversationId, out);
