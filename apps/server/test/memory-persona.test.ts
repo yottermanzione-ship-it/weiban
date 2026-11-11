@@ -479,7 +479,7 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
       const context = app.get(ReplyContext);
       const before = (await context.build(row))!;
       expect(before).not.toBeNull();
-      expect(before.promptTemplateVersion).toBe('chat-v8-stable-history');
+      expect(before.promptTemplateVersion).toBe('chat-v9-original-history');
       const historyEnd = before.messages.findIndex(
         (m) => m.role === 'user' && m.content.includes('CACHE_HISTORY_ANCHOR'),
       );

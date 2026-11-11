@@ -1,6 +1,13 @@
 import 'reflect-metadata';
 import { describe, expect, it } from 'vitest';
-import { detectHabits, splitReply, stripHabits, takeAfterFinalMarker } from './reply-rules.js';
+import { assemblePrompt, type ChatTurnMessage } from './prompt-assembly.js';
+import {
+  detectHabits,
+  historyForReplyModel,
+  splitReply,
+  stripHabits,
+  takeAfterFinalMarker,
+} from './reply-rules.js';
 
 describe('保留线上回复修复：正文标记与动态习惯词', () => {
   it('有正文标记时只保留后面的回复；行内提及不当作分隔符', () => {
@@ -36,5 +43,38 @@ describe('保留线上回复修复：正文标记与动态习惯词', () => {
     expect(stripHabits('OK 一起散步 😊', habits).trim()).toBe('一起散步');
     expect(stripHabits('😊', ['😊'])).toBe('😊');
     expect(history).toEqual(copy);
+  });
+  it('新识别到重复口头禅时，文字聊天的旧请求前缀仍可复用', () => {
+    const turns: ChatTurnMessage[] = Array.from({ length: 11 }, (_, i) => [
+      { role: 'user' as const, content: `合成话题第 ${i + 1} 轮` },
+      { role: 'assistant' as const, content: '今天我们一起去散步 OK 😊' },
+    ]).flat();
+    const earlier = turns.slice(0, -2);
+    const beforeHabits = detectHabits(
+      earlier.filter((m) => m.role === 'assistant').map((m) => m.content),
+      '',
+    );
+    const laterHabits = detectHabits(
+      turns.filter((m) => m.role === 'assistant').map((m) => m.content),
+      '',
+    );
+    expect(beforeHabits).toEqual([]);
+    expect(laterHabits).toEqual(['ok', '😊']);
+    const head = [{ title: '', text: '固定角色说明' }];
+    const before = assemblePrompt({
+      head,
+      history: historyForReplyModel(earlier, beforeHabits, false),
+      tail: [],
+    });
+    const after = assemblePrompt({
+      head,
+      history: historyForReplyModel(turns, laterHabits, false),
+      tail: [],
+    });
+    expect(after.messages.slice(0, before.messages.length)).toEqual(before.messages);
+    expect(stripHabits('OK 一起散步 😊', laterHabits).trim()).toBe('一起散步');
+    expect(historyForReplyModel(turns, laterHabits, true)[1]?.content.trim()).toBe(
+      '今天我们一起去散步',
+    );
   });
 });
