@@ -9,6 +9,7 @@ export const ClientLogKind = z.enum([
   'chunk_load_error',
   'api_failure',
   'realtime_issue',
+  'call_timing',
   'app_crash',
   'push_issue',
 ]);
@@ -26,6 +27,7 @@ export const ClientLogCode = z.enum([
   'chunk_load_failed',
   'render_failed',
   'realtime_reconnect',
+  'slow_turn',
   'app_crash',
   'push_failed',
 ]);
@@ -88,6 +90,15 @@ export const ClientRuntimeEvent = z
       .optional(),
     reconnects: z.number().int().min(0).max(10000).optional(),
     offlineSeconds: z.number().int().min(0).max(86400).optional(),
+    /** 7.11：通话单轮计时（只在网页版采集）：用户停止说话 → 第一段角色声音播放的毫秒数，以及本轮上行音频最大间隔。 */
+    call: z
+      .object({
+        stopToAudioMs: z.number().int().min(0).max(120000),
+        uploadGapMs: z.number().int().min(0).max(120000),
+        model: z.string().max(80).optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export type ClientRuntimeEvent = z.infer<typeof ClientRuntimeEvent>;

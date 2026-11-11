@@ -37,6 +37,7 @@ import { CatalogService } from '../application/catalog.js';
 import { LeaderboardService } from '../application/leaderboard.js';
 import { ModelsDevService } from '../application/models-dev.js';
 import { ModelAdminService } from '../application/models.js';
+import { ModelTestService } from '../application/model-test.js';
 import { ModelDeletionService } from '../application/model-deletion.js';
 import { GatewayLimitsService } from '../application/limits.js';
 import { DisplayPricingService } from '../application/display-pricing.js';
@@ -305,6 +306,7 @@ export class ModelAdminController {
     @Inject(CatalogService) private readonly catalog: CatalogService,
     @Inject(AdminUsageService) private readonly usage: AdminUsageService,
     @Inject(ModelAdminService) private readonly models: ModelAdminService,
+    @Inject(ModelTestService) private readonly modelTest: ModelTestService,
     @Inject(ModelDeletionService) private readonly deletion: ModelDeletionService,
     @Inject(UpstreamScheduler) private readonly scheduler: UpstreamScheduler,
     @Inject(GatewayLimitsService) private readonly limits: GatewayLimitsService,
@@ -450,6 +452,19 @@ export class ModelAdminController {
       throw new AppError('bad_request', '模型键格式不正确（路径中的 / 需要 URL 编码为 %2F）');
     }
     return this.models.upsert(me.userId, params.modelKey, body);
+  }
+
+  @Post('models/:modelKey/test')
+  @RequireAuth(A.testModel.auth)
+  @HttpCode(200)
+  testModel(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Param(new ContractPipe(schema(A.testModel.params))) params: { modelKey: string },
+  ) {
+    if (!ModelKey.safeParse(params.modelKey).success) {
+      throw new AppError('bad_request', '模型键格式不正确（路径中的 / 需要 URL 编码为 %2F）');
+    }
+    return this.modelTest.test(me.userId, params.modelKey);
   }
 
   // ---------- 上游 ----------

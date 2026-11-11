@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 7.10. Regenerate: pnpm android:generate
+// Contract 7.11. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "7.10"
+const val CONTRACT_VERSION: String = "7.11"
 
 @Serializable
 data class AccountAlias(
@@ -593,6 +593,29 @@ data class AdminModel(
 )
 
 typealias AdminModelKey = JsonElement
+
+@Serializable
+data class AdminModelTestResult(
+    @SerialName("modelKey") val `modelKey`: String,
+    @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("routes") val `routes`: List<AdminModelTestRoute>,
+    @SerialName("skipped") val `skipped`: String?,
+)
+
+@Serializable
+data class AdminModelTestRoute(
+    @SerialName("upstreamId") val `upstreamId`: Id,
+    @SerialName("upstreamName") val `upstreamName`: String,
+    @SerialName("upstreamModelId") val `upstreamModelId`: String,
+    @SerialName("kind") val `kind`: String,
+    @SerialName("ok") val `ok`: Boolean,
+    @SerialName("statusCode") val `statusCode`: Long?,
+    @SerialName("latencyMs") val `latencyMs`: Long,
+    @SerialName("errorCode") val `errorCode`: String?,
+    @SerialName("errorMessage") val `errorMessage`: String?,
+    @SerialName("inputTokens") val `inputTokens`: Long?,
+    @SerialName("outputTokens") val `outputTokens`: Long?,
+)
 
 @Serializable
 data class AdminModelWrite(
@@ -2878,6 +2901,7 @@ data class ClientRuntimeEvent(
     @SerialName("api") val `api`: ClientRuntimeEventApi? = null,
     @SerialName("reconnects") val `reconnects`: Long? = null,
     @SerialName("offlineSeconds") val `offlineSeconds`: Long? = null,
+    @SerialName("call") val `call`: ClientRuntimeEventCall? = null,
 )
 
 @Serializable
@@ -7421,6 +7445,11 @@ data class ModelAccessAdminEndpointsRotateUpstreamKeyBody(
 @Serializable
 data class ModelAccessAdminEndpointsRotateUpstreamKeyParams(
     @SerialName("upstreamId") val `upstreamId`: Id,
+)
+
+@Serializable
+data class ModelAccessAdminEndpointsTestModelParams(
+    @SerialName("modelKey") val `modelKey`: String,
 )
 
 @Serializable
@@ -13406,6 +13435,13 @@ data class ClientRuntimeEventApi(
     @SerialName("status") val `status`: Long,
     @SerialName("durationMs") val `durationMs`: Long,
     @SerialName("requestId") val `requestId`: Id? = null,
+)
+
+@Serializable
+data class ClientRuntimeEventCall(
+    @SerialName("stopToAudioMs") val `stopToAudioMs`: Long,
+    @SerialName("uploadGapMs") val `uploadGapMs`: Long,
+    @SerialName("model") val `model`: String? = null,
 )
 
 @Serializable

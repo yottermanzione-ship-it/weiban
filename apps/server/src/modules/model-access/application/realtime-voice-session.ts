@@ -47,6 +47,8 @@ export interface RealtimeTiming {
   responseId: string;
   sinceSpeechMs?: number;
   sinceStartMs?: number;
+  /** 服务器最后一次把用户语音转发给供应商 → 第一段回应声音之间（毫秒）；判断上行/网络是否拖慢。 */
+  sinceLastUserAudioMs?: number;
   totalMs?: number;
 }
 
@@ -78,6 +80,7 @@ export class RealtimeVoice<
   private speechAt = 0;
   private responseStartedAt = 0;
   private firstAudioLogged = false;
+  private lastUserAudioAt = 0;
 
   constructor(
     private readonly ops: RealtimeBillingOps<C>,
@@ -110,7 +113,10 @@ export class RealtimeVoice<
     if (this.closed || this.ended || !chunk.length) return;
     if (chunk.length % 2 || chunk.length > MAX_PUSH_BYTES) return;
     const speech = this.gate.accept(chunk);
-    if (speech.length) this.conn.appendAudio(speech);
+    if (speech.length) {
+      this.lastUserAudioAt = performance.now();
+      this.conn.appendAudio(speech);
+    }
   }
 
   respond(input?: { instructions?: string }): void {
@@ -227,6 +233,9 @@ export class RealtimeVoice<
             phase: 'first_audio',
             responseId: event.responseId,
             sinceStartMs: Math.round(performance.now() - this.responseStartedAt),
+            ...(this.lastUserAudioAt
+              ? { sinceLastUserAudioMs: Math.round(performance.now() - this.lastUserAudioAt) }
+              : {}),
           });
         }
         if (this.deliverable(event.responseId)) this.emit({ kind: 'audio', chunk: event.pcm });

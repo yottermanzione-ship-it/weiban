@@ -38,6 +38,7 @@ import {
 import { CatalogService } from './application/catalog.js';
 import { DisplayPricingService } from './application/display-pricing.js';
 import { ModelAdminService, RatePriceSource } from './application/models.js';
+import { ModelTestService } from './application/model-test.js';
 import { ModelDeletionService } from './application/model-deletion.js';
 import { GatewayLimitsService } from './application/limits.js';
 import { UpstreamScheduler } from './application/scheduler.js';
@@ -93,6 +94,7 @@ import {
     BillingBoundsService,
     WebToolsStore,
     UpstreamService,
+    ModelTestService,
     GatewayLimitsService,
     UpstreamScheduler,
     PrivateBlockLimiter,

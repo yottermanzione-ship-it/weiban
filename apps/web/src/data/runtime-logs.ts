@@ -188,7 +188,10 @@ class RuntimeLogs {
     kind: ClientRuntimeEvent['kind'],
     code: Code,
     extra: Partial<
-      Pick<ClientRuntimeEvent, 'frames' | 'components' | 'api' | 'reconnects' | 'offlineSeconds'>
+      Pick<
+        ClientRuntimeEvent,
+        'frames' | 'components' | 'api' | 'reconnects' | 'offlineSeconds' | 'call'
+      >
     > = {},
   ) {
     if (this.owner === undefined) return;

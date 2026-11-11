@@ -30,6 +30,7 @@ import { openMicrophone, microphoneProblem, type MicrophoneProblem } from './mic
 import { callDevice, hasCallDevice, type CallDeviceState } from './call-device.js';
 import { setCallSurface } from '../data/display-prefs.js';
 import { registerPlaybackStop, releaseAudioPlayback } from './audio-playback.js';
+import { runtimeLogs } from '../data/runtime-logs.js';
 
 /*
  * 网页语音通话（MED-06、MED-07；call.md、media-l5.md 第 7 节；ADR-0025 音频流协议）。
@@ -93,6 +94,11 @@ class CallEngine {
   private ready = false;
   private pinger = 0;
   private lostAt = 0;
+  /** 7.11 诊断：本轮用户最后一次出声的时刻、上行最大间隔、是否已上报。 */
+  private lastVoiceAt = 0;
+  private turnOpen = false;
+  private uploadGapMs = 0;
+  private lastFrameAt = 0;
   constructor(
     private readonly callId: string,
     private readonly ctx: AudioContext,
@@ -210,6 +216,14 @@ class CallEngine {
       for (let i = 0; i < input.length; i += 1) energy += input[i]! * input[i]!;
       const rms = Math.sqrt(energy / input.length);
       if (this.muted) return;
+      // 7.11 诊断：记录本轮用户最后一次出声和上行发送间隔（只在内存里聚合，通话结束后按轮上报）。
+      const nowMs = performance.now();
+      if (this.lastFrameAt) this.uploadGapMs = Math.max(this.uploadGapMs, nowMs - this.lastFrameAt);
+      this.lastFrameAt = nowMs;
+      if (rms > 0.04) {
+        this.lastVoiceAt = nowMs;
+        this.turnOpen = true;
+      }
       // 语音活动检测：角色说话时连续约 120 ms 明显有声 = 用户打断。
       // 队列里还有没播完的角色声音时也算「正在说话」：服务器的 speaking 信号在生成结束就变 false，
       // 但客户端可能还压着几秒音频；这时用户开口必须清掉旧队列，否则新回复会排在这几秒后面。
@@ -238,6 +252,16 @@ class CallEngine {
   private play(data: ArrayBuffer) {
     const pcm = new Int16Array(data);
     if (!pcm.length) return;
+    // 7.11 诊断：用户说完到第一段角色声音（按本地时钟）超过 1.2 秒才上报，避免正常轮次刷屏。
+    if (this.turnOpen && this.lastVoiceAt) {
+      const stopToAudioMs = Math.round(performance.now() - this.lastVoiceAt);
+      if (stopToAudioMs >= 1200) {
+        const uploadGapMs = Math.round(this.uploadGapMs);
+        this.turnOpen = false;
+        this.uploadGapMs = 0;
+        runtimeLogs.record('call_timing', 'slow_turn', { call: { stopToAudioMs, uploadGapMs } });
+      }
+    }
     const buffer = this.ctx.createBuffer(1, pcm.length, this.outputRate);
     const channel = buffer.getChannelData(0);
     for (let i = 0; i < pcm.length; i += 1) channel[i] = pcm[i]! / 0x8000;
