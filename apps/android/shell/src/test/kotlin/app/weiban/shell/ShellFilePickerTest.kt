@@ -101,6 +101,7 @@ class ShellFilePickerTest {
 }
 
 // Robolectric has no Chromium provider. Model its data-only parser for the regression case.
+@Suppress("UtilityClassWithPublicConstructor")
 @Implements(WebChromeClient.FileChooserParams::class)
 class WebViewFileResultShadow {
     companion object {

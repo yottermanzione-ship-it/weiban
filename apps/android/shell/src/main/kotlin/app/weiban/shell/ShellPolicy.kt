@@ -14,6 +14,15 @@ internal object ShellPolicy {
             parsed.port in setOf(-1, 443) && parsed.rawUserInfo == null
     }
 
+    private val appUpdatePath = Regex("/download-assets/weiban-[a-zA-Z0-9.-]{1,96}\\.apk")
+
+    fun appUpdate(url: String?): Boolean {
+        val parsed = parse(url) ?: return false
+        return parsed.scheme == "https" && parsed.host in setOf("app.weiban.online", "weiban.online") &&
+            parsed.port in setOf(-1, 443) && parsed.rawUserInfo == null &&
+            parsed.rawQuery == null && parsed.rawFragment == null && appUpdatePath.matches(parsed.rawPath.orEmpty())
+    }
+
     fun external(url: String?): Boolean {
         val parsed = parse(url) ?: return false
         return parsed.scheme in setOf("https", "http") && !parsed.host.isNullOrEmpty() && parsed.rawUserInfo == null

@@ -4,11 +4,18 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <application android:label="微伴" android:icon="@drawable/shell_icon"
         android:allowBackup="false" android:fullBackupContent="false"
         android:dataExtractionRules="@xml/shell_data_extraction" android:usesCleartextTraffic="false"
         android:theme="@style/ShellTheme" android:supportsRtl="true">
+        <provider android:name=".ShellUpdateProvider"
+            android:authorities="${applicationId}.updates"
+            android:exported="false" android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/shell_update_paths" />
+        </provider>
         <activity android:name=".ShellActivity" android:exported="true" android:launchMode="singleTop"
             android:windowSoftInputMode="adjustResize"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize|smallestScreenSize|uiMode">
