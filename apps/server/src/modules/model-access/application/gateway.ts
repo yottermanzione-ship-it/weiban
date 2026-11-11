@@ -69,7 +69,14 @@ import {
 type TextCeiling = NonNullable<ReserveInput['ceiling']>;
 /** 未指定输出额度的用户聊天按当前线路真实能力；显式调用方上限与平台任务仍保留。 */
 function usesModelOutputLimit(input: GenerateTextInput): boolean {
-  return input.purpose === 'chat_reply' && input.maxOutputTokens === undefined;
+  if (input.maxOutputTokens !== undefined) return false;
+  // 2026-11-12 总经理：记忆整理 / 推演不再设平台小上限，直接用模型自己的最大输出能力；
+  // 上限只由模型与计费边界决定，避免思考模型被我们的固定额度卡成空正文。
+  return (
+    input.purpose === 'chat_reply' ||
+    input.purpose === 'memory' ||
+    input.purpose === 'simulation'
+  );
 }
 
 type GatewayInternal = {
