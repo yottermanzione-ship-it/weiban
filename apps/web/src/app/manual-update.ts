@@ -12,7 +12,7 @@ export function addRefreshGuard(guard: () => string | null): () => void {
     guards.delete(guard);
   };
 }
-function assertCanRefresh() {
+export function assertCanRefresh() {
   for (const guard of guards) {
     const reason = guard();
     if (reason) throw new Error(reason);

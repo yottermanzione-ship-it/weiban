@@ -45,6 +45,7 @@ class ShellActivity : ComponentActivity() {
     private val microphone = ShellPermissions(this) { currentUrl() }
     private val files = ShellFilePicker(this) { currentUrl() }
     private val downloads = ShellDownloads(this) { currentUrl() }
+    private val appUpdates = ShellAppUpdates(this) { currentUrl() }
     private val notices = ShellNoticeBridge(this) { currentUrl() }
     private lateinit var root: FrameLayout
     private val device by lazy { ShellDeviceBridge(this, { currentUrl() }, { dark, surface -> applySystemTheme(dark, surface) }) }
@@ -120,10 +121,11 @@ class ShellActivity : ComponentActivity() {
             javaScriptCanOpenWindowsAutomatically = false
             setSupportMultipleWindows(true)
             mediaPlaybackRequiresUserGesture = true
-            userAgentString += " WeibanShell/${BuildConfig.VERSION_NAME}"
+            userAgentString += " WeibanShell/${BuildConfig.VERSION_NAME} WeibanBuild/${BuildConfig.VERSION_CODE}"
         }
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false)
         downloads.attach(webView)
+        appUpdates.attach(webView)
         notices.attach(webView)
         device.attach(webView)
         webView.webViewClient = navigationClient()
@@ -152,6 +154,7 @@ class ShellActivity : ComponentActivity() {
                 microphone.cancel()
                 files.cancel()
                 downloads.cancel()
+                appUpdates.cancel()
                 device.reset()
                 if (!ShellPolicy.trusted(url)) {
                     view.stopLoading()
@@ -305,6 +308,7 @@ class ShellActivity : ComponentActivity() {
         microphone.cancel()
         files.cancel()
         downloads.close()
+        appUpdates.cancel()
         device.reset()
         (webView.parent as? FrameLayout)?.removeView(webView)
         webView.destroy()
