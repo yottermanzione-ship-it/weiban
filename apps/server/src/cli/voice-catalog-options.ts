@@ -35,6 +35,7 @@ export const VOICE_CATALOG_ITEMS = [
   'qwen-tts-flash',
   'qwen-realtime',
   'qwen-realtime-3.1',
+  'qwen-realtime-3.1-flash',
   'omni',
 ] as const;
 export type VoiceCatalogItem = (typeof VOICE_CATALOG_ITEMS)[number];
@@ -42,6 +43,7 @@ export type VoiceCatalogItem = (typeof VOICE_CATALOG_ITEMS)[number];
 export const REALTIME_ITEMS: readonly VoiceCatalogItem[] = [
   'qwen-realtime',
   'qwen-realtime-3.1',
+  'qwen-realtime-3.1-flash',
   'omni',
 ];
 
@@ -50,12 +52,20 @@ export const REALTIME_PLUS_UPSTREAM_MODEL = 'qwen-audio-3.0-realtime-plus';
 export const REALTIME_31_MODEL_KEY = 'qwen/qwen-audio-3.1-realtime-plus';
 export const REALTIME_31_UPSTREAM_MODEL = 'qwen-audio-3.1-realtime-plus';
 /**
+ * 2026-11-11：3.1 Flash（便宜档）。官方北京价 文字入 1.5 / 音频入 6 / 文字出 4.5 / 音频出 12 元/百万，
+ * 约为 3.1 Plus 的 1/10～1/12；协议相同，默认音色 longanqian_v3.1。
+ * https://help.aliyun.com/zh/model-studio/qwen-audio-3-1-realtime-flash
+ */
+export const REALTIME_31_FLASH_MODEL_KEY = 'qwen/qwen-audio-3.1-realtime-flash';
+export const REALTIME_31_FLASH_UPSTREAM_MODEL = 'qwen-audio-3.1-realtime-flash';
+/**
  * 已按官方核实的 Qwen Audio Realtime 默认音色（没给 --realtime-voice / --realtime31-voice 时用）。
  * https://help.aliyun.com/zh/model-studio/qwen-audio-realtime-user-guides ：3.0 默认 longanqian，3.1 默认 longanqian_v3.1。
  */
 export const REALTIME_VERIFIED_DEFAULT_VOICES: Readonly<Record<string, string>> = {
   [REALTIME_PLUS_UPSTREAM_MODEL]: 'longanqian',
   [REALTIME_31_UPSTREAM_MODEL]: 'longanqian_v3.1',
+  [REALTIME_31_FLASH_UPSTREAM_MODEL]: 'longanqian_v3.1',
 };
 /** 3.0 Plus 官方只接受这 5 个系统音色（同一页）。 */
 export const REALTIME_30_VOICES: ReadonlySet<string> = new Set([
@@ -86,6 +96,8 @@ export const UPSTREAM_REFERENCE: Partial<Record<VoiceCatalogItem, string>> = {
   'qwen-tts-flash': 'qwen-audio-3.0-tts-plus',
   'qwen-realtime': 'qwen-audio-3.0-tts-plus',
   'qwen-realtime-3.1': 'qwen-audio-3.0-tts-plus',
+  // 3.1 Flash 与 3.1 Plus 走同一账号（生产已改挂北京 workspace），避免另配上游。
+  'qwen-realtime-3.1-flash': REALTIME_31_MODEL_KEY,
   omni: 'qwen-audio-3.0-tts-plus',
 };
 
@@ -239,11 +251,16 @@ export function parseVoiceCatalogCommand(argv: readonly string[]): Parsed<VoiceC
       .filter(Boolean);
     if (
       !models.length ||
-      models.some((m) => m !== REALTIME_PLUS_MODEL_KEY && m !== REALTIME_31_MODEL_KEY)
+      models.some(
+        (m) =>
+          m !== REALTIME_PLUS_MODEL_KEY &&
+          m !== REALTIME_31_MODEL_KEY &&
+          m !== REALTIME_31_FLASH_MODEL_KEY,
+      )
     )
       return fail(
         'BAD_ARGUMENT',
-        `--workspace-models 只能是 ${REALTIME_PLUS_MODEL_KEY}、${REALTIME_31_MODEL_KEY}（逗号分隔）`,
+        `--workspace-models 只能是 ${REALTIME_PLUS_MODEL_KEY}、${REALTIME_31_MODEL_KEY}、${REALTIME_31_FLASH_MODEL_KEY}（逗号分隔）`,
       );
     attachWorkspace = {
       upstreamId: attachId.toLowerCase(),
@@ -493,6 +510,29 @@ export function planVoiceCatalog(command: VoiceCatalogCommand): {
         '官方页没写缓存命中价，按文字输入价计',
         '官方实时地址只写了 workspace 专属域名：公共百炼账号能否调用由真实冒烟确认，不行就 --attach-workspace 改挂北京 workspace',
         '复刻音色官方免费（target_model 必须是 3.1），不登记复刻价',
+        command.enableRealtime
+          ? '已按 --enable-realtime 启用'
+          : '登记为停用：真实冒烟通过后在后台启用（或重跑加 --enable-realtime）',
+      ],
+    });
+  if (want('qwen-realtime-3.1-flash'))
+    entries.push({
+      item: 'qwen-realtime-3.1-flash',
+      modelKey: REALTIME_31_FLASH_MODEL_KEY,
+      write: realtimeWrite({
+        modelKey: REALTIME_31_FLASH_MODEL_KEY,
+        upstreamModelId: REALTIME_31_FLASH_UPSTREAM_MODEL,
+        displayName: 'Qwen Audio 3.1 Flash Realtime',
+        // 官方北京价 文字入 1.5 / 音频入 6 / 文字出 4.5 / 音频出 12 元/百万（qwen-audio-3-1-realtime-flash 页）
+        cost: [1.5, 6, 4.5, 12],
+      }),
+      enable: command.enableRealtime,
+      upstream: { flag: 'realtime', reference: UPSTREAM_REFERENCE['qwen-realtime-3.1-flash']! },
+      defaultVoice: REALTIME_VERIFIED_DEFAULT_VOICES[REALTIME_31_FLASH_UPSTREAM_MODEL]!,
+      notes: [
+        '官方北京价 文字入 1.5 / 音频入 6 / 文字出 4.5 / 音频出 12 元/百万，约为 3.1 Plus 的 1/10',
+        '与 3.1 Plus 同一上游（北京 workspace），协议相同',
+        '复刻音色官方免费，不登记复刻价',
         command.enableRealtime
           ? '已按 --enable-realtime 启用'
           : '登记为停用：真实冒烟通过后在后台启用（或重跑加 --enable-realtime）',

@@ -13,6 +13,7 @@ import {
   planVoiceCatalog,
   planWorkspaceAttach,
   REALTIME_31_MODEL_KEY,
+  REALTIME_31_FLASH_MODEL_KEY,
   REALTIME_PLUS_MODEL_KEY,
   UPSTREAM_REFERENCE,
   type WorkspaceAttachModel,
@@ -101,6 +102,21 @@ describe('voice-catalog 条目与价格（实时通话按官方价，参考成�
     // V3：官方 3.0 默认音色 longanqian（3.0 不接受 Cherry）
     expect(e.defaultVoice).toBe('longanqian');
     expect(e.upstream.reference).toBe(UPSTREAM_REFERENCE['qwen-tts-flash']);
+  });
+
+  it('3.1 Flash 实时通话：官方价 1.5/6/4.5/12（售价 = 官方价），默认音色 longanqian_v3.1，默认停用', () => {
+    const e = byItem.get('qwen-realtime-3.1-flash')!;
+    expect(e.modelKey).toBe(REALTIME_31_FLASH_MODEL_KEY);
+    expect(e.write.rates).toEqual({ input: 1.5, output: 4.5, cache: 1.5 });
+    expect(e.write.costRates).toEqual({ input: 1.5, output: 4.5, cache: 1.5 });
+    expect(e.write.serviceRates).toEqual([
+      { unit: 'audio_input_tokens_per_million', price: 6, cost: 6 },
+      { unit: 'audio_output_tokens_per_million', price: 12, cost: 12 },
+    ]);
+    expect(e.write.displayName).toBe('Qwen Audio 3.1 Flash Realtime');
+    expect(e.defaultVoice).toBe('longanqian_v3.1');
+    expect(e.enable).toBe(false);
+    expect(e.upstream.reference).toBe(REALTIME_31_MODEL_KEY);
   });
 
   it('补全写入：通过契约校验；已启用的条目不会被关掉，保留排序', () => {
