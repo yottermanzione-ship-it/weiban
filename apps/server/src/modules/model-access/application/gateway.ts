@@ -90,7 +90,8 @@ type GatewayInternal = {
 const THINKING_KEPT_PURPOSES: readonly GenerateTextInput['purpose'][] = ['memory', 'simulation'];
 export function thinkingBudgetFor(purpose: GenerateTextInput['purpose'], body: number): number {
   if (!THINKING_KEPT_PURPOSES.includes(purpose)) return 0;
-  return Math.min(2048, Math.max(1024, Math.round(body)));
+  // 2026-11-12 总经理：思考模型做记忆整理时正文经常是空的，思考预算加倍（2048～4096）。
+  return Math.min(4096, Math.max(2048, Math.round(body)));
 }
 /**
  * 2026-10-30 空输出根因修：私密模型（Abliteration）做记忆整理时，全部输出 token 都耗在思考上、
@@ -110,13 +111,13 @@ export function thinkingBudgetForModel(
 const DEFAULT_TOKENS: Partial<Record<GenerateTextInput['purpose'], number>> = {
   chat_reply: 600,
   proactive: 400,
-  simulation: 2000,
-  moments: 1000,
-  memory: 1000,
+  simulation: 4000,
+  moments: 1500,
+  memory: 3000,
   safety_check: 300,
   safety_followup: 400,
   behavior_planning: 150,
-  vision: 600,
+  vision: 1000,
   import_analysis: 6000,
 };
 /**
