@@ -4,8 +4,8 @@ import { shellVersion } from './device-info.js';
 
 // Official shells through build 127 share the display version and don't report their build number.
 const LAST_LEGACY_BUILD = 127;
-const BROWSER_DOWNLOAD_ORIGIN = 'https://weiban.online';
-const DOWNLOAD_ORIGINS = new Set([BROWSER_DOWNLOAD_ORIGIN, 'https://app.weiban.online']);
+const BROWSER_DOWNLOAD_ORIGIN = 'https://dl.weiban.online';
+const DOWNLOAD_ORIGINS = new Set(['https://weiban.online', 'https://app.weiban.online']);
 
 export function installedAndroidBuild(userAgent = navigator.userAgent) {
   const version = shellVersion(userAgent);
@@ -67,7 +67,7 @@ export async function checkAndroidUpdate(
     available: {
       versionCode: release.latestVersionCode,
       url: url.href,
-      // An external navigation to the official domain bypasses both the old shell and chat worker.
+      // The download host bypasses the chat worker and stale connections to the old main domain.
       browserUrl: new URL(url.pathname, BROWSER_DOWNLOAD_ORIGIN).href,
     },
   };
