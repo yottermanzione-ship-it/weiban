@@ -345,10 +345,13 @@ function realtimeWrite(input: {
   upstreamModelId: string;
   displayName: string;
   cost: [number, number, number, number];
+  /** 售价（元/百万）；不给 = 与成本相同（官方价）。2026-11-11：Flash 按总经理要求 ×1.3。 */
+  sell?: [number, number, number, number];
   /** V3：复刻一个音色的成本（元/个）；不给 = 不登记复刻价（复刻不向用户收费）。 */
   cloneCost?: number;
 }): PlannedEntry['write'] {
   const [textIn, audioIn, textOut, audioOut] = input.cost;
+  const [sellTextIn, sellAudioIn, sellTextOut, sellAudioOut] = input.sell ?? input.cost;
   return {
     modelKey: input.modelKey,
     displayName: input.displayName,
@@ -359,11 +362,11 @@ function realtimeWrite(input: {
     defaultFor: [],
     scenarios: ['voice_call'],
     billingBounds: realtimeBounds(),
-    rates: { input: textIn, output: textOut, cache: textIn },
+    rates: { input: sellTextIn, output: sellTextOut, cache: sellTextIn },
     costRates: { input: textIn, output: textOut, cache: textIn },
     serviceRates: [
-      { unit: 'audio_input_tokens_per_million', price: audioIn, cost: audioIn },
-      { unit: 'audio_output_tokens_per_million', price: audioOut, cost: audioOut },
+      { unit: 'audio_input_tokens_per_million', price: sellAudioIn, cost: audioIn },
+      { unit: 'audio_output_tokens_per_million', price: sellAudioOut, cost: audioOut },
       ...(input.cloneCost !== undefined ? [cloneRate(input.cloneCost)] : []),
     ],
   };
@@ -525,6 +528,8 @@ export function planVoiceCatalog(command: VoiceCatalogCommand): {
         displayName: 'Qwen Audio 3.1 Flash Realtime',
         // 官方北京价 文字入 1.5 / 音频入 6 / 文字出 4.5 / 音频出 12 元/百万（qwen-audio-3-1-realtime-flash 页）
         cost: [1.5, 6, 4.5, 12],
+        // 2026-11-11 总经理要求 Flash 也按 1.3 倍加价（与 3.1 Plus 同一口径）。
+        sell: [1.95, 7.8, 5.85, 15.6],
       }),
       enable: command.enableRealtime,
       upstream: { flag: 'realtime', reference: UPSTREAM_REFERENCE['qwen-realtime-3.1-flash']! },

@@ -104,14 +104,14 @@ describe('voice-catalog 条目与价格（实时通话按官方价，参考成�
     expect(e.upstream.reference).toBe(UPSTREAM_REFERENCE['qwen-tts-flash']);
   });
 
-  it('3.1 Flash 实时通话：官方价 1.5/6/4.5/12（售价 = 官方价），默认音色 longanqian_v3.1，默认停用', () => {
+  it('3.1 Flash 实时通话：官方成本 ×1.3 售价，默认音色 longanqian_v3.1，默认停用', () => {
     const e = byItem.get('qwen-realtime-3.1-flash')!;
     expect(e.modelKey).toBe(REALTIME_31_FLASH_MODEL_KEY);
-    expect(e.write.rates).toEqual({ input: 1.5, output: 4.5, cache: 1.5 });
+    expect(e.write.rates).toEqual({ input: 1.95, output: 5.85, cache: 1.95 });
     expect(e.write.costRates).toEqual({ input: 1.5, output: 4.5, cache: 1.5 });
     expect(e.write.serviceRates).toEqual([
-      { unit: 'audio_input_tokens_per_million', price: 6, cost: 6 },
-      { unit: 'audio_output_tokens_per_million', price: 12, cost: 12 },
+      { unit: 'audio_input_tokens_per_million', price: 7.8, cost: 6 },
+      { unit: 'audio_output_tokens_per_million', price: 15.6, cost: 12 },
     ]);
     expect(e.write.displayName).toBe('Qwen Audio 3.1 Flash Realtime');
     expect(e.defaultVoice).toBe('longanqian_v3.1');
