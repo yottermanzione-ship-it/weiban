@@ -140,6 +140,20 @@ export class ModelTestService {
     const all = await this.models.list();
     const model = all.find((m) => m.modelKey === modelKey && !m.deletedAt);
     if (!model) return { modelKey, enabled: false, routes: [], skipped: '模型不存在或已删除' };
+    if (model.tags?.includes('pipeline:rt'))
+      return {
+        modelKey,
+        enabled: model.enabled,
+        routes: [],
+        skipped: '实时语音模型请在真实通话里验证（不支持一键文本测试）',
+      };
+    if (!model.rates)
+      return {
+        modelKey,
+        enabled: model.enabled,
+        routes: [],
+        skipped: '该模型不是按 token 计费（图片 / 语音 / 搜索），请在真实场景验证',
+      };
     const upstreams = await this.upstreams.list();
     const byId = new Map(upstreams.map((u) => [u.upstreamId, u]));
     const targets =
