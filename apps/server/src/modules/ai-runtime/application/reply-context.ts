@@ -88,9 +88,10 @@ import { GroupChatService } from './group-chat.js';
 import { ReplyPlanStore, type ReplyPlan } from './plan-store.js';
 import {
   detectHabits,
+  historyForReplyModel,
   highRisk,
-  stripHabits,
   REPLY_TEMPLATE_VERSION,
+  TEXT_REPLY_TEMPLATE_VERSION,
 } from '../domain/reply-rules.js';
 import { HealthCareService } from './health-care.js';
 import { SocialService } from './social.js';
@@ -935,22 +936,18 @@ export class ReplyContext {
       },
       ...head,
     ];
-    // ② 历史清洗：动态检出最近 20 条角色回复里过半出现、卡里没有的习惯词，只在喂给模型的那份原文里清掉，记录本身不删。
+    // ② 检出反复出现的习惯词，交给新回复的出站过滤。改写文字聊天的旧回复会破坏缓存前缀。
     const habits = privateScope
       ? []
       : detectHabits(
           chat.filter((m) => m.role === 'assistant').map((m) => m.content),
           renderSections([...head, ...brainContext]),
         );
-    let cleanedChat: ChatTurnMessage[] = habits.length
-      ? chat.map((m) =>
-          m.role === 'assistant' ? { ...m, content: stripHabits(m.content, habits) } : m,
-        )
-      : chat;
+    let promptHistory = historyForReplyModel(chat, habits, voiceCall);
     let assembled = assemblePrompt({
       macros: { user: userName, char: role.profile.name },
       head: antiMimicHead,
-      history: cleanedChat,
+      history: promptHistory,
       inserts,
       tail,
     });
@@ -1019,15 +1016,11 @@ export class ReplyContext {
             m.sourceScope === undefined ||
             m.sourceSeq > (remembered.rawFromSeqByScope?.[m.sourceScope] ?? remembered.rawFromSeq),
         );
-        cleanedChat = habits.length
-          ? retained.map((m) =>
-              m.role === 'assistant' ? { ...m, content: stripHabits(m.content, habits) } : m,
-            )
-          : retained;
+        promptHistory = historyForReplyModel(retained, habits, voiceCall);
         assembled = assemblePrompt({
           macros: { user: userName, char: role.profile.name },
           head: antiMimicHead,
-          history: cleanedChat,
+          history: promptHistory,
           inserts,
           tail,
         });
@@ -1047,21 +1040,21 @@ export class ReplyContext {
       assembled = assemblePrompt({
         macros: { user: userName, char: role.profile.name },
         head: antiMimicHead,
-        history: cleanedChat,
+        history: promptHistory,
         inserts,
         tail,
       });
-      let lastUser = cleanedChat.length - 1;
-      while (lastUser >= 0 && cleanedChat[lastUser]?.role !== 'user') lastUser--;
-      while (lastUser > 0 && cleanedChat[lastUser - 1]?.role === 'user') lastUser--;
+      let lastUser = promptHistory.length - 1;
+      while (lastUser >= 0 && promptHistory[lastUser]?.role !== 'user') lastUser--;
+      while (lastUser > 0 && promptHistory[lastUser - 1]?.role === 'user') lastUser--;
       let removed = 0;
       while (tooLarge() && removed < lastUser) {
         removed++;
-        while (removed < lastUser && cleanedChat[removed]?.role !== 'user') removed++;
+        while (removed < lastUser && promptHistory[removed]?.role !== 'user') removed++;
         assembled = assemblePrompt({
           macros: { user: userName, char: role.profile.name },
           head: antiMimicHead,
-          history: cleanedChat.slice(removed),
+          history: promptHistory.slice(removed),
           inserts,
           tail,
         });
@@ -1105,7 +1098,9 @@ export class ReplyContext {
       effectiveStyle: style,
       promptTemplateVersion: privateScope
         ? `${REPLY_TEMPLATE_VERSION}:private-card-light`
-        : REPLY_TEMPLATE_VERSION,
+        : voiceCall
+          ? REPLY_TEMPLATE_VERSION
+          : TEXT_REPLY_TEMPLATE_VERSION,
       instantReply: settings.instantReply,
       splitBubbles: settings.splitBubbles,
       highRisk: triggerHigh || risk === 'high',

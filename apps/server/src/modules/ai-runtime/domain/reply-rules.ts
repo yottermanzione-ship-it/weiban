@@ -6,7 +6,9 @@ import {
   P28_INSTANT_REPLY_MIN_TYPING_MS,
 } from '../../../platform/index.js';
 import { petPressure } from './pets.js';
+import type { ChatTurnMessage } from './prompt-assembly.js';
 export const REPLY_TEMPLATE_VERSION = 'chat-v8-stable-history';
+export const TEXT_REPLY_TEMPLATE_VERSION = 'chat-v9-original-history';
 export const USER_BATCH_DELAY_MS = 3000;
 /**
  * F1-8（10-21）：模型偶尔把换行写成字面的「\n」（反斜杠 + n，常见于群聊），连同 \r、\t、\"、\uXXXX
@@ -241,6 +243,18 @@ export function stripHabits(text: string, habits: string[]): string {
   }
   out = out.replace(/[ \t]{2,}/g, ' ');
   return out.trim() ? out : text;
+}
+
+/** 文字聊天保留旧消息原文，习惯词只在发出新回复时处理。 */
+export function historyForReplyModel(
+  messages: ChatTurnMessage[],
+  habits: string[],
+  voiceCall: boolean,
+): ChatTurnMessage[] {
+  if (!voiceCall || !habits.length) return messages;
+  return messages.map((m) =>
+    m.role === 'assistant' ? { ...m, content: stripHabits(m.content, habits) } : m,
+  );
 }
 
 /**
