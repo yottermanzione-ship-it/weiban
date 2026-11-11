@@ -137,6 +137,8 @@ export interface TextAdapter {
     temperature?: number;
     responseFormat?: 'text' | 'json';
     idempotencyKey: string;
+    /** 私密会话的缓存路由标识，仅由已确认支持的直连适配器发送。 */
+    promptCacheKey?: string;
     timeoutMs: number;
     /**
      * 思考开关：off = 按厂商发关闭思考的字段（默认）；default = 不发，用模型默认；
@@ -409,6 +411,11 @@ export class OpenAiTextAdapter implements TextAdapter {
           stream: false,
           [input.outputParameter ?? 'max_tokens']: input.maxOutputTokens,
           temperature: input.temperature,
+          // Abliteration 官方直连接受该提示，其他兼容地址不透传。
+          ...(input.promptCacheKey &&
+          /^https:\/\/api\.abliteration\.ai\/v1\/*$/i.test(input.baseUrl)
+            ? { prompt_cache_key: input.promptCacheKey }
+            : {}),
           ...extra,
           ...(input.responseFormat === 'json' ? { response_format: { type: 'json_object' } } : {}),
         }),

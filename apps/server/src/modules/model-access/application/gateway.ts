@@ -587,6 +587,7 @@ export class ModelGateway implements ModelGatewayPort {
     // 3.24：Anthropic 原生协议自己处理系统消息（顶层 system + 缓存断点）；OpenAI 兼容按模型的系统消息放法改写。
     const baseWire = await this.wireMessages(input);
     const wire = applySystemMessageMode(baseWire, model.systemMessageMode);
+    const promptCacheKey = privateChatPromptCacheKey(input, model.modelKey);
     const wallStart = performance.now();
     const deadlineAt = new Date(
       Math.min(
@@ -736,6 +737,7 @@ export class ModelGateway implements ModelGatewayPort {
                     temperature: input.temperature ?? DEFAULT_TEMPERATURE[input.purpose],
                     responseFormat: input.responseFormat,
                     idempotencyKey: key,
+                    promptCacheKey,
                     // 开思考的后台整理单次常超 20 秒（10-27 生产：记忆整理 3 次 20 秒超时把整条上游判为不可用），放宽到 55 秒。
                     timeoutMs: Math.min(
                       thinkingBudget > 0 || modelOutputLimit ? 55000 : 20000,
@@ -1080,6 +1082,34 @@ export class ModelGateway implements ModelGatewayPort {
         trustedPlatform)
     );
   }
+}
+
+/** 同一私密会话的多轮请求使用同一个不透明标识，内容和单次请求编号不参与。 */
+export function privateChatPromptCacheKey(
+  input: Pick<
+    GenerateTextInput,
+    'purpose' | 'modelRole' | 'meta' | 'userId' | 'conversationId' | 'characterId'
+  >,
+  modelKey: string,
+): string | undefined {
+  if (
+    input.purpose !== 'chat_reply' ||
+    input.modelRole !== 'adult' ||
+    input.meta?.conversationKind !== 'direct' ||
+    !input.conversationId
+  )
+    return undefined;
+  return createHash('sha256')
+    .update(
+      JSON.stringify([
+        'weiban-private-chat-cache-v1',
+        input.userId,
+        input.conversationId,
+        input.characterId ?? null,
+        modelKey,
+      ]),
+    )
+    .digest('hex');
 }
 
 /**
