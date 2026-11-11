@@ -4,7 +4,7 @@ import { expect, test } from './fixtures.js';
 const mobile = 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/131.0.0.0 Mobile';
 const filename = 'weiban-3.0.0-129-abcdef123456.apk';
 const appUrl = `https://app.weiban.online/download-assets/${filename}`;
-const browserUrl = `https://weiban.online/download-assets/${filename}`;
+const browserUrl = `https://dl.weiban.online/download-assets/${filename}`;
 
 test.use({ serviceWorkers: 'block' });
 
