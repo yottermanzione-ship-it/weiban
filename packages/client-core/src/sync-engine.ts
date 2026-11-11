@@ -11,10 +11,14 @@ import {
   type Conversation,
 } from '@weiban/contracts';
 import { LocalSyncState, FullSyncSnapshot, freshSyncState, type SyncEffect } from './sync-state.js';
+/** 同步状态是纯 JSON；旧版 Android WebView 没有 structuredClone（Chromium 98+），用 JSON 复制避免整页崩溃。 */
+function cloneState<T>(value: T): T {
+  return value === undefined ? value : (JSON.parse(JSON.stringify(value)) as T);
+}
 export class SyncEngine {
   private value: LocalSyncState;
   get state(): LocalSyncState {
-    return structuredClone(this.value);
+    return cloneState(this.value);
   }
   /** 当前游标（不复制整份状态）。 */
   get lastUpdateSeq(): number {
@@ -38,7 +42,7 @@ export class SyncEngine {
   apply(input: unknown): void {
     const operation = ClientSyncOperation.parse(input);
     const saved = {
-      value: structuredClone(this.value),
+      value: cloneState(this.value),
       effects: [...this.effects],
       online: this.online,
       pulling: this.pulling,
@@ -183,7 +187,7 @@ export class SyncEngine {
   }
 
   private cleanConversation(input: Conversation): Conversation {
-    const conversation = structuredClone(input);
+    const conversation = cloneState(input);
     const through = Math.max(
       conversation.state.clearedThroughSeq,
       this.localClear(conversation.conversationId),

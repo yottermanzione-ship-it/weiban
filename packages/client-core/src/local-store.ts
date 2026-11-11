@@ -91,7 +91,8 @@ export class IndexedLocalStore implements LocalStore {
     values: Record<string, unknown>,
     expected?: { key: string; value: boolean },
   ): Promise<boolean> {
-    if (Object.hasOwn(values, 'session')) throw new Error('驱动不能改写登录会话');
+    if (Object.prototype.hasOwnProperty.call(values, 'session'))
+      throw new Error('驱动不能改写登录会话');
     return this.transaction(
       'records',
       'readwrite',
