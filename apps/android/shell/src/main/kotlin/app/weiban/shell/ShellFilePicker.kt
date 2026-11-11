@@ -16,21 +16,26 @@ internal class ShellFilePicker(
 ) {
     private var callback: ValueCallback<Array<Uri>>? = null
     private var multiple = false
+    private val selectedFiles = ActivityResultContracts.GetMultipleContents()
     private val launcher =
         activity.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            val pending = callback
+            val pending = callback ?: return@registerForActivityResult
             callback = null
+            if (result.resultCode != Activity.RESULT_OK || !ShellPolicy.trusted(currentUrl())) {
+                pending.onReceiveValue(null)
+                return@registerForActivityResult
+            }
+            // WebView's parser only reads Intent.data. Android pickers also return URI lists in ClipData.
             val selected =
-                if (result.resultCode == Activity.RESULT_OK && ShellPolicy.trusted(currentUrl())) {
-                    WebChromeClient.FileChooserParams
-                        .parseResult(result.resultCode, result.data)
-                        ?.filter { it.scheme == "content" }
-                        ?.take(if (multiple) 10 else 1)
-                        ?.toTypedArray()
-                } else {
-                    null
-                }
-            pending?.onReceiveValue(selected?.takeIf { it.isNotEmpty() })
+                selectedFiles
+                    .parseResult(result.resultCode, result.data)
+                    .filter { it.scheme == "content" && !it.authority.isNullOrEmpty() }
+                    .take(if (multiple) 10 else 1)
+                    .toTypedArray()
+            if (selected.isEmpty()) {
+                Toast.makeText(activity, "无法读取所选文件，请重新选择", Toast.LENGTH_LONG).show()
+            }
+            pending.onReceiveValue(selected.takeIf { it.isNotEmpty() })
         }
 
     fun open(
