@@ -12,7 +12,7 @@
  * 流式调用（实时识别、流式合成）每段 / 每次独立记账，幂等键由调用方保证唯一。
  * 假上游：目录模型 upstreamModelId 以 fake- 开头且非生产环境时走 FakeMediaAdapter，计费照常。
  */
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { speechText } from '../domain/speech-text.js';
 import {
   BACKGROUND_PURPOSES,
@@ -180,6 +180,8 @@ function unitsOf(q: UsageQuantities): Record<string, number> {
 export class ModelGatewayMedia implements ModelGatewayMediaPort {
   private readonly fakeAdapter = new FakeMediaAdapter();
   private readonly activeGenerations = new WeakMap<object, GenerationRow>();
+  /** 实时通话计时日志（诊断「回复忽快忽慢」，只记录不参与计费）。 */
+  private readonly log = new Logger('RealtimeCall');
 
   constructor(
     @Inject(WebToolsStore) private readonly webTools: WebToolsStore,
@@ -805,6 +807,14 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       { modelKey: model.value.modelKey, bounds },
       opened.value,
       first.value,
+      (timing) =>
+        this.log.log(
+          `rt.timing ${JSON.stringify({
+            modelKey: model.value.modelKey,
+            conversationId: input.conversationId,
+            ...timing,
+          })}`,
+        ),
     );
     session.start();
     return { ok: true, value: session };

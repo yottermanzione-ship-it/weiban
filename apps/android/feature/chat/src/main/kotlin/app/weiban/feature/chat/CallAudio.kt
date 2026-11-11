@@ -122,7 +122,10 @@ internal class CallAudio(
                 continue
             }
             onFrame(buffer.copyOf())
-            if (agentSpeaking && rms(buffer) > VOICE_RMS) {
+            // 队列里还有没播完的角色声音也算「正在说话」：服务器的 speaking 信号在生成结束就变 false，
+            // 但本地可能还压着几秒音频；这时用户开口必须清掉旧队列，否则新回复排在这几秒后面。
+            val pending = queue.isNotEmpty()
+            if ((agentSpeaking || pending) && rms(buffer) > VOICE_RMS) {
                 loud++
                 if (loud >= VOICE_FRAMES && !interrupted) {
                     interrupted = true
@@ -131,7 +134,7 @@ internal class CallAudio(
                 }
             } else {
                 loud = 0
-                if (!agentSpeaking) interrupted = false
+                if (!agentSpeaking && !pending) interrupted = false
             }
         }
     }

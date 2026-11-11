@@ -100,6 +100,13 @@ class CallEngine {
   ) {
     this.output = this.ctx.createGain();
     this.output.connect(this.ctx.destination);
+    // iOS 来电/通知会打断音频会话：恢复时把播放时钟对齐到现在，避免旧时间表把声音一次性挤出来。
+    const onState = () => {
+      if (this.ctx.state === 'running') {
+        this.nextTime = Math.max(this.nextTime, this.ctx.currentTime);
+      } else void this.ctx.resume().catch(() => {});
+    };
+    this.ctx.addEventListener?.('statechange', onState);
   }
   async start(stream: MediaStream, ticket: { path: string; token: string }) {
     this.stream = stream;
@@ -204,7 +211,10 @@ class CallEngine {
       const rms = Math.sqrt(energy / input.length);
       if (this.muted) return;
       // 语音活动检测：角色说话时连续约 120 ms 明显有声 = 用户打断。
-      if (this.agentSpeaking && rms > 0.04) {
+      // 队列里还有没播完的角色声音时也算「正在说话」：服务器的 speaking 信号在生成结束就变 false，
+      // 但客户端可能还压着几秒音频；这时用户开口必须清掉旧队列，否则新回复会排在这几秒后面。
+      const queued = this.nextTime > this.ctx.currentTime + 0.15;
+      if ((this.agentSpeaking || queued) && rms > 0.04) {
         this.loud += 1;
         if (this.loud === 3) {
           this.send({ type: 'barge_in', data: { at: new Date().toISOString() } });

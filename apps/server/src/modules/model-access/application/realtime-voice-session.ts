@@ -41,6 +41,15 @@ interface ResponseState<C> {
   done: boolean;
 }
 
+/** 诊断用计时（只写日志，不进计费）：用户开口 → 回应开始 → 第一段声音 → 回应结束。 */
+export interface RealtimeTiming {
+  phase: 'response_started' | 'first_audio' | 'response_done';
+  responseId: string;
+  sinceSpeechMs?: number;
+  sinceStartMs?: number;
+  totalMs?: number;
+}
+
 const CLOSE_GRACE_MS = 3000;
 const MAX_INSTRUCTIONS = 250_000;
 const MAX_PUSH_BYTES = 32_000 * 10;
@@ -66,6 +75,9 @@ export class RealtimeVoice<
   private sessionTimer: NodeJS.Timeout | null = null;
   private doneWaiters: Array<() => void> = [];
   private connClosed = false;
+  private speechAt = 0;
+  private responseStartedAt = 0;
+  private firstAudioLogged = false;
 
   constructor(
     private readonly ops: RealtimeBillingOps<C>,
@@ -75,6 +87,7 @@ export class RealtimeVoice<
     },
     private readonly conn: RealtimeConnection,
     first: C,
+    private readonly timing?: (event: RealtimeTiming) => void,
   ) {
     this.pending = first;
     this.lastUsageId = first.usageRecordId;
@@ -190,6 +203,7 @@ export class RealtimeVoice<
     switch (event.type) {
       case 'speech_started':
         // 用户开口 = 打断角色当前的回应（供应商可能已自动截断，这里再取消一次，重复取消是无害提示）。
+        this.speechAt = performance.now();
         this.interrupt();
         this.emit({ kind: 'user_speech_started' });
         return;
@@ -197,9 +211,24 @@ export class RealtimeVoice<
         this.emit({ kind: 'user_transcript', text: event.text });
         return;
       case 'response_started':
+        this.responseStartedAt = performance.now();
+        this.firstAudioLogged = false;
         this.onResponseStarted(event.responseId);
+        this.timing?.({
+          phase: 'response_started',
+          responseId: event.responseId,
+          ...(this.speechAt ? { sinceSpeechMs: Math.round(this.responseStartedAt - this.speechAt) } : {}),
+        });
         return;
       case 'audio':
+        if (!this.firstAudioLogged && this.responseStartedAt) {
+          this.firstAudioLogged = true;
+          this.timing?.({
+            phase: 'first_audio',
+            responseId: event.responseId,
+            sinceStartMs: Math.round(performance.now() - this.responseStartedAt),
+          });
+        }
         if (this.deliverable(event.responseId)) this.emit({ kind: 'audio', chunk: event.pcm });
         return;
       case 'assistant_text':
@@ -207,6 +236,12 @@ export class RealtimeVoice<
           this.emit({ kind: 'assistant_text', text: event.text, final: event.final });
         return;
       case 'response_done':
+        if (this.responseStartedAt)
+          this.timing?.({
+            phase: 'response_done',
+            responseId: event.responseId,
+            totalMs: Math.round(performance.now() - this.responseStartedAt),
+          });
         this.onResponseDone(event);
         return;
       case 'error':
