@@ -45,6 +45,8 @@ import {
   waitRetryDelayMs,
 } from '../domain/reply-delivery.js';
 import {
+  looksLikeMetaReasoning,
+  metaReasoningRetryInput,
   outputAllowed,
   replyDelay,
   splitReply,
@@ -203,17 +205,18 @@ export class ReplyEngine {
     const strip = (
       result: PortResult<GenerateTextOutput, GenerateError>,
       sawImages = true,
-    ): PortResult<GenerateTextOutput, GenerateError> => {
+    ): PortResult<GenerateTextOutput, GenerateError> | null => {
       if (!result.ok) return result;
       const parts = splitCaptionTail(result.value.text, slots.length);
+      const photo = takePhotoMarker(takeAfterFinalMarker(parts.reply));
+      const marked = takeStickerMarker(photo.text);
+      if (looksLikeMetaReasoning(marked.text)) return null;
       parts.captions.forEach((c, i) => {
         if (sawImages && c && !seen[i]) {
           seen[i] = c;
           captionModel ??= result.value.modelKey;
         }
       });
-      const photo = takePhotoMarker(takeAfterFinalMarker(parts.reply));
-      const marked = takeStickerMarker(photo.text);
       const value = { ...result.value, text: marked.text };
       marks.set(value, { mood: marked.mood, photo: photo.photo });
       return { ...result, value };
@@ -226,46 +229,55 @@ export class ReplyEngine {
             return c ? captionPhrase(c) : null;
           })
         : snapshot.messages;
+    let metaRetried = false;
+    const checked = async (
+      result: PortResult<GenerateTextOutput, GenerateError>,
+      request: GenerateTextInput,
+      sawImages = true,
+    ): Promise<PortResult<GenerateTextOutput, GenerateError>> => {
+      const prepared = strip(result, sawImages);
+      if (prepared) return prepared;
+      // 与网关处理空正文相同，继续走已有的等待或关怀兜底。
+      if (metaRetried) return { ok: false, error: 'provider_unavailable' };
+      metaRetried = true;
+      this.logMetaReasoning(row.characterId);
+      const retry = await callModelForCare(
+        gw,
+        metaReasoningRetryInput(request),
+        facts,
+        this.platform,
+      );
+      return strip(retry, sawImages) ?? { ok: false, error: 'provider_unavailable' };
+    };
     // 3.25（G1-1）：私密模式不再调用成人内容检查模型；底线由角色资格、私密模式提示词与违禁词规则保证。
+    const request = careAware(this.input(row, snapshot, 'reply'));
     let answer: PortResult<GenerateTextOutput, GenerateError> = snapshot.forceCareFallback
       ? { ok: false, error: 'policy_denied' }
-      : strip(await this.imageReply(row, snapshot, gw, facts, privateCare));
+      : await checked(await this.imageReply(row, snapshot, gw, facts, request), request);
     // 模型缺识图能力（或这次读不到图）：去掉附图、按「看不到图」再答一次。
-    if (!answer.ok && answer.error === 'capability_missing' && slots.length)
-      answer = strip(
-        await callModelForCare(
-          gw,
-          careAware({
-            ...this.input(row, snapshot, 'reply-blind'),
-            messages: this.wire(withoutImages(snapshot.messages)),
-          }),
-          facts,
-          this.platform,
-        ),
-        false,
-      );
+    if (!answer.ok && answer.error === 'capability_missing' && slots.length) {
+      const blind = careAware({
+        ...this.input(row, snapshot, 'reply-blind'),
+        messages: this.wire(withoutImages(snapshot.messages)),
+      });
+      answer = await checked(await callModelForCare(gw, blind, facts, this.platform), blind, false);
+    }
     if (
       answer.ok &&
       !outputAllowed(answer.value.text, snapshot.policy, snapshot.scope === 'adult')
     ) {
-      answer = strip(
-        await callModelForCare(
-          gw,
-          careAware({
-            ...this.input(row, snapshot, 'guard'),
-            messages: this.wire([
-              ...retryMessages(),
-              {
-                role: 'system',
-                content:
-                  '上次输出不符合平台边界。请重新用安全、人设内的聊天纯文本回复，不透露技术原因。',
-              },
-            ]),
-          }),
-          facts,
-          this.platform,
-        ),
-      );
+      const guard = careAware({
+        ...this.input(row, snapshot, 'guard'),
+        messages: this.wire([
+          ...retryMessages(),
+          {
+            role: 'system',
+            content:
+              '上次输出不符合平台边界。请重新用安全、人设内的聊天纯文本回复，不透露技术原因。',
+          },
+        ]),
+      });
+      answer = await checked(await callModelForCare(gw, guard, facts, this.platform), guard);
     }
     let bubbles: string[] = [];
     let fallbackReason: string | null = null;
@@ -338,21 +350,17 @@ export class ReplyEngine {
         snapshot.userText,
       );
       if (bad.length) {
-        const retry = await callModelForCare(
-          gw,
-          {
-            ...this.input(row, snapshot, 'names'),
-            messages: this.wire([
-              ...retryMessages(),
-              {
-                role: 'system',
-                content: `上次回复说出了你不能认出的人（${bad.join('、')}）。图片里名单外的人不能说出或猜测身份。请重新回复，只按外观描述，不提这些名字。`,
-              },
-            ]),
-          },
-          facts,
-        );
-        const retried = strip(retry);
+        const names = {
+          ...this.input(row, snapshot, 'names'),
+          messages: this.wire([
+            ...retryMessages(),
+            {
+              role: 'system',
+              content: `上次回复说出了你不能认出的人（${bad.join('、')}）。图片里名单外的人不能说出或猜测身份。请重新回复，只按外观描述，不提这些名字。`,
+            },
+          ]),
+        };
+        const retried = await checked(await callModelForCare(gw, names, facts), names);
         const again =
           retried.ok &&
           outputAllowed(retried.value.text, snapshot.policy, snapshot.scope === 'adult')
@@ -553,12 +561,8 @@ export class ReplyEngine {
     snapshot: ReplySnapshot,
     gw: ModelGatewayPort,
     facts: { highRisk: boolean; careActive: boolean; suspected: boolean },
-    privateCare: boolean,
+    input: GenerateTextInput,
   ) {
-    const input = {
-      ...this.input(row, snapshot, 'reply'),
-      ...(privateCare ? { purpose: 'safety_followup' as const } : {}),
-    };
     const first = await callModelForCare(gw, input, facts, this.platform);
     if (
       !this.imageSearch ||
@@ -711,11 +715,26 @@ export class ReplyEngine {
       .set({
         status: 'waiting',
         failure: reason,
+        resultCiphertext: null,
         leaseId: null,
         leaseUntil: null,
         dueAt: new Date(this.clock.nowMs() + waitRetryDelayMs(row.retryEpoch)),
       })
-      .where(and(eq(replyPlans.id, row.id), eq(replyPlans.leaseId, row.leaseId!)));
+      .where(
+        and(
+          eq(replyPlans.id, row.id),
+          row.status === 'sending'
+            ? and(eq(replyPlans.status, 'sending'), eq(replyPlans.nextBubble, 0))
+            : eq(replyPlans.leaseId, row.leaseId!),
+        ),
+      );
+  }
+  private logMetaReasoning(characterId: string): void {
+    this.logger?.warn({
+      code: 'ai_meta_reasoning_blocked',
+      conversationKind: 'direct',
+      characterId,
+    });
   }
   private async emit(row: ReplyPlan): Promise<void> {
     const result = Result.parse(await this.store.open(row, 'result'));
@@ -743,6 +762,19 @@ export class ReplyEngine {
         );
       return;
     }
+    // 旧版已生成但尚未发完的结果，也必须在送达前过同一检查。
+    const metaReasoning =
+      looksLikeMetaReasoning(result.bubbles.join('\n')) ||
+      result.contents?.some((c) => c.type === 'text' && looksLikeMetaReasoning(c.text));
+    if (metaReasoning) {
+      this.logMetaReasoning(row.characterId);
+      if (!result.care) {
+        if (row.nextBubble === 0) await this.wait(row, 'provider_unavailable');
+        else await this.store.fail(row.id, 'empty_output');
+        return;
+      }
+      delete result.contents;
+    }
     const contact = await this.context.contacts.getActiveContact(row.userId, row.characterId);
     const conversation =
       contact?.conversationId === row.conversationId ||
@@ -766,7 +798,7 @@ export class ReplyEngine {
         conversation.contentScope = 'normal';
       }
       result.snapshot.scope = conversation.contentScope;
-      if (!result.bubbles.every((b) => outputAllowed(b, policy, false))) {
+      if (metaReasoning || !result.bubbles.every((b) => outputAllowed(b, policy, false))) {
         const safe = careFallback(undefined, result.snapshot.careVariant, null);
         result.bubbles = Array.from(
           { length: Math.max(2, result.bubbles.length) },
@@ -979,7 +1011,7 @@ function trackCharges(
           const result = await target.generateText(input);
           if (result.ok) {
             sink.chargedMicros += Math.max(0, result.value.chargedMicros);
-            if (/:(reply|reply-blind|guard|names)$/.test(input.idempotencyKey))
+            if (/:(reply|reply-blind|guard|names)(:meta-retry)?$/.test(input.idempotencyKey))
               sink.usageRecordId = result.value.usageRecordId;
           }
           return result;

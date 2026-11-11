@@ -427,7 +427,7 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
       expect(record).toMatchObject({
         output_tokens: 8192,
         reasoning_tokens: 8192,
-        error_code: 'empty_output',
+        error_code: 'truncated_reasoning',
       });
     } finally {
       await setOutputModel('fake', TEXT_BOUNDS.text.maxOutputTokens);

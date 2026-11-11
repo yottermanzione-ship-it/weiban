@@ -72,7 +72,7 @@ export function textProtocolOf(kind: string | null | undefined): TextProtocol {
 }
 
 export type TextResult =
-  | { ok: true; text: string; usage: TextUsage; ttftMs?: number }
+  | { ok: true; text: string; usage: TextUsage; ttftMs?: number; finishReason?: string }
   | {
       ok: false;
       category:
@@ -85,10 +85,11 @@ export type TextResult =
         | 'bad_request'
         /** 正文为空（常见原因：推理模型的思考吃光了输出额度）。 */
         | 'empty_output'
-        /** 要求 JSON 却因输出额度用完被截断。 */
+        /** 输出额度用完，JSON 未完成或文本生成消耗了思考 token。 */
         | 'truncated';
       retryable: boolean;
       usage?: TextUsage;
+      finishReason?: string;
       /**
        * 批 EJ：截断原因（只做诊断，写进用量记录的 errorCode，不含正文）：
        * reasoning = 上游报告了思考 token / 返回了思考内容（思考吃掉输出额度）；
@@ -270,15 +271,16 @@ export function thinkingOnFields(
 const REASONING_TAGS = 'think|thinking|reasoning';
 /**
  * 剥掉混进正文的思考内容（旧版 reply_content.js 的做法）：成对的 <think>…</think>、
- * 只有结束标记时去掉它之前的全部内容、结尾未闭合的开始标记、开头的「思考过程：」段。
+ * 只有结束标记时去掉它之前的全部内容、结尾未闭合的开始标记、开头明确标出的思考段。
  */
 export function stripReasoning(text: string): string {
   let out = text.replace(new RegExp(`<(${REASONING_TAGS})>[\\s\\S]*?</\\1>`, 'gi'), '');
   const close = new RegExp(`</(?:${REASONING_TAGS})>`, 'i').exec(out);
   if (close) out = out.slice(close.index + close[0].length);
   out = out.replace(new RegExp(`<(?:${REASONING_TAGS})>[\\s\\S]*$`, 'i'), '');
+  out = out.replace(/^\s*(?:思考过程|推理过程|内心思考)\s*[:：][\s\S]*?\n\s*\n/, '');
   out = out.replace(
-    /^\s*(?:思考过程|推理过程|内心思考|thinking(?: process)?|reasoning)\s*[:：][\s\S]*?\n\s*\n/i,
+    /^\s*(?:thinking(?: process)?|reasoning)\s*[:：][\s\S]*?(?:\r?\n[ \t]*\r?\n|$)/i,
     '',
   );
   return out.trim();
@@ -473,11 +475,14 @@ export class OpenAiTextAdapter implements TextAdapter {
             }[]
           | undefined
       )?.[0];
-      if (choice?.finish_reason === 'content_filter' || choice?.message?.refusal)
+      const finishReason = choice?.finish_reason;
+      const finish = typeof finishReason === 'string' ? { finishReason } : {};
+      if (finishReason === 'content_filter' || choice?.message?.refusal)
         return {
           ok: false,
           category: 'content_rejected',
           retryable: false,
+          ...finish,
           ...(payload.usage
             ? { usage: usageOf(payload.usage, estimateInputTokens(input.messages), '') }
             : {}),
@@ -495,23 +500,37 @@ export class OpenAiTextAdapter implements TextAdapter {
       );
       const usage: TextUsage =
         reasoningTokens === undefined ? baseUsage : { ...baseUsage, reasoningTokens };
+      if (
+        input.responseFormat !== 'json' &&
+        finishReason === 'length' &&
+        (reasoningTokens ?? 0) > 0
+      )
+        return {
+          ok: false,
+          category: 'truncated',
+          retryable: true,
+          usage,
+          truncation: 'reasoning',
+          ...finish,
+        };
       // 空正文：按失败处理（网关负责重试与降级），不能当成功静默返回。
-      if (!text) return { ok: false, category: 'empty_output', retryable: true, usage };
+      if (!text) return { ok: false, category: 'empty_output', retryable: true, usage, ...finish };
       if (input.responseFormat === 'json') {
         // 批 EJ：截断只看正文——正文已是完整 JSON（后面只剩空白）就算成功，不看总 token 是否顶格。
         const complete = completeJsonPrefix(text);
-        if (complete !== null) return { ok: true, text: complete, usage };
-        if (choice?.finish_reason === 'length')
+        if (complete !== null) return { ok: true, text: complete, usage, ...finish };
+        if (finishReason === 'length')
           return {
             ok: false,
             category: 'truncated',
             retryable: true,
             usage,
+            ...finish,
             truncation: truncationKind(rawText, payload.usage, choice?.message),
             partialText: text,
           };
       }
-      return { ok: true, text, usage };
+      return { ok: true, text, usage, ...finish };
     } catch {
       return { ok: false, category: 'network_error', retryable: true };
     }

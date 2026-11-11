@@ -1,4 +1,5 @@
 /** 纯文本后处理，模型不输出气泡JSON。产品数字只从平台参数读取。 */
+import type { GenerateTextInput } from '@weiban/contracts';
 import {
   P01_REPLY_DELAY,
   P02_SPLIT_BUBBLES,
@@ -45,6 +46,60 @@ export function takeAfterFinalMarker(text: string): string {
     .trim();
   return withoutMarker || text;
 }
+
+// 「我们先」或「let me」也是常见台词。只有开头明确在判断身份、接话任务等才单独拦截。
+const META_REASONING_OPENINGS = [
+  /^\s*(?:我们(?:需要(?:先)?|先)|需要)\s*(?:回答(?:这条|当前的)?(?:群聊|用户)|判断(?:角色|身份|谁(?:在|来)说话|要不要接话)|选(?:择)?(?:说话人|发言身份)|接(?:一下)?(?:这句|上一条消息))/mu,
+  /^\s*(?:用户(?:给我|现在|说)|作为(?:助手|AI\b))/imu,
+  /^\s*(?:user\s+and\s+assistant\b|assistant(?:\s+(?:is|should|needs?)\b|\s*[:：]))/im,
+  /^\s*(?:need to|let me|i (?:should|need to))\s+(?:respond|reply|answer|decide|choose|infer|determine)\b[^.!?,;\n]{0,48}\b(?:user|assistant|persona|prompt|group chat|last message)\b/im,
+];
+const META_REASONING_MARKERS = [
+  /需要回答/u,
+  /需要判断/u,
+  /需要选/u,
+  /系统提示/u,
+  /没有指定/u,
+  /最安全/u,
+  /上一条是/u,
+  /结合最近/u,
+  /主动发起/u,
+  /事实底稿/u,
+  /角色可能/u,
+  /这符合/u,
+  /可以以[^。！？\n]{1,16}身份/u,
+  /\bassistant\b/i,
+  /\buser\s+and\b/i,
+  /\bneed\s+to\b/i,
+  /\blet\s+me\b/i,
+  /\bi\s+should\b/i,
+  /\bwe\s+should\b/i,
+  /\bpersona\b/i,
+  /\bprompt\b/i,
+];
+
+/** 只检查将要发出的正文。换行可能拆成独立气泡，因此每行开头都要检查。 */
+export function looksLikeMetaReasoning(text: string): boolean {
+  const body = takeAfterFinalMarker(unescapeModelText(text)).normalize('NFKC').trim();
+  if (META_REASONING_OPENINGS.some((opening) => opening.test(body))) return true;
+  const matches = META_REASONING_MARKERS.filter((marker) => marker.test(body)).length;
+  return matches >= 2 || (matches === 1 && body.length >= 400);
+}
+
+export function metaReasoningRetryInput(input: GenerateTextInput): GenerateTextInput {
+  return {
+    ...input,
+    idempotencyKey: `${input.idempotencyKey}:meta-retry`,
+    messages: [
+      ...input.messages,
+      {
+        role: 'system',
+        content: '直接写要发出去的那一句或几句角色台词。不写分析、判断、计划或身份推断。',
+      },
+    ],
+  };
+}
+
 /**
  * 2026-10-30 双兜底（晓楠批准，阈值放保守）：防跟风不是事先列清单，而是动态算。
  * - 窗口：最近 20 条角色回复；阈值：同一候选出现在 11 条以上（过半）才算刚染上的习惯。
