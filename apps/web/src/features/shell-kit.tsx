@@ -16,6 +16,7 @@ import {
   type ReactNode,
 } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 import { OldIcon, OldImage, type IconProps } from './old-icons.js';
 import { showToast } from './toast.js';
 
@@ -565,7 +566,7 @@ export function Sheet({
     onClose();
     return true;
   });
-  return (
+  return createPortal(
     <div
       className="sheet-scrim"
       onClick={() => {
@@ -619,7 +620,8 @@ export function Sheet({
         )}
         <div className="sheet-body">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -667,7 +669,7 @@ export function ActionSheet({
 }) {
   useEscape(onClose);
   const radio = items.some((item) => item.checked !== undefined);
-  return (
+  return createPortal(
     <div className="sheet-scrim action-scrim" onClick={onClose}>
       <div
         className="action-sheet"
@@ -705,7 +707,8 @@ export function ActionSheet({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
