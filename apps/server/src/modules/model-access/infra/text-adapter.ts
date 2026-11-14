@@ -274,6 +274,15 @@ export function thinkingOnFields(
 }
 
 const REASONING_TAGS = 'think|thinking|reasoning';
+/** 去掉开头一行思考标题；有明确的空行分隔才把空行前全当思考，没有空行只删标题，不能把后文一起吃掉。 */
+function stripLeadingReasoningLabel(text: string, label: RegExp): string {
+  const match = label.exec(text);
+  if (!match) return text;
+  const rest = text.slice(match[0].length);
+  const blank = /\r?\n[ \t]*\r?\n/.exec(rest);
+  if (blank) return rest.slice(blank.index + blank[0].length).trim();
+  return rest.trim();
+}
 /**
  * 剥掉混进正文的思考内容（旧版 reply_content.js 的做法）：成对的 <think>…</think>、
  * 只有结束标记时去掉它之前的全部内容、结尾未闭合的开始标记、开头明确标出的思考段。
@@ -283,10 +292,13 @@ export function stripReasoning(text: string): string {
   const close = new RegExp(`</(?:${REASONING_TAGS})>`, 'i').exec(out);
   if (close) out = out.slice(close.index + close[0].length);
   out = out.replace(new RegExp(`<(?:${REASONING_TAGS})>[\\s\\S]*$`, 'i'), '');
-  out = out.replace(/^\s*(?:思考过程|推理过程|内心思考)\s*[:：][\s\S]*?\n\s*\n/, '');
-  out = out.replace(
-    /^\s*(?:thinking(?: process)?|reasoning)\s*[:：][\s\S]*?(?:\r?\n[ \t]*\r?\n|$)/i,
-    '',
+  out = stripLeadingReasoningLabel(
+    out,
+    /^\s*(?:思考过程|推理过程|内心思考)\s*[:：][ \t]*(?:\r?\n)?/,
+  );
+  out = stripLeadingReasoningLabel(
+    out,
+    /^\s*(?:thinking(?: process)?|reasoning)\s*[:：][ \t]*(?:\r?\n)?/i,
   );
   return out.trim();
 }
