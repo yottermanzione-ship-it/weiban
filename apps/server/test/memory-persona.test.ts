@@ -1301,6 +1301,36 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
     expect(second.messages.some((m) => first.messages.some((f) => f.id === m.id))).toBe(false);
     response = '我听着呢\n今天过得怎么样？';
   }, 120_000); // 65条真实加密消息及事件派发；验证批次完整性，不是单次回复延迟指标。
+  it('免费档摘要从窗口起点开始，窗口外旧消息不进入模型调用', async () => {
+    await user('WINDOW_OLD_CANARY 这是很久以前的事');
+    clock.advance(8 * 86_400_000);
+    const recent = await user('WINDOW_RECENT_CANARY 这是窗口内的事');
+    const before = calls.length;
+    response = '__PRIVATE_SUMMARY__';
+    try {
+      await memory().compactWindow(
+        userId,
+        characterId,
+        'normal',
+        recent.triggerSeq,
+        recent.triggerSeq - 1,
+      );
+      const summaryCalls = calls
+        .slice(before)
+        .filter((call) => call.meta?.promptTemplateVersion === 'chat-summary-v2');
+      expect(summaryCalls.length).toBeGreaterThan(0);
+      const payload = summaryCalls.map((call) => call.messages.map((m) => m.content).join('\n'));
+      expect(payload.join('\n')).toContain('WINDOW_RECENT_CANARY');
+      expect(payload.join('\n')).not.toContain('WINDOW_OLD_CANARY');
+      const state = await db.query<{ covered_seq: string }>(
+        'SELECT covered_seq FROM ai_runtime.chat_summary_states WHERE parent_id=(SELECT id FROM ai_runtime.memory_states WHERE user_id=$1 AND character_id=$2 LIMIT 1)',
+        [userId, characterId],
+      );
+      expect(Number(state.rows[0]!.covered_seq)).toBeGreaterThanOrEqual(recent.triggerSeq - 1);
+    } finally {
+      response = '我听着呢\n今天过得怎么样？';
+    }
+  }, 120_000);
   it('后台预算失败保留游标待重试，注销清单包含记忆；彻底删除只清除旧会话', async () => {
     await user('后台余额失败也不能丢这条记忆');
     failure = 'budget_exceeded';

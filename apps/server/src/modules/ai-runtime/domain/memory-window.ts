@@ -9,6 +9,7 @@
  * 两次前移之间，请求开头（含稳定记忆块和窗口里已有的原文）一字不变，前缀缓存几乎每轮命中。
  */
 import { z } from 'zod';
+import { sinceDay } from './memory-tier.js';
 
 /** Additive slack: retain every message in the previous 600-message policy.
  * Within a 64-sequence segment, new messages append without sliding the oldest one.
@@ -216,4 +217,23 @@ export function uncoveredHistoryEnd(
   return history.length >= readLimit && first !== undefined && first > rawFromSeq + 1
     ? first - 1
     : null;
+}
+
+/**
+ * 免费档的摘要起点：不能早于 summaryDays 窗口。返回窗口内第一条消息的 seq；
+ * 没有窗口内消息时返回 MAX_SAFE_INTEGER（本次不摘要，只把旧范围作废）。
+ * summaryDays 为 null（PRO+）时返回 0，保持全量摘要。
+ */
+export function summaryFloorSeq(
+  history: readonly { seq: number; createdAt: string }[],
+  summaryDays: number | null,
+  now: Date,
+): number {
+  if (summaryDays === null) return 0;
+  const since = sinceDay(now, summaryDays);
+  if (since === null) return 0;
+  return (
+    history.find((message) => message.createdAt.slice(0, 10) >= since)?.seq ??
+    Number.MAX_SAFE_INTEGER
+  );
 }

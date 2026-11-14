@@ -1,8 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { uncoveredHistoryEnd } from './memory-window.js';
+import { summaryFloorSeq, uncoveredHistoryEnd } from './memory-window.js';
 import { importantMemoryIntent, renderChatSummary, validateSummaryAnswer } from './chat-summary.js';
 
 describe('滚动总结的来源与权益', () => {
+  it('免费档摘要起点不早于 summaryDays 窗口', () => {
+    const history = [
+      { seq: 1, createdAt: '2026-10-21T04:11:39.150Z' },
+      { seq: 240, createdAt: '2026-10-23T07:46:17.651Z' },
+      { seq: 900, createdAt: '2026-11-04T00:00:00.000Z' },
+    ];
+    expect(summaryFloorSeq(history, 7, new Date('2026-11-10T02:00:00Z'))).toBe(900);
+    expect(summaryFloorSeq(history, null, new Date('2026-11-10T02:00:00Z'))).toBe(0);
+    expect(summaryFloorSeq(history.slice(0, 2), 7, new Date('2026-11-10T02:00:00Z'))).toBe(
+      Number.MAX_SAFE_INTEGER,
+    );
+  });
   it('日期由最早真实来源决定，不能把旧事重新写成今日解锁免费七天', () => {
     const sources = new Map([
       ['old', { at: '2026-09-01' }],

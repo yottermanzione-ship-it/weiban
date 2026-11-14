@@ -769,6 +769,7 @@ export class MemoryService {
     characterId: string,
     scope: 'normal' | 'adult',
     toSeq: number,
+    minimumFloorSeq = 0,
   ): Promise<void> {
     if (!this.chatSummaries) return;
     const job = await this.guard(userId, characterId);
@@ -776,8 +777,9 @@ export class MemoryService {
       await this.lock(tx, job);
       return this.state(tx, job);
     });
-    const floor = Math.max(parent.barrierSeq, parent.windowStartSeq);
-    if (toSeq <= floor) return;
+    const floor = Math.max(parent.barrierSeq, parent.windowStartSeq, minimumFloorSeq);
+    // 超出免费档窗口的旧范围也要交给 request 作废，不能只 return，否则后台会继续补。
+    if (toSeq <= Math.max(parent.barrierSeq, parent.windowStartSeq)) return;
     const previous: ChatSummaryItem[] = [];
     const [legacyPrivate] =
       scope === 'normal'
@@ -843,7 +845,7 @@ export class MemoryService {
         bytes.fill(0);
       }
     }
-    await this.chatSummaries.request(parent, scope, toSeq, previous.slice(-30));
+    await this.chatSummaries.request(parent, scope, toSeq, previous.slice(-30), floor);
   }
   /**
    * 回复 / 通话 / 抽取用的记忆上下文。传 window（私聊回复）时同时维护分段稳定窗口：

@@ -133,10 +133,12 @@ export class ChatSummaryService {
     scope: Scope,
     toSeq: number,
     previous: ChatSummaryItem[],
+    minimumFloorSeq = 0,
   ): Promise<void> {
     const id = newId();
-    const floor = Math.max(parent.barrierSeq, parent.windowStartSeq);
-    if (toSeq <= floor) return;
+    const floor = Math.max(parent.barrierSeq, parent.windowStartSeq, minimumFloorSeq);
+    // 档位窗口前移时从窗口起点重新开始，旧摘要不再带入；否则旧条目会和窗口内消息一起重算。
+    const seed = floor > parent.windowStartSeq ? [] : previous;
     await this.db.transaction(async (tx) => {
       await this.plans.lock(tx, parent.userId, parent.conversationId);
       const [current] = await tx.db
@@ -161,17 +163,28 @@ export class ChatSummaryService {
           ciphertext: await this.crypto.seal(
             parent.userId,
             `ai:chat-summary:${id}`,
-            JSON.stringify(previous),
+            JSON.stringify(seed),
             tx,
           ),
           updatedAt: this.clock.now(),
         })
         .onConflictDoNothing();
+      // 免费档窗口前移时，把旧范围直接标成已覆盖，旧摘要一并作废；后台不再补、不再扣费；
+      // 窗口内未完成的部分仍保留在 target 里继续增量摘要。
       await tx.query(
-        'UPDATE ai_runtime.chat_summary_states SET target_seq=greatest(target_seq,$3) WHERE parent_id=$1 AND scope=$2',
-        [parent.id, scope, toSeq],
+        `UPDATE ai_runtime.chat_summary_states
+            SET target_seq=greatest(target_seq,$3),
+                covered_seq=greatest(covered_seq,$4),
+                ciphertext = CASE WHEN covered_seq < $4 THEN NULL ELSE ciphertext END,
+                version = CASE WHEN covered_seq < $4 THEN 0 ELSE version END,
+                prepared_ciphertext = CASE WHEN covered_seq < $4 THEN NULL ELSE prepared_ciphertext END,
+                attempts = CASE WHEN covered_seq < $4 THEN 0 ELSE attempts END,
+                retry_after = CASE WHEN covered_seq < $4 THEN NULL ELSE retry_after END
+          WHERE parent_id=$1 AND scope=$2`,
+        [parent.id, scope, toSeq, floor],
       );
     });
+    if (toSeq <= floor) return;
     const [state] = await this.db.db
       .select()
       .from(chatSummaryStates)

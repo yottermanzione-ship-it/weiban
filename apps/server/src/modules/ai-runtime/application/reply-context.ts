@@ -38,7 +38,11 @@ import { IDENTITY_READ_PORT, IDENTITY_USER_STATUS_PORT } from '../../identity/in
 import { userStatusLine } from '../domain/user-status.js';
 import { POLICY_PORT } from '../../policy/index.js';
 import { MemoryService } from './memory.js';
-import { stableHistoryReadLimit, uncoveredHistoryEnd } from '../domain/memory-window.js';
+import {
+  stableHistoryReadLimit,
+  summaryFloorSeq,
+  uncoveredHistoryEnd,
+} from '../domain/memory-window.js';
 import { allowedAutomaticStyle, scenarioText } from '../domain/persona.js';
 import { contextTokens } from '../../model-access/index.js';
 import { PlayContinuityStore } from './play-continuity.js';
@@ -962,6 +966,12 @@ export class ReplyContext {
       voiceCall && !includeLiveHistory
         ? contextTokens([{ content: realtimeCallInstructions(messages) }])
         : contextTokens(messages);
+    // 免费档只在 7 天窗口内摘要；窗口外不生成、不扣费。PRO+（summaryDays = null）保持全量。
+    const summaryFloor = summaryFloorSeq(
+      history,
+      remembered.tier?.limits.summaryDays ?? null,
+      this.clock.now(),
+    );
     if (this.memory.chatSummaries) {
       for (let pass = 0; pass < 2; pass++) {
         const historyGap = uncoveredHistoryEnd(history, remembered.rawFromSeq);
@@ -998,7 +1008,7 @@ export class ReplyContext {
         if (!cutoff) break;
         const before = JSON.stringify(remembered.rawFromSeqByScope);
         for (const s of historyScopes)
-          await this.memory.compactWindow(row.userId, row.characterId, s, cutoff);
+          await this.memory.compactWindow(row.userId, row.characterId, s, cutoff, summaryFloor);
         remembered = await this.memory.context(
           row.userId,
           row.characterId,
