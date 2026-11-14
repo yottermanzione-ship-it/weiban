@@ -780,21 +780,7 @@ export class MemoryService {
     const since = sinceDay(this.clock.now(), days);
     if (since === null) return 0;
     const scopes: ContentScope[] = scope === 'adult' ? ['normal', 'adult'] : ['normal'];
-    let afterSeq = 0;
-    while (true) {
-      const page = await this.chat.readMessages({
-        conversationId,
-        scopes,
-        afterSeq,
-        limit: 200,
-      });
-      if (!page.length) return 0;
-      const hit = page.find((message) => message.createdAt.slice(0, 10) >= since);
-      if (hit) return hit.seq;
-      const next = page.at(-1)!.seq;
-      if (next <= afterSeq || page.length < 200) return 0;
-      afterSeq = next;
-    }
+    return (await this.chat.firstSeqAtOrAfter(conversationId, since, scopes)) ?? 0;
   }
 
   /** 只由实际输入压力触发；一次最多一个有界批次，对账继续剩余目标。 */

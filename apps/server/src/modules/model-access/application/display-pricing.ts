@@ -37,7 +37,7 @@ export const DISPLAY_BASE_KEY = 'display_multiplier_base';
 const BASE_KEY = DISPLAY_BASE_KEY;
 const WINDOW_MS = 7 * 24 * 3_600_000;
 const CACHE_MS = 10 * 60_000;
-export const MIN_SAMPLES = 20;
+export const MIN_SAMPLES = 1;
 
 export interface DisplayPricing {
   displayMultiplier: number | null;

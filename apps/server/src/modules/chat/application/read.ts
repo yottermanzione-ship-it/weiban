@@ -5,6 +5,7 @@ import {
   desc,
   eq,
   gt,
+  gte,
   inArray,
   isNull,
   lt,
@@ -276,6 +277,26 @@ export class ChatReadService implements ChatReadPort {
     };
     return transaction ? read(asDbTx(transaction)) : this.db.transaction(read);
   }
+  /** 免费档窗口边界：只查日期和序号，不解密正文。 */
+  async firstSeqAtOrAfter(
+    conversationId: string,
+    at: string,
+    scopes: ContentScope[],
+  ): Promise<number | null> {
+    const [row] = await this.db.db
+      .select({ seq: sql<string>`min(${messages.seq})` })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.conversationId, conversationId),
+          inArray(messages.scope, scopes),
+          gte(messages.createdAt, new Date(at)),
+        ),
+      );
+    const seq = Number(row?.seq);
+    return Number.isSafeInteger(seq) && seq > 0 ? seq : null;
+  }
+
   async getMessage(
     messageId: string,
     scopesInput: ContentScope[],

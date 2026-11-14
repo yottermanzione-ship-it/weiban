@@ -9,6 +9,7 @@ import type {
   PolicyPort,
   Message,
   MediaTranscriptPort,
+  BillingUsageRefundPort,
 } from '@weiban/contracts';
 import {
   CLOCK,
@@ -41,6 +42,7 @@ import { ReplyPlanStore } from './plan-store.js';
 import { blockedSeqs } from './model-blocked-messages.js';
 import { ImageCaptionStore, NO_CAPTIONS } from './image-captions.js';
 import { captionForMemory } from '../domain/image-caption.js';
+import { BILLING_USAGE_REFUND_PORT } from '../../billing/index.js';
 
 export const CHAT_SUMMARY_JOB = 'ai.compact_chat';
 type Parent = typeof memoryStates.$inferSelect;
@@ -84,6 +86,9 @@ export class ChatSummaryService {
     @Inject(ReplyPlanStore) readonly plans: ReplyPlanStore,
     @Optional() @Inject(ImageCaptionStore) readonly captions?: ImageCaptionStore,
     @Optional() @Inject(MEDIA_TRANSCRIPT_PORT) readonly transcripts?: MediaTranscriptPort,
+    @Optional()
+    @Inject(BILLING_USAGE_REFUND_PORT)
+    readonly refunds?: BillingUsageRefundPort,
   ) {}
 
   private async open<T>(
@@ -270,6 +275,8 @@ export class ChatSummaryService {
       return { ...s, attempts };
     });
     if (!claimed) return;
+    let chargedUsageId: string | null = null;
+    let committed = false;
     try {
       let prepared: z.infer<typeof Prepared>;
       if (claimed.preparedCiphertext)
@@ -427,6 +434,7 @@ export class ChatSummaryService {
           ],
         });
         if (!result.ok) throw new Error(`summary_${result.error}`);
+        if (result.value.chargedMicros > 0) chargedUsageId = result.value.usageRecordId;
         if (result.value.truncated) throw new Error('summary_truncated');
         const sources = new Map(
           [...prepared.previous, ...prepared.messages].map((x) => [x.id, { at: x.at }] as const),
@@ -504,8 +512,11 @@ export class ChatSummaryService {
           .update(memoryStates)
           .set({ windowBlockCiphertext: null })
           .where(eq(memoryStates.id, row.p.id));
+        committed = true;
       });
+      await this.refundDiscarded(chargedUsageId, committed);
     } catch (error) {
+      await this.refundDiscarded(chargedUsageId, committed);
       const code = error instanceof Error ? error.message : '';
       new Logger(ChatSummaryService.name).warn({
         code: 'ai_chat_summary_failed',
@@ -526,6 +537,19 @@ export class ChatSummaryService {
           updatedAt: this.clock.now(),
         })
         .where(and(eq(chatSummaryStates.id, id), eq(chatSummaryStates.leaseId, lease)));
+    }
+  }
+
+  /** 摘要没有入库时，把这次模型调用的用户扣费原路退回；失败只记日志，不影响重试。 */
+  private async refundDiscarded(usageRecordId: string | null, committed: boolean): Promise<void> {
+    if (!usageRecordId || committed || !this.refunds) return;
+    try {
+      await this.refunds.refundUsage(usageRecordId, '摘要未入库，自动退回');
+    } catch {
+      new Logger(ChatSummaryService.name).warn({
+        code: 'ai_chat_summary_refund_failed',
+        usageRecordId,
+      });
     }
   }
 }
