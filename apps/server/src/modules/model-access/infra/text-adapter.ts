@@ -166,12 +166,14 @@ export function thinkingControlFor(baseUrl: string, model: string): ThinkingCont
   if (url.includes('openrouter.ai')) return 'openrouter';
   if (url.includes('deepseek.com')) return 'deepseek';
   if (url.includes('dashscope') || url.includes('aliyuncs.com')) return 'qwen';
-  if (id.startsWith('deepseek')) return 'deepseek';
-  if (id.startsWith('qwen') || id.startsWith('qwq')) return 'qwen';
-  // 2026-10-29 关思考：GPT 5.6 系列与 Abliteration 基础款/大闪款厂商均接受 reasoning_effort none；
-  // Abliteration large-v2 除外（它会把 none 映射为低档隐藏思考，不是真正关掉），故排除。
-  if (/^gpt-5\.6(-|$)/.test(id)) return 'reasoning_none';
-  if (id.startsWith('abliterated-model') && !id.includes('large-v2')) return 'reasoning_none';
+  // 只对确认支持的官方域名发“关思考”字段；中转站/兼容站不猜，避免不支持却硬发 400。
+  if (url.includes('api.openai.com') && /^gpt-5\.6(-|$)/.test(id)) return 'reasoning_none';
+  if (
+    url.includes('api.abliteration.ai') &&
+    id.startsWith('abliterated-model') &&
+    !id.includes('large-v2')
+  )
+    return 'reasoning_none';
   return 'none';
 }
 export function thinkingOffFields(control: ThinkingControl): Record<string, unknown> {
