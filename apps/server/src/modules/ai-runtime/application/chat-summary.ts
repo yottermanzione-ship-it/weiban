@@ -240,7 +240,6 @@ export class ChatSummaryService {
       characterId: row.p.characterId,
       modelRole: scope === 'adult' ? 'adult' : 'background',
       purpose: 'memory',
-      maxOutputTokens: 2400,
     });
     if (this.gateway.getContextBudget && !budget) return;
     const lease = newId();
@@ -289,14 +288,31 @@ export class ChatSummaryService {
               ChatSummaryItems,
             )
           : [];
-        const history = (
-          await this.chat.readMessages({
+        // 按所选 background 模型的真实上下文上限读取，而不是固定 80 条。
+        const targetSeq = claimed.targetSeq;
+        const maxMessages = budget
+          ? Math.max(200, Math.min(5000, Math.floor(budget.inputTokens / 20)))
+          : 80;
+        const history: Message[] = [];
+        let afterSeq = claimed.coveredSeq;
+        while (history.length < maxMessages && afterSeq < targetSeq) {
+          const page = await this.chat.readMessages({
             conversationId: row.p.conversationId,
             scopes: [scope],
-            afterSeq: claimed.coveredSeq,
-            limit: 80,
-          })
-        ).filter((m) => m.seq <= claimed.targetSeq);
+            afterSeq,
+            limit: 200,
+          });
+          if (!page.length) break;
+          for (const message of page) {
+            if (message.seq > targetSeq) break;
+            history.push(message);
+            if (history.length >= maxMessages) break;
+          }
+          const next = page.at(-1)?.seq ?? afterSeq;
+          if (next <= afterSeq) break;
+          afterSeq = next;
+          if (page.length < 200) break;
+        }
         const loaded =
           (await this.captions?.forMessages(row.p.userId, history, [scope]).catch(() => null)) ??
           NO_CAPTIONS;
@@ -309,7 +325,9 @@ export class ChatSummaryService {
         const blocked = await blockedSeqs(this.db, row.p.conversationId);
         const messages: z.infer<typeof Prepared>['messages'] = [];
         const fingerprints: z.infer<typeof Prepared>['fingerprints'] = [];
-        const maxChars = claimed.attempts >= 2 ? 6000 : 12000;
+        const baseChars = budget ? Math.max(12000, Math.floor(budget.triggerTokens * 1.1)) : 12000;
+        // 失败重试仍缩批，避免同一超大输入反复失败；首次按模型预算一次读完。
+        const maxChars = claimed.attempts >= 2 ? Math.min(6000, baseChars) : baseChars;
         let chars = 0,
           toSeq = claimed.coveredSeq,
           offset = 0,
@@ -358,10 +376,8 @@ export class ChatSummaryService {
         }
         if (!messages.length && history.length && toSeq === claimed.coveredSeq)
           throw new Error('summary_source_too_large');
-        if (
-          !history.length ||
-          (history.length < 80 && toSeq === history.at(-1)?.seq && offset === 0)
-        )
+        const reachedTarget = (history.at(-1)?.seq ?? claimed.coveredSeq) >= claimed.targetSeq;
+        if (!history.length || (reachedTarget && toSeq === history.at(-1)?.seq && offset === 0))
           toSeq = claimed.targetSeq;
         prepared = {
           epoch: epoch.version,
@@ -395,7 +411,7 @@ export class ChatSummaryService {
           modelRole: scope === 'adult' ? 'adult' : 'background',
           countAsBackground: true,
           responseFormat: 'json',
-          maxOutputTokens: 2400,
+          maxOutputTokens: budget?.reservedOutputTokens ?? 2400,
           idempotencyKey: `chat-summary:${id}:${claimed.version}:${claimed.attempts}`,
           meta: {
             scenarioMode: scope,

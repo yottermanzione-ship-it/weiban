@@ -976,13 +976,10 @@ export class ReplyContext {
       for (let pass = 0; pass < 2; pass++) {
         const historyGap = uncoveredHistoryEnd(history, remembered.rawFromSeq);
         const chars = assembled.messages.reduce((n, m) => n + m.content.length, 0);
-        if (
-          (!modelBudget || promptTokens(assembled.messages) < modelBudget.triggerTokens) &&
-          historyGap === null &&
-          assembled.messages.length < 420 &&
-          chars < 160000
-        )
-          break;
+        const withinContext = modelBudget
+          ? promptTokens(assembled.messages) < modelBudget.triggerTokens
+          : assembled.messages.length < 420 && chars < 160000;
+        if (withinContext && historyGap === null) break;
         const visible = history.filter(
           (m) =>
             m.senderKind !== 'system' &&
