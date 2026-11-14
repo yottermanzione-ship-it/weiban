@@ -3,6 +3,7 @@
  * RoutingTextAdapter 按上游账号的协议选用。不记录响应原文、不跟随重定向、不持有密钥。
  */
 import { Logger } from '@nestjs/common';
+import { existsSync, writeFileSync } from 'node:fs';
 import type { GenerateTextInput, UsageQuantities } from '@weiban/contracts';
 
 const NETWORK_LOG = new Logger('TextAdapter');
@@ -520,6 +521,35 @@ export class OpenAiTextAdapter implements TextAdapter {
       const reasoningTokens = reasoningTokensOf(payload.usage, reasoningText);
       const usage: TextUsage =
         reasoningTokens === undefined ? baseUsage : { ...baseUsage, reasoningTokens };
+      if (!text && !existsSync('/app/.data/empty-output-debug.json')) {
+        try {
+          writeFileSync(
+            '/app/.data/empty-output-debug.json',
+            JSON.stringify(
+              {
+                at: new Date().toISOString(),
+                model: input.model,
+                host: (() => {
+                  try {
+                    return new URL(input.baseUrl).host;
+                  } catch {
+                    return 'invalid_base_url';
+                  }
+                })(),
+                finishReason,
+                content: rawText,
+                reasoning: reasoningText,
+                usage: payload.usage,
+                messageKeys: Object.keys(choice?.message ?? {}),
+              },
+              null,
+              2,
+            ),
+          );
+        } catch {
+          // 诊断文件写不进去不影响主流程。
+        }
+      }
       if (!text)
         NETWORK_LOG.warn({
           code: 'text_empty_output',
