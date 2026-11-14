@@ -73,9 +73,7 @@ function usesModelOutputLimit(input: GenerateTextInput): boolean {
   // 2026-11-12 总经理：记忆整理 / 推演不再设平台小上限，直接用模型自己的最大输出能力；
   // 上限只由模型与计费边界决定，避免思考模型被我们的固定额度卡成空正文。
   return (
-    input.purpose === 'chat_reply' ||
-    input.purpose === 'memory' ||
-    input.purpose === 'simulation'
+    input.purpose === 'chat_reply' || input.purpose === 'memory' || input.purpose === 'simulation'
   );
 }
 
@@ -888,7 +886,8 @@ export class ModelGateway implements ModelGatewayPort {
           (answer.truncation === 'whitespace' || answer.truncation === 'repeat');
         if (runaway) break;
         // 已按模型完整上限请求，空正文时不能原样再花一次钱重试，更不能越过已核准上限。
-        if (empty && modelOutputLimit) break;
+        // 例外：聊天空回复/思考截断常是上游瞬时问题，允许一次同模型重试；失败不扣用户，成功才结算。
+        if (empty && modelOutputLimit && input.purpose !== 'chat_reply') break;
         if (empty && !emptyRetried) {
           emptyRetried = true;
           const platformCap =
