@@ -504,12 +504,25 @@ export class OpenAiTextAdapter implements TextAdapter {
       const text = stripReasoning(rawText);
       const baseUsage = usageOf(payload.usage, estimateInputTokens(input.messages), rawText);
       // 批 EJ：思考 token 单独计量（计费仍按总输出）。
-      const reasoningTokens = reasoningTokensOf(
-        payload.usage,
-        choice?.message?.reasoning_content ?? choice?.message?.reasoning,
-      );
+      const reasoningText = choice?.message?.reasoning_content ?? choice?.message?.reasoning;
+      const reasoningTokens = reasoningTokensOf(payload.usage, reasoningText);
       const usage: TextUsage =
         reasoningTokens === undefined ? baseUsage : { ...baseUsage, reasoningTokens };
+      if (!text)
+        NETWORK_LOG.warn({
+          code: 'text_empty_output',
+          model: input.model,
+          finishReason,
+          rawLen: rawText.length,
+          strippedLen: text.length,
+          startsThinkTag: /^\s*<(?:think|thinking|reasoning)>/i.test(rawText),
+          hasCloseThinkTag: /<\/(?:think|thinking|reasoning)>/i.test(rawText),
+          startsThinkingLabel:
+            /^\s*(?:thinking(?: process)?|reasoning|思考过程|推理过程|内心思考)\s*[:：]/i.test(
+              rawText,
+            ),
+          reasoningLen: typeof reasoningText === 'string' ? reasoningText.length : null,
+        });
       if (
         input.responseFormat !== 'json' &&
         finishReason === 'length' &&
