@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { AnnouncementEndpoints, ReleaseEndpoints, type Announcement } from '@weiban/contracts';
 import { api } from '../data/client.js';
+import { shellBuild, shellVersion } from '../data/device-info.js';
 import { friendlyError, useRemote } from '../data/use-remote.js';
 import { MenuGroup, MenuRow, NavBar } from './shell-kit.js';
 import { Dialog } from './toast.js';
@@ -117,14 +118,20 @@ export function ReleaseCenter() {
 /** 我 › 设置 › 关于微伴。 */
 export function AboutPage() {
   const unreadCount = useAnnouncementUnread();
-  const androidVersion = /WeibanShell\/(\d+\.\d+\.\d+(?:-[\w.]+)?)/.exec(navigator.userAgent)?.[1];
+  const androidVersion = shellVersion();
+  const androidBuild = shellBuild();
   return (
     <main>
       <NavBar title="关于微伴" fallback="/settings" />
       <div className="coming-soon-body">
         <img className="brand-logo" src="/assets/old-ui/brand/weiban_logo.png" alt="" />
         <h2>微伴</h2>
-        {androidVersion && <p className="hint">安卓版 {androidVersion}</p>}
+        {androidVersion && (
+          <p className="hint">
+            安卓版 {androidVersion}
+            {androidBuild ? `（构建 ${androidBuild}）` : ''}
+          </p>
+        )}
         <p className="hint">
           网页版本 {WEB_VERSION}（构建 {WEB_BUILD}）
         </p>

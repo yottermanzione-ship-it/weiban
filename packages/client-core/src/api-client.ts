@@ -240,7 +240,10 @@ export class ApiClient {
     if (query && typeof query === 'object')
       for (const [name, value] of Object.entries(query))
         if (value !== undefined && value !== null) search.set(name, String(value));
-    return path + (search.size ? `?${search.toString()}` : '');
+    const searchString = search.toString();
+    // URLSearchParams.size 到 Chromium 113 才有；旧安卓 WebView 上它是 undefined，
+    // 直接用它判断会静默丢掉全部查询参数，服务器随后按缺参数返回 400。
+    return path + (searchString ? `?${searchString}` : '');
   }
   private key(endpoint: EndpointDef, url: string): string {
     return `${this.auth?.user.userId ?? 'public'}:${endpoint.method}:${url}`;
