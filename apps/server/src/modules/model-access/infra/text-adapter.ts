@@ -457,9 +457,10 @@ export class OpenAiTextAdapter implements TextAdapter {
       } finally {
         reader.releaseLock();
       }
+      const rawBody = Buffer.concat(chunks).toString('utf8');
       let payload: Record<string, unknown> = {};
       try {
-        payload = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
+        payload = JSON.parse(rawBody) as Record<string, unknown>;
       } catch {
         if (response.ok) return { ok: false, category: 'provider_error', retryable: true };
       }
@@ -541,6 +542,32 @@ export class OpenAiTextAdapter implements TextAdapter {
                 reasoning: reasoningText,
                 usage: payload.usage,
                 messageKeys: Object.keys(choice?.message ?? {}),
+              },
+              null,
+              2,
+            ),
+          );
+        } catch {
+          // 诊断文件写不进去不影响主流程。
+        }
+      }
+      if (!text && !existsSync('/app/.data/empty-raw-debug.json')) {
+        try {
+          writeFileSync(
+            '/app/.data/empty-raw-debug.json',
+            JSON.stringify(
+              {
+                at: new Date().toISOString(),
+                status: response.status,
+                model: input.model,
+                host: (() => {
+                  try {
+                    return new URL(input.baseUrl).host;
+                  } catch {
+                    return 'invalid_base_url';
+                  }
+                })(),
+                rawBody,
               },
               null,
               2,
