@@ -105,15 +105,7 @@ export class SharedSearchBilling implements SharedSearchBillingPort {
         if (
           available(account) <= 0 ||
           (await this.reservations.inFlightPaidCalls(tx, account.id)) >=
-            limits.maxConcurrentPaidCalls ||
-          (await this.reservations.backgroundSpent(
-            tx,
-            account.id,
-            localDate(this.clock.now(), account.timeZone),
-          )) +
-            ceiling +
-            100 >
-            account.backgroundDailyLimitMicros
+            limits.maxConcurrentPaidCalls
         )
           continue;
         members.push(account);
