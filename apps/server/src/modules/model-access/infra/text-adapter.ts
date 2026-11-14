@@ -2,7 +2,10 @@
  * 文本协议适配器：OpenAI 兼容（本文件）与 Anthropic 原生 Messages（anthropic-adapter.ts，3.24），
  * RoutingTextAdapter 按上游账号的协议选用。不记录响应原文、不跟随重定向、不持有密钥。
  */
+import { Logger } from '@nestjs/common';
 import type { GenerateTextInput, UsageQuantities } from '@weiban/contracts';
+
+const NETWORK_LOG = new Logger('TextAdapter');
 
 export interface TextUsage {
   reported?: {
@@ -538,7 +541,21 @@ export class OpenAiTextAdapter implements TextAdapter {
           };
       }
       return { ok: true, text, usage, ...finish };
-    } catch {
+    } catch (error) {
+      // 只记供应商/模型/错误摘要，不记 prompt、响应正文或密钥，便于定位是超时、断连还是解析异常。
+      NETWORK_LOG.warn({
+        code: 'text_network_error',
+        model: input.model,
+        host: (() => {
+          try {
+            return new URL(input.baseUrl).host;
+          } catch {
+            return 'invalid_base_url';
+          }
+        })(),
+        detail:
+          error instanceof Error ? `${error.name}: ${error.message}`.slice(0, 240) : 'unknown',
+      });
       return { ok: false, category: 'network_error', retryable: true };
     }
   }

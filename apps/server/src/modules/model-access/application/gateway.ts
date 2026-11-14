@@ -71,9 +71,13 @@ type TextCeiling = NonNullable<ReserveInput['ceiling']>;
 function usesModelOutputLimit(input: GenerateTextInput): boolean {
   if (input.maxOutputTokens !== undefined) return false;
   // 2026-11-12 总经理：记忆整理 / 推演不再设平台小上限，直接用模型自己的最大输出能力；
-  // 上限只由模型与计费边界决定，避免思考模型被我们的固定额度卡成空正文。
+  // 2026-11-14 总经理：行为规划 / 主动消息也照聊天，用模型自己的最大输出，不再固定 600/300。
   return (
-    input.purpose === 'chat_reply' || input.purpose === 'memory' || input.purpose === 'simulation'
+    input.purpose === 'chat_reply' ||
+    input.purpose === 'memory' ||
+    input.purpose === 'simulation' ||
+    input.purpose === 'behavior_planning' ||
+    input.purpose === 'proactive'
   );
 }
 
@@ -249,7 +253,9 @@ export class ModelGateway implements ModelGatewayPort {
     const primaryKey = primary?.facts?.modelKey;
     if (!primaryKey || primary?.facts?.entry?.capabilities.includes('adult_content'))
       return complete(first);
-    const chain = await this.catalog.cheaperTextFallbacks(primaryKey).catch(() => []);
+    let chain = await this.catalog.cheaperTextFallbacks(primaryKey).catch(() => []);
+    if (!chain.length)
+      chain = await this.catalog.alternateTextFallbacks(primaryKey).catch(() => []);
     for (const candidate of chain) {
       if (this.clock.nowMs() >= Date.parse(deadlineAt)) break;
       if (primaryKey && candidate === primaryKey) continue;

@@ -1365,6 +1365,38 @@ export class CatalogService {
   }
 
   /**
+   * 兜底换模型：不只找更便宜的。聊天/记忆连续空输出或网络失败时，
+   * 允许切到另一个已上架、有价格的普通文本模型（优先低价），避免“没有更便宜模型就等死”。
+   */
+  async alternateTextFallbacks(currentModelKey: string): Promise<string[]> {
+    const rows = await this.database.db
+      .select({ entry: modelCatalog })
+      .from(modelCatalog)
+      .where(and(eq(modelCatalog.enabled, true), isNull(modelCatalog.deletedAt)));
+    const candidates = rows
+      .map((r) => r.entry)
+      .filter(
+        (entry) =>
+          entry.modelKey !== currentModelKey &&
+          entry.scenarios.includes('chat') &&
+          !entry.capabilities.includes('adult_content') &&
+          !isRealtimeCallEntry(entry),
+      );
+    if (!candidates.length) return [];
+    const prices = await this.prices.textPrices(candidates.map((e) => e.modelKey));
+    const available = await this.availabilityDetails(candidates.map((entry) => entry.modelKey));
+    return candidates
+      .filter((entry) => available.get(entry.modelKey) === null && prices.has(entry.modelKey))
+      .sort(
+        (a, b) =>
+          standardReplyMicros(prices.get(a.modelKey)!) -
+            standardReplyMicros(prices.get(b.modelKey)!) || a.modelKey.localeCompare(b.modelKey),
+      )
+      .map((entry) => entry.modelKey)
+      .slice(0, 3);
+  }
+
+  /**
    * 契约 1.3：保存为启用时，当前生效价目表必须有这个模型的价格，否则 422 model_unavailable
    * （billing.md 4.1、ADR-0017 第 1 条）。计费查询端口未接入时 503，不放行。
    * 组合通话模型例外，见 requiresCatalogPrice。
