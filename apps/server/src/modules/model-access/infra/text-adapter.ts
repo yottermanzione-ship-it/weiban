@@ -346,6 +346,48 @@ export function reasoningTokensOf(raw: unknown, reasoningText?: unknown): number
   return undefined;
 }
 
+/** 把 OpenAI 兼容 SSE 的 data 帧压成最终 message；只保留正文/思考/结束原因/usage。 */
+function parseOpenAiSse(raw: string): {
+  content: string;
+  reasoning: string;
+  finishReason?: string;
+  usage?: unknown;
+} {
+  let content = '';
+  let reasoning = '';
+  let finishReason: string | undefined;
+  let usage: unknown;
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('data:')) continue;
+    const data = trimmed.slice(5).trim();
+    if (!data || data === '[DONE]') continue;
+    let event: Record<string, unknown>;
+    try {
+      event = JSON.parse(data) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    if (event.usage) usage = event.usage;
+    const choices = event.choices;
+    if (!Array.isArray(choices)) continue;
+    for (const item of choices) {
+      const choice = item as Record<string, unknown>;
+      const delta = (choice.delta ?? choice.message) as Record<string, unknown> | undefined;
+      if (typeof delta?.content === 'string') content += delta.content;
+      const think = delta?.reasoning_content ?? delta?.reasoning;
+      if (typeof think === 'string') reasoning += think;
+      if (typeof choice.finish_reason === 'string') finishReason = choice.finish_reason;
+    }
+  }
+  return {
+    content,
+    reasoning,
+    ...(finishReason ? { finishReason } : {}),
+    ...(usage ? { usage } : {}),
+  };
+}
+
 function usageOf(raw: unknown, inputEstimate: number, output: string): TextUsage {
   const object = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   const details = object.prompt_tokens_details as Record<string, unknown> | undefined;
@@ -416,11 +458,20 @@ export class OpenAiTextAdapter implements TextAdapter {
     input: Parameters<TextAdapter['generate']>[0],
     extra: Record<string, unknown>,
   ): Promise<TextResult> {
+    let idleTimer: NodeJS.Timeout | undefined;
+    let hardTimer: NodeJS.Timeout | undefined;
     try {
+      const controller = new AbortController();
+      const armIdle = () => {
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => controller.abort(), input.timeoutMs);
+      };
+      armIdle();
+      hardTimer = setTimeout(() => controller.abort(), Math.max(input.timeoutMs, 120_000));
       const response = await fetch(`${input.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
         method: 'POST',
         redirect: 'manual',
-        signal: AbortSignal.timeout(input.timeoutMs),
+        signal: controller.signal,
         headers: {
           Authorization: `Bearer ${input.apiKey}`,
           'Content-Type': 'application/json',
@@ -429,7 +480,7 @@ export class OpenAiTextAdapter implements TextAdapter {
         body: JSON.stringify({
           model: input.model,
           messages: wireMessages(input.messages),
-          stream: false,
+          stream: true,
           [input.outputParameter ?? 'max_tokens']: input.maxOutputTokens,
           temperature: input.temperature,
           // Abliteration 官方直连接受该提示，其他兼容地址不透传。
@@ -450,6 +501,7 @@ export class OpenAiTextAdapter implements TextAdapter {
         for (;;) {
           const part = await reader.read();
           if (part.done) break;
+          armIdle();
           bytes += part.value.length;
           if (bytes > 2_000_000) {
             await reader.cancel();
@@ -461,11 +513,28 @@ export class OpenAiTextAdapter implements TextAdapter {
         reader.releaseLock();
       }
       const rawBody = Buffer.concat(chunks).toString('utf8');
+      const contentType = response.headers.get('content-type') ?? '';
       let payload: Record<string, unknown> = {};
-      try {
-        payload = JSON.parse(rawBody) as Record<string, unknown>;
-      } catch {
-        if (response.ok) return { ok: false, category: 'provider_error', retryable: true };
+      if (/text\/event-stream/i.test(contentType) || /^\s*data:/m.test(rawBody)) {
+        const streamed = parseOpenAiSse(rawBody);
+        payload = {
+          choices: [
+            {
+              message: {
+                ...(streamed.content ? { content: streamed.content } : {}),
+                ...(streamed.reasoning ? { reasoning_content: streamed.reasoning } : {}),
+              },
+              ...(streamed.finishReason ? { finish_reason: streamed.finishReason } : {}),
+            },
+          ],
+          ...(streamed.usage ? { usage: streamed.usage } : {}),
+        };
+      } else {
+        try {
+          payload = JSON.parse(rawBody) as Record<string, unknown>;
+        } catch {
+          if (response.ok) return { ok: false, category: 'provider_error', retryable: true };
+        }
       }
       const error = payload?.error as { code?: unknown; type?: unknown } | undefined;
       const code = typeof error?.code === 'string' ? error.code : '';
@@ -642,6 +711,9 @@ export class OpenAiTextAdapter implements TextAdapter {
           error instanceof Error ? `${error.name}: ${error.message}`.slice(0, 240) : 'unknown',
       });
       return { ok: false, category: 'network_error', retryable: true };
+    } finally {
+      if (idleTimer) clearTimeout(idleTimer);
+      if (hardTimer) clearTimeout(hardTimer);
     }
   }
 }
