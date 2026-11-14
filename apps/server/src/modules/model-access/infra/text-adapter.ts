@@ -400,12 +400,15 @@ export class RoutingTextAdapter implements TextAdapter {
 export class OpenAiTextAdapter implements TextAdapter {
   async generate(input: Parameters<TextAdapter['generate']>[0]): Promise<TextResult> {
     const control = thinkingControlFor(input.baseUrl, input.model);
+    // DeepSeek 不发送 thinking/关思考字段：中转站和官方都没有这个标准参数，直接让它按默认思考跑。
     const extra =
-      input.thinking === 'default'
+      control === 'deepseek'
         ? {}
-        : input.thinking === 'on'
-          ? thinkingOnFields(control, input.thinkingBudget ?? 0)
-          : thinkingOffFields(control);
+        : input.thinking === 'default'
+          ? {}
+          : input.thinking === 'on'
+            ? thinkingOnFields(control, input.thinkingBudget ?? 0)
+            : thinkingOffFields(control);
     // 每次generate恰好一次HTTP；所有重试必须由网关另建attempt并预留风险。
     return this.once(input, extra);
   }
