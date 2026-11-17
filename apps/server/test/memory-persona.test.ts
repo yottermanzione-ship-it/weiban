@@ -1323,9 +1323,10 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
       expect(payload.join('\n')).toContain('WINDOW_RECENT_CANARY');
       expect(payload.join('\n')).not.toContain('WINDOW_OLD_CANARY');
       const state = await db.query<{ covered_seq: string }>(
-        'SELECT covered_seq FROM ai_runtime.chat_summary_states WHERE parent_id=(SELECT id FROM ai_runtime.memory_states WHERE user_id=$1 AND character_id=$2 LIMIT 1)',
-        [userId, characterId],
+        "SELECT s.covered_seq FROM ai_runtime.chat_summary_states s JOIN ai_runtime.memory_states m ON m.id=s.parent_id WHERE m.user_id=$1 AND m.character_id=$2 AND m.conversation_id=$3 AND s.scope='normal'",
+        [userId, characterId, cid],
       );
+      expect(state.rows).toHaveLength(1);
       expect(Number(state.rows[0]!.covered_seq)).toBeGreaterThanOrEqual(recent.triggerSeq - 1);
     } finally {
       response = '我听着呢\n今天过得怎么样？';

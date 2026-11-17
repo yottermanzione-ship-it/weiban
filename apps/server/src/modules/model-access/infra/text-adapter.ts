@@ -158,19 +158,25 @@ export interface TextAdapter {
 
 /**
  * 厂商思考开关的写法（docs/refactor/03 第 2.2 B 节）。按上游地址优先判断（同一模型在不同平台字段不同），
- * 判断不出时按模型名；都不认识就不发任何字段，避免别家报 400。
+ * 再按模型名限定支持项；判断不出时不发任何字段，避免别家报 400。
  */
 export type ThinkingControl = 'deepseek' | 'qwen' | 'openrouter' | 'reasoning_none' | 'none';
 export function thinkingControlFor(baseUrl: string, model: string): ThinkingControl {
   const url = baseUrl.toLowerCase();
+  let host: string;
+  try {
+    host = new URL(baseUrl).hostname.toLowerCase();
+  } catch {
+    return 'none';
+  }
   const id = model.toLowerCase();
   if (url.includes('openrouter.ai')) return 'openrouter';
   if (url.includes('deepseek.com')) return 'deepseek';
   if (url.includes('dashscope') || url.includes('aliyuncs.com')) return 'qwen';
   // 只对确认支持的官方域名发“关思考”字段；中转站/兼容站不猜，避免不支持却硬发 400。
-  if (url.includes('api.openai.com') && /^gpt-5\.6(-|$)/.test(id)) return 'reasoning_none';
+  if (host === 'api.openai.com' && /^gpt-5\.6(-|$)/.test(id)) return 'reasoning_none';
   if (
-    url.includes('api.abliteration.ai') &&
+    host === 'api.abliteration.ai' &&
     id.startsWith('abliterated-model') &&
     !id.includes('large-v2')
   )

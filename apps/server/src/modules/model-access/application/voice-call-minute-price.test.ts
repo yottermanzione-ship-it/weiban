@@ -37,7 +37,8 @@ describe('call minute estimate is not conservative freezing', () => {
         throw new Error('Text freezing quote would fold cache and overstate cost');
       return { amountMicros: key === 'asr/x' ? 10833 : 9828 };
     });
-    expect(await service(quote).voiceCallPointsPerMinute(pipeline)).toBe(5.18);
+    // 单轮ceil(6000×2.16 + 6500×0.0216 + 150×8.64)=14397微元；五轮加媒体=92646。
+    expect(await service(quote).voiceCallPointsPerMinute(pipeline)).toBe(9.26);
     expect(quote.mock.calls).toEqual([
       ['asr/x', VOICE_CALL_MINUTE_USAGE.asr],
       ['tts/x', VOICE_CALL_MINUTE_USAGE.tts],
@@ -45,7 +46,7 @@ describe('call minute estimate is not conservative freezing', () => {
   });
   it('applies the text discount once and retains already discounted media quotes', async () => {
     const quote = async (key: string) => ({ amountMicros: key === 'asr/x' ? 5417 : 4914 });
-    expect(await service(quote, true, true).voiceCallPointsPerMinute(pipeline)).toBe(2.59);
+    expect(await service(quote, true, true).voiceCallPointsPerMinute(pipeline)).toBe(4.63);
   });
   it('does not invent zero or a text estimate if any required price is absent', async () => {
     expect(await service().voiceCallPointsPerMinute(pipeline)).toBeNull();

@@ -262,6 +262,17 @@ describe('保留线上线路冷却与思考参数修复', () => {
     );
     expect(thinkingControlFor('https://provider.example', 'gpt-5.6')).toBe('none');
     expect(thinkingControlFor('https://provider.example', 'abliterated-model-flash')).toBe('none');
+    for (const [host, model] of [
+      ['api.openai.com', 'gpt-5.6'],
+      ['api.abliteration.ai', 'abliterated-model-flash'],
+    ]) {
+      for (const url of [
+        `https://${host}.example.test/v1`,
+        `https://example.test/${host}/v1`,
+        `https://example.test/v1?provider=${host}`,
+      ])
+        expect(thinkingControlFor(url, model!)).toBe('none');
+    }
     expect(supportsThinkingDisabled('claude-opus-5')).toBe(true);
     expect(supportsThinkingDisabled('claude-opus-5.5')).toBe(false);
     expect(supportsThinkingDisabled('claude-sonnet-5.5')).toBe(false);
