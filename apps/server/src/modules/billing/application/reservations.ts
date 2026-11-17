@@ -286,15 +286,9 @@ export class ReservationService implements BillingReservationPort {
         if (inFlight >= limits.maxConcurrentPaidCalls) return BUSY;
       }
 
-      // 用户后台每日上限（账户行已加锁，同一用户的并发请求已排队）
       const counts = kind === 'user' && countsAsBackground(input.purpose, input.countAsBackground);
       const backgroundDay = counts ? localDate(now, account.timeZone) : null;
-      if (backgroundDay) {
-        const spent = await this.backgroundSpent(tx, account.id, backgroundDay);
-        if (spent + (postpaid ? estimate : amount) > account.backgroundDailyLimitMicros) {
-          return fail('budget_exceeded', '今天的后台花费已达上限');
-        }
-      }
+      // 用户后台每日上限已取消：余额不足由 postpaid/insufficient_balance 拦截，不再按天设上限。
 
       // 平台每日上限：原子预留。v3.3（ADR-0032）：只约束平台账户（管理员侧任务）；
       // 用户真实付费调用不占平台预算；已知售价0但成本>0则由平台承担，先预留其成本。

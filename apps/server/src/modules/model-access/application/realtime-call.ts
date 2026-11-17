@@ -5,7 +5,7 @@
  * - 目录标记：标签 `pipeline:rt`（11 字符，在契约 16 字符上限内）+ 场景 voice_call + 能力 voice_input & voice_output。
  * - 计费：每次回应按供应商报告的「文字输入 / 缓存文字输入 / 音频输入 / 文字输出 / 音频输出」token 分别计价；
  *   文字 token 用 input / cached_input / output 单价，音频 token 用 4.5 新增的 audio_input / audio_output 单价。
- * - 展示：约每分钟积分按下面的分钟用量假设估算（只展示，不按分钟扣费）。
+ * - 展示：约每分钟积分按 5 分钟参考通话的平均用量估算（只展示，不按分钟扣费）。
  */
 import type { UsageQuantities, RouteBillingBounds } from '@weiban/contracts';
 import type { RealtimeUsage } from '../infra/dashscope-realtime.js';
@@ -47,17 +47,67 @@ export function isRealtimeCallEntry(entry: RealtimeCatalogEntry | null | undefin
 }
 
 /**
- * 每分钟用量假设（只用于「约每分钟积分」展示）：沿用级联通话的旧站实测口径（约 5 轮 / 分钟、角色约 54 字 ≈ 14 秒语音），
- * 用户约 20 秒语音；未知型号暂用 25 token / 秒，Omni 3.5/3.8 在展示报价时改用官方输入7/输出12.5。
- * 每轮回应的文字输入（人设 + 记忆 + 通话转写）按约 3000 token，
- * 音频上下文随通话累积，按新增语音的 3 倍粗估。真实扣费只按供应商每次回应报告的数字。
+ * 「约每分钟积分」展示口径（2026-11-11 重做）：按一通 5 分钟参考通话的**平均**每分钟用量估算。
+ * 实时模型每轮都把该次回应之前的全部语音作为音频上下文重新计费（官方上下文保留最近 300 秒），
+ * 所以第 1 分钟便宜、第 5 分钟最贵；只报一个「每分钟」数字时必须取平均，否则会低估约 8 倍
+ * （3.1 Plus 5 分钟实际约 10 元，旧口径只报 0.25 元/分钟）。
+ * 口径：每分钟 5 轮、用户每轮 20 秒、角色每轮 14 秒、音频 25 token/秒（Omni 3.5/3.8 按官方 7 / 12.5）、
+ * 文字输入每轮 1 万 token（2026-11 账单反推：3.1 Plus 约 723k 文字输入、约 72 轮），文字输出每轮 60 token。
+ * 只用于展示，真实扣费按供应商每次回应报告的数字。
  */
-export const REALTIME_MINUTE_USAGE: UsageQuantities = {
-  inputTokens: 5 * 3000,
-  audioInputTokens: 20 * 25 * 3,
-  outputTokens: 60,
-  audioOutputTokens: 14 * 25,
-};
+export const REALTIME_REFERENCE_CALL_SECONDS = 300;
+export const REALTIME_ROUNDS_PER_MINUTE = 5;
+export const REALTIME_USER_SECONDS_PER_ROUND = 20;
+export const REALTIME_ASSISTANT_SECONDS_PER_ROUND = 14;
+export const REALTIME_AUDIO_CONTEXT_CAP_SECONDS = 300;
+export const REALTIME_TEXT_INPUT_TOKENS_PER_ROUND = 10_000;
+export const REALTIME_TEXT_OUTPUT_TOKENS_PER_ROUND = 60;
+
+/** 各型号音频 token / 秒（官方口径；未知型号按 25）。 */
+export interface RealtimeAudioTokenRates {
+  inputPerSecond: number;
+  outputPerSecond: number;
+}
+export function realtimeAudioTokenRates(model: string): RealtimeAudioTokenRates {
+  return /^qwen3\.[58]-omni-.*-realtime/u.test(model)
+    ? { inputPerSecond: 7, outputPerSecond: 12.5 }
+    : { inputPerSecond: 25, outputPerSecond: 25 };
+}
+
+/** 一通参考通话的总用量（展示估算）：音频输入按每轮累积、封顶 300 秒。 */
+export function realtimeCallUsage(
+  seconds: number,
+  rates: RealtimeAudioTokenRates,
+): UsageQuantities {
+  const rounds = Math.max(1, Math.round((seconds / 60) * REALTIME_ROUNDS_PER_MINUTE));
+  const perRound = REALTIME_USER_SECONDS_PER_ROUND + REALTIME_ASSISTANT_SECONDS_PER_ROUND;
+  let audioSeconds = 0;
+  for (let i = 1; i <= rounds; i++)
+    audioSeconds += Math.min(i * perRound, REALTIME_AUDIO_CONTEXT_CAP_SECONDS);
+  return {
+    inputTokens: rounds * REALTIME_TEXT_INPUT_TOKENS_PER_ROUND,
+    outputTokens: rounds * REALTIME_TEXT_OUTPUT_TOKENS_PER_ROUND,
+    audioInputTokens: Math.round(audioSeconds * rates.inputPerSecond),
+    audioOutputTokens: Math.round(
+      rounds * REALTIME_ASSISTANT_SECONDS_PER_ROUND * rates.outputPerSecond,
+    ),
+  };
+}
+
+/** 平均每分钟用量（按 5 分钟参考通话折算），用于「约每分钟积分」。 */
+export function realtimeMinuteUsage(
+  model = '',
+  seconds = REALTIME_REFERENCE_CALL_SECONDS,
+): UsageQuantities {
+  const total = realtimeCallUsage(seconds, realtimeAudioTokenRates(model));
+  const minutes = seconds / 60;
+  return {
+    inputTokens: Math.round((total.inputTokens ?? 0) / minutes),
+    outputTokens: Math.round((total.outputTokens ?? 0) / minutes),
+    audioInputTokens: Math.round((total.audioInputTokens ?? 0) / minutes),
+    audioOutputTokens: Math.round((total.audioOutputTokens ?? 0) / minutes),
+  };
+}
 
 /** 供应商分模态用量 → 平台计费数量。 */
 export function realtimeUsageQuantities(u: RealtimeUsage): UsageQuantities {

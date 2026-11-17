@@ -2,7 +2,12 @@
  * 文本协议适配器：OpenAI 兼容（本文件）与 Anthropic 原生 Messages（anthropic-adapter.ts，3.24），
  * RoutingTextAdapter 按上游账号的协议选用。不记录响应原文、不跟随重定向、不持有密钥。
  */
+import { Logger } from '@nestjs/common';
+import { existsSync, writeFileSync } from 'node:fs';
 import type { GenerateTextInput, UsageQuantities } from '@weiban/contracts';
+import { SystemClock, type Clock } from '../../../platform/index.js';
+
+const NETWORK_LOG = new Logger('TextAdapter');
 
 export interface TextUsage {
   reported?: {
@@ -153,21 +158,29 @@ export interface TextAdapter {
 
 /**
  * 厂商思考开关的写法（docs/refactor/03 第 2.2 B 节）。按上游地址优先判断（同一模型在不同平台字段不同），
- * 判断不出时按模型名；都不认识就不发任何字段，避免别家报 400。
+ * 再按模型名限定支持项；判断不出时不发任何字段，避免别家报 400。
  */
 export type ThinkingControl = 'deepseek' | 'qwen' | 'openrouter' | 'reasoning_none' | 'none';
 export function thinkingControlFor(baseUrl: string, model: string): ThinkingControl {
   const url = baseUrl.toLowerCase();
+  let host: string;
+  try {
+    host = new URL(baseUrl).hostname.toLowerCase();
+  } catch {
+    return 'none';
+  }
   const id = model.toLowerCase();
   if (url.includes('openrouter.ai')) return 'openrouter';
   if (url.includes('deepseek.com')) return 'deepseek';
   if (url.includes('dashscope') || url.includes('aliyuncs.com')) return 'qwen';
-  if (id.startsWith('deepseek')) return 'deepseek';
-  if (id.startsWith('qwen') || id.startsWith('qwq')) return 'qwen';
-  // 2026-10-29 关思考：GPT 5.6 系列与 Abliteration 基础款/大闪款厂商均接受 reasoning_effort none；
-  // Abliteration large-v2 除外（它会把 none 映射为低档隐藏思考，不是真正关掉），故排除。
-  if (/^gpt-5\.6(-|$)/.test(id)) return 'reasoning_none';
-  if (id.startsWith('abliterated-model') && !id.includes('large-v2')) return 'reasoning_none';
+  // 只对确认支持的官方域名发“关思考”字段；中转站/兼容站不猜，避免不支持却硬发 400。
+  if (host === 'api.openai.com' && /^gpt-5\.6(-|$)/.test(id)) return 'reasoning_none';
+  if (
+    host === 'api.abliteration.ai' &&
+    id.startsWith('abliterated-model') &&
+    !id.includes('large-v2')
+  )
+    return 'reasoning_none';
   return 'none';
 }
 export function thinkingOffFields(control: ThinkingControl): Record<string, unknown> {
@@ -271,6 +284,15 @@ export function thinkingOnFields(
 }
 
 const REASONING_TAGS = 'think|thinking|reasoning';
+/** 去掉开头一行思考标题；有明确的空行分隔才把空行前全当思考，没有空行只删标题，不能把后文一起吃掉。 */
+function stripLeadingReasoningLabel(text: string, label: RegExp): string {
+  const match = label.exec(text);
+  if (!match) return text;
+  const rest = text.slice(match[0].length);
+  const blank = /\r?\n[ \t]*\r?\n/.exec(rest);
+  if (blank) return rest.slice(blank.index + blank[0].length).trim();
+  return rest.trim();
+}
 /**
  * 剥掉混进正文的思考内容（旧版 reply_content.js 的做法）：成对的 <think>…</think>、
  * 只有结束标记时去掉它之前的全部内容、结尾未闭合的开始标记、开头明确标出的思考段。
@@ -280,10 +302,13 @@ export function stripReasoning(text: string): string {
   const close = new RegExp(`</(?:${REASONING_TAGS})>`, 'i').exec(out);
   if (close) out = out.slice(close.index + close[0].length);
   out = out.replace(new RegExp(`<(?:${REASONING_TAGS})>[\\s\\S]*$`, 'i'), '');
-  out = out.replace(/^\s*(?:思考过程|推理过程|内心思考)\s*[:：][\s\S]*?\n\s*\n/, '');
-  out = out.replace(
-    /^\s*(?:thinking(?: process)?|reasoning)\s*[:：][\s\S]*?(?:\r?\n[ \t]*\r?\n|$)/i,
-    '',
+  out = stripLeadingReasoningLabel(
+    out,
+    /^\s*(?:思考过程|推理过程|内心思考)\s*[:：][ \t]*(?:\r?\n)?/,
+  );
+  out = stripLeadingReasoningLabel(
+    out,
+    /^\s*(?:thinking(?: process)?|reasoning)\s*[:：][ \t]*(?:\r?\n)?/i,
   );
   return out.trim();
 }
@@ -328,6 +353,48 @@ export function reasoningTokensOf(raw: unknown, reasoningText?: unknown): number
   if (typeof reasoningText === 'string' && reasoningText.length)
     return estimateTokens(reasoningText);
   return undefined;
+}
+
+/** 把 OpenAI 兼容 SSE 的 data 帧压成最终 message；只保留正文/思考/结束原因/usage。 */
+function parseOpenAiSse(raw: string): {
+  content: string;
+  reasoning: string;
+  finishReason?: string;
+  usage?: unknown;
+} {
+  let content = '';
+  let reasoning = '';
+  let finishReason: string | undefined;
+  let usage: unknown;
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('data:')) continue;
+    const data = trimmed.slice(5).trim();
+    if (!data || data === '[DONE]') continue;
+    let event: Record<string, unknown>;
+    try {
+      event = JSON.parse(data) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    if (event.usage) usage = event.usage;
+    const choices = event.choices;
+    if (!Array.isArray(choices)) continue;
+    for (const item of choices) {
+      const choice = item as Record<string, unknown>;
+      const delta = (choice.delta ?? choice.message) as Record<string, unknown> | undefined;
+      if (typeof delta?.content === 'string') content += delta.content;
+      const think = delta?.reasoning_content ?? delta?.reasoning;
+      if (typeof think === 'string') reasoning += think;
+      if (typeof choice.finish_reason === 'string') finishReason = choice.finish_reason;
+    }
+  }
+  return {
+    content,
+    reasoning,
+    ...(finishReason ? { finishReason } : {}),
+    ...(usage ? { usage } : {}),
+  };
 }
 
 function usageOf(raw: unknown, inputEstimate: number, output: string): TextUsage {
@@ -382,14 +449,19 @@ export class RoutingTextAdapter implements TextAdapter {
 }
 
 export class OpenAiTextAdapter implements TextAdapter {
+  constructor(private readonly clock: Clock = new SystemClock()) {}
+
   async generate(input: Parameters<TextAdapter['generate']>[0]): Promise<TextResult> {
     const control = thinkingControlFor(input.baseUrl, input.model);
+    // DeepSeek 不发送 thinking/关思考字段：中转站和官方都没有这个标准参数，直接让它按默认思考跑。
     const extra =
-      input.thinking === 'default'
+      control === 'deepseek'
         ? {}
-        : input.thinking === 'on'
-          ? thinkingOnFields(control, input.thinkingBudget ?? 0)
-          : thinkingOffFields(control);
+        : input.thinking === 'default'
+          ? {}
+          : input.thinking === 'on'
+            ? thinkingOnFields(control, input.thinkingBudget ?? 0)
+            : thinkingOffFields(control);
     // 每次generate恰好一次HTTP；所有重试必须由网关另建attempt并预留风险。
     return this.once(input, extra);
   }
@@ -397,11 +469,20 @@ export class OpenAiTextAdapter implements TextAdapter {
     input: Parameters<TextAdapter['generate']>[0],
     extra: Record<string, unknown>,
   ): Promise<TextResult> {
+    let idleTimer: NodeJS.Timeout | undefined;
+    let hardTimer: NodeJS.Timeout | undefined;
     try {
+      const controller = new AbortController();
+      const armIdle = () => {
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => controller.abort(), input.timeoutMs);
+      };
+      armIdle();
+      hardTimer = setTimeout(() => controller.abort(), Math.max(input.timeoutMs, 120_000));
       const response = await fetch(`${input.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
         method: 'POST',
         redirect: 'manual',
-        signal: AbortSignal.timeout(input.timeoutMs),
+        signal: controller.signal,
         headers: {
           Authorization: `Bearer ${input.apiKey}`,
           'Content-Type': 'application/json',
@@ -410,7 +491,7 @@ export class OpenAiTextAdapter implements TextAdapter {
         body: JSON.stringify({
           model: input.model,
           messages: wireMessages(input.messages),
-          stream: false,
+          stream: true,
           [input.outputParameter ?? 'max_tokens']: input.maxOutputTokens,
           temperature: input.temperature,
           // Abliteration 官方直连接受该提示，其他兼容地址不透传。
@@ -431,6 +512,7 @@ export class OpenAiTextAdapter implements TextAdapter {
         for (;;) {
           const part = await reader.read();
           if (part.done) break;
+          armIdle();
           bytes += part.value.length;
           if (bytes > 2_000_000) {
             await reader.cancel();
@@ -441,11 +523,29 @@ export class OpenAiTextAdapter implements TextAdapter {
       } finally {
         reader.releaseLock();
       }
+      const rawBody = Buffer.concat(chunks).toString('utf8');
+      const contentType = response.headers.get('content-type') ?? '';
       let payload: Record<string, unknown> = {};
-      try {
-        payload = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
-      } catch {
-        if (response.ok) return { ok: false, category: 'provider_error', retryable: true };
+      if (/text\/event-stream/i.test(contentType) || /^\s*data:/m.test(rawBody)) {
+        const streamed = parseOpenAiSse(rawBody);
+        payload = {
+          choices: [
+            {
+              message: {
+                ...(streamed.content ? { content: streamed.content } : {}),
+                ...(streamed.reasoning ? { reasoning_content: streamed.reasoning } : {}),
+              },
+              ...(streamed.finishReason ? { finish_reason: streamed.finishReason } : {}),
+            },
+          ],
+          ...(streamed.usage ? { usage: streamed.usage } : {}),
+        };
+      } else {
+        try {
+          payload = JSON.parse(rawBody) as Record<string, unknown>;
+        } catch {
+          if (response.ok) return { ok: false, category: 'provider_error', retryable: true };
+        }
       }
       const error = payload?.error as { code?: unknown; type?: unknown } | undefined;
       const code = typeof error?.code === 'string' ? error.code : '';
@@ -501,12 +601,80 @@ export class OpenAiTextAdapter implements TextAdapter {
       const text = stripReasoning(rawText);
       const baseUsage = usageOf(payload.usage, estimateInputTokens(input.messages), rawText);
       // 批 EJ：思考 token 单独计量（计费仍按总输出）。
-      const reasoningTokens = reasoningTokensOf(
-        payload.usage,
-        choice?.message?.reasoning_content ?? choice?.message?.reasoning,
-      );
+      const reasoningText = choice?.message?.reasoning_content ?? choice?.message?.reasoning;
+      const reasoningTokens = reasoningTokensOf(payload.usage, reasoningText);
       const usage: TextUsage =
         reasoningTokens === undefined ? baseUsage : { ...baseUsage, reasoningTokens };
+      if (!text && !existsSync('/app/.data/empty-output-debug.json')) {
+        try {
+          writeFileSync(
+            '/app/.data/empty-output-debug.json',
+            JSON.stringify(
+              {
+                at: this.clock.now().toISOString(),
+                model: input.model,
+                host: (() => {
+                  try {
+                    return new URL(input.baseUrl).host;
+                  } catch {
+                    return 'invalid_base_url';
+                  }
+                })(),
+                finishReason,
+                content: rawText,
+                reasoning: reasoningText,
+                usage: payload.usage,
+                messageKeys: Object.keys(choice?.message ?? {}),
+              },
+              null,
+              2,
+            ),
+          );
+        } catch {
+          // 诊断文件写不进去不影响主流程。
+        }
+      }
+      if (!text && !existsSync('/app/.data/empty-raw-debug.json')) {
+        try {
+          writeFileSync(
+            '/app/.data/empty-raw-debug.json',
+            JSON.stringify(
+              {
+                at: this.clock.now().toISOString(),
+                status: response.status,
+                model: input.model,
+                host: (() => {
+                  try {
+                    return new URL(input.baseUrl).host;
+                  } catch {
+                    return 'invalid_base_url';
+                  }
+                })(),
+                rawBody,
+              },
+              null,
+              2,
+            ),
+          );
+        } catch {
+          // 诊断文件写不进去不影响主流程。
+        }
+      }
+      if (!text)
+        NETWORK_LOG.warn({
+          code: 'text_empty_output',
+          model: input.model,
+          finishReason,
+          rawLen: rawText.length,
+          strippedLen: text.length,
+          startsThinkTag: /^\s*<(?:think|thinking|reasoning)>/i.test(rawText),
+          hasCloseThinkTag: /<\/(?:think|thinking|reasoning)>/i.test(rawText),
+          startsThinkingLabel:
+            /^\s*(?:thinking(?: process)?|reasoning|思考过程|推理过程|内心思考)\s*[:：]/i.test(
+              rawText,
+            ),
+          reasoningLen: typeof reasoningText === 'string' ? reasoningText.length : null,
+        });
       if (
         input.responseFormat !== 'json' &&
         finishReason === 'length' &&
@@ -538,8 +706,25 @@ export class OpenAiTextAdapter implements TextAdapter {
           };
       }
       return { ok: true, text, usage, ...finish };
-    } catch {
+    } catch (error) {
+      // 只记供应商/模型/错误摘要，不记 prompt、响应正文或密钥，便于定位是超时、断连还是解析异常。
+      NETWORK_LOG.warn({
+        code: 'text_network_error',
+        model: input.model,
+        host: (() => {
+          try {
+            return new URL(input.baseUrl).host;
+          } catch {
+            return 'invalid_base_url';
+          }
+        })(),
+        detail:
+          error instanceof Error ? `${error.name}: ${error.message}`.slice(0, 240) : 'unknown',
+      });
       return { ok: false, category: 'network_error', retryable: true };
+    } finally {
+      if (idleTimer) clearTimeout(idleTimer);
+      if (hardTimer) clearTimeout(hardTimer);
     }
   }
 }

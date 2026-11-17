@@ -69,7 +69,16 @@ import {
 type TextCeiling = NonNullable<ReserveInput['ceiling']>;
 /** 未指定输出额度的用户聊天按当前线路真实能力；显式调用方上限与平台任务仍保留。 */
 function usesModelOutputLimit(input: GenerateTextInput): boolean {
-  return input.purpose === 'chat_reply' && input.maxOutputTokens === undefined;
+  if (input.maxOutputTokens !== undefined) return false;
+  // 2026-11-12 总经理：记忆整理 / 推演不再设平台小上限，直接用模型自己的最大输出能力；
+  // 2026-11-14 总经理：行为规划 / 主动消息也照聊天，用模型自己的最大输出，不再固定 600/300。
+  return (
+    input.purpose === 'chat_reply' ||
+    input.purpose === 'memory' ||
+    input.purpose === 'simulation' ||
+    input.purpose === 'behavior_planning' ||
+    input.purpose === 'proactive'
+  );
 }
 
 type GatewayInternal = {
@@ -90,7 +99,8 @@ type GatewayInternal = {
 const THINKING_KEPT_PURPOSES: readonly GenerateTextInput['purpose'][] = ['memory', 'simulation'];
 export function thinkingBudgetFor(purpose: GenerateTextInput['purpose'], body: number): number {
   if (!THINKING_KEPT_PURPOSES.includes(purpose)) return 0;
-  return Math.min(2048, Math.max(1024, Math.round(body)));
+  // 2026-11-12 总经理：思考模型做记忆整理时正文经常是空的，思考预算加倍（2048～4096）。
+  return Math.min(4096, Math.max(2048, Math.round(body)));
 }
 /**
  * 2026-10-30 空输出根因修：私密模型（Abliteration）做记忆整理时，全部输出 token 都耗在思考上、
@@ -110,13 +120,13 @@ export function thinkingBudgetForModel(
 const DEFAULT_TOKENS: Partial<Record<GenerateTextInput['purpose'], number>> = {
   chat_reply: 600,
   proactive: 400,
-  simulation: 2000,
-  moments: 1000,
-  memory: 1000,
+  simulation: 4000,
+  moments: 1500,
+  memory: 3000,
   safety_check: 300,
   safety_followup: 400,
   behavior_planning: 150,
-  vision: 600,
+  vision: 1000,
   import_analysis: 6000,
 };
 /**
@@ -243,7 +253,9 @@ export class ModelGateway implements ModelGatewayPort {
     const primaryKey = primary?.facts?.modelKey;
     if (!primaryKey || primary?.facts?.entry?.capabilities.includes('adult_content'))
       return complete(first);
-    const chain = await this.catalog.cheaperTextFallbacks(primaryKey).catch(() => []);
+    let chain = await this.catalog.cheaperTextFallbacks(primaryKey).catch(() => []);
+    if (!chain.length)
+      chain = await this.catalog.alternateTextFallbacks(primaryKey).catch(() => []);
     for (const candidate of chain) {
       if (this.clock.nowMs() >= Date.parse(deadlineAt)) break;
       if (primaryKey && candidate === primaryKey) continue;
@@ -880,7 +892,8 @@ export class ModelGateway implements ModelGatewayPort {
           (answer.truncation === 'whitespace' || answer.truncation === 'repeat');
         if (runaway) break;
         // 已按模型完整上限请求，空正文时不能原样再花一次钱重试，更不能越过已核准上限。
-        if (empty && modelOutputLimit) break;
+        // 例外：聊天空回复/思考截断常是上游瞬时问题，允许一次同模型重试；失败不扣用户，成功才结算。
+        if (empty && modelOutputLimit && input.purpose !== 'chat_reply') break;
         if (empty && !emptyRetried) {
           emptyRetried = true;
           const platformCap =

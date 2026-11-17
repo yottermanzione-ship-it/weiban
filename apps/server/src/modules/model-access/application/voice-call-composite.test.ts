@@ -162,10 +162,11 @@ describe('voice-call minute blend display multiplier', () => {
       text: textPrices,
       base: basePrices,
     };
-    // 10,800 + 1,820,000×54/10,000 + 5×4,400 = 42,628 micros ≈ 4.26 积分 / 分钟
-    expect(voiceCallMinuteMicros(prices)).toBe(42_628);
-    // 基准模型同口径5轮 = 5×30,400 = 152,000 micros
-    expect(voiceCallDisplayMultiplier(prices)).toBe(0.28);
+    // 已上线11-14假设：6000未缓存输入+6500缓存输入+150输出；单轮6000+1300+600=7900。
+    // 10,800 + 1,820,000×54/10,000 + 5×7,900 = 60,128 micros ≈ 6.01 积分 / 分钟。
+    expect(voiceCallMinuteMicros(prices)).toBe(60_128);
+    // 基准同口径单轮48000+6500+4800=59300，5轮296500；60128/296500约0.20。
+    expect(voiceCallDisplayMultiplier(prices)).toBe(0.2);
   });
 
   it('returns null instead of inventing a multiplier when any price is missing', () => {
@@ -291,7 +292,7 @@ describe('catalog composite display multiplier', () => {
       rates: { getActiveServiceRates: async () => serviceRates },
       prices: { textPrices: async () => prices },
     });
-    await expect(catalog.voiceCallCompositeDisplayMultiplier()).resolves.toBe(0.28);
+    await expect(catalog.voiceCallCompositeDisplayMultiplier()).resolves.toBe(0.2);
 
     Object.assign(catalog, {
       rates: { getActiveServiceRates: async () => new Map([...serviceRates].slice(0, 1)) },

@@ -464,3 +464,11 @@ export interface BillingServiceFeePort {
   /** 查冻结状态；不存在返回 null。 */
   get(holdId: string): Promise<ServiceFeeHold | null>;
 }
+
+/**
+ * 3.28：模型调用成功后、业务侧判定结果不可用时，把这一笔用户扣费原路退回。
+ * 幂等：同一 usageRecordId 只退一次；平台吸收或已退款的调用不再处理。
+ */
+export interface BillingUsageRefundPort {
+  refundUsage(usageRecordId: string, reason: string): Promise<void>;
+}

@@ -9,6 +9,7 @@ import {
 } from '@weiban/contracts';
 import { z } from 'zod';
 import { microphoneFailureName, type MicrophoneStage } from '../features/microphone.js';
+import type { AuthFailureReason, AuthFailureStage } from '../features/auth-errors.js';
 
 type Code = z.infer<typeof ClientLogCode>;
 type Environment = z.infer<typeof ClientLogEnvironment>;
@@ -188,7 +189,10 @@ class RuntimeLogs {
     kind: ClientRuntimeEvent['kind'],
     code: Code,
     extra: Partial<
-      Pick<ClientRuntimeEvent, 'frames' | 'components' | 'api' | 'reconnects' | 'offlineSeconds'>
+      Pick<
+        ClientRuntimeEvent,
+        'frames' | 'components' | 'api' | 'reconnects' | 'offlineSeconds' | 'call'
+      >
     > = {},
   ) {
     if (this.owner === undefined) return;
@@ -258,6 +262,13 @@ class RuntimeLogs {
     this.record('js_error', name === 'TypeError' ? 'type_error' : 'unknown', {
       components: [clientLogCodeId(`microphone:${stage}`), clientLogCodeId(name)],
     });
+  }
+  captureAuth(stage: AuthFailureStage, reason: AuthFailureReason) {
+    this.record('js_error', reason === 'type_error' ? 'type_error' : 'unknown', {
+      components: [clientLogCodeId(`auth:${stage}`), clientLogCodeId(`auth:${reason}`)],
+    });
+    // 存储故障时仍使用内存中的匿名技术事件，不依赖本机队列写成功。
+    void this.flush().catch(() => {});
   }
   apiFailure(event: {
     route: string;

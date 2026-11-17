@@ -248,16 +248,31 @@ describe('保留线上线路冷却与思考参数修复', () => {
       thinkingBudgetFor('simulation', 1000),
     );
   });
-  it('关闭思考仅作用于支持的模型，不误给新Claude或large-v2传不兼容字段', () => {
-    expect(thinkingOffFields(thinkingControlFor('https://provider.example', 'gpt-5.6'))).toEqual({
+  it('关闭思考仅作用于确认支持的官方域名，不对中转站硬发不兼容字段', () => {
+    expect(thinkingOffFields(thinkingControlFor('https://api.openai.com/v1', 'gpt-5.6'))).toEqual({
       reasoning_effort: 'none',
     });
     expect(
-      thinkingOffFields(thinkingControlFor('https://provider.example', 'abliterated-model-flash')),
+      thinkingOffFields(
+        thinkingControlFor('https://api.abliteration.ai/v1', 'abliterated-model-flash'),
+      ),
     ).toEqual({ reasoning_effort: 'none' });
-    expect(thinkingControlFor('https://provider.example', 'abliterated-model-large-v2')).toBe(
+    expect(thinkingControlFor('https://api.abliteration.ai/v1', 'abliterated-model-large-v2')).toBe(
       'none',
     );
+    expect(thinkingControlFor('https://provider.example', 'gpt-5.6')).toBe('none');
+    expect(thinkingControlFor('https://provider.example', 'abliterated-model-flash')).toBe('none');
+    for (const [host, model] of [
+      ['api.openai.com', 'gpt-5.6'],
+      ['api.abliteration.ai', 'abliterated-model-flash'],
+    ]) {
+      for (const url of [
+        `https://${host}.example.test/v1`,
+        `https://example.test/${host}/v1`,
+        `https://example.test/v1?provider=${host}`,
+      ])
+        expect(thinkingControlFor(url, model!)).toBe('none');
+    }
     expect(supportsThinkingDisabled('claude-opus-5')).toBe(true);
     expect(supportsThinkingDisabled('claude-opus-5.5')).toBe(false);
     expect(supportsThinkingDisabled('claude-sonnet-5.5')).toBe(false);

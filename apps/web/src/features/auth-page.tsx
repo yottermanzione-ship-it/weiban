@@ -7,12 +7,14 @@
  */
 import { useRef, useState, type FormEvent } from 'react';
 import { IdentityEndpoints } from '@weiban/contracts';
+import { ApiFailure } from '@weiban/client-core';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../data/client.js';
+import { api, localStore } from '../data/client.js';
 import { currentDevice } from '../data/device-info.js';
 import { useWhiteSurface } from '../data/display-prefs.js';
 import { useAuth } from '../app/auth.js';
-import { friendlyError } from '../data/use-remote.js';
+import { runtimeLogs } from '../data/runtime-logs.js';
+import { authFailureMessage, authFailureReason, type AuthFailureStage } from './auth-errors.js';
 import { OldIcon } from './old-icons.js';
 import { CheckCircle, showComingSoon } from './shell-kit.js';
 import { showToast } from './toast.js';
@@ -41,17 +43,23 @@ export function AuthPage() {
       username: String(data.get('username') ?? ''),
       password: String(data.get('password') ?? ''),
     };
+    let stage: AuthFailureStage = 'storage_check';
     try {
+      await localStore.ensureWritable();
+      stage = 'device';
       const loginBody = { ...body, device: await currentDevice() };
+      stage = 'request';
       const result = register
         ? await api.call(IdentityEndpoints.register, {
             body: loginBody,
           })
         : await api.call(IdentityEndpoints.login, { body: { ...loginBody, kind: 'app' } });
+      stage = 'session_save';
       await auth.accept(result);
       navigate(result.user.profileCompleted ? '/chat' : '/profile', { replace: true });
     } catch (e) {
-      setError(friendlyError(e));
+      setError(authFailureMessage(e, stage));
+      if (!(e instanceof ApiFailure)) runtimeLogs.captureAuth(stage, authFailureReason(e));
     } finally {
       setPending(false);
     }

@@ -36,9 +36,11 @@ import {
   BILLING_READ_PORT,
   BILLING_RESERVATION_PORT,
   BILLING_SERVICE_FEE_PORT,
+  BILLING_USAGE_REFUND_PORT,
 } from './tokens.js';
 import { PaidHistoryService } from './application/paid-history.js';
 import { ServiceFeeService } from './application/service-fees.js';
+import { UsageRefundService } from './application/usage-refund.js';
 import { CostResolutionService } from './application/cost-resolution.js';
 import { PostpaidSettingsService } from './application/postpaid-settings.js';
 import { SharedSearchBilling } from './application/shared-search.js';
@@ -81,6 +83,8 @@ import { BILLING_SHARED_SEARCH_PORT } from './tokens.js';
     { provide: BILLING_MODEL_RATE_PORT, useExisting: ModelRateService },
     ServiceFeeService,
     { provide: BILLING_SERVICE_FEE_PORT, useExisting: ServiceFeeService },
+    UsageRefundService,
+    { provide: BILLING_USAGE_REFUND_PORT, useExisting: UsageRefundService },
     PaidHistoryService,
     { provide: BILLING_PAID_HISTORY_PORT, useExisting: PaidHistoryService },
     {
@@ -102,6 +106,7 @@ import { BILLING_SHARED_SEARCH_PORT } from './tokens.js';
     BILLING_QUOTE_PORT,
     BILLING_DAILY_SPEND_READ_PORT,
     BILLING_SERVICE_FEE_PORT,
+    BILLING_USAGE_REFUND_PORT,
     BILLING_PAID_HISTORY_PORT,
     BILLING_CUSTOMER_CONFIG_PORT,
   ],

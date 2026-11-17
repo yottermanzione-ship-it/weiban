@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { describeDevice, shellVersion } from '../src/data/device-info.js';
+import { describeDevice, shellBuild, shellVersion } from '../src/data/device-info.js';
 
 afterEach(() => vi.unstubAllGlobals());
 it('recognizes formal and old shells without mistaking an ordinary Android browser for the app', () => {
@@ -26,4 +26,10 @@ it('recognizes formal and old shells without mistaking an ordinary Android brows
 it('separates iPhone browser and home-screen mode', () => {
   expect(describeDevice('iPhone Safari/600', false).platform).toBe('web');
   expect(describeDevice('iPhone Safari/600', true).platform).toBe('ios_pwa');
+});
+it('reads the Android build number only when the shell reports it', () => {
+  expect(shellBuild('Android WeibanShell/3.0.0 WeibanBuild/128')).toBe(128);
+  expect(shellBuild('Android WeibanShell/3.0.0')).toBeUndefined();
+  expect(shellBuild('Android WeibanShell/3.0.0 WeibanBuild/0')).toBeUndefined();
+  expect(shellBuild('Android WeibanShell/3.0.0 WeibanBuild/2200000000')).toBeUndefined();
 });

@@ -29,7 +29,8 @@ export class IndexedLocalStore implements LocalStore {
       request.onupgradeneeded = () => {
         for (const store of ['records', 'outbox', 'sync']) request.result.createObjectStore(store);
       };
-      request.onerror = () => reject(new Error('本机存储不可用，请检查浏览器设置'));
+      request.onerror = () =>
+        reject(request.error ?? new Error('本机存储不可用，请检查浏览器设置'));
       request.onsuccess = () => {
         const db = request.result;
         // 浏览器可能在后台、清理站点数据或内部出错时关掉连接（Safari 常见），下次用时重开。
@@ -39,7 +40,20 @@ export class IndexedLocalStore implements LocalStore {
         resolve(db);
       };
     });
+    // 打开结果会缓存；没有等待者时也接住拒绝，真正使用时仍将原错误交给调用方。
+    void opening.catch(() => {});
     return opening;
+  }
+  /** 首次打开的临时失败不能让本页永久失效；同一次操作最多重开一次。 */
+  private async connection(): Promise<IDBDatabase> {
+    const current = this.database;
+    try {
+      return await current;
+    } catch {
+      // 并发调用共享已经发起的重开，不各自创建连接。
+      if (this.database === current) this.database = this.open();
+      return this.database;
+    }
   }
   /** 连接已被关掉（InvalidStateError）时重开一次再试，不把它当成设备存储故障。 */
   /** 请求必须在建事务的同一拍里发出，所以 body 同步拿到事务。 */
@@ -48,8 +62,8 @@ export class IndexedLocalStore implements LocalStore {
     mode: IDBTransactionMode,
     body: (tx: IDBTransaction) => Promise<T>,
   ): Promise<T> {
+    const db = await this.connection();
     const current = this.database;
-    const db = await current;
     let tx: IDBTransaction;
     try {
       tx = db.transaction(names, mode);
@@ -69,7 +83,14 @@ export class IndexedLocalStore implements LocalStore {
       mode,
       (tx) =>
         new Promise((resolve, reject) => {
-          const request = action(tx.objectStore('records'));
+          let request: IDBRequest<T>;
+          try {
+            request = action(tx.objectStore('records'));
+          } catch (error) {
+            tx.abort();
+            reject(error);
+            return;
+          }
           tx.oncomplete = () => resolve(request.result);
           tx.onabort = tx.onerror = () => reject(storeError('本机存储操作失败', tx));
         }),
@@ -81,6 +102,15 @@ export class IndexedLocalStore implements LocalStore {
   async set(key: string, value: unknown): Promise<void> {
     await this.run('readwrite', (store) => store.put(value, key));
   }
+  /** 登录前确认本机能提交写事务；不改会话、缓存或待发队列。 */
+  async ensureWritable(): Promise<void> {
+    const key = `storage-probe:${crypto.randomUUID()}`;
+    await this.run('readwrite', (store) => {
+      const request = store.put(true, key);
+      store.delete(key);
+      return request;
+    });
+  }
   /** 归属检查与写入同一事务：退出清库后，迟到的驱动不能重建旧账号数据。 */
   async setOwned(owner: StoreOwner, key: string, value: unknown): Promise<boolean> {
     return this.setOwnedValues(owner, { [key]: value });
@@ -91,7 +121,8 @@ export class IndexedLocalStore implements LocalStore {
     values: Record<string, unknown>,
     expected?: { key: string; value: boolean },
   ): Promise<boolean> {
-    if (Object.hasOwn(values, 'session')) throw new Error('驱动不能改写登录会话');
+    if (Object.prototype.hasOwnProperty.call(values, 'session'))
+      throw new Error('驱动不能改写登录会话');
     return this.transaction(
       'records',
       'readwrite',
@@ -139,7 +170,7 @@ export class IndexedLocalStore implements LocalStore {
         new Promise<void>((resolve, reject) => {
           for (const name of ['records', 'outbox', 'sync']) tx.objectStore(name).clear();
           tx.oncomplete = () => resolve();
-          tx.onabort = tx.onerror = () => reject(new Error('清理本机数据失败'));
+          tx.onabort = tx.onerror = () => reject(storeError('清理本机数据失败', tx));
         }),
     );
   }

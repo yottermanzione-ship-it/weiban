@@ -1,6 +1,11 @@
 import { expect, it, vi } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
-import { AuthResponse, IdentityEndpoints, ClientLogEndpoints } from '@weiban/contracts';
+import {
+  AnnouncementEndpoints,
+  AuthResponse,
+  IdentityEndpoints,
+  ClientLogEndpoints,
+} from '@weiban/contracts';
 import {
   ApiClient,
   ApiFailure,
@@ -27,6 +32,31 @@ function session(username = 'test_user') {
   });
 }
 const store = () => new IndexedLocalStore('weiban-test', new IDBFactory());
+it('旧网页组件没有 URLSearchParams.size 时仍带上查询参数', async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(URLSearchParams.prototype, 'size');
+  Object.defineProperty(URLSearchParams.prototype, 'size', {
+    value: undefined,
+    configurable: true,
+  });
+  try {
+    let requested = '';
+    const fetcher = vi.fn(async (input: URL | RequestInfo) => {
+      requested = String(input);
+      return Response.json({ items: [], unreadCount: 0 });
+    });
+    const client = new ApiClient(store(), fetcher);
+    await client.authenticate(session());
+    await expect(
+      client.call(AnnouncementEndpoints.listAnnouncements, {
+        query: { platform: 'android' },
+        networkOnly: true,
+      }),
+    ).resolves.toEqual({ items: [], unreadCount: 0 });
+    expect(requested).toBe('/api/v1/announcements?platform=android');
+  } finally {
+    if (descriptor) Object.defineProperty(URLSearchParams.prototype, 'size', descriptor);
+  }
+});
 it('较旧网页组件没有组合取消接口时，带取消信号的请求仍然发出', async () => {
   const auth = session();
   const fetcher = vi.fn(async () => Response.json(auth.user));

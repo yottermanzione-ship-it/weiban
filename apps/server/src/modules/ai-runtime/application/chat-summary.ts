@@ -9,6 +9,7 @@ import type {
   PolicyPort,
   Message,
   MediaTranscriptPort,
+  BillingUsageRefundPort,
 } from '@weiban/contracts';
 import {
   CLOCK,
@@ -41,6 +42,7 @@ import { ReplyPlanStore } from './plan-store.js';
 import { blockedSeqs } from './model-blocked-messages.js';
 import { ImageCaptionStore, NO_CAPTIONS } from './image-captions.js';
 import { captionForMemory } from '../domain/image-caption.js';
+import { BILLING_USAGE_REFUND_PORT } from '../../billing/index.js';
 
 export const CHAT_SUMMARY_JOB = 'ai.compact_chat';
 type Parent = typeof memoryStates.$inferSelect;
@@ -84,6 +86,9 @@ export class ChatSummaryService {
     @Inject(ReplyPlanStore) readonly plans: ReplyPlanStore,
     @Optional() @Inject(ImageCaptionStore) readonly captions?: ImageCaptionStore,
     @Optional() @Inject(MEDIA_TRANSCRIPT_PORT) readonly transcripts?: MediaTranscriptPort,
+    @Optional()
+    @Inject(BILLING_USAGE_REFUND_PORT)
+    readonly refunds?: BillingUsageRefundPort,
   ) {}
 
   private async open<T>(
@@ -133,10 +138,12 @@ export class ChatSummaryService {
     scope: Scope,
     toSeq: number,
     previous: ChatSummaryItem[],
+    minimumFloorSeq = 0,
   ): Promise<void> {
     const id = newId();
-    const floor = Math.max(parent.barrierSeq, parent.windowStartSeq);
-    if (toSeq <= floor) return;
+    const floor = Math.max(parent.barrierSeq, parent.windowStartSeq, minimumFloorSeq);
+    // 档位窗口前移时从窗口起点重新开始，旧摘要不再带入；否则旧条目会和窗口内消息一起重算。
+    const seed = floor > parent.windowStartSeq ? [] : previous;
     await this.db.transaction(async (tx) => {
       await this.plans.lock(tx, parent.userId, parent.conversationId);
       const [current] = await tx.db
@@ -161,17 +168,28 @@ export class ChatSummaryService {
           ciphertext: await this.crypto.seal(
             parent.userId,
             `ai:chat-summary:${id}`,
-            JSON.stringify(previous),
+            JSON.stringify(seed),
             tx,
           ),
           updatedAt: this.clock.now(),
         })
         .onConflictDoNothing();
+      // 免费档窗口前移时，把旧范围直接标成已覆盖，旧摘要一并作废；后台不再补、不再扣费；
+      // 窗口内未完成的部分仍保留在 target 里继续增量摘要。
       await tx.query(
-        'UPDATE ai_runtime.chat_summary_states SET target_seq=greatest(target_seq,$3) WHERE parent_id=$1 AND scope=$2',
-        [parent.id, scope, toSeq],
+        `UPDATE ai_runtime.chat_summary_states
+            SET target_seq=greatest(target_seq,$3),
+                covered_seq=greatest(covered_seq,$4),
+                ciphertext = CASE WHEN covered_seq < $4 THEN NULL ELSE ciphertext END,
+                version = CASE WHEN covered_seq < $4 THEN 0 ELSE version END,
+                prepared_ciphertext = CASE WHEN covered_seq < $4 THEN NULL ELSE prepared_ciphertext END,
+                attempts = CASE WHEN covered_seq < $4 THEN 0 ELSE attempts END,
+                retry_after = CASE WHEN covered_seq < $4 THEN NULL ELSE retry_after END
+          WHERE parent_id=$1 AND scope=$2`,
+        [parent.id, scope, toSeq, floor],
       );
     });
+    if (toSeq <= floor) return;
     const [state] = await this.db.db
       .select()
       .from(chatSummaryStates)
@@ -227,7 +245,6 @@ export class ChatSummaryService {
       characterId: row.p.characterId,
       modelRole: scope === 'adult' ? 'adult' : 'background',
       purpose: 'memory',
-      maxOutputTokens: 2400,
     });
     if (this.gateway.getContextBudget && !budget) return;
     const lease = newId();
@@ -258,6 +275,8 @@ export class ChatSummaryService {
       return { ...s, attempts };
     });
     if (!claimed) return;
+    let chargedUsageId: string | null = null;
+    let committed = false;
     try {
       let prepared: z.infer<typeof Prepared>;
       if (claimed.preparedCiphertext)
@@ -276,14 +295,31 @@ export class ChatSummaryService {
               ChatSummaryItems,
             )
           : [];
-        const history = (
-          await this.chat.readMessages({
+        // 按所选 background 模型的真实上下文上限读取，而不是固定 80 条。
+        const targetSeq = claimed.targetSeq;
+        const maxMessages = budget
+          ? Math.max(200, Math.min(5000, Math.floor(budget.inputTokens / 20)))
+          : 80;
+        const history: Message[] = [];
+        let afterSeq = claimed.coveredSeq;
+        while (history.length < maxMessages && afterSeq < targetSeq) {
+          const page = await this.chat.readMessages({
             conversationId: row.p.conversationId,
             scopes: [scope],
-            afterSeq: claimed.coveredSeq,
-            limit: 80,
-          })
-        ).filter((m) => m.seq <= claimed.targetSeq);
+            afterSeq,
+            limit: 200,
+          });
+          if (!page.length) break;
+          for (const message of page) {
+            if (message.seq > targetSeq) break;
+            history.push(message);
+            if (history.length >= maxMessages) break;
+          }
+          const next = page.at(-1)?.seq ?? afterSeq;
+          if (next <= afterSeq) break;
+          afterSeq = next;
+          if (page.length < 200) break;
+        }
         const loaded =
           (await this.captions?.forMessages(row.p.userId, history, [scope]).catch(() => null)) ??
           NO_CAPTIONS;
@@ -296,7 +332,9 @@ export class ChatSummaryService {
         const blocked = await blockedSeqs(this.db, row.p.conversationId);
         const messages: z.infer<typeof Prepared>['messages'] = [];
         const fingerprints: z.infer<typeof Prepared>['fingerprints'] = [];
-        const maxChars = claimed.attempts >= 2 ? 6000 : 12000;
+        const baseChars = budget ? Math.max(12000, Math.floor(budget.triggerTokens * 1.1)) : 12000;
+        // 失败重试仍缩批，避免同一超大输入反复失败；首次按模型预算一次读完。
+        const maxChars = claimed.attempts >= 2 ? Math.min(6000, baseChars) : baseChars;
         let chars = 0,
           toSeq = claimed.coveredSeq,
           offset = 0,
@@ -345,10 +383,8 @@ export class ChatSummaryService {
         }
         if (!messages.length && history.length && toSeq === claimed.coveredSeq)
           throw new Error('summary_source_too_large');
-        if (
-          !history.length ||
-          (history.length < 80 && toSeq === history.at(-1)?.seq && offset === 0)
-        )
+        const reachedTarget = (history.at(-1)?.seq ?? claimed.coveredSeq) >= claimed.targetSeq;
+        if (!history.length || (reachedTarget && toSeq === history.at(-1)?.seq && offset === 0))
           toSeq = claimed.targetSeq;
         prepared = {
           epoch: epoch.version,
@@ -382,7 +418,7 @@ export class ChatSummaryService {
           modelRole: scope === 'adult' ? 'adult' : 'background',
           countAsBackground: true,
           responseFormat: 'json',
-          maxOutputTokens: 2400,
+          maxOutputTokens: budget?.reservedOutputTokens ?? 2400,
           idempotencyKey: `chat-summary:${id}:${claimed.version}:${claimed.attempts}`,
           meta: {
             scenarioMode: scope,
@@ -398,6 +434,7 @@ export class ChatSummaryService {
           ],
         });
         if (!result.ok) throw new Error(`summary_${result.error}`);
+        if (result.value.chargedMicros > 0) chargedUsageId = result.value.usageRecordId;
         if (result.value.truncated) throw new Error('summary_truncated');
         const sources = new Map(
           [...prepared.previous, ...prepared.messages].map((x) => [x.id, { at: x.at }] as const),
@@ -475,8 +512,11 @@ export class ChatSummaryService {
           .update(memoryStates)
           .set({ windowBlockCiphertext: null })
           .where(eq(memoryStates.id, row.p.id));
+        committed = true;
       });
+      await this.refundDiscarded(chargedUsageId, committed);
     } catch (error) {
+      await this.refundDiscarded(chargedUsageId, committed);
       const code = error instanceof Error ? error.message : '';
       new Logger(ChatSummaryService.name).warn({
         code: 'ai_chat_summary_failed',
@@ -497,6 +537,19 @@ export class ChatSummaryService {
           updatedAt: this.clock.now(),
         })
         .where(and(eq(chatSummaryStates.id, id), eq(chatSummaryStates.leaseId, lease)));
+    }
+  }
+
+  /** 摘要没有入库时，把这次模型调用的用户扣费原路退回；失败只记日志，不影响重试。 */
+  private async refundDiscarded(usageRecordId: string | null, committed: boolean): Promise<void> {
+    if (!usageRecordId || committed || !this.refunds) return;
+    try {
+      await this.refunds.refundUsage(usageRecordId, '摘要未入库，自动退回');
+    } catch {
+      new Logger(ChatSummaryService.name).warn({
+        code: 'ai_chat_summary_refund_failed',
+        usageRecordId,
+      });
     }
   }
 }

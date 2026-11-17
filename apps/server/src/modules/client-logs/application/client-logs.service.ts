@@ -64,6 +64,7 @@ const labels: Record<ClientRuntimeEvent['kind'], string> = {
   chunk_load_error: '页面文件加载失败',
   api_failure: '请求失败',
   realtime_issue: '实时连接异常',
+  call_timing: '通话延迟',
   app_crash: '安卓崩溃',
   push_issue: '推送异常',
 };

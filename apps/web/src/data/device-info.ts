@@ -5,6 +5,13 @@ export function shellVersion(userAgent = navigator.userAgent): string | undefine
   return /(?:^|\s)WeibanShell\/(\d+(?:\.\d+){0,2}(?:-debug)?)(?=\s|$)/.exec(userAgent)?.[1];
 }
 
+/** 安装包构建号；旧壳（127 及以前）不上报，返回 undefined。 */
+export function shellBuild(userAgent = navigator.userAgent): number | undefined {
+  const raw = /(?:^|\s)WeibanBuild\/(\d{1,10})(?=\s|$)/.exec(userAgent)?.[1];
+  const code = Number(raw);
+  return Number.isSafeInteger(code) && code > 0 && code <= 2_100_000_000 ? code : undefined;
+}
+
 export function describeDevice(
   userAgent = navigator.userAgent,
   standalone = typeof window !== 'undefined' &&

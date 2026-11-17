@@ -64,6 +64,12 @@ export interface ChatReadPort {
   findOfficialConversation(userId: string, tx?: Tx): Promise<Conversation | null>;
   /** 结果按 seq 升序；不含正文被撤回的内容。5.7：可传 tx（锁会话行）。 */
   readMessages(input: ReadMessagesInput, tx?: Tx): Promise<Message[]>;
+  /** 第一条 createdAt >= at 的消息 seq；只读日期和序号，不解密正文、不锁会话行。 */
+  firstSeqAtOrAfter(
+    conversationId: string,
+    at: string,
+    scopes: ContentScope[],
+  ): Promise<number | null>;
   /** 可选事务用于派生资料写入前锁定并核对来源，防止撤回与迟到写入交错。 */
   getMessage(messageId: string, scopes: ContentScope[], tx?: Tx): Promise<Message | null>;
 }

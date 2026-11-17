@@ -408,16 +408,26 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
     expect(requests[0]).toMatchObject({ max_tokens: 256 });
     expect(calls).toBe(1);
   });
-  it('已按模型完整输出上限仍只有思考时，不原样重复付费重试', async () => {
+  it('聊天只有思考时最多同模型重试一次，不越过输出上限且失败不扣用户', async () => {
     mode = 'reasoning-empty';
+    const charges = async () =>
+      (
+        await db.query<{ n: string }>(
+          "SELECT count(*) n FROM billing.ledger_entries WHERE type='charge' AND absorbed=false",
+        )
+      ).rows[0]!.n;
+    const chargedBefore = await charges();
     try {
       await setOutputModel('abliterated-model', 8192);
       expect(await gateway.generateText(input())).toEqual({
         ok: false,
         error: 'provider_unavailable',
       });
-      expect(calls).toBe(1);
-      expect(requests[0]).toMatchObject({ max_tokens: 8192 });
+      expect(calls).toBe(2);
+      expect(requests).toHaveLength(2);
+      for (const request of requests)
+        expect(request).toMatchObject({ model: 'abliterated-model', max_tokens: 8192 });
+      expect(await charges()).toBe(chargedBefore);
       const [record] = (
         await db.query<{ output_tokens: number; reasoning_tokens: number; error_code: string }>(
           'SELECT output_tokens,reasoning_tokens,error_code FROM model_access.usage_records WHERE user_id=$1 ORDER BY created_at DESC,id DESC LIMIT 1',

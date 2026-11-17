@@ -10,6 +10,7 @@ import {
   Form,
   Input,
   InputNumber,
+  Modal,
   Select,
   Space,
   Switch,
@@ -28,6 +29,7 @@ import {
   RouteBillingBounds,
   USAGE_MISSING_ALERT_STREAK,
   type AdminModel,
+  type AdminModelTestResult,
   type ModelScenario,
   type ModelRates,
   type ModelsDevMatch,
@@ -187,6 +189,24 @@ export function ModelsTab({
   // 3.23：勾选批量删除；删除后让展示倍率基准卡片重新读取（基准模型可能被清空）
   const [selected, setSelected] = useState<Key[]>([]);
   const [deleteVersion, setDeleteVersion] = useState(0);
+  // 7.11：逐条线路测试模型（账号测试通过但模型调用失败的定位入口）。
+  const [testing, setTesting] = useState<{
+    model: AdminModel;
+    loading: boolean;
+    result: AdminModelTestResult | null;
+    error: string;
+  } | null>(null);
+  const runModelTest = async (m: AdminModel) => {
+    setTesting({ model: m, loading: true, result: null, error: '' });
+    try {
+      const result = await api.call(ModelAccessAdminEndpoints.testModel, {
+        params: { modelKey: m.modelKey },
+      });
+      setTesting({ model: m, loading: false, result, error: '' });
+    } catch (e) {
+      setTesting({ model: m, loading: false, result: null, error: errorText(e) });
+    }
+  };
   const askDelete = useDeleteModels((keys) => {
     setSelected((cur) => cur.filter((k) => !keys.includes(String(k))));
     setDeleteVersion((v) => v + 1);
@@ -460,7 +480,7 @@ export function ModelsTab({
     },
     {
       title: '操作',
-      width: 140,
+      width: 180,
       fixed: 'right',
       // 3.27：已删除的行没有可操作的动作（再编辑 / 上架 / 删除都没有意义，接口也不接受这些键）。
       render: (_, m) =>
@@ -468,6 +488,16 @@ export function ModelsTab({
           <span className="cell-sub">已删除，仅供核对</span>
         ) : (
           <Space size={4}>
+            <Button
+              type="link"
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation();
+                void runModelTest(m);
+              }}
+            >
+              测试
+            </Button>
             <Button
               type="link"
               size="small"
@@ -687,6 +717,41 @@ export function ModelsTab({
           }}
         />
       )}
+      <Modal
+        open={!!testing}
+        title={testing ? `测试模型：${modelDisplayName(testing.model)}` : '测试模型'}
+        footer={null}
+        width={760}
+        onCancel={() => setTesting(null)}
+        destroyOnHidden
+      >
+        {testing?.loading && <div className="cell-sub">正在依次请求每条线路（最多 20 秒/条）…</div>}
+        {testing?.error && <Alert type="error" showIcon message={testing.error} />}
+        {testing?.result?.skipped && (
+          <Alert type="info" showIcon message={testing.result.skipped} />
+        )}
+        {testing?.result?.routes.map((r) => (
+          <div
+            key={`${r.upstreamId}:${r.upstreamModelId}`}
+            style={{ padding: '10px 0', borderBottom: '1px solid #f0f0f0' }}
+          >
+            <Space size={8} wrap>
+              <Tag color={r.ok ? 'green' : 'red'}>{r.ok ? '成功' : '失败'}</Tag>
+              <span>{r.upstreamName}</span>
+              <span className="mono">{r.upstreamModelId}</span>
+              <span>{r.latencyMs} ms</span>
+              {r.statusCode !== null && <span>HTTP {r.statusCode}</span>}
+              {r.errorCode && <Tag>{r.errorCode}</Tag>}
+              {r.inputTokens !== null && (
+                <span className="cell-sub">
+                  {r.inputTokens} / {r.outputTokens ?? '?'} token
+                </span>
+              )}
+            </Space>
+            {r.errorMessage && <div className="cell-sub">{r.errorMessage}</div>}
+          </div>
+        ))}
+      </Modal>
     </div>
   );
 }

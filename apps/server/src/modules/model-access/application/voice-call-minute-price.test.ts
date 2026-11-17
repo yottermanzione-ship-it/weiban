@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DisplayPricingService } from './display-pricing.js';
 import { VOICE_CALL_MINUTE_USAGE } from './voice-call-composite.js';
-import { REALTIME_MINUTE_USAGE } from './realtime-call.js';
+import { realtimeMinuteUsage } from './realtime-call.js';
 const pipeline = { asrModelKey: 'asr/x', textModelKey: 'text/x', ttsModelKey: 'tts/x' };
 const textPrice = {
   inputPerMillionMicros: 2160000,
@@ -37,7 +37,8 @@ describe('call minute estimate is not conservative freezing', () => {
         throw new Error('Text freezing quote would fold cache and overstate cost');
       return { amountMicros: key === 'asr/x' ? 10833 : 9828 };
     });
-    expect(await service(quote).voiceCallPointsPerMinute(pipeline)).toBe(5.18);
+    // 单轮ceil(6000×2.16 + 6500×0.0216 + 150×8.64)=14397微元；五轮加媒体=92646。
+    expect(await service(quote).voiceCallPointsPerMinute(pipeline)).toBe(9.26);
     expect(quote.mock.calls).toEqual([
       ['asr/x', VOICE_CALL_MINUTE_USAGE.asr],
       ['tts/x', VOICE_CALL_MINUTE_USAGE.tts],
@@ -45,7 +46,7 @@ describe('call minute estimate is not conservative freezing', () => {
   });
   it('applies the text discount once and retains already discounted media quotes', async () => {
     const quote = async (key: string) => ({ amountMicros: key === 'asr/x' ? 5417 : 4914 });
-    expect(await service(quote, true, true).voiceCallPointsPerMinute(pipeline)).toBe(2.59);
+    expect(await service(quote, true, true).voiceCallPointsPerMinute(pipeline)).toBe(4.63);
   });
   it('does not invent zero or a text estimate if any required price is absent', async () => {
     expect(await service().voiceCallPointsPerMinute(pipeline)).toBeNull();
@@ -62,21 +63,31 @@ describe('call minute estimate is not conservative freezing', () => {
 });
 
 describe('批 V：实时语音 / Omni 约每分钟积分', () => {
-  it('按分钟用量假设一次报价（分模态 token），缓存 10 分钟；没价格不编数', async () => {
+  it('按 5 分钟参考通话的平均分钟用量报价（分模态 token），缓存 10 分钟；没价格不编数', async () => {
     const quote = vi.fn(async () => ({ amountMicros: 246_870 }));
     const s = service(quote);
     Object.assign(s, { mediaQuotes: new Map() });
     expect(await s.realtimePointsPerMinute('qwen/rt')).toBe(24.69);
     expect(await s.realtimePointsPerMinute('qwen/rt')).toBe(24.69);
     expect(quote).toHaveBeenCalledTimes(1);
-    expect(quote).toHaveBeenCalledWith('qwen/rt', REALTIME_MINUTE_USAGE);
-    expect(REALTIME_MINUTE_USAGE).toMatchObject({
-      audioInputTokens: expect.any(Number),
-      audioOutputTokens: expect.any(Number),
-    });
+    expect(quote).toHaveBeenCalledWith('qwen/rt', realtimeMinuteUsage(''));
     const none = service(async () => null);
     Object.assign(none, { mediaQuotes: new Map() });
     expect(await none.realtimePointsPerMinute('qwen/rt')).toBeNull();
     expect(await service().realtimePointsPerMinute('qwen/rt')).toBeNull();
+  });
+
+  it('平均分钟用量对得上 5 分钟真实账：音频上下文封顶 300 秒、文字输入每轮 1 万', () => {
+    // 25 轮：音频累计 min(34i,300) 秒 = 6324 秒；25 token/秒 → 158100 token，平均每分钟 31620。
+    expect(realtimeMinuteUsage('qwen-audio-3.1-realtime-plus')).toMatchObject({
+      inputTokens: 50_000,
+      audioInputTokens: 31_620,
+      audioOutputTokens: 1_750,
+    });
+    // Omni 按官方 7 / 12.5 token/秒。
+    expect(realtimeMinuteUsage('qwen3.5-omni-plus-realtime')).toMatchObject({
+      audioInputTokens: 8_854,
+      audioOutputTokens: 875,
+    });
   });
 });

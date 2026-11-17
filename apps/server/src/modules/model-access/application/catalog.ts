@@ -73,6 +73,7 @@ import {
   type ModelPriceSource,
 } from '../tokens.js';
 import { DisplayPricingService } from './display-pricing.js';
+import { UpstreamScheduler } from './scheduler.js';
 import { ChargeQueryUnavailableError } from './defaults.js';
 import { parseVoiceCallPipeline, type VoiceCallPipeline } from '../domain/voice-call-pipeline.js';
 import {
@@ -198,6 +199,8 @@ export class CatalogService {
     @Optional() @Inject(DisplayPricingService) private readonly display?: DisplayPricingService,
     // ADR-20261024：组合通话模型的展示倍率需要语音 / 识别的服务单价（billing 价目表）。
     @Optional() @Inject(MODEL_RATE_PORT) private readonly rates?: BillingModelRatePort,
+    // 7.11：模型列表的「暂不可用」要反映线路级连续失败冷却（只影响这个模型，不影响上游账号与其他模型）。
+    @Optional() @Inject(UpstreamScheduler) private readonly scheduler?: UpstreamScheduler,
   ) {}
 
   // ---------- 3.22 场景推荐模型 / 平台内部模型 ----------
@@ -1093,13 +1096,26 @@ export class CatalogService {
     const rows = await this.database.db
       .select({
         modelKey: modelRoutes.modelKey,
-        up: sql<boolean>`bool_or(${modelRoutes.enabled} and ${upstreams.enabled} and ${upstreams.status} = 'active')`,
+        upstreamId: modelRoutes.upstreamId,
+        up: sql<boolean>`(${modelRoutes.enabled} and ${upstreams.enabled} and ${upstreams.status} = 'active')`,
       })
       .from(modelRoutes)
       .innerJoin(upstreams, eq(upstreams.id, modelRoutes.upstreamId))
-      .where(inArray(modelRoutes.modelKey, keys))
-      .groupBy(modelRoutes.modelKey);
-    for (const r of rows) out.set(r.modelKey, r.up ? 'active' : 'unavailable');
+      .where(inArray(modelRoutes.modelKey, keys));
+    const byModel = new Map<string, Array<{ upstreamId: string; up: boolean }>>();
+    for (const r of rows) {
+      const list = byModel.get(r.modelKey) ?? [];
+      list.push({ upstreamId: r.upstreamId, up: r.up });
+      byModel.set(r.modelKey, list);
+    }
+    for (const [modelKey, list] of byModel) {
+      // 7.11：所有可用线路都在连续失败冷却里 → 这一个模型标「暂不可用」；
+      // 只影响模型列表，不动上游账号与其他模型（账号级状态仍以数据库为准）。
+      const usable = list.some(
+        (r) => r.up && !(this.scheduler?.isRouteCooling(modelKey, r.upstreamId) ?? false),
+      );
+      out.set(modelKey, usable ? 'active' : 'unavailable');
+    }
     return out;
   }
 
@@ -1339,6 +1355,38 @@ export class CatalogService {
             price.outputPerMillionMicros < current.outputPerMillionMicros)
         );
       })
+      .sort(
+        (a, b) =>
+          standardReplyMicros(prices.get(a.modelKey)!) -
+            standardReplyMicros(prices.get(b.modelKey)!) || a.modelKey.localeCompare(b.modelKey),
+      )
+      .map((entry) => entry.modelKey)
+      .slice(0, 3);
+  }
+
+  /**
+   * 兜底换模型：不只找更便宜的。聊天/记忆连续空输出或网络失败时，
+   * 允许切到另一个已上架、有价格的普通文本模型（优先低价），避免“没有更便宜模型就等死”。
+   */
+  async alternateTextFallbacks(currentModelKey: string): Promise<string[]> {
+    const rows = await this.database.db
+      .select({ entry: modelCatalog })
+      .from(modelCatalog)
+      .where(and(eq(modelCatalog.enabled, true), isNull(modelCatalog.deletedAt)));
+    const candidates = rows
+      .map((r) => r.entry)
+      .filter(
+        (entry) =>
+          entry.modelKey !== currentModelKey &&
+          entry.scenarios.includes('chat') &&
+          !entry.capabilities.includes('adult_content') &&
+          !isRealtimeCallEntry(entry),
+      );
+    if (!candidates.length) return [];
+    const prices = await this.prices.textPrices(candidates.map((e) => e.modelKey));
+    const available = await this.availabilityDetails(candidates.map((entry) => entry.modelKey));
+    return candidates
+      .filter((entry) => available.get(entry.modelKey) === null && prices.has(entry.modelKey))
       .sort(
         (a, b) =>
           standardReplyMicros(prices.get(a.modelKey)!) -

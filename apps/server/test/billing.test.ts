@@ -954,9 +954,9 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
     });
   });
 
-  // ---------- 后台每日上限 ----------
+  // ---------- 后台每日上限（已取消拦截，字段仅为兼容/统计保留） ----------
 
-  it('后台每日上限：后台用途与 countAsBackground 受限，聊天、安全用途不受限', async () => {
+  it('后台每日上限不再拦截后台用途，余额仍由 postpaid/余额检查约束', async () => {
     const user = await newUser();
     await grant(user.userId, YUAN).expect(201);
     const w = Wallet.parse(
@@ -968,27 +968,14 @@ describeDb('billing 模块（真实 PostgreSQL）', () => {
       ).body,
     );
     expect(w.backgroundBudget.dailyLimitMicros).toBe(15_000);
-    await reserveOk(reserveInput(user.userId, { purpose: 'memory' }));
-    expect(
-      await port.estimateAndReserve(reserveInput(user.userId, { purpose: 'simulation' })),
-    ).toMatchObject({ ok: false, error: 'budget_exceeded' });
-    expect(
-      await port.estimateAndReserve(
-        reserveInput(user.userId, { purpose: 'behavior_planning', countAsBackground: true }),
-      ),
-    ).toMatchObject({ ok: false, error: 'budget_exceeded' });
-    // 3.27：同一用户同时在途的付费调用最多 3 个，不计后台额度的调用逐个做完（解冻）再发下一个
-    for (const extra of [
-      { purpose: 'behavior_planning' },
-      { purpose: 'chat_reply' },
-      { purpose: 'safety_followup', countAsBackground: true },
-    ] as const) {
-      const h = await reserveOk(reserveInput(user.userId, extra));
-      await port.release({ holdId: h.holdId, reason: 'cancelled' });
-    }
-    // 进行中的后台调用（memory，先用后扣按预估 10,000 计）占用今天的后台额度
-    expect((await wallet(user.token)).backgroundBudget.spentTodayMicros).toBe(10_000);
-    expect((await read.getSpendStatus(user.userId)).backgroundRemainingTodayMicros).toBe(5_000);
+    const memory = await reserveOk(reserveInput(user.userId, { purpose: 'memory' }));
+    const simulation = await reserveOk(reserveInput(user.userId, { purpose: 'simulation' }));
+    const planning = await reserveOk(
+      reserveInput(user.userId, { purpose: 'behavior_planning', countAsBackground: true }),
+    );
+    await port.release({ holdId: memory.holdId, reason: 'cancelled' });
+    await port.release({ holdId: simulation.holdId, reason: 'cancelled' });
+    await port.release({ holdId: planning.holdId, reason: 'cancelled' });
     await http()
       .patch('/api/v1/billing/wallet/settings', user.token)
       .send({ backgroundDailyLimitMicros: -1 })

@@ -1,3 +1,4 @@
+import './app/compat-polyfills.js';
 import './app/secure-context-polyfill.js';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';

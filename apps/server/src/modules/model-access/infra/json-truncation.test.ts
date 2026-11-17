@@ -47,10 +47,10 @@ describe('truncationKind', () => {
 });
 
 describe('批 EJ：后台任务保留思考、思考与正文分开预算', () => {
-  it('只有记忆整理与推演开思考；预算 1024～2048，正文额度不变', () => {
-    expect(thinkingBudgetFor('memory', 1000)).toBe(1024);
-    expect(thinkingBudgetFor('memory', 3200)).toBe(2048);
-    expect(thinkingBudgetFor('simulation', 512)).toBe(1024);
+  it('只有记忆整理与推演开思考；预算 2048～4096，正文额度不变', () => {
+    expect(thinkingBudgetFor('memory', 1000)).toBe(2048);
+    expect(thinkingBudgetFor('memory', 3200)).toBe(3200);
+    expect(thinkingBudgetFor('simulation', 512)).toBe(2048);
     expect(thinkingBudgetFor('chat_reply', 600)).toBe(0);
     expect(thinkingBudgetFor('behavior_planning', 150)).toBe(0);
   });

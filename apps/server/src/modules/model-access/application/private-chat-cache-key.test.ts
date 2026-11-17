@@ -73,8 +73,9 @@ it('仅给官方直连的请求加缓存标识，消息内容保持原样', asyn
   const [direct, other, lookalike, ordinary] = send.mock.calls.map(([, init]) =>
     JSON.parse(init.body as string),
   );
-  expect(direct).toEqual({ ...other, prompt_cache_key: key });
+  // 已上线策略仅对官方直连接口发送关思考参数；代理和伪装域名不附加。
+  expect(direct).toEqual({ ...other, reasoning_effort: 'none', prompt_cache_key: key });
   expect(other).toEqual(lookalike);
-  expect(other).toEqual(ordinary);
+  expect(ordinary).toEqual({ ...other, reasoning_effort: 'none' });
   expect(direct.messages).toEqual(messages);
 });

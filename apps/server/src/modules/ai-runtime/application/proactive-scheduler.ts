@@ -1271,7 +1271,6 @@ export class ProactiveSchedulerService {
       countAsBackground: !care,
       ecologyTask: !care,
       responseFormat: 'text',
-      maxOutputTokens: 300,
       idempotencyKey: `proactive:${plan.id}${care && adult && !privateModel ? ':care-normal' : ''}`,
       messages: [
         ...brainMessages(

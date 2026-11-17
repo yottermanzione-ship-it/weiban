@@ -951,6 +951,42 @@ export const AdminModel = AdminCatalogEntry.extend({
 });
 export type AdminModel = z.infer<typeof AdminModel>;
 
+/**
+ * 7.11：后台「测试模型」——对模型当前启用的每条线路发一条最小文本请求（固定「你好」、最多 8 token），
+ * 直接反映「账号测试通过但模型调用失败」的情况。不发用户账单、不写用量记录，只写审计。
+ */
+export const AdminModelTestRoute = z
+  .object({
+    upstreamId: Id,
+    upstreamName: z.string().max(120),
+    upstreamModelId: z.string().max(200),
+    kind: z.string().max(40),
+    ok: z.boolean(),
+    /** HTTP 状态码；网络层失败为 null。 */
+    statusCode: z.number().int().min(0).max(599).nullable(),
+    latencyMs: z.number().int().min(0).max(120000),
+    /** 供应商错误码（如 invalid_model / rate_limited），成功为 null。 */
+    errorCode: z.string().max(80).nullable(),
+    /** 供应商错误说明（已截断，不含密钥与请求头）。 */
+    errorMessage: z.string().max(300).nullable(),
+    inputTokens: z.number().int().nonnegative().nullable(),
+    outputTokens: z.number().int().nonnegative().nullable(),
+  })
+  .strict();
+export type AdminModelTestRoute = z.infer<typeof AdminModelTestRoute>;
+
+export const AdminModelTestResult = z
+  .object({
+    modelKey: z.string().max(200),
+    /** 目录里是否启用（停用模型仍可测试，但要如实告诉后台）。 */
+    enabled: z.boolean(),
+    routes: z.array(AdminModelTestRoute).max(8),
+    /** 例如「该模型类型不支持文本测试」；正常测试为 null。 */
+    skipped: z.string().max(300).nullable(),
+  })
+  .strict();
+export type AdminModelTestResult = z.infer<typeof AdminModelTestResult>;
+
 /** 3.26（G3-2）：同一条线路连续多少次没返回用量后，后台提示一次（只提示，不停用）。 */
 export const USAGE_MISSING_ALERT_STREAK = 5;
 
@@ -1453,6 +1489,15 @@ export const ModelAccessAdminEndpoints = {
     response: AdminModel,
     summary:
       'v3.3：新增或修改模型（目录 + 倍率一次保存）。倍率有变化时先自动生成并发布新价目表版本，再保存目录；path 中的 modelKey 需 URL 编码。其余规则同 upsertCatalogEntry',
+  }),
+  testModel: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/admin/model/models/:modelKey/test`,
+    auth: 'admin',
+    params: z.object({ modelKey: z.string() }),
+    response: AdminModelTestResult,
+    summary:
+      '7.11：对模型当前启用的每条线路发一条最小文本请求（「你好」、最多 8 token），逐条返回成功/错误码/耗时；不扣用户、不写用量，写审计',
   }),
   previewDeleteModels: defineEndpoint({
     method: 'POST',

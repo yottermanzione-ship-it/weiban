@@ -64,9 +64,15 @@ describe('OpenAI 兼容纯文本结束原因', () => {
 });
 
 describe('只剥除明确标记的英文思考段', () => {
-  it('识别带空行的 Thinking 标题和只有思考的 Reasoning 标题', () => {
+  it('有空行时只去掉思考段，保留答案', () => {
     expect(stripReasoning('Thinking:\r\nI should answer.\r\n\r\nGood night.')).toBe('Good night.');
-    expect(stripReasoning('Reasoning: The reply is still missing.')).toBe('');
+  });
+
+  it('没有空行时只删标题，不能把标题后的正文一起吃掉', () => {
+    expect(stripReasoning('Reasoning: The reply is still missing.')).toBe(
+      'The reply is still missing.',
+    );
+    expect(stripReasoning('Thinking: 直接回答\n你好')).toBe('直接回答\n你好');
   });
 
   it('没有标题的分析原样交给出站检查', () => {
