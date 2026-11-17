@@ -43,7 +43,7 @@ async function safe<T>(work: Promise<T>): Promise<T | undefined> {
   }
 }
 
-/** 菜单角标与工作台待办共用一份计数，每 60 秒自动刷新。 */
+/** 菜单角标与工作台待办共用一份计数，信息级提示在运行提醒里查阅。 */
 export function TodoProvider({ children }: { children: ReactNode }) {
   const [counts, setCounts] = useState<TodoCounts>(EMPTY);
   const [loading, setLoading] = useState(true);
@@ -65,7 +65,11 @@ export function TodoProvider({ children }: { children: ReactNode }) {
         safe(api.call(SupportAdminEndpoints.list, { query: { status: 'open', limit: 1 } })),
         safe(api.call(PlazaAdminEndpoints.listReports, { query: { status: 'pending' } })),
         safe(api.call(IdentityAdminEndpoints.listPendingDeletions)),
-        safe(api.call(PushAdminEndpoints.listAdminAlerts, { query: { status: 'open', limit: 1 } })),
+        safe(
+          api.call(PushAdminEndpoints.listAdminAlerts, {
+            query: { status: 'open', view: 'actionable', limit: 1 },
+          }),
+        ),
       ]);
       if (!active || !alive.current) return;
       setCounts({
@@ -83,8 +87,13 @@ export function TodoProvider({ children }: { children: ReactNode }) {
   }, [revision]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => setRevision((v) => v + 1), 60_000);
-    return () => window.clearInterval(timer);
+    const refresh = () => setRevision((v) => v + 1);
+    const timer = window.setInterval(refresh, 60_000);
+    window.addEventListener('weiban-admin:alerts-changed', refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('weiban-admin:alerts-changed', refresh);
+    };
   }, []);
 
   const refresh = useCallback(() => setRevision((v) => v + 1), []);

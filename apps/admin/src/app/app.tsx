@@ -144,6 +144,7 @@ function AdminShell({
     const groupCount = groupBadge(item, counts);
     return {
       ...item,
+      badge: badgeOf(item.path, counts),
       // 分组标题用「图标上的红点」提示有待办，展开后每个菜单项再显示具体数字。
       icon: item.icon ? (
         <span className="admin-menu-icon">
@@ -169,7 +170,7 @@ function AdminShell({
       route={{ path: '/', routes: decorated }}
       location={{ pathname }}
       menu={{ autoClose: false }}
-      contentStyle={{ padding: 20, minHeight: 'calc(100vh - 48px)' }}
+      contentStyle={{ padding: 'clamp(12px, 2vw, 30px)', minHeight: 'calc(100vh - 48px)' }}
       menuItemRender={(item, dom) => {
         const badge = (item as { badge?: number }).badge ?? 0;
         if (!item.path) return dom;
@@ -202,6 +203,9 @@ function AdminShell({
       }}
       onMenuHeaderClick={() => onNavigate('/dashboard')}
     >
+      {import.meta.env.DEV && import.meta.env.MODE === 'admin-preview' && (
+        <div className="admin-preview-label">本机预览 · 示例数据</div>
+      )}
       <VersionBanner />
       <Routes>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />

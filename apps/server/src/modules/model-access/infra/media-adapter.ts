@@ -599,11 +599,13 @@ async function mimoSynthesize(
       return {
         ok: true,
         value: { bytes: pcm, mimeType: 'audio/L16', durationMs: Math.round(pcm.length / 48) },
+        ...ttsReceipt(payload),
       };
     }
     return {
       ok: true,
       value: { bytes: new Uint8Array(decoded), mimeType: 'audio/wav', durationMs },
+      ...ttsReceipt(payload),
     };
   } catch {
     return { ok: false, category: 'network_error' };

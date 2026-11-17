@@ -3,9 +3,7 @@
  * RoutingTextAdapter 按上游账号的协议选用。不记录响应原文、不跟随重定向、不持有密钥。
  */
 import { Logger } from '@nestjs/common';
-import { existsSync, writeFileSync } from 'node:fs';
 import type { GenerateTextInput, UsageQuantities } from '@weiban/contracts';
-import { SystemClock, type Clock } from '../../../platform/index.js';
 
 const NETWORK_LOG = new Logger('TextAdapter');
 
@@ -146,6 +144,8 @@ export interface TextAdapter {
     /** 私密会话的缓存路由标识，仅由已确认支持的直连适配器发送。 */
     promptCacheKey?: string;
     timeoutMs: number;
+    /** 流式读取的总时限；timeoutMs 仍用于检测无数据的间隔。 */
+    deadlineMs?: number;
     /**
      * 思考开关：off = 按厂商发关闭思考的字段（默认）；default = 不发，用模型默认；
      * on = 批 EJ 后台任务保留思考，并按 thinkingBudget 单独给思考预算（maxOutputTokens 已是正文 + 思考的总额）。
@@ -359,78 +359,91 @@ export function reasoningTokensOf(raw: unknown, reasoningText?: unknown): number
 function parseOpenAiSse(raw: string): {
   content: string;
   reasoning: string;
+  done: boolean;
+  refusal: boolean;
+  error?: unknown;
   finishReason?: string;
   usage?: unknown;
 } {
   let content = '';
   let reasoning = '';
+  let refusal = false;
+  let done = false;
+  let error: unknown;
   let finishReason: string | undefined;
   let usage: unknown;
   for (const line of raw.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed.startsWith('data:')) continue;
     const data = trimmed.slice(5).trim();
-    if (!data || data === '[DONE]') continue;
+    if (data === '[DONE]') {
+      done = true;
+      break;
+    }
+    if (!data) continue;
     let event: Record<string, unknown>;
     try {
       event = JSON.parse(data) as Record<string, unknown>;
     } catch {
       continue;
     }
-    if (event.usage) usage = event.usage;
+    if (!event || typeof event !== 'object') continue;
+    if (event.error) error = event.error;
+    if (event.usage && typeof event.usage === 'object' && Object.keys(event.usage).length) {
+      usage = event.usage;
+    }
     const choices = event.choices;
     if (!Array.isArray(choices)) continue;
-    for (const item of choices) {
-      const choice = item as Record<string, unknown>;
-      const delta = (choice.delta ?? choice.message) as Record<string, unknown> | undefined;
-      if (typeof delta?.content === 'string') content += delta.content;
-      const think = delta?.reasoning_content ?? delta?.reasoning;
-      if (typeof think === 'string') reasoning += think;
-      if (typeof choice.finish_reason === 'string') finishReason = choice.finish_reason;
-    }
+    const choice = choices[0] as Record<string, unknown> | undefined;
+    const delta = (choice?.delta ?? choice?.message) as Record<string, unknown> | undefined;
+    if (typeof delta?.content === 'string') content += delta.content;
+    const think = delta?.reasoning_content ?? delta?.reasoning;
+    if (typeof think === 'string') reasoning += think;
+    if (delta?.refusal) refusal = true;
+    if (typeof choice?.finish_reason === 'string') finishReason = choice.finish_reason;
   }
   return {
     content,
     reasoning,
+    done,
+    refusal,
+    ...(error ? { error } : {}),
     ...(finishReason ? { finishReason } : {}),
     ...(usage ? { usage } : {}),
   };
 }
 
-function usageOf(raw: unknown, inputEstimate: number, output: string): TextUsage {
+function usageOf(
+  raw: unknown,
+  messages: AdapterMessage[],
+  output: string,
+  reasoningText?: unknown,
+): TextUsage {
   const object = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   const details = object.prompt_tokens_details as Record<string, unknown> | undefined;
   const numberOrNull = (value: unknown) =>
-    typeof value === 'number' && Number.isFinite(value) ? value : null;
+    typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
+  const cache = object.prompt_cache_hit_tokens ?? details?.cached_tokens;
   const reported = {
     promptTokens: numberOrNull(object.prompt_tokens),
-    cachedTokens: numberOrNull(object.prompt_cache_hit_tokens ?? details?.cached_tokens),
+    cachedTokens: numberOrNull(cache),
     completionTokens: numberOrNull(object.completion_tokens),
   };
-  if (raw && typeof raw === 'object') {
-    const u = raw as Record<string, unknown>;
-    const details = u.prompt_tokens_details as Record<string, unknown> | undefined;
-    const cached = u.prompt_cache_hit_tokens ?? details?.cached_tokens ?? 0;
-    const totalInput = u.prompt_tokens;
-    const out = u.completion_tokens;
-    if (
-      [totalInput, cached, out].every((n) => Number.isSafeInteger(n) && Number(n) >= 0) &&
-      Number(cached) <= Number(totalInput)
-    ) {
-      return {
-        inputTokens: Number(totalInput) - Number(cached),
-        cachedInputTokens: Number(cached),
-        outputTokens: Number(out),
-        estimated: false,
-        reported,
-      };
-    }
-  }
+  const totalInput = reported.promptTokens ?? Math.max(1, estimateInputTokens(messages));
+  const cacheValid =
+    cache == null || (reported.cachedTokens !== null && reported.cachedTokens <= totalInput);
+  const cachedInputTokens = cacheValid ? (reported.cachedTokens ?? 0) : 0;
+  const reasoningTokens = reasoningTokensOf(raw, reasoningText);
+  const outputTokens =
+    reported.completionTokens ?? (output ? estimateTokens(output) : 0) + (reasoningTokens ?? 0);
   return {
-    inputTokens: Math.max(1, inputEstimate),
-    cachedInputTokens: 0,
-    outputTokens: estimateTokens(output),
-    estimated: true,
+    inputTokens: totalInput - cachedInputTokens,
+    cachedInputTokens,
+    outputTokens,
+    ...(reasoningTokens === undefined
+      ? {}
+      : { reasoningTokens: Math.min(reasoningTokens, outputTokens) }),
+    estimated: reported.promptTokens === null || reported.completionTokens === null || !cacheValid,
     reported,
   };
 }
@@ -449,8 +462,6 @@ export class RoutingTextAdapter implements TextAdapter {
 }
 
 export class OpenAiTextAdapter implements TextAdapter {
-  constructor(private readonly clock: Clock = new SystemClock()) {}
-
   async generate(input: Parameters<TextAdapter['generate']>[0]): Promise<TextResult> {
     const control = thinkingControlFor(input.baseUrl, input.model);
     // DeepSeek 不发送 thinking/关思考字段：中转站和官方都没有这个标准参数，直接让它按默认思考跑。
@@ -472,13 +483,20 @@ export class OpenAiTextAdapter implements TextAdapter {
     let idleTimer: NodeJS.Timeout | undefined;
     let hardTimer: NodeJS.Timeout | undefined;
     try {
+      // 直连 Abliteration 的非流式回应有实测用量，流式回应目前没有。每次调用保持单次 HTTP。
+      const officialAbliteration = /^https:\/\/api\.abliteration\.ai\/v1\/*$/i.test(input.baseUrl);
+      const stream = !officialAbliteration;
+      const officialOpenAi = new URL(input.baseUrl).origin === 'https://api.openai.com';
       const controller = new AbortController();
       const armIdle = () => {
         if (idleTimer) clearTimeout(idleTimer);
         idleTimer = setTimeout(() => controller.abort(), input.timeoutMs);
       };
       armIdle();
-      hardTimer = setTimeout(() => controller.abort(), Math.max(input.timeoutMs, 120_000));
+      hardTimer = setTimeout(
+        () => controller.abort(),
+        input.deadlineMs ?? Math.max(input.timeoutMs, 120_000),
+      );
       const response = await fetch(`${input.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
         method: 'POST',
         redirect: 'manual',
@@ -491,12 +509,12 @@ export class OpenAiTextAdapter implements TextAdapter {
         body: JSON.stringify({
           model: input.model,
           messages: wireMessages(input.messages),
-          stream: true,
+          stream,
+          ...(officialOpenAi ? { stream_options: { include_usage: true } } : {}),
           [input.outputParameter ?? 'max_tokens']: input.maxOutputTokens,
           temperature: input.temperature,
           // Abliteration 官方直连接受该提示，其他兼容地址不透传。
-          ...(input.promptCacheKey &&
-          /^https:\/\/api\.abliteration\.ai\/v1\/*$/i.test(input.baseUrl)
+          ...(input.promptCacheKey && officialAbliteration
             ? { prompt_cache_key: input.promptCacheKey }
             : {}),
           ...extra,
@@ -505,9 +523,11 @@ export class OpenAiTextAdapter implements TextAdapter {
       });
       // 限制响应大小，避免异常供应商占满服务器内存；只提取结构化字段，不向外传播正文。
       if (!response.body) return { ok: false, category: 'provider_error', retryable: true };
+      const eventStream = /text\/event-stream/i.test(response.headers.get('content-type') ?? '');
       const reader = response.body.getReader();
       const chunks: Uint8Array[] = [];
       let bytes = 0;
+      let tail = '';
       try {
         for (;;) {
           const part = await reader.read();
@@ -519,26 +539,48 @@ export class OpenAiTextAdapter implements TextAdapter {
             return { ok: false, category: 'provider_error', retryable: false };
           }
           chunks.push(part.value);
+          if (eventStream) {
+            const fragment = tail + Buffer.from(part.value).toString('utf8');
+            if (/^data:[ \t]*\[DONE\][ \t]*\r?\n/m.test(fragment)) {
+              await reader.cancel();
+              break;
+            }
+            tail = fragment.slice(-64);
+          }
         }
       } finally {
         reader.releaseLock();
       }
       const rawBody = Buffer.concat(chunks).toString('utf8');
-      const contentType = response.headers.get('content-type') ?? '';
       let payload: Record<string, unknown> = {};
-      if (/text\/event-stream/i.test(contentType) || /^\s*data:/m.test(rawBody)) {
+      if (eventStream || /^\s*data:/m.test(rawBody)) {
         const streamed = parseOpenAiSse(rawBody);
+        if (
+          response.ok &&
+          !streamed.done &&
+          !streamed.finishReason &&
+          !streamed.error &&
+          !streamed.refusal
+        )
+          return {
+            ok: false,
+            category: 'network_error',
+            retryable: true,
+            usage: usageOf(streamed.usage, input.messages, streamed.content, streamed.reasoning),
+          };
         payload = {
           choices: [
             {
               message: {
                 ...(streamed.content ? { content: streamed.content } : {}),
                 ...(streamed.reasoning ? { reasoning_content: streamed.reasoning } : {}),
+                ...(streamed.refusal ? { refusal: true } : {}),
               },
               ...(streamed.finishReason ? { finish_reason: streamed.finishReason } : {}),
             },
           ],
           ...(streamed.usage ? { usage: streamed.usage } : {}),
+          ...(streamed.error ? { error: streamed.error } : {}),
         };
       } else {
         try {
@@ -560,15 +602,20 @@ export class OpenAiTextAdapter implements TextAdapter {
           ok: false,
           category: 'content_rejected',
           retryable: false,
-          ...(payload.usage
-            ? { usage: usageOf(payload.usage, estimateInputTokens(input.messages), '') }
-            : {}),
+          ...(payload.usage ? { usage: usageOf(payload.usage, input.messages, '') } : {}),
         };
       if (response.status === 401 || response.status === 403)
         return { ok: false, category: 'invalid_key', retryable: false };
       if (response.status === 429) return { ok: false, category: 'rate_limited', retryable: true };
       if (response.status >= 500) return { ok: false, category: 'provider_error', retryable: true };
       if (!response.ok) return { ok: false, category: 'bad_request', retryable: false };
+      if (error)
+        return {
+          ok: false,
+          category: 'provider_error',
+          retryable: true,
+          ...(payload.usage ? { usage: usageOf(payload.usage, input.messages, '') } : {}),
+        };
       const choice = (
         payload.choices as
           | {
@@ -590,76 +637,20 @@ export class OpenAiTextAdapter implements TextAdapter {
           category: 'content_rejected',
           retryable: false,
           ...finish,
-          ...(payload.usage
-            ? { usage: usageOf(payload.usage, estimateInputTokens(input.messages), '') }
-            : {}),
+          ...(payload.usage ? { usage: usageOf(payload.usage, input.messages, '') } : {}),
         };
       const raw: unknown = choice?.message?.content;
       if (raw !== undefined && raw !== null && typeof raw !== 'string')
         return { ok: false, category: 'provider_error', retryable: true };
       const rawText = typeof raw === 'string' ? raw : '';
       const text = stripReasoning(rawText);
-      const baseUsage = usageOf(payload.usage, estimateInputTokens(input.messages), rawText);
-      // 批 EJ：思考 token 单独计量（计费仍按总输出）。
       const reasoningText = choice?.message?.reasoning_content ?? choice?.message?.reasoning;
-      const reasoningTokens = reasoningTokensOf(payload.usage, reasoningText);
-      const usage: TextUsage =
-        reasoningTokens === undefined ? baseUsage : { ...baseUsage, reasoningTokens };
-      if (!text && !existsSync('/app/.data/empty-output-debug.json')) {
-        try {
-          writeFileSync(
-            '/app/.data/empty-output-debug.json',
-            JSON.stringify(
-              {
-                at: this.clock.now().toISOString(),
-                model: input.model,
-                host: (() => {
-                  try {
-                    return new URL(input.baseUrl).host;
-                  } catch {
-                    return 'invalid_base_url';
-                  }
-                })(),
-                finishReason,
-                content: rawText,
-                reasoning: reasoningText,
-                usage: payload.usage,
-                messageKeys: Object.keys(choice?.message ?? {}),
-              },
-              null,
-              2,
-            ),
-          );
-        } catch {
-          // 诊断文件写不进去不影响主流程。
-        }
-      }
-      if (!text && !existsSync('/app/.data/empty-raw-debug.json')) {
-        try {
-          writeFileSync(
-            '/app/.data/empty-raw-debug.json',
-            JSON.stringify(
-              {
-                at: this.clock.now().toISOString(),
-                status: response.status,
-                model: input.model,
-                host: (() => {
-                  try {
-                    return new URL(input.baseUrl).host;
-                  } catch {
-                    return 'invalid_base_url';
-                  }
-                })(),
-                rawBody,
-              },
-              null,
-              2,
-            ),
-          );
-        } catch {
-          // 诊断文件写不进去不影响主流程。
-        }
-      }
+      const usage = usageOf(
+        payload.usage,
+        input.messages,
+        reasoningText ? text : rawText,
+        reasoningText,
+      );
       if (!text)
         NETWORK_LOG.warn({
           code: 'text_empty_output',
@@ -678,7 +669,7 @@ export class OpenAiTextAdapter implements TextAdapter {
       if (
         input.responseFormat !== 'json' &&
         finishReason === 'length' &&
-        (reasoningTokens ?? 0) > 0
+        (usage.reasoningTokens ?? 0) > 0
       )
         return {
           ok: false,

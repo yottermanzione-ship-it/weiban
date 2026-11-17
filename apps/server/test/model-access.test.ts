@@ -1204,6 +1204,7 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
         inputTokens: 100,
         cachedInputTokens: 50,
         outputTokens: 10,
+        reasoningTokens: over.estimated ? 4 : undefined,
         estimated: over.estimated ?? false,
         latencyMs: 1200,
         ttftMs: null,
@@ -1214,6 +1215,7 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
           ledgerEntryId: `0192f000-0000-7000-8000-${String(ids.length).padStart(12, '0')}`,
           amountMicros: over.charged ?? 1000,
           costMicros: 800,
+          costKnown: true,
         });
       }
       ids.push(record.id);
@@ -1285,6 +1287,8 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
         outputTokens: 60,
         totalTokens: 960,
         estimatedTokens: 160,
+        estimatedCalls: 1,
+        unknownCostCalls: 1,
         chargedMicros: 3000 + 1000 + 5000 + 2000,
         costMicros: 800 * 5,
         absorbedCostMicros: 0,
@@ -1364,6 +1368,21 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
         retryCount: 3,
         chargedMicros: 0,
       });
+      const quality = async (filter: { estimated?: boolean; costKnown?: boolean }) =>
+        z.object({ items: z.array(AdminUsageRecord) }).parse(
+          (
+            await http()
+              .post('/api/v1/admin/model/usage/records', adminToken)
+              .send({ filter: { ...FILTER, ...filter } })
+              .expect(200)
+          ).body,
+        ).items;
+      expect(await quality({ estimated: true })).toEqual([
+        expect.objectContaining({ usageRecordId: ids[1], reasoningTokens: 4, costKnown: true }),
+      ]);
+      expect(await quality({ costKnown: false })).toEqual([
+        expect.objectContaining({ usageRecordId: ids[2], estimated: false }),
+      ]);
       const keys = Object.keys(failed[0] ?? {});
       for (const k of ['content', 'text', 'prompt', 'messages']) expect(keys).not.toContain(k);
       await http()
@@ -1395,7 +1414,7 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
       // a2 的金额快照缺失（模拟结算后崩溃）：billing 有扣费
       await withClient((c) =>
         c.query(
-          `UPDATE model_access.usage_records SET snapshot_at = NULL, charged_micros = 0, cost_micros = 0, ledger_entry_id = NULL WHERE id = $1`,
+          `UPDATE model_access.usage_records SET snapshot_at = NULL, charged_micros = 0, cost_micros = 0, ledger_entry_id = NULL, cost_known = false WHERE id = $1`,
           [a2],
         ),
       );

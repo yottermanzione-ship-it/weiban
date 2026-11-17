@@ -4,12 +4,13 @@ import react from '@vitejs/plugin-react';
 // 脚本仍然只允许本站文件（不允许 inline script / eval）。
 const csp =
   "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'";
-const proxy = {
-  '/api': { target: 'http://127.0.0.1:3000', changeOrigin: false },
+const proxyTo = (target: string) => ({
+  '/api': { target, changeOrigin: false },
   // V3：页面顶部比对服务器契约版本（GET /health）
-  '/health': { target: 'http://127.0.0.1:3000', changeOrigin: false },
-};
-export default defineConfig({
+  '/health': { target, changeOrigin: false },
+});
+const proxy = proxyTo('http://127.0.0.1:3000');
+export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     {
@@ -26,7 +27,10 @@ export default defineConfig({
       },
     },
   ],
-  server: { port: 5174, proxy },
+  server:
+    mode === 'admin-preview'
+      ? { host: '127.0.0.1', port: 5184, strictPort: true, proxy: proxyTo('http://127.0.0.1:3084') }
+      : { port: 5174, proxy },
   // pnpm 的虚拟 store 会让依赖各自解析到自己的 react 副本，必须去重，
   // 否则 Ant Design / ProComponents 与页面用到两份 React，hooks 直接报错。
   resolve: { dedupe: ['react', 'react-dom', 'react/jsx-runtime'] },
@@ -50,4 +54,4 @@ export default defineConfig({
       'Referrer-Policy': 'no-referrer',
     },
   },
-});
+}));

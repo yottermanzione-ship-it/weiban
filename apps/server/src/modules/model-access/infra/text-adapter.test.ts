@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { OpenAiTextAdapter, stripReasoning, type TextAdapter } from './text-adapter.js';
+import {
+  estimateTokens,
+  OpenAiTextAdapter,
+  stripReasoning,
+  type TextAdapter,
+} from './text-adapter.js';
 
 const input: Parameters<TextAdapter['generate']>[0] = {
   baseUrl: 'https://upstream.invalid/v1',
@@ -26,6 +31,115 @@ function respond(content: string | null, finishReason: string, reasoningTokens: 
 }
 
 afterEach(() => vi.restoreAllMocks());
+
+describe('OpenAI 兼容回执与计量', () => {
+  it('官方 OpenAI 请求用量，保留末帧的完整回执并结束已完成的流', async () => {
+    const encoder = new TextEncoder();
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            for (const frame of [
+              'data: {"choices":[{"delta":{"content":"你好"}}],"usage":null}\r\n\r\n',
+              'data: {"choices":[{"finish_reason":"stop"}]}\r\n\r\n',
+              'data: {"choices":[],"usage":{"prompt_tokens":120,"completion_tokens":40,"prompt_tokens_details":{"cached_tokens":70},"completion_tokens_details":{"reasoning_tokens":25}}}\r\n\r\n',
+              'data: [DO',
+              'NE]\r\n\r\n',
+            ])
+              controller.enqueue(encoder.encode(frame));
+            // 故意保持连接打开，结束标记后适配器无需等 TCP 关闭。
+          },
+        }),
+        { headers: { 'Content-Type': 'text/event-stream' } },
+      ),
+    );
+    const result = await new OpenAiTextAdapter().generate({
+      ...input,
+      baseUrl: 'https://api.openai.com/v1',
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toMatchObject({
+      stream: true,
+      stream_options: { include_usage: true },
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      text: '你好',
+      usage: {
+        inputTokens: 50,
+        cachedInputTokens: 70,
+        outputTokens: 40,
+        reasoningTokens: 25,
+        estimated: false,
+      },
+    });
+  });
+
+  it('直连 Abliteration 回到有用量的 JSON 请求，保留缓存亲和参数；自定义中转保持原协议', async () => {
+    respond('合成测试回复', 'stop', 0);
+    respond('合成测试回复', 'stop', 0);
+    const fetch = vi.mocked(globalThis.fetch);
+    const adapter = new OpenAiTextAdapter();
+    await expect(
+      adapter.generate({
+        ...input,
+        baseUrl: 'https://api.abliteration.ai/v1',
+        promptCacheKey: 'test-affinity',
+      }),
+    ).resolves.toMatchObject({ ok: true, usage: { estimated: false } });
+    await adapter.generate(input);
+    const [direct, relay] = fetch.mock.calls.map((call) => JSON.parse(String(call[1]?.body)));
+    expect(direct).toMatchObject({ stream: false, prompt_cache_key: 'test-affinity' });
+    expect(direct).not.toHaveProperty('stream_options');
+    expect(relay).toMatchObject({ stream: true });
+    expect(relay).not.toHaveProperty('stream_options');
+  });
+
+  it('只估算缺失的出站 token，并计入独立返回的思考用量', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      Response.json({
+        choices: [
+          {
+            message: { content: '简短回复', reasoning_content: '独立思考内容' },
+            finish_reason: 'stop',
+          },
+        ],
+        usage: { prompt_tokens: 120, prompt_cache_hit_tokens: 70 },
+      }),
+    );
+    await expect(new OpenAiTextAdapter().generate(input)).resolves.toMatchObject({
+      ok: true,
+      usage: {
+        estimated: true,
+        inputTokens: 50,
+        cachedInputTokens: 70,
+        outputTokens: estimateTokens('简短回复') + estimateTokens('独立思考内容'),
+        reasoningTokens: estimateTokens('独立思考内容'),
+      },
+    });
+  });
+
+  it('识别嵌在 200 流里的拒绝和没有结束帧的部分文本', async () => {
+    const sse = (data: unknown) =>
+      new Response(`data: ${JSON.stringify(data)}\n\n`, {
+        headers: { 'Content-Type': 'text/event-stream' },
+      });
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(sse({ error: { code: 'policy_violation' } }))
+      .mockResolvedValueOnce(sse({ choices: [{ delta: { content: '尚未完成' } }] }));
+    const adapter = new OpenAiTextAdapter();
+    await expect(adapter.generate(input)).resolves.toMatchObject({
+      ok: false,
+      category: 'content_rejected',
+      retryable: false,
+    });
+    await expect(adapter.generate(input)).resolves.toMatchObject({
+      ok: false,
+      category: 'network_error',
+      usage: { estimated: true },
+    });
+  });
+});
 
 describe('OpenAI 兼容纯文本结束原因', () => {
   it.each(['这是尚未结束的部分内容', null])('思考占用额度后的截断可以重试', async (content) => {

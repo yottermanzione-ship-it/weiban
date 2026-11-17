@@ -10,7 +10,13 @@
  * - 合法的照常展示（37 条目录 / 25 条路由该有的行都在）；
  * - 不合法的收敛成一条**可见的警告**（模型键 + 第一个不符合的字段），不静默丢弃、也不补默认值。
  */
-import { AdminModel } from '@weiban/contracts';
+import { AdminModel, ModelAccessAdminEndpoints } from '@weiban/contracts';
+import { z } from 'zod';
+
+export const listAllModels = {
+  ...ModelAccessAdminEndpoints.listModels,
+  response: z.object({ items: z.array(z.unknown()) }),
+};
 
 export interface AdminModelIssue {
   /** 出问题的模型键（行里连模型键都没有时给出占位说明）。 */

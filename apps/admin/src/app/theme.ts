@@ -1,9 +1,9 @@
 import type { ThemeConfig } from 'antd';
 
 /** 品牌绿：只用于主按钮与选中态。 */
-export const BRAND = '#07C160';
-export const BRAND_HOVER = '#06AD56';
-export const BRAND_SOFT = '#E8F8EF';
+export const BRAND = '#14765E';
+export const BRAND_HOVER = '#0E614C';
+export const BRAND_SOFT = '#E8F4EF';
 
 export const FONT_SANS =
   '"MiSans", -apple-system, BlinkMacSystemFont, "PingFang SC", "HarmonyOS Sans SC", "Noto Sans SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif';
@@ -21,7 +21,7 @@ export const adminTheme: ThemeConfig = {
     colorTextTertiary: '#8A9099',
     colorBorder: '#DFE3E8',
     colorBorderSecondary: '#EDEFF2',
-    colorBgLayout: '#F4F5F7',
+    colorBgLayout: '#F4F6F5',
     colorBgContainer: '#FFFFFF',
     borderRadius: 6,
     borderRadiusLG: 8,
@@ -34,12 +34,12 @@ export const adminTheme: ThemeConfig = {
     Layout: {
       headerBg: '#FFFFFF',
       siderBg: '#FFFFFF',
-      bodyBg: '#F4F5F7',
+      bodyBg: '#F4F6F5',
       headerHeight: 48,
       headerPadding: '0 20px',
     },
     Menu: {
-      itemHeight: 34,
+      itemHeight: 38,
       itemMarginInline: 6,
       itemBorderRadius: 6,
       subMenuItemBg: 'transparent',

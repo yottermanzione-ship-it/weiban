@@ -455,7 +455,7 @@ export class ChatSummaryService {
         if (!current || fingerprint(current) !== source.hash)
           throw new Error('summary_source_changed');
       }
-      await this.db.transaction(async (tx) => {
+      committed = await this.db.transaction(async (tx) => {
         await this.plans.lock(tx, row.p.userId, row.p.conversationId);
         const current = await this.load(id, tx);
         if (
@@ -464,14 +464,14 @@ export class ChatSummaryService {
           current.s.version !== claimed.version ||
           current.p.barrierSeq !== prepared.barrier
         )
-          return;
+          return false;
         if (
           (await this.contacts.getActiveContactEpoch(row.p.userId, row.p.characterId, tx))
             ?.version !== prepared.epoch
         )
-          return;
+          return false;
         if (scope === 'adult' && !(await this.policy.checkAdultGeneration(row.p, tx)).allowed)
-          return;
+          return false;
         const ciphertext = await this.crypto.seal(
           row.p.userId,
           `ai:chat-summary:${id}`,
@@ -512,7 +512,7 @@ export class ChatSummaryService {
           .update(memoryStates)
           .set({ windowBlockCiphertext: null })
           .where(eq(memoryStates.id, row.p.id));
-        committed = true;
+        return true;
       });
       await this.refundDiscarded(chargedUsageId, committed);
     } catch (error) {

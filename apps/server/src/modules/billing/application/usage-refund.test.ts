@@ -3,7 +3,7 @@ import type { Database } from '../../../platform/index.js';
 import type { Ledger } from './ledger.js';
 import { UsageRefundService } from './usage-refund.js';
 
-function setup(overrides: { absorbed?: boolean; existing?: boolean } = {}) {
+function setup(overrides: { absorbed?: boolean; existing?: boolean; platform?: boolean } = {}) {
   const tx = { marker: 'tx' };
   const charge = {
     id: 'charge-1',
@@ -20,7 +20,10 @@ function setup(overrides: { absorbed?: boolean; existing?: boolean } = {}) {
   const ledger = {
     findChargeByUsage: vi.fn(async () => (overrides.absorbed ? null : charge)),
     findByIdempotencyKey: vi.fn(async () => (overrides.existing ? { id: 'refund-1' } : null)),
-    lockAccountById: vi.fn(async () => ({ id: 'account-1' })),
+    lockAccountById: vi.fn(async () => ({
+      id: 'account-1',
+      kind: overrides.platform ? 'platform' : 'user',
+    })),
     postEntry: vi.fn(async () => ({})),
   } as unknown as Ledger;
   const db = {
@@ -53,5 +56,9 @@ describe('摘要无效调用的自动退款', () => {
     const absorbed = setup({ absorbed: true });
     await absorbed.service.refundUsage('usage-2', '平台吸收');
     expect(absorbed.ledger.postEntry).not.toHaveBeenCalled();
+
+    const platform = setup({ platform: true });
+    await platform.service.refundUsage('usage-3', '平台调用');
+    expect(platform.ledger.postEntry).not.toHaveBeenCalled();
   });
 });

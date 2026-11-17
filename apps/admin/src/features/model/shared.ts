@@ -32,6 +32,15 @@ export const ERROR_LABELS: Record<string, string> = {
   provider_error: '上游错误',
   model_unavailable: '模型不可用',
   upstream_test_failed: '连通测试未通过',
+  empty_output: '没有返回正文',
+  truncated_reasoning: '思考用完输出额度',
+  truncated_whitespace: '输出大量空白',
+  truncated_repeat: '输出重复',
+  truncated: '输出截断',
+  content_rejected: '上游拒绝内容',
+  bad_request: '请求不符合接口要求',
+  interrupted: '调用中断',
+  provider_unavailable: '线路不可用',
 };
 
 /** 供应商下拉：接口地址由后台自己维护，前端不预填域名（工程规范 R4）。 */

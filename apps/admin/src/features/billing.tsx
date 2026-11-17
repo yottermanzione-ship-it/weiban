@@ -3,12 +3,25 @@
  * 数据仍来自 billing 管理接口，界面统一 Ant Design。
  */
 import { useEffect, useState } from 'react';
-import { Alert, Button, DatePicker, Form, Input, InputNumber, Select, Skeleton, Space } from 'antd';
+import { useSearchParams } from 'react-router-dom';
+import {
+  Alert,
+  Button,
+  Collapse,
+  DatePicker,
+  Form,
+  Input,
+  InputNumber,
+  Select,
+  Skeleton,
+  Space,
+} from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
 import type { z } from 'zod';
 import {
   BillingAdminEndpoints,
+  LocalDate,
   ModelAccessAdminEndpoints,
   ReconciliationRun,
 } from '@weiban/contracts';
@@ -45,7 +58,11 @@ export function BillingPage() {
   const toast = useToast();
   const summary = useRemote(BillingAdminEndpoints.getPlatformSummary);
   const upstreams = useRemote(ModelAccessAdminEndpoints.listUpstreams);
-  const [range, setRange] = useState<[Dayjs, Dayjs]>([dayjs(localDate(-30)), dayjs(todayBj())]);
+  const [params] = useSearchParams();
+  const [range, setRange] = useState<[Dayjs, Dayjs]>(() => {
+    const date = LocalDate.safeParse(params.get('day')).data;
+    return date ? [dayjs(date), dayjs(date)] : [dayjs(localDate(-30)), dayjs(todayBj())];
+  });
   const [items, setItems] = useState<Recon[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -80,7 +97,7 @@ export function BillingPage() {
   const columns: ProColumns<Recon>[] = [
     { title: '日期', width: 110, render: (_, r) => formatDate(r.date) },
     {
-      title: '账本自洽',
+      title: '内部账本',
       width: 100,
       render: (_, r) =>
         r.ledgerConsistent ? (
@@ -95,14 +112,19 @@ export function BillingPage() {
       render: (_, r) => r.staleHolds,
     },
     {
-      title: '缺扣费 / 多扣费',
+      title: '缺扣费 / 缺用量',
       width: 130,
-      render: (_, r) => `${r.usageWithoutCharge} / ${r.chargeWithoutUsage}`,
+      render: (_, r) =>
+        r.usageReconciledAt ? (
+          `${r.usageWithoutCharge} / ${r.chargeWithoutUsage}`
+        ) : (
+          <StatusTag>待核对</StatusTag>
+        ),
     },
     {
       title: '金额不一致',
       width: 110,
-      render: (_, r) => r.usageAmountMismatch ?? 0,
+      render: (_, r) => (r.usageReconciledAt ? (r.usageAmountMismatch ?? 0) : '—'),
     },
     {
       title: '平台吸收',
@@ -124,8 +146,8 @@ export function BillingPage() {
     {
       title: (
         <span>
-          估算计费
-          <HelpTip text="上游没返回用量（token 数）的调用：系统按本地分词估算计费并标记「估算」，线路照常使用。这里是当天的条数和记账金额；数量多时可以检查上游 / 中转是否返回 usage。" />
+          本地计量或估算
+          <HelpTip text="上游没返回用量（token 数）的调用：系统按本地分词本地计量或估算并标记「估算」，线路照常使用。这里是当天的条数和记账金额；数量多时可以检查上游 / 中转是否返回 usage。" />
         </span>
       ),
       width: 150,
@@ -143,7 +165,7 @@ export function BillingPage() {
       title: '上游账单偏差',
       render: (_, r) =>
         r.upstreamDiffs.length === 0 ? (
-          '—'
+          '未录入账单'
         ) : (
           <div className="cell-main">
             {r.upstreamDiffs
@@ -167,68 +189,24 @@ export function BillingPage() {
 
   return (
     <Page
-      title="对账与平台花费"
-      desc="平台自己花了多少钱、每个上游对不对得上账。用户扣费在「用量与花费」里看。"
+      title="供应商对账"
+      desc="核对每日账本和供应商账单，查看平台预算及先用后扣状态。"
       extra={
         <Space>
-          <Button onClick={() => summary.refresh()}>刷新</Button>
+          <Button
+            onClick={() => {
+              summary.refresh();
+              void loadRecon();
+            }}
+          >
+            刷新
+          </Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setBillOpen(true)}>
             录入上游账单
           </Button>
         </Space>
       }
     >
-      {summary.loading && !data ? (
-        <SectionCard>
-          <Skeleton active paragraph={{ rows: 3 }} />
-        </SectionCard>
-      ) : (
-        <div className="mini-stats">
-          <div className="mini-stat">
-            <span>今日成本（北京时间）</span>
-            <strong>{formatYuan(data?.todayCostMicros ?? 0)}</strong>
-            <em>付给模型服务商的钱</em>
-          </div>
-          <div className="mini-stat">
-            <span>每日上限</span>
-            <strong>{formatYuan(data?.dailyCapMicros ?? 0)}</strong>
-            <em>超过后平台调用会被拦住</em>
-          </div>
-          <div className="mini-stat">
-            <span>平台账户余额</span>
-            <strong>{formatYuan(data?.platformAccountBalanceMicros ?? 0)}</strong>
-            <em>平台自己账户里的积分折合</em>
-          </div>
-          <div className="mini-stat">
-            <span>今日剩余额度</span>
-            <strong>
-              {formatYuan(Math.max(0, (data?.dailyCapMicros ?? 0) - (data?.todayCostMicros ?? 0)))}
-            </strong>
-            <em>上限减去今日已花</em>
-          </div>
-        </div>
-      )}
-      {summary.error && <Alert type="error" showIcon message={summary.error} />}
-
-      <PostpaidPanel />
-
-      <SectionCard title="各上游近 30 天成本" desc="按线路看钱花在哪">
-        {(data?.last30DaysCostByUpstream ?? []).length === 0 ? (
-          <div className="detail-muted">近 30 天没有成本记录。</div>
-        ) : (
-          <div className="rank-list">
-            {[...(data?.last30DaysCostByUpstream ?? [])]
-              .sort((a, b) => b.costMicros - a.costMicros)
-              .map((row) => (
-                <div className="rank-row" key={row.upstreamId}>
-                  <span className="rank-name">{upstreamName(row.upstreamId)}</span>
-                  <span className="rank-meta">{formatYuan(row.costMicros)}</span>
-                </div>
-              ))}
-          </div>
-        )}
-      </SectionCard>
-
       <div className="tab-head">
         <div className="tab-desc">
           <strong>每日对账结果</strong>
@@ -256,6 +234,71 @@ export function BillingPage() {
         pagination={false}
         emptyTitle="这段时间没有对账记录"
         emptyHint="对账每天凌晨自动跑一次；刚部署或当天还没跑完时这里是空的。"
+      />
+
+      <Collapse
+        items={[
+          {
+            key: 'platform',
+            label: '平台预算与先用后扣',
+            children: (
+              <div className="admin-stack">
+                {summary.loading && !data ? (
+                  <SectionCard>
+                    <Skeleton active paragraph={{ rows: 3 }} />
+                  </SectionCard>
+                ) : data ? (
+                  <div className="mini-stats">
+                    <div className="mini-stat">
+                      <span>今日平台预算支出</span>
+                      <strong>{formatYuan(data?.todayCostMicros ?? 0)}</strong>
+                      <em>平台任务及平台承担的成本</em>
+                    </div>
+                    <div className="mini-stat">
+                      <span>每日上限</span>
+                      <strong>{formatYuan(data?.dailyCapMicros ?? 0)}</strong>
+                      <em>超过后平台调用会被拦住</em>
+                    </div>
+                    <div className="mini-stat">
+                      <span>平台账户余额</span>
+                      <strong>{formatYuan(data?.platformAccountBalanceMicros ?? 0)}</strong>
+                      <em>平台自己账户里的积分折合</em>
+                    </div>
+                    <div className="mini-stat">
+                      <span>今日剩余额度</span>
+                      <strong>
+                        {formatYuan(
+                          Math.max(0, (data?.dailyCapMicros ?? 0) - (data?.todayCostMicros ?? 0)),
+                        )}
+                      </strong>
+                      <em>上限减去今日已花</em>
+                    </div>
+                  </div>
+                ) : null}
+                {summary.error && <Alert type="error" showIcon message={summary.error} />}
+
+                <PostpaidPanel />
+
+                <SectionCard title="各上游近 30 天成本" desc="根据计费流水汇总">
+                  {(data?.last30DaysCostByUpstream ?? []).length === 0 ? (
+                    <div className="detail-muted">近 30 天没有成本记录。</div>
+                  ) : (
+                    <div className="rank-list">
+                      {[...(data?.last30DaysCostByUpstream ?? [])]
+                        .sort((a, b) => b.costMicros - a.costMicros)
+                        .map((row) => (
+                          <div className="rank-row" key={row.upstreamId}>
+                            <span className="rank-name">{upstreamName(row.upstreamId)}</span>
+                            <span className="rank-meta">{formatYuan(row.costMicros)}</span>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </SectionCard>
+              </div>
+            ),
+          },
+        ]}
       />
 
       {billOpen && (

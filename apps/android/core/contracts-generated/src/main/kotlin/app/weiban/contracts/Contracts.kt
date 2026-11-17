@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 7.11. Regenerate: pnpm android:generate
+// Contract 7.12. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "7.11"
+const val CONTRACT_VERSION: String = "7.12"
 
 @Serializable
 data class AccountAlias(
@@ -1090,6 +1090,8 @@ data class AdminUsageFilter(
     @SerialName("billingOwner") val `billingOwner`: BillingOwner? = null,
     @SerialName("status") val `status`: AdminUsageCallStatus? = null,
     @SerialName("upstreamIds") val `upstreamIds`: List<Id>? = null,
+    @SerialName("estimated") val `estimated`: Boolean? = null,
+    @SerialName("costKnown") val `costKnown`: Boolean? = null,
 )
 
 @Serializable
@@ -1103,6 +1105,8 @@ data class AdminUsageFilterInput(
     @SerialName("billingOwner") val `billingOwner`: BillingOwner? = null,
     @SerialName("status") val `status`: AdminUsageCallStatus? = null,
     @SerialName("upstreamIds") val `upstreamIds`: List<Id>? = null,
+    @SerialName("estimated") val `estimated`: Boolean? = null,
+    @SerialName("costKnown") val `costKnown`: Boolean? = null,
 )
 
 @Serializable
@@ -1115,6 +1119,9 @@ data class AdminUsageOverview(
 
 @Serializable
 data class AdminUsageRecord(
+    @SerialName("ttsChars") val `ttsChars`: Long? = null,
+    @SerialName("asrSeconds") val `asrSeconds`: Double? = null,
+    @SerialName("reasoningTokens") val `reasoningTokens`: Long? = null,
     @SerialName("audioInputTokens") val `audioInputTokens`: Long? = null,
     @SerialName("audioOutputTokens") val `audioOutputTokens`: Long? = null,
     @SerialName("costKnown") val `costKnown`: Boolean? = null,
@@ -1187,6 +1194,7 @@ data class AdminUsageSummaryRow(
     @SerialName("cacheWriteTokens") val `cacheWriteTokens`: Long? = null,
     @SerialName("totalTokens") val `totalTokens`: Long,
     @SerialName("estimatedTokens") val `estimatedTokens`: Long,
+    @SerialName("estimatedCalls") val `estimatedCalls`: Long? = null,
     @SerialName("chargedMicros") val `chargedMicros`: Long,
     @SerialName("costMicros") val `costMicros`: Long,
     @SerialName("absorbedCostMicros") val `absorbedCostMicros`: Long,
@@ -1210,6 +1218,7 @@ data class AdminUsageTotals(
     @SerialName("cacheWriteTokens") val `cacheWriteTokens`: Long? = null,
     @SerialName("totalTokens") val `totalTokens`: Long,
     @SerialName("estimatedTokens") val `estimatedTokens`: Long,
+    @SerialName("estimatedCalls") val `estimatedCalls`: Long? = null,
     @SerialName("chargedMicros") val `chargedMicros`: Long,
     @SerialName("costMicros") val `costMicros`: Long,
     @SerialName("absorbedCostMicros") val `absorbedCostMicros`: Long,
@@ -9209,6 +9218,7 @@ data class PushAdminEndpointsAcknowledgeAdminAlertParams(
 @Serializable
 data class PushAdminEndpointsListAdminAlertsQuery(
     @SerialName("status") val `status`: String? = null,
+    @SerialName("view") val `view`: String? = null,
     @SerialName("cursor") val `cursor`: String? = null,
     @SerialName("limit") val `limit`: Long? = null,
 )

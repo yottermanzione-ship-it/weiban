@@ -59,6 +59,7 @@ export interface DataTableProps<T extends Record<string, unknown>> {
   footer?: ReactNode;
   size?: 'small' | 'middle';
   scrollX?: number | string;
+  showTools?: boolean;
 }
 
 /**
@@ -88,6 +89,7 @@ export function DataTable<T extends Record<string, unknown>>({
   footer,
   size = 'middle',
   scrollX = 'max-content',
+  showTools = true,
 }: DataTableProps<T>) {
   return (
     <div className="table-card">
@@ -114,7 +116,9 @@ export function DataTable<T extends Record<string, unknown>>({
         cardProps={false}
         size={size}
         scroll={{ x: scrollX }}
-        options={{ reload: false, density: true, setting: true, fullScreen: false }}
+        options={
+          showTools ? { reload: false, density: true, setting: true, fullScreen: false } : false
+        }
         pagination={
           pagination === false
             ? false
@@ -140,7 +144,7 @@ export function DataTable<T extends Record<string, unknown>>({
                   ? (record) => ({ disabled: !rowSelectable(record) })
                   : undefined,
               }
-            : { preserveSelectedRowKeys: false }
+            : undefined
         }
         tableAlertRender={
           onSelectionChange && selectionHint

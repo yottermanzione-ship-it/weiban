@@ -1,7 +1,15 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Button, Col, Row, Skeleton, Tooltip } from 'antd';
-import { ReloadOutlined, RightOutlined } from '@ant-design/icons';
+import { Link } from 'react-router-dom';
+import { Alert, Button, Segmented, Skeleton } from 'antd';
+import {
+  AlertOutlined,
+  ArrowRightOutlined,
+  CustomerServiceOutlined,
+  FileProtectOutlined,
+  ReloadOutlined,
+  SkinOutlined,
+  UserDeleteOutlined,
+} from '@ant-design/icons';
 import {
   ModelAccessAdminEndpoints,
   ModelAccessAdminUsageEndpoints,
@@ -11,446 +19,306 @@ import {
 } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { settle } from '../data/use-async.js';
-import { errorText } from '../data/hooks.js';
-import { HelpTip, Page, SectionCard, StatusTag, type StatusTone } from '../ui/page.js';
+import { Page, SectionCard, StatusTag } from '../ui/page.js';
 import { TrendBars } from '../ui/chart.js';
-import {
-  beijingDayKey,
-  formatInt,
-  formatPercent,
-  formatYuan,
-  pointsOf,
-  startOfBeijingDay,
-} from '../ui/format.js';
+import { beijingDayKey, formatInt, formatYuan, pointsOf, startOfBeijingDay } from '../ui/format.js';
 import { useTodos, type TodoCounts } from '../app/todos.js';
+import {
+  ERROR_LABELS,
+  upstreamReason,
+  upstreamState,
+  UPSTREAM_STATE_LABELS,
+} from './model/shared.js';
 
 interface DashboardData {
   overview?: AdminUsageOverview;
-  usersToday?: AdminUsageSummary;
-  usersYesterday?: AdminUsageSummary;
+  yesterday?: AdminUsageSummary;
   trend?: AdminUsageSummary;
-  purposesToday?: AdminUsageSummary;
-  purposesYesterday?: AdminUsageSummary;
-  upstreams: Upstream[];
+  upstreams?: Upstream[];
 }
 
 async function loadDashboard(): Promise<DashboardData> {
-  const today = startOfBeijingDay(0);
-  const weekAgo = startOfBeijingDay(-6);
-  const now = new Date().toISOString();
-  // 「昨天」取与今天等长的时段（今天 0 点到现在），否则半天比一天没有意义。
-  const elapsed = Date.now() - new Date(today).getTime();
-  const yesterdayFrom = new Date(new Date(today).getTime() - 86_400_000).toISOString();
-  const yesterdayTo = new Date(new Date(today).getTime() - 86_400_000 + elapsed).toISOString();
-  const [overview, usersToday, usersYesterday, trend, purposesToday, purposesYesterday, upstreams] =
-    await Promise.all([
-      settle(
-        api.call(ModelAccessAdminUsageEndpoints.usageOverview, {
-          body: { from: today, to: now },
-        }),
-      ),
-      settle(
-        api.call(ModelAccessAdminUsageEndpoints.usageSummary, {
-          body: {
-            filter: { from: today, to: now },
-            groupBy: ['user'],
-            sort: 'charged_desc',
-            limit: 1000,
+  const to = new Date().toISOString();
+  const [overview, trend, upstreams, yesterday] = await Promise.all([
+    settle(
+      api.call(ModelAccessAdminUsageEndpoints.usageOverview, {
+        body: { from: startOfBeijingDay(0), to },
+      }),
+    ),
+    settle(
+      api.call(ModelAccessAdminUsageEndpoints.usageSummary, {
+        body: { filter: { from: startOfBeijingDay(-6), to }, groupBy: ['day'], limit: 7 },
+      }),
+    ),
+    settle(api.call(ModelAccessAdminEndpoints.listUpstreams)),
+    settle(
+      api.call(ModelAccessAdminUsageEndpoints.usageSummary, {
+        body: {
+          filter: {
+            from: startOfBeijingDay(-1),
+            to: new Date(Date.parse(to) - 86_400_000).toISOString(),
           },
-        }),
-      ),
-      settle(
-        api.call(ModelAccessAdminUsageEndpoints.usageSummary, {
-          body: {
-            filter: { from: yesterdayFrom, to: yesterdayTo },
-            groupBy: ['user'],
-            sort: 'charged_desc',
-            limit: 1000,
-          },
-        }),
-      ),
-      settle(
-        api.call(ModelAccessAdminUsageEndpoints.usageSummary, {
-          body: {
-            filter: { from: weekAgo, to: now },
-            groupBy: ['day'],
-            sort: 'key_asc',
-            limit: 100,
-          },
-        }),
-      ),
-      settle(
-        api.call(ModelAccessAdminUsageEndpoints.usageSummary, {
-          body: {
-            filter: { from: today, to: now },
-            groupBy: ['purpose'],
-            sort: 'charged_desc',
-            limit: 100,
-          },
-        }),
-      ),
-      settle(
-        api.call(ModelAccessAdminUsageEndpoints.usageSummary, {
-          body: {
-            filter: { from: yesterdayFrom, to: yesterdayTo },
-            groupBy: ['purpose'],
-            sort: 'charged_desc',
-            limit: 100,
-          },
-        }),
-      ),
-      settle(api.call(ModelAccessAdminEndpoints.listUpstreams)),
-    ]);
+          groupBy: ['day'],
+          limit: 1,
+        },
+      }),
+    ),
+  ]);
   return {
     overview,
-    usersToday,
-    usersYesterday,
     trend,
-    purposesToday,
-    purposesYesterday,
-    upstreams: (upstreams?.items ?? []).filter((u) => !u.deletedAt),
+    yesterday,
+    upstreams: upstreams?.items.filter((item) => !item.deletedAt),
   };
 }
 
-function chatCalls(summary: AdminUsageSummary | undefined): number {
-  if (!summary) return 0;
-  return summary.rows
-    .filter((row) => row.keys[0] === 'chat_reply')
-    .reduce((sum, row) => sum + row.calls, 0);
-}
-
-function deltaText(today: number, yesterday: number): { text: string; up: boolean; flat: boolean } {
-  if (!yesterday) {
-    if (!today) return { text: '昨天没有数据', up: false, flat: true };
-    return { text: '昨天没有数据', up: false, flat: true };
-  }
-  const rate = (today - yesterday) / Math.abs(yesterday);
-  if (Math.abs(rate) < 0.005) return { text: '与昨天基本持平', up: false, flat: true };
-  return {
-    text: `较昨天${rate > 0 ? '多' : '少'} ${Math.abs(rate * 100).toFixed(1)}%`,
-    up: rate > 0,
-    flat: false,
-  };
-}
-
-function pointsDeltaText(
-  today: number,
-  yesterday: number,
-): { text: string; up: boolean; flat: boolean } {
-  const diff = today - yesterday;
-  if (!today && !yesterday) return { text: '昨天没有数据', up: false, flat: true };
-  if (Math.abs(diff) < 0.0005) return { text: '与昨天持平', up: false, flat: true };
-  return {
-    text: `较昨天${diff > 0 ? '高' : '低'} ${Math.abs(diff * 100).toFixed(1)} 个百分点`,
-    up: diff > 0,
-    flat: false,
-  };
-}
-
-function StatCard({
-  label,
-  value,
-  hint,
-  delta,
-  betterWhen = 'up',
-}: {
+const TODO_ITEMS = [
+  { key: 'alerts', label: '运行异常', path: '/admin/alerts', icon: AlertOutlined },
+  { key: 'support', label: '帮助与反馈', path: '/support', icon: CustomerServiceOutlined },
+  { key: 'roleRequests', label: '制作申请', path: '/role-requests', icon: SkinOutlined },
+  { key: 'reports', label: '举报处理', path: '/reports', icon: FileProtectOutlined },
+  { key: 'deletions', label: '注销未完成', path: '/account-deletions', icon: UserDeleteOutlined },
+] satisfies Array<{
+  key: keyof TodoCounts;
   label: string;
-  value: string;
-  hint?: string;
-  delta?: { text: string; up: boolean; flat: boolean };
-  betterWhen?: 'up' | 'down' | 'none';
-}) {
-  let deltaClass = 'stat-delta';
-  if (delta && !delta.flat && betterWhen !== 'none') {
-    const good = betterWhen === 'up' ? delta.up : !delta.up;
-    deltaClass += good ? ' is-good' : ' is-bad';
-  }
-  return (
-    <div className="stat-card">
-      <div className="stat-label">
-        {label}
-        {hint && <HelpTip text={hint} />}
-      </div>
-      <div className="stat-value">{value}</div>
-      <div className={deltaClass}>{delta?.text ?? '—'}</div>
-    </div>
-  );
-}
+  path: string;
+  icon: typeof AlertOutlined;
+}>;
 
-const TODO_ITEMS: { key: keyof TodoCounts; label: string; path: string; hint: string }[] = [
-  {
-    key: 'roleRequests',
-    label: '制作申请',
-    path: '/role-requests',
-    hint: '用户提交的角色制作需求',
-  },
-  { key: 'support', label: '帮助与反馈', path: '/support', hint: '用户反馈与投诉' },
-  { key: 'reports', label: '举报处理', path: '/reports', hint: '广场作品与评论的举报' },
-  {
-    key: 'deletions',
-    label: '注销未完成',
-    path: '/account-deletions',
-    hint: '注销流程还没跑完的账号',
-  },
-  { key: 'alerts', label: '运行提醒', path: '/admin/alerts', hint: '系统自动报出的异常' },
-];
-
-function upstreamTone(upstream: Upstream): { tone: StatusTone; label: string } {
-  if (upstream.enabled === false) return { tone: 'default', label: '已停用' };
-  if (upstream.cooldownUntil && new Date(upstream.cooldownUntil).getTime() > Date.now())
-    return { tone: 'warning', label: '自动暂停中' };
-  switch (upstream.status) {
-    case 'active':
-      return { tone: 'success', label: '正常' };
-    case 'quota_exhausted':
-      return { tone: 'warning', label: '额度用完' };
-    case 'invalid':
-      return { tone: 'error', label: '密钥失效' };
-    default:
-      return { tone: 'error', label: '不可用' };
-  }
+function changeFromYesterday(current: number, previous: number): string {
+  if (!previous) return '昨天同期暂无数据';
+  const change = (current - previous) / previous;
+  if (Math.abs(change) < 0.005) return '与昨天同期持平';
+  return `较昨天同期 ${change > 0 ? '+' : '−'}${Math.abs(change * 100).toFixed(1)}%`;
 }
 
 export function DashboardPage() {
-  const navigate = useNavigate();
-  const { counts, refresh: refreshTodos } = useTodos();
+  const { counts, loading: todosLoading, refresh: refreshTodos } = useTodos();
   const [data, setData] = useState<DashboardData>();
+  const [revision, setRevision] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [metric, setMetric] = useState<'calls' | 'costMicros' | 'chargedMicros'>('calls');
 
   useEffect(() => {
-    let active = true;
+    let alive = true;
     setLoading(true);
-    setError('');
-    void loadDashboard()
-      .then((result) => {
-        if (active) setData(result);
-      })
-      .catch((e: unknown) => {
-        if (active) setError(errorText(e));
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
+    void loadDashboard().then((result) => {
+      if (!alive) return;
+      setData(result);
+      setLoading(false);
+    });
     return () => {
-      active = false;
+      alive = false;
     };
-  }, []);
+  }, [revision]);
 
   const totals = data?.overview?.totals;
-  const previous = data?.overview?.previousTotals;
-  const chargedPoints = totals?.chargedPoints ?? pointsOf(totals?.chargedMicros ?? 0);
-  const previousChargedPoints = previous?.chargedPoints ?? pointsOf(previous?.chargedMicros ?? 0);
-  const profit =
-    (totals?.chargedMicros ?? 0) - (totals?.costMicros ?? 0) - (totals?.absorbedCostMicros ?? 0);
-  const previousProfit =
-    (previous?.chargedMicros ?? 0) -
-    (previous?.costMicros ?? 0) -
-    (previous?.absorbedCostMicros ?? 0);
-
-  const days = Array.from({ length: 7 }, (_, index) => beijingDayKey(startOfBeijingDay(index - 6)));
-  const trendRows = data?.trend?.rows ?? [];
-  const pick = (day: string) => trendRows.find((row) => row.keys[0] === day);
-  const labels = days.map((day) => `${Number(day.slice(5, 7))}/${Number(day.slice(8, 10))}`);
-  const callValues = days.map((day) => pick(day)?.calls ?? 0);
-  const pointValues = days.map(
-    (day) => pick(day)?.chargedPoints ?? pointsOf(pick(day)?.chargedMicros ?? 0),
+  const previous = data?.yesterday?.totals;
+  const upstreams = data?.upstreams;
+  const recentErrors = data?.overview?.recentErrors.slice(0, 6) ?? [];
+  const normal = upstreams?.filter((u) => upstreamState(u) === 'normal').length ?? 0;
+  const days = Array.from({ length: 7 }, (_, i) => beijingDayKey(startOfBeijingDay(i - 6)));
+  const chartValues = days.map(
+    (day) => data?.trend?.rows.find((row) => row.keys[0] === day)?.[metric] ?? 0,
   );
-  const costValues = days.map((day) => pick(day)?.costMicros ?? 0);
-
-  const upstreams = [...(data?.upstreams ?? [])].sort((a, b) => {
-    const rank = (u: Upstream) => (u.enabled === false ? 3 : u.status === 'active' ? 0 : 1);
-    return rank(a) - rank(b);
-  });
-  const healthy = upstreams.filter((u) => u.status === 'active' && u.enabled !== false).length;
+  const formatMetric = (value: number) =>
+    metric === 'costMicros'
+      ? formatYuan(value)
+      : formatInt(metric === 'chargedMicros' ? pointsOf(value) : value);
+  const date = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    month: 'long',
+    day: 'numeric',
+    weekday: 'long',
+  }).format(new Date());
 
   return (
     <Page
       title="工作台"
-      desc="今天的整体情况、需要处理的事、模型线路是否正常"
+      desc={`${date} · 北京时间`}
       extra={
         <Button
           icon={<ReloadOutlined />}
+          loading={loading}
           onClick={() => {
             refreshTodos();
-            setLoading(true);
-            setError('');
-            void loadDashboard()
-              .then(setData)
-              .catch((e: unknown) => setError(errorText(e)))
-              .finally(() => setLoading(false));
+            setRevision((value) => value + 1);
           }}
         >
-          刷新数据
+          刷新
         </Button>
       }
     >
-      {error && <div className="dash-error">数据没加载出来：{error}</div>}
-      {loading && !data ? (
-        <SectionCard>
-          <Skeleton active paragraph={{ rows: 6 }} />
+      <SectionCard title="待处理">
+        <div className="workbench-inbox">
+          {TODO_ITEMS.map(({ key, label, path, icon: Icon }) => (
+            <Link to={path} className="workbench-inbox-item" key={key}>
+              <Icon aria-hidden />
+              <span>{label}</span>
+              <strong className={counts[key] > 0 ? 'has-todos' : undefined}>
+                {todosLoading ? '—' : formatInt(counts[key])}
+              </strong>
+            </Link>
+          ))}
+        </div>
+      </SectionCard>
+
+      <section aria-label="今日模型数据">
+        <div className="workbench-section-head">
+          <h2>今日模型数据</h2>
+          <Link to="/usage?range=today">
+            用量分析 <ArrowRightOutlined />
+          </Link>
+        </div>
+        {loading && !data ? (
+          <SectionCard>
+            <Skeleton active paragraph={{ rows: 1 }} />
+          </SectionCard>
+        ) : totals ? (
+          <div className="workbench-metrics">
+            <div className="workbench-metric">
+              <span>模型调用</span>
+              <strong>
+                {formatInt(totals.calls)} <small>次</small>
+              </strong>
+              <small>{formatInt(totals.failedCalls)} 次失败</small>
+            </div>
+            <div className="workbench-metric">
+              <span>用户扣除</span>
+              <strong>
+                {formatInt(pointsOf(totals.chargedMicros))} <small>积分</small>
+              </strong>
+              <small>
+                {changeFromYesterday(totals.chargedMicros, previous?.chargedMicros ?? 0)}
+              </small>
+            </div>
+            <div className="workbench-metric">
+              <span>已记上游成本</span>
+              <strong>{formatYuan(totals.costMicros)}</strong>
+              <small>含平台吸收 {formatYuan(totals.absorbedCostMicros)}</small>
+            </div>
+            <div className="workbench-metric">
+              <span>成本待核</span>
+              <strong>
+                {totals.unknownCostCalls === undefined ? '—' : formatInt(totals.unknownCostCalls)}{' '}
+                <small>笔</small>
+              </strong>
+              <Link to="/usage?view=records&quality=cost_pending&range=today">
+                查看待核记录 <ArrowRightOutlined />
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <Alert type="error" message="今日用量加载失败" showIcon />
+        )}
+      </section>
+
+      <div className="workbench-detail">
+        <SectionCard
+          title="近 7 天趋势"
+          extra={
+            <Segmented
+              value={metric}
+              onChange={setMetric}
+              aria-label="趋势指标"
+              options={[
+                { value: 'calls', label: '调用' },
+                { value: 'chargedMicros', label: '积分' },
+                { value: 'costMicros', label: '成本' },
+              ]}
+            />
+          }
+        >
+          {data?.trend ? (
+            <TrendBars
+              labels={days.map((d) => d.slice(5).replace('-', '/'))}
+              values={chartValues}
+              format={formatMetric}
+              color="#14765e"
+              height={145}
+            />
+          ) : loading ? (
+            <Skeleton active paragraph={{ rows: 3 }} />
+          ) : (
+            <span className="detail-muted">趋势数据加载失败。</span>
+          )}
         </SectionCard>
-      ) : (
-        <>
-          <div className="dash-stats">
-            <StatCard
-              label="活跃用户"
-              value={formatInt(data?.usersToday?.rows.length ?? 0)}
-              hint="今天调用过 AI 的用户数"
-              delta={deltaText(
-                data?.usersToday?.rows.length ?? 0,
-                data?.usersYesterday?.rows.length ?? 0,
-              )}
-            />
-            <StatCard
-              label="消息数"
-              value={formatInt(chatCalls(data?.purposesToday))}
-              hint="今天 AI 回复的条数（按聊天回复的模型调用统计）"
-              delta={deltaText(chatCalls(data?.purposesToday), chatCalls(data?.purposesYesterday))}
-            />
-            <StatCard
-              label="积分消耗"
-              value={`${formatInt(chargedPoints)} 积分`}
-              hint="今天用户被扣掉的积分，1 元 = 100 积分"
-              delta={deltaText(chargedPoints, previousChargedPoints)}
-              betterWhen="none"
-            />
-            <StatCard
-              label="上游成本"
-              value={formatYuan(totals?.costMicros ?? 0)}
-              hint="今天付给模型服务商的钱（成本价）"
-              delta={deltaText(totals?.costMicros ?? 0, previous?.costMicros ?? 0)}
-              betterWhen="down"
-            />
-            <StatCard
-              label="毛利"
-              value={formatYuan(profit)}
-              hint="用户扣费 − 上游成本 − 失败调用平台吸收的成本"
-              delta={deltaText(profit, previousProfit)}
-            />
-            <StatCard
-              label="失败率"
-              value={formatPercent(totals?.failureRate)}
-              hint="今天调用失败的比例"
-              delta={pointsDeltaText(totals?.failureRate ?? 0, previous?.failureRate ?? 0)}
-              betterWhen="down"
-            />
-            <StatCard
-              label="缓存命中率"
-              value={formatPercent(totals?.cacheHitRate)}
-              hint="输入内容命中缓存的比例，越高越省钱"
-              delta={pointsDeltaText(totals?.cacheHitRate ?? 0, previous?.cacheHitRate ?? 0)}
-            />
-          </div>
-
-          <Row gutter={14}>
-            <Col span={8}>
-              <SectionCard title="近 7 天消息数" desc="按 AI 调用次数">
-                <TrendBars labels={labels} values={callValues} format={(v) => formatInt(v)} />
-              </SectionCard>
-            </Col>
-            <Col span={8}>
-              <SectionCard title="近 7 天积分消耗" desc="用户被扣的积分">
-                <TrendBars
-                  labels={labels}
-                  values={pointValues}
-                  format={(v) => formatInt(v)}
-                  color="#0B7A45"
-                />
-              </SectionCard>
-            </Col>
-            <Col span={8}>
-              <SectionCard title="近 7 天上游成本" desc="付给模型服务商的钱">
-                <TrendBars
-                  labels={labels}
-                  values={costValues}
-                  format={(v) => formatYuan(v)}
-                  color="#E8912D"
-                />
-              </SectionCard>
-            </Col>
-          </Row>
-
-          <Row gutter={14}>
-            <Col span={9}>
-              <SectionCard
-                title="待办"
-                desc="点一条直接去处理"
-                extra={
-                  <span className="dash-total">
-                    共 {Object.values(counts).reduce((a, b) => a + b, 0)} 件
-                  </span>
-                }
-              >
-                <div className="todo-list">
-                  {TODO_ITEMS.map((item) => (
-                    <button
-                      type="button"
-                      key={item.key}
-                      className="todo-row"
-                      onClick={() => navigate(item.path)}
+        <SectionCard
+          title="上游线路"
+          extra={
+            <Link to="/model?tab=upstreams">
+              {upstreams ? `${normal}/${upstreams.length} 正常` : '查看线路'} <ArrowRightOutlined />
+            </Link>
+          }
+        >
+          {upstreams?.length ? (
+            <div className="workbench-upstreams">
+              {[...upstreams]
+                .sort(
+                  (a, b) =>
+                    Number(upstreamState(a) === 'normal') - Number(upstreamState(b) === 'normal'),
+                )
+                .slice(0, 5)
+                .map((u) => {
+                  const state = upstreamState(u);
+                  const error = upstreamReason(u);
+                  return (
+                    <Link
+                      to={`/usage?view=records&upstream=${u.upstreamId}`}
+                      className="workbench-upstream"
+                      key={u.upstreamId}
                     >
-                      <span className="todo-label">
-                        {item.label}
-                        <Tooltip title={item.hint}>
-                          <span className="todo-hint">{item.hint}</span>
-                        </Tooltip>
-                      </span>
-                      <span
-                        className={counts[item.key] > 0 ? 'todo-count is-active' : 'todo-count'}
+                      <div>
+                        <strong>{u.name}</strong>
+                        <small>{error ?? `今日 ${formatInt(u.todayCalls ?? 0)} 次调用`}</small>
+                      </div>
+                      <StatusTag
+                        tone={
+                          state === 'normal'
+                            ? 'success'
+                            : state === 'abnormal'
+                              ? 'warning'
+                              : 'default'
+                        }
                       >
-                        {counts[item.key]}
-                      </span>
-                      <RightOutlined className="todo-arrow" />
-                    </button>
-                  ))}
-                </div>
-              </SectionCard>
-            </Col>
-            <Col span={15}>
-              <SectionCard
-                title="上游线路健康"
-                desc={`共 ${upstreams.length} 条线路，正常 ${healthy} 条`}
-                extra={
-                  <Button type="link" size="small" onClick={() => navigate('/model')}>
-                    去模型管理
-                  </Button>
-                }
+                        {UPSTREAM_STATE_LABELS[state]}
+                      </StatusTag>
+                    </Link>
+                  );
+                })}
+            </div>
+          ) : loading ? (
+            <Skeleton active paragraph={{ rows: 3 }} />
+          ) : (
+            <span className="detail-muted">
+              {upstreams ? '暂无上游线路。' : '线路数据加载失败。'}
+            </span>
+          )}
+        </SectionCard>
+      </div>
+      {recentErrors.length > 0 && (
+        <SectionCard
+          title="近 24 小时主要失败"
+          extra={
+            <Link to="/usage?view=records&status=failed">
+              查看失败调用 <ArrowRightOutlined />
+            </Link>
+          }
+        >
+          <div className="workbench-errors">
+            {recentErrors.map((item) => (
+              <Link
+                className="workbench-error"
+                to={`/usage?view=records&status=failed&upstream=${item.upstreamId}&model=${encodeURIComponent(item.modelKey)}`}
+                key={`${item.upstreamId}:${item.modelKey}:${item.errorCode}`}
               >
-                {upstreams.length === 0 ? (
-                  <div className="health-empty">
-                    还没有添加上游账号。去「模型管理 › 上游账号」添加第一条，填入 API
-                    密钥后系统会自动测试连通。
-                  </div>
-                ) : (
-                  <div className="health-list">
-                    {upstreams.map((upstream) => {
-                      const status = upstreamTone(upstream);
-                      return (
-                        <div key={upstream.upstreamId} className="health-row">
-                          <div className="health-name">
-                            <span>{upstream.name}</span>
-                            <StatusTag tone={status.tone}>{status.label}</StatusTag>
-                          </div>
-                          <div className="health-meta">
-                            <span>今天 {formatInt(upstream.todayCalls ?? 0)} 次</span>
-                            <span>{formatYuan(upstream.todayCostMicros ?? 0)}</span>
-                            {upstream.lastError && (
-                              <span className="health-error">最近错误：{upstream.lastError}</span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </SectionCard>
-            </Col>
-          </Row>
-          <div className="dash-foot">
-            数据来自「模型与计费 › 用量与花费」的用量监控，统计到今天此刻；对比对象是昨天同一时段。
+                <span>{ERROR_LABELS[item.errorCode] ?? item.errorCode}</span>
+                <span>{item.modelKey}</span>
+                <span>{formatInt(item.count)} 次</span>
+              </Link>
+            ))}
           </div>
-        </>
+        </SectionCard>
       )}
     </Page>
   );

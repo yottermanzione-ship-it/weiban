@@ -176,7 +176,7 @@ export class BillingBoundsService {
           .update(route.upstreamModelId)
           .digest('hex')
           .slice(0, 16)}`,
-        summary: `线路「${name}」连续 ${streak} 次没有返回用量，已按本地估算计费（线路照常使用）。可检查上游是否返回 usage。`,
+        summary: `线路「${name}」连续 ${streak} 次缺少供应商用量。可在调用明细查看本地估算和成本状态。`,
         refs: { upstreamId: route.upstreamId },
       });
       await this.audit.record(

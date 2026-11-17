@@ -19,8 +19,8 @@ export class UsageRefundService implements BillingUsageRefundPort {
       const charge = await this.ledger.findChargeByUsage(tx, usageRecordId);
       if (!charge || charge.absorbed || charge.amountMicros >= 0) return;
       const key = `refund:usage:${usageRecordId}`;
-      if (await this.ledger.findByIdempotencyKey(tx, key)) return;
       const account = await this.ledger.lockAccountById(tx, charge.accountId);
+      if (account.kind !== 'user' || (await this.ledger.findByIdempotencyKey(tx, key))) return;
       await this.ledger.postEntry(tx, account, {
         type: 'refund',
         amountMicros: -charge.amountMicros,

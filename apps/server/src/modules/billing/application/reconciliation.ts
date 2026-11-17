@@ -257,10 +257,17 @@ export class ReconciliationService {
       if (!saved) throw new Error('对账记录保存失败');
       persisted = saved;
       if (flagged) {
+        const flaggedBills = upstreamDiffs.filter((d) => d.flagged).length;
+        const causes = [
+          !ledgerConsistent ? '内部账本不一致' : '',
+          row.staleHolds ? `${row.staleHolds} 笔冻结超时` : '',
+          dayRisk.count ? `${dayRisk.count} 笔成本待核` : '',
+          flaggedBills ? `${flaggedBills} 条供应商账单有偏差` : '',
+        ].filter(Boolean);
         await this.outbox.publish(tx, 'platform.admin_alert_raised', 'billing', {
           kind: 'reconciliation_flagged',
           severity: 'critical',
-          summary: '账本或上游对账发现异常，请到管理后台查看',
+          summary: `${date} 对账：${causes.join('，')}。`,
           dedupeKey: `reconciliation_flagged:${date}:ledger_upstream`,
           refs: { day: date },
         });
@@ -277,7 +284,7 @@ export class ReconciliationService {
               heldMismatches: heldMismatches.length,
               overdrawnAccounts: overdrawnAccounts.length,
               staleHolds: row.staleHolds,
-              flaggedBills: upstreamDiffs.filter((d) => d.flagged).length,
+              flaggedBills,
               unknownCostCalls: dayRisk.count,
               uncertainCostMicros: dayRisk.amount,
             },

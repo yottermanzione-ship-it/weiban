@@ -1,6 +1,8 @@
 import {
   ApiOutlined,
   AppstoreOutlined,
+  BarChartOutlined,
+  BellOutlined,
   CustomerServiceOutlined,
   DashboardOutlined,
   RobotOutlined,
@@ -10,12 +12,25 @@ import {
 import type { MenuDataItem } from '@ant-design/pro-components';
 import type { TodoCounts } from './todos.js';
 
-/** 7 组菜单：工作台 / 用户 / 角色 / 模型与计费 / 内容运营 / 客服与安全 / 系统。 */
 export const MENU: MenuDataItem[] = [
   {
     path: '/dashboard',
     name: '工作台',
     icon: <DashboardOutlined />,
+  },
+  { path: '/usage', name: '用量与成本', icon: <BarChartOutlined /> },
+  { path: '/admin/alerts', name: '运行提醒', icon: <BellOutlined /> },
+  {
+    key: '/model-billing',
+    name: '模型与计费',
+    icon: <ApiOutlined />,
+    children: [
+      { path: '/model', name: '模型管理' },
+      { path: '/prices', name: '价目表' },
+      { path: '/billing', name: '供应商对账' },
+      { path: '/planner', name: '行为规划' },
+      { path: '/ecology', name: '角色生态' },
+    ],
   },
   {
     key: '/users',
@@ -43,19 +58,6 @@ export const MENU: MenuDataItem[] = [
     ],
   },
   {
-    key: '/model-billing',
-    name: '模型与计费',
-    icon: <ApiOutlined />,
-    children: [
-      { path: '/model', name: '模型管理' },
-      { path: '/prices', name: 'AI 模型价格' },
-      { path: '/usage', name: '用量与花费' },
-      { path: '/billing', name: '对账与平台花费' },
-      { path: '/planner', name: '行为规划' },
-      { path: '/ecology', name: '角色生态' },
-    ],
-  },
-  {
     key: '/content',
     name: '内容运营',
     icon: <AppstoreOutlined />,
@@ -79,7 +81,6 @@ export const MENU: MenuDataItem[] = [
     children: [
       { path: '/support', name: '帮助与反馈' },
       { path: '/reports', name: '举报处理' },
-      { path: '/admin/alerts', name: '运行提醒' },
       { path: '/client-logs', name: '客户端报错' },
       { path: '/account-deletions', name: '注销未完成' },
     ],
@@ -118,6 +119,6 @@ export function badgeOf(path: string | undefined, counts: TodoCounts): number {
 export function groupBadge(item: MenuDataItem, counts: TodoCounts): number {
   const key = item.key ?? item.path;
   if (key === '/roles') return counts.roleRequests;
-  if (key === '/service') return counts.support + counts.reports + counts.alerts + counts.deletions;
+  if (key === '/service') return counts.support + counts.reports + counts.deletions;
   return 0;
 }

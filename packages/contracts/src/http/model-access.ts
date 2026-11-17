@@ -1550,6 +1550,9 @@ export const AdminUsageFilter = z.object({
   billingOwner: BillingOwner.optional(),
   status: AdminUsageCallStatus.optional(),
   upstreamIds: z.array(Id).min(1).max(50).optional(),
+  /** 是否有本地计量或估算的用量。与成本是否待核独立。 */
+  estimated: z.boolean().optional(),
+  costKnown: z.boolean().optional(),
 });
 export type AdminUsageFilter = z.infer<typeof AdminUsageFilter>;
 
@@ -1567,6 +1570,8 @@ export const AdminUsageTotals = z.object({
   totalTokens: z.number().int().nonnegative(),
   /** 其中按估算得出的 token 数（上游没返回用量时），界面据此显示估算占比。 */
   estimatedTokens: z.number().int().nonnegative(),
+  /** 含本地计量的多媒体调用。与 token 估算量分开汇总。 */
+  estimatedCalls: z.number().int().nonnegative().optional(),
   chargedMicros: z.number().int().nonnegative(),
   costMicros: z.number().int().nonnegative(),
   absorbedCostMicros: z.number().int().nonnegative(),
@@ -1621,6 +1626,10 @@ export type AdminUsageSummary = z.infer<typeof AdminUsageSummary>;
 
 /** 一次调用的明细（ADM-08 第 5 条）。没有任何内容字段。 */
 export const AdminUsageRecord = z.object({
+  ttsChars: z.number().int().nonnegative().optional(),
+  asrSeconds: z.number().nonnegative().optional(),
+  /** 已计入输出 token，其中的思考用量。 */
+  reasoningTokens: z.number().int().nonnegative().optional(),
   /** 7.3：实时通话供应商分模态用量；历史未报告时缺省，不伪造为零。 */
   audioInputTokens: z.number().int().nonnegative().optional(),
   audioOutputTokens: z.number().int().nonnegative().optional(),

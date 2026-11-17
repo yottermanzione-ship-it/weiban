@@ -56,6 +56,7 @@ import { MEDIA_ASSET_READ_PORT, MEDIA_READ_PORT, MEDIA_SYSTEM_PORT } from '../..
 import {
   FakeMediaAdapter,
   isFakeModel,
+  isMimoChatAudioModel,
   wavFromPcm,
   type MediaAdapter,
   type MediaAdapterResult,
@@ -1391,8 +1392,13 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       null,
       actualKnown ? 'reported' : estimated ? 'estimated' : 'unknown',
     );
-    // 未知的由 billing.call_cost_unknown 事件计入；这里只记已报 / 估算两种
-    if (actualKnown || estimated)
+    // MiMo 合成按发送文本本地量字数；回执未提供字数是该接口的常见形态。
+    // 成本状态仍由结算返回，缺字数与未知成本各自记录。
+    const locallyMeteredTts =
+      !actualKnown &&
+      actual.ttsChars !== undefined &&
+      isMimoChatAudioModel(charge.model.upstreamModelId);
+    if (actualKnown || (estimated && !locallyMeteredTts))
       await this.bounds
         ?.recordUsage(charge.model.modelKey, charge.model, actualKnown ? 'reported' : 'missing')
         .catch(() => undefined);

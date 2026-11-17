@@ -724,6 +724,7 @@ export class ModelGateway implements ModelGatewayPort {
         );
         const sent =
           !!currentProof &&
+          budgetMs - (performance.now() - wallStart) > 0 &&
           boundsEvidence(currentProof) === boundsEvidence(route.billingBounds) &&
           !!this.billing.beginCall &&
           (await this.billing.beginCall({
@@ -753,8 +754,9 @@ export class ModelGateway implements ModelGatewayPort {
                     // 开思考的后台整理单次常超 20 秒（10-27 生产：记忆整理 3 次 20 秒超时把整条上游判为不可用），放宽到 55 秒。
                     timeoutMs: Math.min(
                       thinkingBudget > 0 || modelOutputLimit ? 55000 : 20000,
-                      remaining,
+                      Math.max(1, Math.floor(budgetMs - (performance.now() - wallStart))),
                     ),
+                    deadlineMs: Math.max(1, Math.floor(budgetMs - (performance.now() - wallStart))),
                     ...(thinkingBudget > 0
                       ? { thinking: 'on' as const, thinkingBudget }
                       : { thinking: 'off' as const }),
@@ -785,7 +787,8 @@ export class ModelGateway implements ModelGatewayPort {
           answer.ok ? null : answer.category,
           known ? 'reported' : answer.usage || failureUsage?.estimated ? 'estimated' : 'unknown',
         );
-        if (sent && (answer.ok || known || answer.usage || failureUsage?.estimated))
+        // 网络中断的成本估算留给结算。它没有完整的供应商回应，不能归入连续缺失用量。
+        if (sent && (answer.ok || known || (answer.usage && answer.category !== 'network_error')))
           await this.bounds!.recordUsage(
             model.modelKey,
             route,
