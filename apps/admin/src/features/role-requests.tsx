@@ -250,7 +250,7 @@ function RequestDrawer({
 }) {
   const toast = useToast();
   const remote = useRemote(RoleRequestAdminEndpoints.get, { params: { requestId } });
-  const characters = useRemote(CharacterAdminEndpoints.list);
+  const characters = useRemote(CharacterAdminEndpoints.directory);
   const [data, setData] = useState<AdminRoleRequest | null>(null);
   const [action, setAction] = useState<Action | null>(null);
   const [text, setText] = useState('');

@@ -73,3 +73,5 @@ export { MembershipOrderService } from './application/membership-orders.js';
 export { ServiceFeeService } from './application/service-fees.js';
 
 export { ScanPaymentService, monitorSigningText } from './application/scan-payments.js';
+
+export { RewardedAdsService } from './application/rewarded-ads.js';

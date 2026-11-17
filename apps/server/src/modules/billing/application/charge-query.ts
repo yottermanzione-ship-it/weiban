@@ -5,12 +5,13 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type {
   BillingChargeQueryPort,
+  Tx,
   UsageBillingState,
   UsageCharge,
   UsageChargePage,
 } from '@weiban/contracts';
 import { Id } from '@weiban/contracts';
-import { AppError, DATABASE, type Database } from '../../../platform/index.js';
+import { AppError, DATABASE, type Database, asDbTx } from '../../../platform/index.js';
 import { addDays, PLATFORM_TIME_ZONE, startOfLocalDay } from '../domain/local-time.js';
 
 const MAX_IDS = 1000;
@@ -142,8 +143,10 @@ export class ChargeQueryService implements BillingChargeQueryPort {
     return { items: items.map(toCharge), nextCursor };
   }
 
-  async listActivePricedModelKeys(): Promise<string[]> {
-    const { rows } = await this.database.query<{ model_key: string }>(
+  async listActivePricedModelKeys(transaction?: Tx): Promise<string[]> {
+    const { rows } = await (transaction ? asDbTx(transaction) : this.database).query<{
+      model_key: string;
+    }>(
       `SELECT DISTINCT i.model_key FROM billing.price_items i
          JOIN billing.price_versions v ON v.id = i.price_version_id
         WHERE v.status = 'active' ORDER BY i.model_key`,

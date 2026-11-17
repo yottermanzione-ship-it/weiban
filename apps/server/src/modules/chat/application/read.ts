@@ -321,14 +321,19 @@ export class ChatReadService implements ChatReadPort {
       const rows = await tx.db
         .select()
         .from(conversations)
-        .where(eq(conversations.ownerUserId, userId))
+        .where(
+          and(
+            eq(conversations.ownerUserId, userId),
+            isNull(conversations.archivedAt),
+            isNull(conversations.trialExpiresAt),
+          ),
+        )
         .orderBy(conversations.id)
         .for('share');
       const items: Conversation[] = [];
       for (const row of rows) {
         // 已归档、试聊会话不返回；用户手动隐藏的会话照常返回（state.hidden = true，
         // 客户端在会话列表里过滤），否则全量同步后客户端会把它删掉，「通讯录 › 群聊」也找不到。
-        if (row.archivedAt || row.trialExpiresAt) continue;
         items.push(await this.store.conversation(tx, row));
       }
       items.sort(
@@ -350,7 +355,7 @@ export class ChatReadService implements ChatReadPort {
   async pageForUser(userId: string, conversationId: string, input: unknown): Promise<MessagePage> {
     const query = parseContract(ListMessagesQuery, input);
     return this.db.transaction(async (tx) => {
-      const row = await this.store.load(tx, conversationId, userId);
+      const row = await this.store.load(tx, conversationId, userId, 'share');
       const view = await this.store.view(tx, row, userId);
       if (query.beforeSeq !== undefined)
         return this.visibleHistory(tx, row, view, userId, query.beforeSeq, query.limit);
@@ -388,7 +393,7 @@ export class ChatReadService implements ChatReadPort {
       if (rows.length !== through - from + 1)
         throw new AppError('internal_error', '消息记录不完整');
       const excludedRanges: NonNullable<MessagePage['coverage']>['excludedRanges'] = [];
-      const items: Message[] = [];
+      const visibleRows: typeof rows = [];
       for (const message of rows) {
         const reason =
           message.seq <= view.state.clearedThroughSeq
@@ -401,10 +406,10 @@ export class ChatReadService implements ChatReadPort {
           if (previous?.reason === reason && previous.throughSeq + 1 === message.seq)
             previous.throughSeq = message.seq;
           else excludedRanges.push({ fromSeq: message.seq, throughSeq: message.seq, reason });
-        } else items.push(await this.store.message(tx, row, message, view));
+        } else visibleRows.push(message);
       }
       return MessagePage.parse({
-        items,
+        items: await this.store.messagePage(tx, row, visibleRows, view),
         hasMore: forward ? through < row.lastSeq : from > 1,
         coverage: { fromSeq: from, throughSeq: through, excludedRanges },
       });
@@ -450,8 +455,8 @@ export class ChatReadService implements ChatReadPort {
     const hasMore = candidates.length > limit;
     const selected = candidates.slice(0, limit).reverse();
     const from = hasMore ? selected[0]!.seq : floor + 1;
-    const scanned = await tx.db
-      .select({ id: messages.id, seq: messages.seq })
+    const [scanned] = await tx.db
+      .select({ n: sql<number>`count(*)::int` })
       .from(messages)
       .where(
         and(
@@ -459,12 +464,9 @@ export class ChatReadService implements ChatReadPort {
           gt(messages.seq, from - 1),
           lt(messages.seq, through + 1),
         ),
-      )
-      .orderBy(asc(messages.seq));
-    if (scanned.length !== through - from + 1)
-      throw new AppError('internal_error', '消息记录不完整');
-    const items: Message[] = [];
-    for (const message of selected) items.push(await this.store.message(tx, row, message, view));
+      );
+    if (scanned?.n !== through - from + 1) throw new AppError('internal_error', '消息记录不完整');
+    const items = await this.store.messagePage(tx, row, selected, view);
     // 手动历史用最老可见消息作下一页游标，不推进afterSeq同步边界。
     // 契约允许不带coverage：不能把上千隐藏seq塞进最多200的同步覆盖证明。
     return MessagePage.parse({ items, hasMore });

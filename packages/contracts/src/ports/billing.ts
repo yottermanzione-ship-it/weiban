@@ -303,7 +303,7 @@ export interface BillingChargeQueryPort {
     page?: { cursor?: string; limit?: number },
   ): Promise<UsageChargePage>;
   /** 当前生效价目表中至少有一条价格的模型键（去重）；没有生效的价目表时为空数组。 */
-  listActivePricedModelKeys(): Promise<string[]>;
+  listActivePricedModelKeys(transaction?: Tx): Promise<string[]>;
 }
 
 // v1.0：原 BillingPort（四个方法合在一起）删除，拆为上面两个端口。
@@ -344,43 +344,55 @@ export interface BillingModelRatePort {
     modelKeys: readonly string[],
   ): Promise<Map<string, ActiveModelServiceRate[]>>;
   /** 只替换传入单位的全部分时/全天行，复制并发布完整价目表；相同不发版。金额为安全整数微元。 */
-  publishModelServiceRates?(input: {
-    operatorUserId: string;
-    modelKey: string;
-    rates: { unit: ServicePriceUnit; priceMicros: number; costMicros: number }[];
-  }): Promise<{ priceVersionId: string; published: boolean }>;
+  publishModelServiceRates?(
+    input: {
+      operatorUserId: string;
+      modelKey: string;
+      rates: { unit: ServicePriceUnit; priceMicros: number; costMicros: number }[];
+    },
+    transaction?: Tx,
+  ): Promise<{ priceVersionId: string; published: boolean }>;
   /** 当前生效价目表里这些模型的 token 全天价；没有价格的模型不在结果里。 */
   getActiveTokenRates(modelKeys: readonly string[]): Promise<Map<string, ActiveModelTokenRates>>;
   /**
    * 复制当前生效价目表，把该模型的输入 / 缓存 / 输出三项价格（含它们的分时价）替换为给定的全天价，
    * 生成新版本并立即发布（同一事务，写审计）。价格与当前完全相同时不发新版本，返回当前版本 ID。
    */
-  publishModelTokenRates(input: {
-    operatorUserId: string;
-    modelKey: string;
-    price: ModelTokenPrices;
-    cost: ModelTokenPrices;
-  }): Promise<{ priceVersionId: string; published: boolean }>;
+  publishModelTokenRates(
+    input: {
+      operatorUserId: string;
+      modelKey: string;
+      price: ModelTokenPrices;
+      cost: ModelTokenPrices;
+    },
+    transaction?: Tx,
+  ): Promise<{ priceVersionId: string; published: boolean }>;
   /**
    * 3.22：各模型的限时折扣设置（含未开始 / 已结束的；没有设置的模型不在结果里）。
    * 折扣只作用于售价，成本不变；冻结、结算、报价都由 billing 在同一处按折扣计算（冻结时锁定折扣）。
    */
   getModelDiscounts(modelKeys: readonly string[]): Promise<Map<string, ModelDiscountSetting>>;
   /** 3.22：设置 / 取消（discount = null）某模型的限时折扣（写审计）。 */
-  setModelDiscount(input: {
-    operatorUserId: string;
-    modelKey: string;
-    discount: ModelDiscountSetting | null;
-  }): Promise<void>;
+  setModelDiscount(
+    input: {
+      operatorUserId: string;
+      modelKey: string;
+      discount: ModelDiscountSetting | null;
+    },
+    transaction?: Tx,
+  ): Promise<void>;
   /**
    * 3.23：删除模型时调用。复制当前生效价目表、去掉这些模型的全部价格行（token、语音、图片等所有单位），
    * 生成新版本并立即发布（历史版本保留，写审计）；同时删除它们的限时折扣。
    * 当前价目表里没有它们的价格时不发新版本，priceVersionId 为 null。
    */
-  removeModels(input: {
-    operatorUserId: string;
-    modelKeys: readonly string[];
-  }): Promise<{ priceVersionId: string | null; pricedModels: number; discounts: number }>;
+  removeModels(
+    input: {
+      operatorUserId: string;
+      modelKeys: readonly string[];
+    },
+    transaction?: Tx,
+  ): Promise<{ priceVersionId: string | null; pricedModels: number; discounts: number }>;
   /** 3.23：删除预览用——当前生效价目表里有价格的模型键、有折扣设置的模型键（只读）。 */
   modelPriceFootprint(
     modelKeys: readonly string[],

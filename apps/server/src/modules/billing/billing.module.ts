@@ -1,3 +1,4 @@
+import { RewardedAdsService } from './application/rewarded-ads.js';
 /**
  * billing 模块装配（D-L0-16）。说明见 docs/backend/billing.md。
  */
@@ -57,6 +58,7 @@ import { BILLING_SHARED_SEARCH_PORT } from './tokens.js';
     MembershipAdminController,
   ],
   providers: [
+    RewardedAdsService,
     ScanPaymentService,
     SharedSearchBilling,
     { provide: BILLING_SHARED_SEARCH_PORT, useExisting: SharedSearchBilling },

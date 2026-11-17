@@ -1,3 +1,4 @@
+import { RewardedAdsService } from '../application/rewarded-ads.js';
 /**
  * billing 的 HTTP 接口，一一对应契约 BillingEndpoints / BillingAdminEndpoints
  * （packages/contracts/src/http/billing.ts）。请求参数一律用契约里的 schema 校验。
@@ -49,6 +50,7 @@ function schema<S extends z.ZodType>(value: S | undefined): S {
 @Controller('api/v1/billing')
 export class BillingController {
   constructor(
+    @Inject(RewardedAdsService) private readonly rewards: RewardedAdsService,
     @Inject(WalletService) private readonly wallet: WalletService,
     @Inject(PriceService) private readonly prices: PriceService,
     @Inject(RechargeService) private readonly recharge: RechargeService,
@@ -71,6 +73,34 @@ export class BillingController {
     @Body(new ContractPipe(schema(E.quoteRecharge.body))) body: Out<typeof E.quoteRecharge.body>,
   ) {
     return this.recharge.quote(body);
+  }
+
+  @Get('rewards/today')
+  @RequireAuth(E.rewardStatus.auth)
+  rewardStatus(@CurrentPrincipal() me: AuthPrincipal) {
+    return this.rewards.status(me.userId);
+  }
+  @Post('rewards/check-in')
+  @HttpCode(200)
+  @RequireAuth(E.checkIn.auth)
+  checkIn(@CurrentPrincipal() me: AuthPrincipal) {
+    return this.rewards.checkIn(me.userId);
+  }
+  @Post('rewards/ad/:intentId/cancel')
+  @HttpCode(200)
+  @RequireAuth(E.cancelRewardAd.auth)
+  cancelRewardAd(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Param(new ContractPipe(schema(E.cancelRewardAd.params)))
+    params: Out<typeof E.cancelRewardAd.params>,
+  ) {
+    return this.rewards.cancelAd(me.userId, params.intentId);
+  }
+  @Post('rewards/ad')
+  @HttpCode(200)
+  @RequireAuth(E.startRewardAd.auth)
+  rewardAd(@CurrentPrincipal() me: AuthPrincipal) {
+    return this.rewards.startAd(me.userId);
   }
 
   @Get('wallet')
@@ -118,6 +148,7 @@ export class BillingController {
 @Controller('api/v1/admin/billing')
 export class BillingAdminController {
   constructor(
+    @Inject(RewardedAdsService) private readonly rewards: RewardedAdsService,
     @Inject(CostResolutionService) private readonly costResolution: CostResolutionService,
     @Inject(BillingAdminService) private readonly admin: BillingAdminService,
     @Inject(PriceService) private readonly prices: PriceService,
@@ -126,6 +157,19 @@ export class BillingAdminController {
     @Inject(PostpaidSettingsService) private readonly postpaid: PostpaidSettingsService,
   ) {}
 
+  @Get('ad-revenue')
+  @RequireAuth(A.adRevenue.auth)
+  adRevenue(@Query(new ContractPipe(schema(A.adRevenue.query))) q: Out<typeof A.adRevenue.query>) {
+    return this.rewards.revenue(q.days);
+  }
+  @Put('ad-revenue')
+  @RequireAuth(A.saveAdRevenue.auth)
+  saveRevenue(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Body(new ContractPipe(schema(A.saveAdRevenue.body))) body: Out<typeof A.saveAdRevenue.body>,
+  ) {
+    return this.rewards.saveReport(me.userId, body);
+  }
   @Get('postpaid-settings')
   @RequireAuth(A.getPostpaidSettings.auth)
   postpaidSettings() {
@@ -180,6 +224,12 @@ export class BillingAdminController {
   @RequireAuth(A.listAccounts.auth)
   async listAccounts() {
     return { items: await this.admin.listAccounts() };
+  }
+
+  @Get('users')
+  @RequireAuth(A.userPage.auth)
+  userPage(@Query(new ContractPipe(schema(A.userPage.query))) query: Out<typeof A.userPage.query>) {
+    return this.admin.userPage(query);
   }
 
   @Post('accounts/:userId/adjustments')

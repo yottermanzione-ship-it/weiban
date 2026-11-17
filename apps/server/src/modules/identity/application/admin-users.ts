@@ -3,7 +3,12 @@
  * 余额与流水在 billing（后台按 userId 合并）；管理员替用户注销见 AccountService.adminRequestDeletion。
  */
 import { Inject, Injectable } from '@nestjs/common';
-import type { AdminUserOverview, AdminUserSummary } from '@weiban/contracts';
+import type {
+  AdminUserFilter,
+  AdminUserOverview,
+  AdminUserSummary,
+  IdentityAdminDirectoryPort,
+} from '@weiban/contracts';
 import { and, eq } from 'drizzle-orm';
 import {
   AppError,
@@ -47,7 +52,7 @@ const SELECT = `SELECT u.id, u.username, u.current_alias, p.nickname, u.role, u.
   LEFT JOIN identity.memberships m ON m.user_id = u.id`;
 
 @Injectable()
-export class AdminUsersService {
+export class AdminUsersService implements IdentityAdminDirectoryPort {
   constructor(
     @Inject(DATABASE) private readonly database: Database,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -92,6 +97,71 @@ export class AdminUsersService {
     const { rows } = await this.database.query<Row>(`${SELECT} WHERE u.id = $1`, [userId]);
     if (!rows[0]) throw new AppError('not_found', '账号不存在');
     return this.toSummary(rows[0], this.clock.nowMs());
+  }
+  async labels() {
+    const { rows } = await this.database.query<{
+      userId: string;
+      username: string;
+      nickname: string | null;
+    }>(
+      `SELECT u.id AS "userId", coalesce(u.current_alias,u.username) AS username,p.nickname
+       FROM identity.users u LEFT JOIN identity.profiles p ON p.user_id=u.id ORDER BY u.created_at DESC,u.id`,
+    );
+    return { items: rows };
+  }
+  private filtered(filter: AdminUserFilter) {
+    const values: unknown[] = [];
+    const clauses = ['true'];
+    if (filter.q) {
+      values.push(filter.q.toLowerCase());
+      clauses.push(
+        `(strpos(lower(coalesce(u.current_alias,u.username)),$1)>0 OR strpos(lower(p.nickname),$1)>0 OR strpos(u.id::text,$1)>0)`,
+      );
+    }
+    if (filter.group === 'banned') clauses.push('u.banned_at IS NOT NULL');
+    if (filter.group === 'pro' || filter.group === 'expiring') {
+      values.push(this.clock.now());
+      clauses.push(`m.pro_plus_until > $${values.length}`);
+      if (filter.group === 'expiring')
+        clauses.push(`m.pro_plus_until <= $${values.length}::timestamptz + interval '7 days'`);
+    }
+    return { where: clauses.join(' AND '), values };
+  }
+  async selectable(filter: AdminUserFilter) {
+    const { where, values } = this.filtered(filter);
+    const { rows } = await this.database.query<Row>(
+      `${SELECT} WHERE u.role='user' AND u.status='active' AND ${where} ORDER BY u.id`,
+      values,
+    );
+    const now = this.clock.nowMs();
+    return { items: rows.map((row) => this.toSummary(row, now)) };
+  }
+  async matchingIds(
+    filter: AdminUserFilter,
+    window?: { page: number; pageSize: number; oldest: boolean },
+  ) {
+    const { where, values } = this.filtered(filter);
+    const from = `FROM identity.users u LEFT JOIN identity.profiles p ON p.user_id=u.id
+      LEFT JOIN identity.memberships m ON m.user_id=u.id WHERE ${where}`;
+    if (!window) {
+      const { rows } = await this.database.query<{ id: string }>(`SELECT u.id ${from}`, values);
+      return { ids: rows.map((r) => r.id), total: rows.length };
+    }
+    const [page, count] = await Promise.all([
+      this.database.query<{ id: string }>(
+        `SELECT u.id ${from} ORDER BY u.created_at ${window.oldest ? 'ASC' : 'DESC'},u.id
+          LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+        [...values, window.pageSize, (window.page - 1) * window.pageSize],
+      ),
+      this.database.query<{ n: number }>(`SELECT count(*)::int n ${from}`, values),
+    ]);
+    return { ids: page.rows.map((r) => r.id), total: count.rows[0]?.n ?? 0 };
+  }
+  async summariesFor(ids: string[]) {
+    if (!ids.length) return [];
+    const { rows } = await this.database.query<Row>(`${SELECT} WHERE u.id=ANY($1::uuid[])`, [ids]);
+    const now = this.clock.nowMs();
+    return rows.map((r) => this.toSummary(r, now));
   }
 
   async overview(): Promise<AdminUserOverview> {

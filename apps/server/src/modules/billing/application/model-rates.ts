@@ -13,6 +13,7 @@ import type {
   ActiveModelTokenRates,
   ServicePriceUnit,
   BillingModelRatePort,
+  Tx,
   ModelDiscountSetting,
   ModelTokenPrices,
   PriceUnit,
@@ -27,6 +28,8 @@ import {
   type AuditLog,
   type Clock,
   type Database,
+  type DbTx,
+  asDbTx,
 } from '../../../platform/index.js';
 import {
   discountRateToBp,
@@ -123,12 +126,15 @@ export class ModelRateService implements BillingModelRatePort {
     return out;
   }
 
-  async publishModelTokenRates(input: {
-    operatorUserId: string;
-    modelKey: string;
-    price: ModelTokenPrices;
-    cost: ModelTokenPrices;
-  }): Promise<{ priceVersionId: string; published: boolean }> {
+  async publishModelTokenRates(
+    input: {
+      operatorUserId: string;
+      modelKey: string;
+      price: ModelTokenPrices;
+      cost: ModelTokenPrices;
+    },
+    transaction?: Tx,
+  ): Promise<{ priceVersionId: string; published: boolean }> {
     checkPrices(input.price);
     checkPrices(input.cost);
     // 缓存命中未单列时本来就按各自输入价写入；比较前同样归一化，重复保存不新建版本。
@@ -145,7 +151,7 @@ export class ModelRateService implements BillingModelRatePort {
           input.cost.cachedInputPerMillionMicros ?? input.cost.inputPerMillionMicros,
       },
     };
-    return this.database.transaction(async (tx) => {
+    const apply = async (tx: DbTx) => {
       // 所有发布（含 PriceService.activate）都先锁当前生效版本，串行切换
       await tx.query(PRICE_PUBLISH_LOCK_SQL);
       const { rows: locked } = await tx.query<{ id: string }>(
@@ -279,7 +285,8 @@ export class ModelRateService implements BillingModelRatePort {
         tx,
       );
       return { priceVersionId: id, published: true };
-    });
+    };
+    return transaction ? apply(asDbTx(transaction)) : this.database.transaction(apply);
   }
 
   /** 3.36：非 token 全天基价；每个单位单独保留分时标志。 */
@@ -328,11 +335,14 @@ export class ModelRateService implements BillingModelRatePort {
     return out;
   }
 
-  async publishModelServiceRates(input: {
-    operatorUserId: string;
-    modelKey: string;
-    rates: { unit: ServicePriceUnit; priceMicros: number; costMicros: number }[];
-  }): Promise<{ priceVersionId: string; published: boolean }> {
+  async publishModelServiceRates(
+    input: {
+      operatorUserId: string;
+      modelKey: string;
+      rates: { unit: ServicePriceUnit; priceMicros: number; costMicros: number }[];
+    },
+    transaction?: Tx,
+  ): Promise<{ priceVersionId: string; published: boolean }> {
     const allowed = [
       'image',
       'tts_10k_chars',
@@ -356,7 +366,7 @@ export class ModelRateService implements BillingModelRatePort {
       )
     )
       throw new AppError('bad_request', '服务单价必须为不重复的非 token 单位和非负整数微元');
-    return this.database.transaction(async (tx) => {
+    const apply = async (tx: DbTx) => {
       // 不能仅锁 active 行：初次发布不存在该行，并发发布仍须串行。
       await tx.query(PRICE_PUBLISH_LOCK_SQL);
       const { rows: locked } = await tx.query<{ id: string }>(
@@ -450,7 +460,8 @@ export class ModelRateService implements BillingModelRatePort {
         tx,
       );
       return { priceVersionId: id, published: true };
-    });
+    };
+    return transaction ? apply(asDbTx(transaction)) : this.database.transaction(apply);
   }
 
   // ---------- 3.23 删除模型 ----------
@@ -480,13 +491,16 @@ export class ModelRateService implements BillingModelRatePort {
     };
   }
 
-  async removeModels(input: {
-    operatorUserId: string;
-    modelKeys: readonly string[];
-  }): Promise<{ priceVersionId: string | null; pricedModels: number; discounts: number }> {
+  async removeModels(
+    input: {
+      operatorUserId: string;
+      modelKeys: readonly string[];
+    },
+    transaction?: Tx,
+  ): Promise<{ priceVersionId: string | null; pricedModels: number; discounts: number }> {
     const keys = [...new Set(input.modelKeys)];
     if (keys.length === 0) return { priceVersionId: null, pricedModels: 0, discounts: 0 };
-    return this.database.transaction(async (tx) => {
+    const remove = async (tx: DbTx) => {
       // 与其他发布一样先锁当前生效版本，串行切换
       await tx.query(PRICE_PUBLISH_LOCK_SQL);
       const { rows: locked } = await tx.query<{ id: string }>(
@@ -563,7 +577,8 @@ export class ModelRateService implements BillingModelRatePort {
           tx,
         );
       return { priceVersionId, pricedModels, discounts: droppedDiscounts.length };
-    });
+    };
+    return transaction ? remove(asDbTx(transaction)) : this.database.transaction(remove);
   }
 
   // ---------- 3.22 限时折扣 ----------
@@ -587,11 +602,14 @@ export class ModelRateService implements BillingModelRatePort {
     return out;
   }
 
-  async setModelDiscount(input: {
-    operatorUserId: string;
-    modelKey: string;
-    discount: ModelDiscountSetting | null;
-  }): Promise<void> {
+  async setModelDiscount(
+    input: {
+      operatorUserId: string;
+      modelKey: string;
+      discount: ModelDiscountSetting | null;
+    },
+    transaction?: Tx,
+  ): Promise<void> {
     const now = this.clock.now();
     let values: { rateBp: number; startsAt: Date; endsAt: Date } | null = null;
     if (input.discount) {
@@ -613,7 +631,7 @@ export class ModelRateService implements BillingModelRatePort {
         throw new AppError('bad_request', '折扣的结束时间必须晚于开始时间', { status: 422 });
       values = { rateBp, startsAt, endsAt };
     }
-    await this.database.transaction(async (tx) => {
+    const apply = async (tx: DbTx) => {
       if (values)
         await tx.db
           .insert(modelDiscounts)
@@ -640,6 +658,7 @@ export class ModelRateService implements BillingModelRatePort {
         },
         tx,
       );
-    });
+    };
+    return transaction ? apply(asDbTx(transaction)) : this.database.transaction(apply);
   }
 }

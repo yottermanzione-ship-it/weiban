@@ -57,3 +57,5 @@ export {
 /** V2：实时通话按需复刻——角色声音来源（装配入口绑定）与拨打前的音色检查（calls 经 CALL_SERVICE_STATUS 调用）。 */
 export { MODEL_ACCESS_CHARACTER_VOICE, type ModelAccessCharacterVoice } from './tokens.js';
 export type { RealtimeCallVoiceCheck } from './application/media-gateway.js';
+
+export { ModelDeletionService } from './application/model-deletion.js';

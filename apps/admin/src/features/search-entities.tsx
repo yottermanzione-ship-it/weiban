@@ -53,7 +53,7 @@ export function SearchEntitiesPage() {
 
 /** 官方角色下拉（角色库里的全部官方角色）。 */
 function useCharacterOptions() {
-  const list = useRemote(CharacterAdminEndpoints.list);
+  const list = useRemote(CharacterAdminEndpoints.directory);
   return useMemo(
     () =>
       (list.data?.items ?? []).map((c) => ({

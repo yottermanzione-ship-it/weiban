@@ -1,3 +1,4 @@
+import { participatesInTextArena } from '../domain/leaderboard.js';
 /**
  * 模型目录（billing.md 3.2）：管理员维护（模型键 → 上游 + 上游模型名、能力、标签、默认标记、启用 / 停用），
  * 用户端模型列表（只列启用的），以及给选择 / 状态 / 网关用的查询。
@@ -31,7 +32,7 @@ import {
   ModelScenarioSettings,
   RouteBillingBounds,
 } from '@weiban/contracts';
-import { and, asc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, sql, getTableColumns } from 'drizzle-orm';
 import type { z } from 'zod';
 import {
   AUDIT_LOG,
@@ -150,10 +151,16 @@ const DETAIL_PRIORITY: readonly ModelUnavailableDetail[] = [
 /** 目录写入串行化的咨询锁键（任意固定数字）。 */
 export const CATALOG_LOCK_KEY = 72_270_008;
 
-export function toAdminEntry(row: CatalogRow): AdminCatalogEntry {
+const adminSelection = {
+  ...getTableColumns(modelCatalog),
+  catalogRevision: sql<string>`xmin::text`,
+};
+export function toAdminEntry(row: CatalogRow & { catalogRevision?: string }): AdminCatalogEntry {
   return {
     // 3.23：已删除的行 model_key 已改名，对外仍给原键（历史记录按原键找名字）
     modelKey: row.originalModelKey ?? row.modelKey,
+    catalogRevision: row.catalogRevision,
+    ...(row.deletedAt ? { archiveId: row.modelKey } : {}),
     displayName: row.displayName,
     vendorName: row.vendorName,
     upstreamId: row.upstreamId,
@@ -698,7 +705,7 @@ export class CatalogService {
   /** 后台目录（含停用的；3.23 起也含已删除的，deletedAt 非空，排在最后）。 */
   async adminList(): Promise<AdminCatalogEntry[]> {
     const rows = await this.database.db
-      .select()
+      .select(adminSelection)
       .from(modelCatalog)
       .orderBy(
         sql`${modelCatalog.deletedAt} is not null`,
@@ -708,7 +715,28 @@ export class CatalogService {
     return rows.map(toAdminEntry);
   }
 
-  async upsert(adminId: string, pathKey: string, raw: CatalogWrite): Promise<AdminCatalogEntry> {
+  async withCatalogWrite<T>(work: (tx: DbTx) => Promise<T>): Promise<T> {
+    return this.database.transaction(async (tx) => {
+      await tx.query('SELECT pg_advisory_xact_lock($1)', [CATALOG_LOCK_KEY]);
+      return work(tx);
+    });
+  }
+  async assertRevision(tx: DbTx, key: string, expected: string | null | undefined) {
+    if (expected === undefined) return;
+    const [row] = await tx.db
+      .select({ revision: sql<string>`xmin::text` })
+      .from(modelCatalog)
+      .where(and(eq(modelCatalog.modelKey, key), isNull(modelCatalog.deletedAt)))
+      .for('update');
+    if ((row?.revision ?? null) !== expected)
+      throw new AppError('conflict', '模型已被其他操作修改或删除，请刷新目录后再保存');
+  }
+  async upsert(
+    adminId: string,
+    pathKey: string,
+    raw: CatalogWrite,
+    transaction?: DbTx,
+  ): Promise<AdminCatalogEntry> {
     this.validateBillingBounds(raw.billingBounds);
     // 3.24：没带核对时间的计费上限记为保存时刻
     const body = { ...raw, billingBounds: this.stampBounds(raw.billingBounds) };
@@ -723,11 +751,9 @@ export class CatalogService {
     const scenarios = body.scenarios?.filter((s) => s !== 'vision');
 
     // 组合通话模型自身不调用上游、没有 token 单价（三组件各自计费），启用时不要求自己的价格。
-    if (body.enabled && requiresCatalogPrice({ modelKey: body.modelKey, tags }))
-      await this.requirePrice(body.modelKey);
-
-    return this.database.transaction(async (tx) => {
-      await tx.query('SELECT pg_advisory_xact_lock($1)', [CATALOG_LOCK_KEY]);
+    const save = async (tx: DbTx) => {
+      if (body.enabled && requiresCatalogPrice({ modelKey: body.modelKey, tags }))
+        await this.requirePrice(body.modelKey, tx);
       const [before] = await tx.db
         .select()
         .from(modelCatalog)
@@ -779,11 +805,11 @@ export class CatalogService {
             .update(modelCatalog)
             .set(values)
             .where(eq(modelCatalog.modelKey, body.modelKey))
-            .returning()
+            .returning(adminSelection)
         : await tx.db
             .insert(modelCatalog)
             .values({ ...values, createdAt: now })
-            .returning();
+            .returning(adminSelection);
       if (!row) throw new Error('数据库没有返回写入的行');
       if (upstream)
         await this.syncPrimaryRoute(
@@ -832,7 +858,8 @@ export class CatalogService {
         }
       }
       return toAdminEntry(row);
-    });
+    };
+    return transaction ? save(transaction) : this.withCatalogWrite(save);
   }
 
   // ---------- 用户端 ----------
@@ -893,13 +920,13 @@ export class CatalogService {
     const relative = relativeRanks(
       visible.map(({ entry }) => ({
         key: entry.modelKey,
-        rank: arena.rankOfEntry(entry),
+        rank: participatesInTextArena(entry) ? arena.rankOfEntry(entry) : null,
       })),
     );
     const previous = relativeRanks(
       visible.map(({ entry }) => ({
         key: entry.modelKey,
-        rank: arena.previousRankOfEntry(entry),
+        rank: participatesInTextArena(entry) ? arena.previousRankOfEntry(entry) : null,
       })),
     );
     // 批 V：实时语音 / Omni 通话模型按分钟展示（分钟用量假设 × 价目表），不显示按文字 token 推出的「约每条」与倍率。
@@ -1175,19 +1202,30 @@ export class CatalogService {
   }
 
   /** 整体替换某模型的路由（后台「模型」向导）。账号必须存在、不能重复。 */
-  async replaceRoutes(adminId: string, modelKey: string, raw: ModelRoute[]): Promise<void> {
+  async replaceRoutes(
+    adminId: string,
+    modelKey: string,
+    raw: ModelRoute[],
+    transaction?: DbTx,
+  ): Promise<void> {
     for (const route of raw) this.validateBillingBounds(route.billingBounds);
     const routes = raw.map((r) => ({ ...r, billingBounds: this.stampBounds(r.billingBounds) }));
     const ids = routes.map((r) => r.upstreamId);
     if (new Set(ids).size !== ids.length) {
       throw new AppError('bad_request', '同一个上游账号在路由里出现了两次', { status: 422 });
     }
-    await this.database.transaction(async (tx) => {
-      await tx.query('SELECT pg_advisory_xact_lock($1)', [CATALOG_LOCK_KEY]);
+    const replace = async (tx: DbTx) => {
+      const [live] = await tx.db
+        .select({ key: modelCatalog.modelKey })
+        .from(modelCatalog)
+        .where(and(eq(modelCatalog.modelKey, modelKey), isNull(modelCatalog.deletedAt)));
+      if (!live) throw new AppError('not_found', '模型已经删除或不存在');
       const found = await tx.db
         .select({ id: upstreams.id })
         .from(upstreams)
-        .where(and(inArray(upstreams.id, ids), isNull(upstreams.deletedAt)));
+        .where(and(inArray(upstreams.id, ids), isNull(upstreams.deletedAt)))
+        .orderBy(upstreams.id)
+        .for('share');
       if (found.length !== ids.length) {
         throw new AppError('bad_request', '路由里有不存在的上游账号', { status: 422 });
       }
@@ -1228,7 +1266,8 @@ export class CatalogService {
         },
         tx,
       );
-    });
+    };
+    return transaction ? replace(transaction) : this.withCatalogWrite(replace);
   }
 
   validateBillingBounds(bounds: RouteBillingBounds | null | undefined): void {
@@ -1401,10 +1440,10 @@ export class CatalogService {
    * （billing.md 4.1、ADR-0017 第 1 条）。计费查询端口未接入时 503，不放行。
    * 组合通话模型例外，见 requiresCatalogPrice。
    */
-  private async requirePrice(modelKey: string): Promise<void> {
+  private async requirePrice(modelKey: string, tx: DbTx): Promise<void> {
     let priced: string[];
     try {
-      priced = await this.charges.listActivePricedModelKeys();
+      priced = await this.charges.listActivePricedModelKeys(tx);
     } catch (error) {
       if (error instanceof ChargeQueryUnavailableError) {
         throw new AppError('service_unavailable', '暂时无法查询价目表，模型未启用，请稍后再试');

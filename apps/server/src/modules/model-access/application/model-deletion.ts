@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { UpstreamService } from './upstreams.js';
 /**
  * 3.23：删除模型（软删，可批量）。
  *
@@ -7,9 +9,9 @@
  *
  * 同一操作里清理引用（预览接口按同样的口径计数）：
  * - model-access（同一事务）：线路、用户场景配置、角色逐场景设置、场景推荐 / 平台内部模型、展示倍率基准；
- * - billing（BillingModelRatePort.removeModels，事务之后）：发布不含这些模型的新价目表（历史版本保留）、删折扣。
+ * - billing（BillingModelRatePort.removeModels，同一事务）：发布不含这些模型的新价目表（历史版本保留）、删折扣。
  * 用户的选择被清掉后回到「未配置」（文本聊天没了 → needsSetup，首次引导重新选），不报错。
- * 「角色生态决策」模型存在生态配置里（ai-runtime），由后台在删除后一并清空（见 apps/admin model 页）。
+ * 「角色生态决策」模型存在生态配置里（ai-runtime），由配置所属模块在删除事务内按当前引用清理。
  */
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import type {
@@ -47,6 +49,8 @@ import { DISPLAY_BASE_KEY, DisplayPricingService } from './display-pricing.js';
 type Executor = Database['db'] | DbTx['db'];
 
 interface Counted {
+  revision: string;
+  upstreamAccounts: { upstreamId: string; name: string; shared: boolean }[];
   models: { modelKey: string; displayName: string; enabled: boolean }[];
   users: number;
   scenarioSelections: number;
@@ -66,9 +70,17 @@ export class ModelDeletionService {
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
     @Inject(OUTBOX) private readonly outbox: Outbox,
     @Inject(MODEL_RATE_PORT) private readonly rates: BillingModelRatePort,
+    @Inject(UpstreamService) private readonly upstreamService: UpstreamService,
     @Optional() @Inject(DisplayPricingService) private readonly display?: DisplayPricingService,
   ) {}
 
+  private ecology?: {
+    isReferenced: (keys: readonly string[]) => Promise<boolean>;
+    clear: (tx: DbTx, keys: readonly string[], operator: string) => Promise<boolean>;
+  };
+  bindEcology(reference: NonNullable<ModelDeletionService['ecology']>) {
+    this.ecology = reference;
+  }
   /** 删除前预览：将要清理的引用（只读）。 */
   async preview(modelKeys: readonly string[]): Promise<ModelDeletionImpact> {
     await this.assertNotFixedPrivate(modelKeys);
@@ -76,6 +88,7 @@ export class ModelDeletionService {
     const footprint = await this.rates.modelPriceFootprint(modelKeys);
     return {
       ...counted,
+      ecologyDecision: (await this.ecology?.isReferenced(modelKeys)) ?? false,
       discounts: footprint.discountedModelKeys.length,
       pricedModels: footprint.pricedModelKeys.length,
     };
@@ -98,10 +111,14 @@ export class ModelDeletionService {
     );
   }
 
-  async delete(adminId: string, modelKeys: readonly string[]): Promise<ModelDeletionImpact> {
+  async delete(
+    adminId: string,
+    modelKeys: readonly string[],
+    options: { expectedRevision?: string; removeUpstreamIds?: string[] } = {},
+  ): Promise<ModelDeletionImpact> {
     const keys = [...new Set(modelKeys)];
     await this.assertNotFixedPrivate(keys);
-    const counted = await this.database.transaction(async (tx) => {
+    const removed = await this.database.transaction(async (tx) => {
       await tx.query('SELECT pg_advisory_xact_lock($1)', [CATALOG_LOCK_KEY]);
       await this.assertNotFixedPrivate(keys, tx.db);
       await tx.db
@@ -110,6 +127,15 @@ export class ModelDeletionService {
         .where(and(inArray(modelCatalog.modelKey, keys), isNull(modelCatalog.deletedAt)))
         .for('update');
       const result = await this.count(tx.db, keys);
+      const cleanupIds = [...new Set(options.removeUpstreamIds ?? [])].sort();
+      if (
+        (options.expectedRevision && options.expectedRevision !== result.revision) ||
+        cleanupIds.some(
+          (id) => !result.upstreamAccounts.some((a) => a.upstreamId === id && !a.shared),
+        )
+      ) {
+        throw new AppError('conflict', '模型或账号绑定已变化，请重新查看删除范围', { status: 409 });
+      }
       const now = this.clock.now();
 
       await tx.db.delete(modelRoutes).where(inArray(modelRoutes.modelKey, keys));
@@ -151,7 +177,7 @@ export class ModelDeletionService {
         await tx.db
           .update(modelCatalog)
           .set({
-            modelKey: `${m.modelKey}#deleted:${newId().slice(0, 8)}`,
+            modelKey: `${m.modelKey}#deleted:${newId()}`,
             originalModelKey: m.modelKey,
             deletedAt: now,
             enabled: false,
@@ -192,28 +218,16 @@ export class ModelDeletionService {
           characterId,
         });
       }
-      return result;
-    });
-
-    // 价目表与折扣归 billing：目录删除成功后再发布不含这些模型的价目表。
-    let billing: { priceVersionId: string | null; pricedModels: number; discounts: number };
-    try {
-      billing = await this.rates.removeModels({ operatorUserId: adminId, modelKeys: keys });
-    } catch (error) {
-      throw new AppError(
-        'service_unavailable',
-        '模型已删除，但价目表 / 折扣没清理成功：请到「价目表版本」检查，或稍后再删一次同名模型的价格',
-        { cause: error },
+      for (const id of cleanupIds) await this.upstreamService.delete(adminId, id, tx);
+      const billing = await this.rates.removeModels(
+        { operatorUserId: adminId, modelKeys: keys },
+        tx,
       );
-    } finally {
-      this.display?.invalidate();
-    }
-    return {
-      ...counted,
-      discounts: billing.discounts,
-      pricedModels: billing.pricedModels,
-      priceVersionId: billing.priceVersionId,
-    };
+      const ecologyDecision = (await this.ecology?.clear(tx, keys, adminId)) ?? false;
+      return { ...result, ...billing, ecologyDecision, removedUpstreamIds: cleanupIds };
+    });
+    this.display?.invalidate();
+    return removed;
   }
 
   private async modelUses(db: Executor): Promise<ModelScenarioSettings> {
@@ -233,6 +247,7 @@ export class ModelDeletionService {
         modelKey: modelCatalog.modelKey,
         displayName: modelCatalog.displayName,
         enabled: modelCatalog.enabled,
+        generation: sql<string>`xmin::text`,
       })
       .from(modelCatalog)
       .where(and(inArray(modelCatalog.modelKey, keys), isNull(modelCatalog.deletedAt)));
@@ -242,6 +257,24 @@ export class ModelDeletionService {
         details: { modelKeys: missing },
       });
 
+    const targets = sql.join(
+      keys.map((key) => sql`${key}`),
+      sql`, `,
+    );
+    const accounts = await db.execute<{ upstreamId: string; name: string; shared: boolean }>(sql`
+      WITH bindings AS (
+        SELECT model_key,upstream_id FROM model_access.model_catalog WHERE deleted_at IS NULL
+        UNION
+        SELECT r.model_key,r.upstream_id FROM model_access.model_routes r
+        JOIN model_access.model_catalog c ON r.model_key=c.model_key WHERE c.deleted_at IS NULL
+      )
+      SELECT u.id AS "upstreamId",u.name,bool_or(b.model_key NOT IN (${targets})) AS shared
+      FROM bindings b JOIN model_access.upstreams u ON u.id=b.upstream_id AND u.deleted_at IS NULL
+      GROUP BY u.id,u.name HAVING bool_or(b.model_key IN (${targets})) ORDER BY u.id
+    `);
+    const revision = createHash('sha256')
+      .update(JSON.stringify(rows.map((r) => [r.modelKey, r.generation]).sort()))
+      .digest('hex');
     const [sel] = await db
       .select({
         rows: sql<number>`cast(count(*) as integer)`,
@@ -275,7 +308,12 @@ export class ModelDeletionService {
     const baseKey = DisplayMultiplierSettings.safeParse(base?.value);
 
     return {
-      models: keys.map((k) => rows.find((r) => r.modelKey === k)!),
+      revision,
+      upstreamAccounts: accounts.rows,
+      models: keys.map((k) => {
+        const m = rows.find((r) => r.modelKey === k)!;
+        return { modelKey: m.modelKey, displayName: m.displayName, enabled: m.enabled };
+      }),
       users: sel?.users ?? 0,
       scenarioSelections: sel?.rows ?? 0,
       characters: ovr?.characters ?? 0,

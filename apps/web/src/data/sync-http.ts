@@ -103,9 +103,23 @@ async function snapshot(api: ApiClient, signal: AbortSignal): Promise<FullSyncSn
       .parse({ profile, notification, preferences, model_selection: selection, wallet }),
   };
   // 限制并发，所有会话覆盖范围必须保留，不能只保留可见消息的最大seq。
-  for (let offset = 0; offset < conversations.items.length; offset += 4) {
+  const withMessages = conversations.items.filter((conversation) => {
+    const throughSeq = conversation.lastSeq;
+    if (throughSeq > conversation.state.clearedThroughSeq) return true;
+    const fromSeq = throughSeq ? Math.max(1, throughSeq - 49) : 0;
+    result.coverages.push({
+      conversationId: conversation.conversationId,
+      coverage: {
+        fromSeq,
+        throughSeq,
+        excludedRanges: throughSeq ? [{ fromSeq, throughSeq, reason: 'cleared' }] : [],
+      },
+    });
+    return false;
+  });
+  for (let offset = 0; offset < withMessages.length; offset += 4) {
     const pages = await Promise.all(
-      conversations.items.slice(offset, offset + 4).map(async (conversation) => ({
+      withMessages.slice(offset, offset + 4).map(async (conversation) => ({
         conversationId: conversation.conversationId,
         page: await api.call(ChatEndpoints.listMessages, {
           ...options,

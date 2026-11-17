@@ -48,7 +48,7 @@ export const adminTheme: ThemeConfig = {
       itemHoverBg: '#F4F5F7',
       groupTitleFontSize: 11,
       groupTitleColor: '#98A0A8',
-      groupTitleLineHeight: 22,
+      groupTitleLineHeight: 1.5,
       collapsedWidth: 56,
       iconSize: 15,
       collapsedIconSize: 16,

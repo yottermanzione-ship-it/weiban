@@ -120,18 +120,8 @@ export function LeaderboardSourceCard({ onChanged }: { onChanged?: () => void })
 
   return (
     <SectionCard
-      title="用户模型榜单来源"
-      desc={
-        remote.data
-          ? `用户端显示「来源：${remote.data.label}${
-              current?.snapshot
-                ? ` · ${current.snapshot.publishedAt ?? '发布日期未知'}`
-                : remote.data.asOf
-                  ? ` · ${remote.data.asOf}`
-                  : ''
-            }」；名次默认按模型自己的名字自动匹配，用户端按相对顺序显示 1、2、3…`
-          : '还没配置：用户端排行榜不显示来源行'
-      }
+      title="参榜模型"
+      desc="仅统计已上架并配置了文本聊天场景的模型。"
       extra={
         <Space>
           <Button icon={<UploadOutlined />} onClick={() => setPasting(true)}>
@@ -145,9 +135,6 @@ export function LeaderboardSourceCard({ onChanged }: { onChanged?: () => void })
           >
             立即刷新
           </Button>
-          <Button type="primary" loading={saving} onClick={() => void save()}>
-            保存来源
-          </Button>
         </Space>
       }
     >
@@ -155,48 +142,55 @@ export function LeaderboardSourceCard({ onChanged }: { onChanged?: () => void })
       {remote.error && (
         <Alert type="error" showIcon message={remote.error} style={{ marginBottom: 12 }} />
       )}
-      <Form<SourceValues>
-        form={form}
-        layout="vertical"
-        className="leaderboard-source-form"
-        initialValues={{ url: 'https://arena.ai/leaderboard/chat/text' }}
-      >
-        <Form.Item
-          name="label"
-          label="来源名称"
-          rules={[{ required: true, message: '填写来源名称' }]}
-          extra={<FieldHelp>例：Arena。</FieldHelp>}
-        >
-          <Input maxLength={80} placeholder="Arena" />
-        </Form.Item>
-        <Form.Item
-          label="参考日期"
-          extra={
-            <FieldHelp>仅供手动来源备注；官方发布日期由数据集提供，不用抓取日期代替。</FieldHelp>
-          }
-        >
-          <Form.Item name="asOf" noStyle>
-            <DatePicker style={{ width: '100%' }} placeholder="选择日期" />
-          </Form.Item>
-        </Form.Item>
-        <Form.Item
-          name="url"
-          label="官方链接"
-          rules={[
-            { required: true, message: '填写链接' },
-            { type: 'url', message: '要以 https:// 开头' },
-          ]}
-          extra={
-            <FieldHelp>
-              只支持 Arena 官方 https 链接；服务器每六小时完整分页同步官方 Dataset Viewer 的 Overall
-              数据。
-            </FieldHelp>
-          }
-        >
-          <Input />
-        </Form.Item>
-      </Form>
       {current && <SnapshotStatus status={current} onStatus={setStatus} onChanged={onChanged} />}
+      <details className="workspace-options">
+        <summary>榜单来源设置</summary>
+        <Form<SourceValues>
+          form={form}
+          layout="vertical"
+          className="leaderboard-source-form"
+          initialValues={{ url: 'https://arena.ai/leaderboard/chat/text' }}
+        >
+          <Form.Item
+            name="label"
+            label="来源名称"
+            rules={[{ required: true, message: '填写来源名称' }]}
+            extra={<FieldHelp>例：Arena。</FieldHelp>}
+          >
+            <Input maxLength={80} placeholder="Arena" />
+          </Form.Item>
+          <Form.Item
+            label="参考日期"
+            extra={
+              <FieldHelp>仅供手动来源备注；官方发布日期由数据集提供，不用抓取日期代替。</FieldHelp>
+            }
+          >
+            <Form.Item name="asOf" noStyle>
+              <DatePicker style={{ width: '100%' }} placeholder="选择日期" />
+            </Form.Item>
+          </Form.Item>
+          <Form.Item
+            name="url"
+            label="官方链接"
+            rules={[
+              { required: true, message: '填写链接' },
+              { type: 'url', message: '要以 https:// 开头' },
+            ]}
+            extra={
+              <FieldHelp>
+                只支持 Arena 官方 https 链接；服务器每六小时完整分页同步官方 Dataset Viewer 的
+                Overall 数据。
+              </FieldHelp>
+            }
+          >
+            <Input />
+          </Form.Item>
+        </Form>{' '}
+        <Button type="primary" loading={saving} onClick={() => void save()}>
+          保存来源
+        </Button>
+      </details>
+
       {pasting && (
         <PasteDrawer
           onClose={() => setPasting(false)}
@@ -224,13 +218,13 @@ function SnapshotStatus({
   return (
     <div className="leaderboard-status">
       <div>
-        <strong>自动获取：</strong>
+        <strong>榜单版本 </strong>
         {status.snapshot ? (
           <span>
             官方发布日期 {status.snapshot.publishedAt ?? '未知'}；抓取于{' '}
             {fmt(status.snapshot.fetchedAt)}（
-            {status.snapshot.method === 'fetch' ? '官方数据集' : '管理员手工导入（非自动官方同步）'}
-            ，{status.snapshot.entries} 条）
+            {status.snapshot.method === 'fetch' ? '官方数据集' : '管理员手工导入'}，
+            {status.snapshot.entries} 条）
           </span>
         ) : (
           <span>还没有有效榜单数据（用户端显示暂无排名）</span>
@@ -249,11 +243,14 @@ function SnapshotStatus({
       )}
       <Collapse
         ghost
+        defaultActiveKey={['match']}
         size="small"
         items={[
           {
             key: 'match',
-            label: `匹配上 ${status.matched.length} 个模型，没匹配上 ${status.unmatched.length} 个`,
+            label: status.snapshot
+              ? `文本聊天模型 · 已匹配 ${status.matched.length} · 待匹配 ${status.unmatched.length}`
+              : `等待榜单数据 · ${status.eligibleCount ?? 0} 个文本聊天模型`,
             children: (
               <div className="leaderboard-match">
                 {status.matched.map((m) => (
@@ -264,10 +261,7 @@ function SnapshotStatus({
                 {status.unmatched.length > 0 && (
                   <div style={{ marginTop: 10 }}>
                     <div className="field-help" style={{ marginBottom: 6 }}>
-                      没匹配上的模型在用户端排在后面、显示「暂无排名」。默认按模型名自动匹配， 只有
-                      Flash /
-                      Pro、带日期版本这类例外才需要在这里手动指定；下面是按相似度算出的候选，
-                      确认后才保存。
+                      以下文本模型需要核对名称。可选择候选或填写 Arena 使用的名称。
                     </div>
                     {status.unmatched.map((m) => (
                       <UnmatchedRow

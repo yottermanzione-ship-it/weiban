@@ -93,7 +93,7 @@ function changeFromYesterday(current: number, previous: number): string {
 }
 
 export function DashboardPage() {
-  const { counts, loading: todosLoading, refresh: refreshTodos } = useTodos();
+  const { counts, loading: todosLoading, partial, refresh: refreshTodos } = useTodos();
   const [data, setData] = useState<DashboardData>();
   const [revision, setRevision] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -149,20 +149,49 @@ export function DashboardPage() {
         </Button>
       }
     >
-      <SectionCard title="待处理">
-        <div className="workbench-inbox">
-          {TODO_ITEMS.map(({ key, label, path, icon: Icon }) => (
-            <Link to={path} className="workbench-inbox-item" key={key}>
-              <Icon aria-hidden />
-              <span>{label}</span>
-              <strong className={counts[key] > 0 ? 'has-todos' : undefined}>
-                {todosLoading ? '—' : formatInt(counts[key])}
-              </strong>
+      <div className="workbench-start">
+        <SectionCard
+          title="待处理"
+          extra={
+            <Link to="/admin/alerts">
+              查看告警 <ArrowRightOutlined />
             </Link>
-          ))}
-        </div>
-      </SectionCard>
+          }
+        >
+          <div className="workbench-inbox">
+            {partial && <p role="status">部分待办未能读取，可点页面右上角刷新。</p>}
+            {!partial && !todosLoading && TODO_ITEMS.every((item) => counts[item.key] === 0) && (
+              <p role="status">当前没有待处理事项。</p>
+            )}
+            {TODO_ITEMS.filter((item) => todosLoading || counts[item.key] > 0).map(
+              ({ key, label, path, icon: Icon }) => (
+                <Link to={path} className="workbench-inbox-item" key={key}>
+                  <Icon aria-hidden />
+                  <span>{label}</span>
+                  <strong className={counts[key] > 0 ? 'has-todos' : undefined}>
+                    {todosLoading ? '—' : formatInt(counts[key])}
+                  </strong>
+                </Link>
+              ),
+            )}
+          </div>
+        </SectionCard>
 
+        <SectionCard title="常用操作">
+          <div className="workbench-links">
+            {[
+              ['/accounts', '查找用户'],
+              ['/characters', '管理角色'],
+              ['/rewarded-ads', '核对广告收入'],
+            ].map(([to, title]) => (
+              <Link key={to} to={to!}>
+                {title}
+                <ArrowRightOutlined />
+              </Link>
+            ))}
+          </div>
+        </SectionCard>
+      </div>
       <section aria-label="今日模型数据">
         <div className="workbench-section-head">
           <h2>今日模型数据</h2>
@@ -213,113 +242,117 @@ export function DashboardPage() {
         )}
       </section>
 
-      <div className="workbench-detail">
-        <SectionCard
-          title="近 7 天趋势"
-          extra={
-            <Segmented
-              value={metric}
-              onChange={setMetric}
-              aria-label="趋势指标"
-              options={[
-                { value: 'calls', label: '调用' },
-                { value: 'chargedMicros', label: '积分' },
-                { value: 'costMicros', label: '成本' },
-              ]}
-            />
-          }
-        >
-          {data?.trend ? (
-            <TrendBars
-              labels={days.map((d) => d.slice(5).replace('-', '/'))}
-              values={chartValues}
-              format={formatMetric}
-              color="#14765e"
-              height={145}
-            />
-          ) : loading ? (
-            <Skeleton active paragraph={{ rows: 3 }} />
-          ) : (
-            <span className="detail-muted">趋势数据加载失败。</span>
-          )}
-        </SectionCard>
-        <SectionCard
-          title="上游线路"
-          extra={
-            <Link to="/model?tab=upstreams">
-              {upstreams ? `${normal}/${upstreams.length} 正常` : '查看线路'} <ArrowRightOutlined />
-            </Link>
-          }
-        >
-          {upstreams?.length ? (
-            <div className="workbench-upstreams">
-              {[...upstreams]
-                .sort(
-                  (a, b) =>
-                    Number(upstreamState(a) === 'normal') - Number(upstreamState(b) === 'normal'),
-                )
-                .slice(0, 5)
-                .map((u) => {
-                  const state = upstreamState(u);
-                  const error = upstreamReason(u);
-                  return (
-                    <Link
-                      to={`/usage?view=records&upstream=${u.upstreamId}`}
-                      className="workbench-upstream"
-                      key={u.upstreamId}
-                    >
-                      <div>
-                        <strong>{u.name}</strong>
-                        <small>{error ?? `今日 ${formatInt(u.todayCalls ?? 0)} 次调用`}</small>
-                      </div>
-                      <StatusTag
-                        tone={
-                          state === 'normal'
-                            ? 'success'
-                            : state === 'abnormal'
-                              ? 'warning'
-                              : 'default'
-                        }
-                      >
-                        {UPSTREAM_STATE_LABELS[state]}
-                      </StatusTag>
-                    </Link>
-                  );
-                })}
-            </div>
-          ) : loading ? (
-            <Skeleton active paragraph={{ rows: 3 }} />
-          ) : (
-            <span className="detail-muted">
-              {upstreams ? '暂无上游线路。' : '线路数据加载失败。'}
-            </span>
-          )}
-        </SectionCard>
-      </div>
-      {recentErrors.length > 0 && (
-        <SectionCard
-          title="近 24 小时主要失败"
-          extra={
-            <Link to="/usage?view=records&status=failed">
-              查看失败调用 <ArrowRightOutlined />
-            </Link>
-          }
-        >
-          <div className="workbench-errors">
-            {recentErrors.map((item) => (
-              <Link
-                className="workbench-error"
-                to={`/usage?view=records&status=failed&upstream=${item.upstreamId}&model=${encodeURIComponent(item.modelKey)}`}
-                key={`${item.upstreamId}:${item.modelKey}:${item.errorCode}`}
-              >
-                <span>{ERROR_LABELS[item.errorCode] ?? item.errorCode}</span>
-                <span>{item.modelKey}</span>
-                <span>{formatInt(item.count)} 次</span>
+      <details className="workspace-options monitor-disclosure">
+        <summary>运行详情与趋势</summary>
+        <div className="workbench-detail">
+          <SectionCard
+            title="近 7 天趋势"
+            extra={
+              <Segmented
+                value={metric}
+                onChange={setMetric}
+                aria-label="趋势指标"
+                options={[
+                  { value: 'calls', label: '调用' },
+                  { value: 'chargedMicros', label: '积分' },
+                  { value: 'costMicros', label: '成本' },
+                ]}
+              />
+            }
+          >
+            {data?.trend ? (
+              <TrendBars
+                labels={days.map((d) => d.slice(5).replace('-', '/'))}
+                values={chartValues}
+                format={formatMetric}
+                color="#14765e"
+                height={145}
+              />
+            ) : loading ? (
+              <Skeleton active paragraph={{ rows: 3 }} />
+            ) : (
+              <span className="detail-muted">趋势数据加载失败。</span>
+            )}
+          </SectionCard>
+          <SectionCard
+            title="上游线路"
+            extra={
+              <Link to="/model?tab=upstreams">
+                {upstreams ? `${normal}/${upstreams.length} 正常` : '查看线路'}{' '}
+                <ArrowRightOutlined />
               </Link>
-            ))}
-          </div>
-        </SectionCard>
-      )}
+            }
+          >
+            {upstreams?.length ? (
+              <div className="workbench-upstreams">
+                {[...upstreams]
+                  .sort(
+                    (a, b) =>
+                      Number(upstreamState(a) === 'normal') - Number(upstreamState(b) === 'normal'),
+                  )
+                  .slice(0, 5)
+                  .map((u) => {
+                    const state = upstreamState(u);
+                    const error = upstreamReason(u);
+                    return (
+                      <Link
+                        to={`/usage?view=records&upstream=${u.upstreamId}`}
+                        className="workbench-upstream"
+                        key={u.upstreamId}
+                      >
+                        <div>
+                          <strong>{u.name}</strong>
+                          <small>{error ?? `今日 ${formatInt(u.todayCalls ?? 0)} 次调用`}</small>
+                        </div>
+                        <StatusTag
+                          tone={
+                            state === 'normal'
+                              ? 'success'
+                              : state === 'abnormal'
+                                ? 'warning'
+                                : 'default'
+                          }
+                        >
+                          {UPSTREAM_STATE_LABELS[state]}
+                        </StatusTag>
+                      </Link>
+                    );
+                  })}
+              </div>
+            ) : loading ? (
+              <Skeleton active paragraph={{ rows: 3 }} />
+            ) : (
+              <span className="detail-muted">
+                {upstreams ? '暂无上游线路。' : '线路数据加载失败。'}
+              </span>
+            )}
+          </SectionCard>
+        </div>
+        {recentErrors.length > 0 && (
+          <SectionCard
+            title="近 24 小时主要失败"
+            extra={
+              <Link to="/usage?view=records&status=failed">
+                查看失败调用 <ArrowRightOutlined />
+              </Link>
+            }
+          >
+            <div className="workbench-errors">
+              {recentErrors.map((item) => (
+                <Link
+                  className="workbench-error"
+                  to={`/usage?view=records&status=failed&upstream=${item.upstreamId}&model=${encodeURIComponent(item.modelKey)}`}
+                  key={`${item.upstreamId}:${item.modelKey}:${item.errorCode}`}
+                >
+                  <span>{ERROR_LABELS[item.errorCode] ?? item.errorCode}</span>
+                  <span>{item.modelKey}</span>
+                  <span>{formatInt(item.count)} 次</span>
+                </Link>
+              ))}
+            </div>
+          </SectionCard>
+        )}
+      </details>
     </Page>
   );
 }

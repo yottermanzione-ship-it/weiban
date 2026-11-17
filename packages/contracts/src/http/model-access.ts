@@ -810,6 +810,8 @@ export const AdminCatalogEntry = z.object({
    * 后台的模型表格与各处模型选择应隐藏它。删除后可以用同一个键重新添加（与已删除的记录互不影响）。
    */
   deletedAt: Timestamp.nullable().optional(),
+  archiveId: z.string().optional(),
+  catalogRevision: z.string().optional(),
 });
 export type AdminCatalogEntry = z.infer<typeof AdminCatalogEntry>;
 
@@ -821,6 +823,8 @@ export type AdminCatalogEntry = z.infer<typeof AdminCatalogEntry>;
 export const AdminCatalogEntryWrite = AdminCatalogEntry.omit({
   updatedAt: true,
   deletedAt: true,
+  archiveId: true,
+  catalogRevision: true,
 }).extend({
   modelKey: CanonicalModelKey,
   // 7.3：模型/厂商显示名采用英文；读取仍兼容历史记录，生产名称独立核对后更名。
@@ -991,6 +995,8 @@ export type AdminModelTestResult = z.infer<typeof AdminModelTestResult>;
 export const USAGE_MISSING_ALERT_STREAK = 5;
 
 export const AdminModelWrite = AdminCatalogEntryWrite.extend({
+  /** null 表示新建，修订值用于拒绝过期编辑。 */
+  expectedRevision: z.string().min(1).max(32).nullable().optional(),
   /** 3.36：省略不改；只替换传入单位（含分时价）为全天价，其他单位完整保留。 */
   serviceRates: ServiceRatesWrite.optional(),
   /**
@@ -1067,6 +1073,12 @@ export type DeleteModelsRequest = z.infer<typeof DeleteModelsRequest>;
  * 用户的场景配置 / 角色设置被清掉后回到「未配置」/「跟随」，由首次引导重新选。
  */
 export const ModelDeletionImpact = z.object({
+  ecologyDecision: z.boolean().optional(),
+  revision: z.string().optional(),
+  upstreamAccounts: z
+    .array(z.object({ upstreamId: Id, name: z.string(), shared: z.boolean() }))
+    .optional(),
+  removedUpstreamIds: z.array(Id).optional(),
   models: z.array(z.object({ modelKey: ModelKey, displayName: z.string(), enabled: z.boolean() })),
   /** 场景配置里用到这些模型的用户数（去重）与配置条数。 */
   users: z.number().int().nonnegative(),
@@ -1097,6 +1109,7 @@ export type DisplayMultiplierSettings = z.infer<typeof DisplayMultiplierSettings
  * 网站开启人机验证等原因抓不到时保留上次结果、写明原因，可改用「粘贴榜单文本 / CSV」导入。
  */
 export const LeaderboardSnapshotStatus = z.object({
+  eligibleCount: z.number().int().nonnegative().optional(),
   source: ModelLeaderboardSource.nullable(),
   /** 当前生效的榜单快照（没有为 null）。 */
   snapshot: z
@@ -1511,7 +1524,13 @@ export const ModelAccessAdminEndpoints = {
     method: 'POST',
     path: `${API_PREFIX}/admin/model/models/delete`,
     auth: 'admin',
-    body: DeleteModelsRequest,
+    body: DeleteModelsRequest.extend({
+      expectedRevision: z
+        .string()
+        .regex(/^[a-f0-9]{64}$/)
+        .optional(),
+      removeUpstreamIds: z.array(Id).max(1000).optional(),
+    }),
     response: ModelDeletionImpact,
     summary:
       '3.23：删除模型（软删，可批量）：删线路，清用户场景配置 / 角色设置 / 场景推荐 / 平台内部模型 / 展示倍率基准 / 折扣，发布不含它们的新价目表（历史版本保留）；历史调用记录仍显示模型名；同键可重新添加。写审计',

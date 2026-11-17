@@ -124,6 +124,22 @@ export const ledgerEntries = billingSchema.table(
   ],
 );
 
+export const rewardDailyTotals = billingSchema.table(
+  'reward_daily_totals',
+  {
+    rewardDay: date('reward_day').primaryKey(),
+    checkins: integer('checkins').notNull(),
+    completions: integer('completions').notNull(),
+    points: integer('points').notNull(),
+  },
+  (t) => [
+    check(
+      'reward_totals_nonnegative',
+      sql`${t.checkins}>=0 AND ${t.completions}>=0 AND ${t.points}>=0`,
+    ),
+  ],
+);
+
 /** 冻结记录（预授权）。冻结不写流水，只改账户的 held_micros。 */
 export const holds = billingSchema.table(
   'holds',
@@ -437,5 +453,48 @@ export const sharedSearchCarries = billingSchema.table(
   (t) => [
     primaryKey({ columns: [t.accountId, t.characterId] }),
     check('shared_search_carry_range', sql`${t.carryMicros} BETWEEN -50 AND 99`),
+  ],
+);
+
+export const rewardDays = billingSchema.table(
+  'reward_days',
+  {
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    rewardDay: date('reward_day').notNull(),
+    checkinPoints: integer('checkin_points').notNull().default(0),
+    adPoints: integer('ad_points').notNull().default(0),
+    intentId: uuid('intent_id').unique(),
+    provider: text('provider'),
+    readyAt: tz('ready_at'),
+    expiresAt: tz('expires_at'),
+    rewardedAt: tz('rewarded_at'),
+    receiptId: text('receipt_id'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.accountId, t.rewardDay] }),
+    index('reward_days_by_day').on(t.rewardDay),
+    uniqueIndex('reward_provider_receipt').on(t.provider, t.receiptId),
+    check('reward_days_points', sql`${t.checkinPoints}>=0 AND ${t.adPoints}>=0`),
+    check('reward_days_completion', sql`(${t.rewardedAt} IS NULL)=(${t.receiptId} IS NULL)`),
+  ],
+);
+export const adRevenueReports = billingSchema.table(
+  'ad_revenue_reports',
+  {
+    reportDay: date('report_day').notNull(),
+    provider: text('provider').notNull(),
+    estimatedMicros: money('estimated_micros'),
+    settledMicros: money('settled_micros'),
+    revision: integer('revision').notNull().default(1),
+    updatedAt: tz('updated_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.reportDay, t.provider] }),
+    check(
+      'ad_report_amount',
+      sql`(${t.estimatedMicros} IS NOT NULL OR ${t.settledMicros} IS NOT NULL) AND ${t.estimatedMicros}>=0 AND ${t.settledMicros}>=0`,
+    ),
   ],
 );

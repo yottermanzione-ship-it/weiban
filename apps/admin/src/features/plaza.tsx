@@ -576,7 +576,7 @@ function WorkDrawer({
 
 function OfficialCommentsTab() {
   const toast = useToast();
-  const characters = useRemote(CharacterAdminEndpoints.list);
+  const characters = useRemote(CharacterAdminEndpoints.directory);
   const [characterId, setCharacterId] = useState('');
   const [items, setItems] = useState<OfficialComment[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);

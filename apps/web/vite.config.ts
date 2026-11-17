@@ -37,7 +37,7 @@ const bootCssFile = `assets/boot-${createHash('sha256').update(bootCssSource).di
  * 单独列在这里；字体（4.8MB）与提示音不进。
  */
 const precacheOldUi = ['assets/old-ui/brand/icon.png'];
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   define: {
     __WEB_BUILD__: JSON.stringify(buildNumber),
     __WEB_VERSION__: JSON.stringify(webVersion),
@@ -146,7 +146,13 @@ export default defineConfig({
       },
     }),
   ],
-  server: { port: 5173, proxy },
+  server: {
+    port: mode === 'admin-preview' ? 5185 : 5173,
+    proxy:
+      mode === 'admin-preview'
+        ? { '/api': { target: 'http://127.0.0.1:3084', changeOrigin: false } }
+        : proxy,
+  },
   preview: {
     port: 5173,
     proxy,
@@ -156,4 +162,4 @@ export default defineConfig({
       'Referrer-Policy': 'no-referrer',
     },
   },
-});
+}));

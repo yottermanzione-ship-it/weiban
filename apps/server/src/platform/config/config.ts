@@ -58,6 +58,7 @@ export const EnvSchema = z.object({
   MEDIA_S3_FORCE_PATH_STYLE: booleanFlag,
   /** 本机部署显式允许回环媒体地址使用 HTTP；外部地址仍须 HTTPS。 */
   ALLOW_LOCAL_HTTP: booleanFlag,
+  REWARDED_ADS_DEMO: booleanFlag,
   /** 无域名试运行：显式允许以 IPv4 地址作媒体地址时使用 HTTP；域名仍须 HTTPS。 */
   ALLOW_IP_HTTP: booleanFlag,
   IMAGE_PUBLIC_SEARCH_ENABLED: booleanFlag,
@@ -232,6 +233,7 @@ export interface AppConfig {
   };
   readonly billing: {
     readonly platformDailyCapMicros: number;
+    readonly rewardedAdsDemo?: boolean;
     /** null = 使用 billing 模块的默认值（billing.md 6.6 第 2 条）。 */
     readonly safetyOverdraftLimitMicros: number | null;
     readonly upstreamDiffRatio: number;
@@ -341,6 +343,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       },
     },
     billing: {
+      rewardedAdsDemo:
+        e.NODE_ENV === 'test' &&
+        e.REWARDED_ADS_DEMO === true &&
+        ['localhost', '127.0.0.1', '[::1]'].includes(new URL(e.DATABASE_URL).hostname),
       platformDailyCapMicros: e.BILLING_PLATFORM_DAILY_CAP_MICROS ?? DEV_PLATFORM_DAILY_CAP_MICROS,
       safetyOverdraftLimitMicros: e.BILLING_SAFETY_OVERDRAFT_LIMIT_MICROS ?? null,
       upstreamDiffRatio: e.BILLING_UPSTREAM_DIFF_RATIO,

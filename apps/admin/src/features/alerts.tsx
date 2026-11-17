@@ -1,3 +1,4 @@
+import { BulkTable, collectPages } from '../ui/bulk-table.js';
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Button, Segmented, Select } from 'antd';
@@ -5,7 +6,7 @@ import { ReloadOutlined } from '@ant-design/icons';
 import { PushAdminEndpoints, type AdminAlert } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { errorText } from '../data/hooks.js';
-import { DataTable, type ProColumns } from '../ui/table.js';
+import { type ProColumns } from '../ui/table.js';
 import { Page, StatusTag, useToast } from '../ui/page.js';
 import { formatDateTime, formatInt } from '../ui/format.js';
 
@@ -201,7 +202,32 @@ export function AlertsPage() {
           刷新
         </Button>
       </div>
-      <DataTable<AdminAlert>
+      <BulkTable<AdminAlert>
+        scope={JSON.stringify([status, view])}
+        nameOf={(row) => row.summary}
+        afterBatch={() => {
+          window.dispatchEvent(new Event('weiban-admin:alerts-changed'));
+          reset();
+        }}
+        allMatching={() =>
+          collectPages<AdminAlert>(
+            (cursor) =>
+              api.call(PushAdminEndpoints.listAdminAlerts, {
+                query: { status, view, limit: 200, cursor },
+              }),
+            (r) => r.alertId,
+          )
+        }
+        operations={[
+          {
+            label: view === 'info' ? '批量已读' : '批量标记已处理',
+            applies: (r) => !r.acknowledgedAt,
+            run: (r) =>
+              api.call(PushAdminEndpoints.acknowledgeAdminAlert, {
+                params: { alertId: r.alertId },
+              }),
+          },
+        ]}
         rowKey="alertId"
         columns={columns}
         data={items}

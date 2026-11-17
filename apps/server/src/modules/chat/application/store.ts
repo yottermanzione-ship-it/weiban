@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, gt, notInArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, notInArray, sql } from 'drizzle-orm';
 import {
   Conversation,
   GROUP_MEMBER_LIMIT,
@@ -61,13 +61,18 @@ export class ChatStore {
     if ((await this.accounts.getAccountStatus(userId, tx)) !== 'active')
       throw new AppError('unauthenticated', '账号已失效');
   }
-  async load(tx: DbTx, conversationId: string, userId?: string): Promise<ConversationRow> {
+  async load(
+    tx: DbTx,
+    conversationId: string,
+    userId?: string,
+    lock: 'update' | 'share' = 'update',
+  ): Promise<ConversationRow> {
     parseContract(Id, conversationId);
     const [row] = await tx.db
       .select()
       .from(conversations)
       .where(eq(conversations.id, conversationId))
-      .for('update');
+      .for(lock);
     if (!row) throw new AppError('not_found', '会话不存在');
     if (userId && row.ownerUserId !== userId)
       throw new AppError('not_conversation_member', '不能访问此会话');
@@ -128,35 +133,96 @@ export class ChatStore {
     stored: MessageRow,
     view: MessageView,
   ): Promise<Message> {
-    let quote: Message['quote'] = null;
-    if (stored.quoteMessageId && stored.status !== 'recalled') {
-      const [source] = await tx.db
+    return (await this.messagePage(tx, row, [stored], view))[0]!;
+  }
+
+  /** 同一页只取一次引用记录和一次账户密钥。先执行可见性判断，再解密正文。 */
+  async messagePage(
+    tx: DbTx,
+    row: ConversationRow,
+    page: MessageRow[],
+    view: MessageView,
+  ): Promise<Message[]> {
+    if (!page.length) return [];
+    const sources = new Map(page.map((m) => [m.id, m]));
+    const missing = [
+      ...new Set(
+        page.flatMap((m) =>
+          m.status !== 'recalled' && m.quoteMessageId && !sources.has(m.quoteMessageId)
+            ? [m.quoteMessageId]
+            : [],
+        ),
+      ),
+    ];
+    if (missing.length) {
+      const quotes = await tx.db
         .select()
         .from(messages)
-        .where(and(eq(messages.id, stored.quoteMessageId), eq(messages.conversationId, row.id)));
-      if (source) {
-        let preview: string | null = null;
-        if (
-          source.status !== 'recalled' &&
-          source.seq > view.state.clearedThroughSeq &&
-          !view.hidden.has(source.id) &&
-          (source.scope === 'normal' || stored.scope === 'adult') &&
-          view.scopes.includes(source.scope as ContentScope)
-        ) {
-          const content = await this.content(tx, row, source);
-          if (content?.type === 'text') preview = previewText(content.text);
-          else if (content) preview = '[消息]';
-        }
-        quote = { messageId: source.id, seq: source.seq, preview };
-      }
+        .where(and(eq(messages.conversationId, row.id), inArray(messages.id, missing)));
+      for (const source of quotes) sources.set(source.id, source);
     }
+    const visibleQuote = (m: MessageRow, source: MessageRow) =>
+      source.status !== 'recalled' &&
+      source.seq > view.state.clearedThroughSeq &&
+      !view.hidden.has(source.id) &&
+      (source.scope === 'normal' || m.scope === 'adult') &&
+      view.scopes.includes(source.scope as ContentScope);
+    const needed = new Map(page.map((m) => [m.id, m]));
+    for (const m of page) {
+      const source =
+        m.status !== 'recalled' && m.quoteMessageId ? sources.get(m.quoteMessageId) : undefined;
+      if (source && visibleQuote(m, source)) needed.set(source.id, source);
+    }
+    const sealed = [...needed.values()].filter(
+      (m) => m.status !== 'recalled' && m.contentCiphertext,
+    );
+    const buffers = await this.crypto.openMany(
+      row.ownerUserId,
+      sealed.map((m) => ({ aad: `chat:message:${m.id}`, sealed: m.contentCiphertext! })),
+      tx,
+    );
+    try {
+      const contents = new Map(
+        sealed.map((m, index) => [
+          m.id,
+          MessageContent.parse(JSON.parse(buffers[index]!.toString('utf8'))),
+        ]),
+      );
+      return page.map((stored) => {
+        const source =
+          stored.status !== 'recalled' && stored.quoteMessageId
+            ? sources.get(stored.quoteMessageId)
+            : undefined;
+        const quoted = source && visibleQuote(stored, source) ? contents.get(source.id) : undefined;
+        const quote = source
+          ? {
+              messageId: source.id,
+              seq: source.seq,
+              preview:
+                quoted?.type === 'text' ? previewText(quoted.text) : quoted ? '[消息]' : null,
+            }
+          : null;
+        return this.messageDto(row, stored, view, quote, contents.get(stored.id) ?? null);
+      });
+    } finally {
+      for (const buffer of buffers) buffer.fill(0);
+    }
+  }
+
+  private messageDto(
+    row: ConversationRow,
+    stored: MessageRow,
+    view: MessageView,
+    quote: Message['quote'],
+    content: MessageContent | null,
+  ): Message {
     return Message.parse({
       messageId: stored.id,
       conversationId: row.id,
       seq: stored.seq,
       senderParticipantId: stored.senderParticipantId,
       senderKind: stored.senderKind,
-      content: await this.content(tx, row, stored),
+      content,
       quote,
       status: stored.status,
       scope: stored.scope,
@@ -204,7 +270,7 @@ export class ChatStore {
       .limit(1);
     let lastMessage: Conversation['lastMessage'] = null;
     if (last) {
-      const content = await this.content(tx, row, last);
+      const content = last.scope === 'adult' ? null : await this.content(tx, row, last);
       // 3.25（G1-3）：私密模式（成人范围）消息在会话列表一律显示「[私密消息]」，不露正文。
       const text =
         last.status === 'recalled'

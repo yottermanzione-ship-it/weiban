@@ -23,6 +23,7 @@ import {
   tolerantEnum,
 } from '../common.js';
 import { ModelKey } from './model-access.js';
+import { AdminUserFilter, AdminUserSummary } from './admin-users.js';
 
 // ---------- 基础类型 ----------
 
@@ -255,7 +256,57 @@ export const UpdateRechargeOptionsRequest = z.object({
 
 // ---------- 用户端接口 ----------
 
+export const RewardDayStatus = z.object({
+  available: z.boolean(),
+  day: LocalDate,
+  checkedIn: z.boolean(),
+  rewarded: z.boolean(),
+  checkInPoints: z.number().int().nonnegative(),
+  adPoints: z.number().int().nonnegative(),
+});
+export const AdRevenueDay = z.object({
+  day: LocalDate,
+  provider: z.string(),
+  estimatedMicros: z.number().int().nonnegative().nullable(),
+  settledMicros: z.number().int().nonnegative().nullable(),
+  revision: z.number().int().nonnegative(),
+});
 export const BillingEndpoints = {
+  rewardStatus: defineEndpoint({
+    method: 'GET',
+    path: API_PREFIX + '/billing/rewards/today',
+    auth: 'user',
+    response: RewardDayStatus,
+    summary: '当天签到与自愿激励状态。',
+  }),
+  checkIn: defineEndpoint({
+    method: 'POST',
+    path: API_PREFIX + '/billing/rewards/check-in',
+    auth: 'user',
+    response: RewardDayStatus,
+    summary: '按北京时间每日领取一次签到赠送积分。',
+  }),
+  cancelRewardAd: defineEndpoint({
+    method: 'POST',
+    path: API_PREFIX + '/billing/rewards/ad/:intentId/cancel',
+    auth: 'user',
+    params: z.object({ intentId: Id }),
+    response: RewardDayStatus,
+    summary: '取消本人尚未领取的广告奖励。',
+  }),
+  startRewardAd: defineEndpoint({
+    method: 'POST',
+    path: API_PREFIX + '/billing/rewards/ad',
+    auth: 'user',
+    response: z.object({
+      intentId: Id,
+      readyAt: Timestamp,
+      expiresAt: Timestamp,
+      points: z.number().int().positive(),
+    }),
+    summary: '发起本次激励，不发放奖励。',
+  }),
+
   consumeEcologyInsufficientNotice: defineEndpoint({
     method: 'POST',
     path: `${API_PREFIX}/billing/ecology-insufficient-notice/consume`,
@@ -511,6 +562,56 @@ export const BillingDebtSummary = z.object({
 export type BillingDebtSummary = z.infer<typeof BillingDebtSummary>;
 
 export const BillingAdminEndpoints = {
+  adRevenue: defineEndpoint({
+    method: 'GET',
+    path: API_PREFIX + '/admin/billing/ad-revenue',
+    auth: 'admin',
+    query: z.object({ days: z.coerce.number().int().min(1).max(90).default(7) }),
+    response: z.object({
+      reports: z.array(AdRevenueDay),
+      rewards: z.array(
+        z.object({
+          day: LocalDate,
+          checkins: z.number().int(),
+          completions: z.number().int(),
+          points: z.number().int(),
+        }),
+      ),
+    }),
+    summary: '供应商日收入及已入账赠分。',
+  }),
+  saveAdRevenue: defineEndpoint({
+    method: 'PUT',
+    path: API_PREFIX + '/admin/billing/ad-revenue',
+    auth: 'admin',
+    body: AdRevenueDay.extend({
+      provider: z.string().trim().min(1).max(48),
+      estimatedMicros: z.number().int().min(0).max(1e12).nullable(),
+      settledMicros: z.number().int().min(0).max(1e12).nullable(),
+    }).refine((v) => v.estimatedMicros !== null || v.settledMicros !== null),
+    response: AdRevenueDay,
+    summary: '按日期和平台录入人民币报表，版本校验防止覆盖并发编辑。',
+  }),
+
+  userPage: defineEndpoint({
+    method: 'GET',
+    path: API_PREFIX + '/admin/billing/users',
+    auth: 'admin',
+    query: AdminUserFilter.extend({
+      page: z.coerce.number().int().min(1).max(1000000).default(1),
+      pageSize: z.coerce.number().int().min(1).max(100).default(20),
+      sort: z
+        .enum(['newest', 'oldest', 'balance_asc', 'balance_desc', 'spent_asc', 'spent_desc'])
+        .default('newest'),
+    }),
+    response: z.object({
+      items: z.array(
+        z.object({ userId: Id, user: AdminUserSummary, account: AdminAccountSummary.optional() }),
+      ),
+      total: z.number().int().nonnegative(),
+    }),
+    summary: '按全局筛选和排序分页读取用户，合并当前页的余额和近 30 天消耗。',
+  }),
   resolveUnknownCost: defineEndpoint({
     method: 'POST',
     path: `${API_PREFIX}/admin/billing/holds/:holdId/cost-resolution`,

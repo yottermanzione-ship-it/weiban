@@ -477,8 +477,8 @@ export class UpstreamService {
    * details 带引用它的模型键与名称，提示先换线路。删除后清空密文、停用、记删除时间；
    * 行保留，历史调用记录仍能显示账号名。已删除的账号不再出现在调度、探测、线路选择里。
    */
-  async delete(adminId: string, upstreamId: string): Promise<void> {
-    await this.database.transaction(async (tx) => {
+  async delete(adminId: string, upstreamId: string, transaction?: DbTx): Promise<void> {
+    const remove = async (tx: DbTx) => {
       const row = await this.lock(tx, upstreamId);
       const routed = await tx.db
         .select({ modelKey: modelRoutes.modelKey })
@@ -526,7 +526,9 @@ export class UpstreamService {
         },
         tx,
       );
-    });
+    };
+    if (transaction) await remove(transaction);
+    else await this.database.transaction(remove);
   }
 
   // ---------- 给网关（D-L0-09）用 ----------

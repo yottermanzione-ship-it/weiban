@@ -6,7 +6,7 @@ import {
   MEDIA_LIMITS,
   MediaPurpose as MediaPurposeSchema,
   type MediaObject,
-  type MediaReadPort,
+  type MediaAvatarReadPort,
   type MediaPurpose,
   type MediaSystemPort,
   type MediaTranscriptPort,
@@ -111,7 +111,7 @@ interface Processed {
 
 @Injectable()
 export class MediaService
-  implements UserDataOwner, OnModuleInit, MediaReadPort, MediaSystemPort, MediaTranscriptPort
+  implements UserDataOwner, OnModuleInit, MediaAvatarReadPort, MediaSystemPort, MediaTranscriptPort
 {
   readonly module = 'media';
   constructor(
@@ -499,9 +499,44 @@ export class MediaService
         JSON.stringify({ userId, expiresAt: expires.getTime(), v: variant }),
       )
     ).toString('base64url');
-    const url = new URL(`/api/v1/media/${row.id}/content`, this.config.media.publicBaseUrl);
+    return this.signedContentUrl(row.id, token);
+  }
+  private signedContentUrl(id: string, token: string) {
+    const url = new URL(`/api/v1/media/${id}/content`, this.config.media.publicBaseUrl);
     url.searchParams.set('token', token);
     return url.toString();
+  }
+
+  async characterAvatarUrls(
+    userId: string,
+    ids: readonly string[],
+  ): Promise<Record<string, string>> {
+    if (!ids.length) return {};
+    const rows = await this.database.db
+      .select({ id: objects.id, thumb: objects.thumbStorageKey })
+      .from(objects)
+      .where(
+        and(
+          inArray(objects.id, [...new Set(ids)]),
+          eq(objects.state, 'ready'),
+          eq(objects.purpose, 'character_avatar'),
+          or(isNull(objects.ownerId), eq(objects.ownerId, userId)),
+        ),
+      );
+    const expiresAt = this.clock.nowMs() + LINK_TTL_MS;
+    const sealed = await this.crypto.sealMany(
+      PLATFORM_KEY_OWNER,
+      rows.map((row) => ({
+        aad: 'media-link:' + row.id,
+        plaintext: JSON.stringify({ userId, expiresAt, v: row.thumb ? 't' : 'o' }),
+      })),
+    );
+    return Object.fromEntries(
+      rows.map((row, i) => [
+        row.id,
+        this.signedContentUrl(row.id, sealed[i]!.toString('base64url')),
+      ]),
+    );
   }
 
   async toMedia(row: Row, userId: string): Promise<MediaObject> {

@@ -46,8 +46,9 @@ export default defineConfig(({ mode }) => ({
     ],
   },
   preview: {
-    port: 5174,
-    proxy,
+    port: mode === 'admin-preview' ? 5184 : 5174,
+    host: mode === 'admin-preview' ? '127.0.0.1' : undefined,
+    proxy: mode === 'admin-preview' ? proxyTo('http://127.0.0.1:3084') : proxy,
     headers: {
       'Content-Security-Policy': csp + "; frame-ancestors 'none'",
       'X-Content-Type-Options': 'nosniff',

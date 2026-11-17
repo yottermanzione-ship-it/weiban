@@ -1605,3 +1605,214 @@ body {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+.workspace-shell {
+  min-height: 100dvh;
+  background: #f5f7fa;
+}
+.workspace-header.ant-layout-header {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  height: 58px;
+  padding: 0 24px;
+  line-height: 1.3;
+  background: #142d43;
+  color: white;
+}
+.workspace-brand {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 9px;
+  font-size: 17px;
+  font-weight: 650;
+  color: white;
+}
+.workspace-brand img {
+  width: 29px;
+  height: 29px;
+  border-radius: 7px;
+}
+.workspace-header nav {
+  flex: 1;
+  min-width: 0;
+}
+.workspace-header .ant-menu-dark {
+  background: transparent;
+}
+.workspace-header .ant-menu-horizontal {
+  line-height: 58px;
+  border: 0;
+}
+.workspace-header .ant-menu-dark.ant-menu-horizontal > .ant-menu-item-selected {
+  background: #294b66;
+  box-shadow: inset 0 -3px #76d4b5;
+}
+.workspace-identity {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.demo-marker {
+  color: #c6e6d9;
+  font-size: 12px;
+}
+.workspace-profile {
+  border: 0;
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #f5fafc;
+  background: transparent;
+  cursor: pointer;
+}
+.workspace-profile .ant-avatar {
+  background: #38617a;
+}
+.workspace-header .ant-btn-text {
+  color: white;
+}
+.workspace-main {
+  background: #f5f7fa;
+}
+.workspace-sider {
+  align-self: stretch;
+  border-inline-end: 1px solid #e4e9ed;
+}
+.workspace-sider .ant-layout-sider-children {
+  position: sticky;
+  top: 58px;
+  max-height: calc(100dvh - 58px);
+  padding-top: 12px;
+  overflow: auto;
+}
+.workspace-sider .ant-menu-inline {
+  border-inline-end: 0 !important;
+}
+.workspace-sider .ant-menu-item-group-title {
+  padding-top: 14px;
+  color: #647785;
+  font-size: 12px;
+}
+.workspace-page-link {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.workspace-canvas {
+  width: 0;
+  min-width: 0;
+  padding: clamp(16px, 2.3vw, 32px);
+}
+.workspace-canvas main {
+  max-width: 1520px;
+  margin: auto;
+}
+.workspace-canvas .page {
+  gap: 16px;
+}
+.workspace-loading {
+  padding: 60px;
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  color: #627584;
+}
+.mobile-area-menu {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.workspace-canvas .table-card .ant-table-thead > tr > th {
+  background: #f4f7fa;
+}
+.workspace-canvas .table-card {
+  border-color: #e1e7ec;
+}
+.delete-account-options {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #f7f8fa;
+}
+@media (max-width: 991px) {
+  .workspace-header.ant-layout-header {
+    gap: 8px;
+    padding: 0 12px;
+  }
+  .workspace-profile > span:not(.ant-avatar) {
+    display: none;
+  }
+  .workspace-canvas {
+    width: 100%;
+  }
+  .workspace-brand {
+    font-size: 16px;
+  }
+}
+
+.workbench-start {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(240px, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+.workbench-start .workbench-inbox {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.workbench-start .workbench-inbox-item,
+.workbench-links a {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 45px;
+  border: 0;
+  border-bottom: 1px solid #eef1f5;
+  border-radius: 0;
+  padding: 8px 4px;
+  background: transparent;
+}
+.workbench-start .workbench-inbox-item:last-child,
+.workbench-links a:last-child {
+  border-bottom: 0;
+}
+.workbench-start .workbench-inbox-item strong,
+.workbench-links a span:last-child {
+  margin-left: auto;
+}
+.workbench-links a {
+  color: #24364b;
+}
+.workspace-options {
+  background: #fff;
+  border: 1px solid #dbe2e8;
+  border-radius: 8px;
+  margin: 0 0 16px;
+  padding: 12px 16px;
+}
+.workspace-options > summary {
+  cursor: pointer;
+  color: #33485e;
+  font-weight: 600;
+}
+.workspace-options[open] > summary {
+  margin-bottom: 14px;
+}
+.monitor-disclosure {
+  margin-top: 18px;
+}
+@media (max-width: 740px) {
+  .workbench-start {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}

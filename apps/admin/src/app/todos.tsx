@@ -30,10 +30,16 @@ const EMPTY: TodoCounts = { roleRequests: 0, support: 0, reports: 0, deletions: 
 interface TodoState {
   counts: TodoCounts;
   loading: boolean;
+  partial: boolean;
   refresh: () => void;
 }
 
-const TodoContext = createContext<TodoState>({ counts: EMPTY, loading: true, refresh: () => {} });
+const TodoContext = createContext<TodoState>({
+  counts: EMPTY,
+  loading: true,
+  partial: false,
+  refresh: () => {},
+});
 
 async function safe<T>(work: Promise<T>): Promise<T | undefined> {
   try {
@@ -47,6 +53,7 @@ async function safe<T>(work: Promise<T>): Promise<T | undefined> {
 export function TodoProvider({ children }: { children: ReactNode }) {
   const [counts, setCounts] = useState<TodoCounts>(EMPTY);
   const [loading, setLoading] = useState(true);
+  const [partial, setPartial] = useState(false);
   const [revision, setRevision] = useState(0);
   const alive = useRef(true);
 
@@ -72,6 +79,9 @@ export function TodoProvider({ children }: { children: ReactNode }) {
         ),
       ]);
       if (!active || !alive.current) return;
+      setPartial(
+        [requests, support, reports, deletions, alerts].some((value) => value === undefined),
+      );
       setCounts({
         roleRequests: requests?.pendingCount ?? 0,
         support: support?.openCount ?? 0,
@@ -97,7 +107,10 @@ export function TodoProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refresh = useCallback(() => setRevision((v) => v + 1), []);
-  const value = useMemo(() => ({ counts, loading, refresh }), [counts, loading, refresh]);
+  const value = useMemo(
+    () => ({ counts, loading, refresh, partial }),
+    [counts, loading, refresh, partial],
+  );
   return <TodoContext.Provider value={value}>{children}</TodoContext.Provider>;
 }
 

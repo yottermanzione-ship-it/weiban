@@ -1,10 +1,11 @@
+import { participatesInTextArena } from '../domain/leaderboard.js';
 /**
  * v3.3（ADR-0032）：后台「模型」页的合并接口——目录条目 + 倍率一次保存。
  *
  * 倍率（输入 / 输出 / 缓存，数值 = 每百万 token 的人民币价格）存在 billing 的价目表里（BillingModelRatePort）：
  * 保存时倍率有变化就先由 billing 复制当前价目表、替换该模型三项价格并立即发布新版本，再保存目录条目
  * （启用模型要求当前价目表有价格，所以先发价目表）。目录条目的规则全部沿用 CatalogService.upsert。
- * 若目录保存失败，已发布的新价格保留（只影响这一个模型的单价），管理员修正后重试即可。
+ * 目录、价格、线路与折扣在同一事务内写入。
  */
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import {
@@ -167,7 +168,7 @@ export class ModelAdminService {
               ...(serviceRates
                 ? { serviceRates: serviceRatesToYuan(serviceRates.get(e.modelKey) ?? []) }
                 : {}),
-              arenaRank: arena.rankOfEntry(e),
+              arenaRank: participatesInTextArena(e) ? arena.rankOfEntry(e) : null,
               availability:
                 e === composite && voiceCall
                   ? voiceCall
@@ -182,8 +183,16 @@ export class ModelAdminService {
   }
 
   async upsert(adminId: string, pathKey: string, body: Write): Promise<AdminModel> {
-    const { rates, costRates, serviceRates, routes, displayMultiplierManual, discount, ...rest } =
-      body;
+    const {
+      rates,
+      costRates,
+      serviceRates,
+      routes,
+      displayMultiplierManual,
+      discount,
+      expectedRevision,
+      ...rest
+    } = body;
     if (serviceRates !== undefined) {
       if (!this.rates.publishModelServiceRates)
         throw new AppError('bad_request', '当前服务不支持服务单价写入，不能忽略该请求');
@@ -231,35 +240,48 @@ export class ModelAdminService {
           ...(primary.billingBounds === undefined ? {} : { billingBounds: primary.billingBounds }),
         }
       : rest;
-    if (rates && pathKey === body.modelKey) {
-      await this.rates.publishModelTokenRates({
-        operatorUserId: adminId,
-        modelKey: body.modelKey,
-        price: ratesToPrices(rates),
-        cost: ratesToPrices(costRates ?? rates),
-      });
-    }
-    if (serviceRates !== undefined)
-      await this.rates.publishModelServiceRates!({
-        operatorUserId: adminId,
-        modelKey: body.modelKey,
-        rates: serviceRates.map((r) => ({
-          unit: r.unit,
-          priceMicros: Math.round(r.price * MICROS_PER_YUAN),
-          costMicros: Math.round((r.cost ?? r.price) * MICROS_PER_YUAN),
-        })),
-      });
-    const saved = await this.catalog.upsert(adminId, pathKey, entry);
-    if (routes) await this.catalog.replaceRoutes(adminId, saved.modelKey, routes);
-    if (displayMultiplierManual !== undefined)
-      await this.display?.setManual(saved.modelKey, displayMultiplierManual);
-    // 3.22：限时折扣存 billing（报价 / 冻结 / 结算在 billing 同一处按它打折）。
-    if (discount !== undefined)
-      await this.rates.setModelDiscount({
-        operatorUserId: adminId,
-        modelKey: saved.modelKey,
-        discount,
-      });
+    const saved = await this.catalog.withCatalogWrite(async (tx) => {
+      await this.catalog.assertRevision(tx, pathKey, expectedRevision);
+      if (rates && pathKey === body.modelKey) {
+        await this.rates.publishModelTokenRates(
+          {
+            operatorUserId: adminId,
+            modelKey: body.modelKey,
+            price: ratesToPrices(rates),
+            cost: ratesToPrices(costRates ?? rates),
+          },
+          tx,
+        );
+      }
+      if (serviceRates !== undefined)
+        await this.rates.publishModelServiceRates!(
+          {
+            operatorUserId: adminId,
+            modelKey: body.modelKey,
+            rates: serviceRates.map((r) => ({
+              unit: r.unit,
+              priceMicros: Math.round(r.price * MICROS_PER_YUAN),
+              costMicros: Math.round((r.cost ?? r.price) * MICROS_PER_YUAN),
+            })),
+          },
+          tx,
+        );
+      const saved = await this.catalog.upsert(adminId, pathKey, entry, tx);
+      if (routes) await this.catalog.replaceRoutes(adminId, saved.modelKey, routes, tx);
+      if (displayMultiplierManual !== undefined)
+        await this.display?.setManual(saved.modelKey, displayMultiplierManual, tx);
+      // 3.22：限时折扣存 billing（报价 / 冻结 / 结算在 billing 同一处按它打折）。
+      if (discount !== undefined)
+        await this.rates.setModelDiscount(
+          {
+            operatorUserId: adminId,
+            modelKey: saved.modelKey,
+            discount,
+          },
+          tx,
+        );
+      return saved;
+    });
     this.display?.invalidate();
     const current = await this.rates.getActiveTokenRates([saved.modelKey]);
     const currentServices = await this.rates.getActiveServiceRates?.([saved.modelKey]);
@@ -279,7 +301,7 @@ export class ModelAdminService {
         ...(currentServices
           ? { serviceRates: serviceRatesToYuan(currentServices.get(saved.modelKey) ?? []) }
           : {}),
-        arenaRank: arena.rankOfEntry(saved),
+        arenaRank: participatesInTextArena(saved) ? arena.rankOfEntry(saved) : null,
         availability: { available: !detail, detail: detail ?? null },
       },
     );

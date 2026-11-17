@@ -329,7 +329,9 @@
       "version": "7",
       "when": 1795600000000,
       "tag": "0056_account_deletion",
-      "dependsOn": ["0060_plaza"],
+      "dependsOn": [
+        "0060_plaza"
+      ],
       "breakpoints": true
     },
     {
@@ -1072,6 +1074,13 @@
       "version": "7",
       "when": 1794229200000,
       "tag": "0164_legacy_channel_relay",
+      "breakpoints": true
+    },
+    {
+      "idx": 165,
+      "version": "7",
+      "when": 1794232800000,
+      "tag": "0165_rewarded_ads",
       "breakpoints": true
     }
   ]

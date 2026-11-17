@@ -14,7 +14,7 @@ test('昵称选择保留同名用户编号，完整编号和多用户查询仍�
   expect(targets).toHaveLength(2);
   const [first, second] = targets.map((u) => u.userId) as [string, string];
   // Two synthetic accounts share a nickname; the selected UUID must never be inferred from the name.
-  await page.route('**/api/v1/admin/users', async (route) => {
+  await page.route('**/api/v1/admin/users/labels', async (route) => {
     const original = await route.fetch();
     const body = await original.json();
     await route.fulfill({

@@ -177,7 +177,7 @@ export function ModelsTab({
   const toast = useToast();
   const confirm = useDangerConfirm();
   const [use, setUse] = useState<UseFilter>('all');
-  const [status, setStatus] = useState<'all' | 'on' | 'off'>('all');
+  const [status, setStatus] = useState<'all' | 'on' | 'off' | 'archived'>('all');
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState<AdminModel | 'new' | null>(null);
   const [focusBounds, setFocusBounds] = useState(false);
@@ -226,22 +226,22 @@ export function ModelsTab({
     .filter((m) => status === 'all' || (status === 'on' ? m.enabled : !m.enabled))
     .filter(matchesQuery)
     .sort((a, b) => a.sortOrder - b.sortOrder);
-  // 3.27：已删除的行照旧排在最后。它们恒为停用，所以「已上架」筛选里不出现。
+  // 删除档案只在显式选择历史视图时出现。
   const deletedList =
-    status === 'on'
+    status !== 'archived'
       ? []
       : deletedModels
           .filter((m) => matchesUse(m, use))
           .filter(matchesQuery)
           .sort((a, b) => a.sortOrder - b.sortOrder);
-  const tableRows = [...list, ...deletedList];
+  const tableRows = status === 'archived' ? deletedList : list;
 
   async function setEnabled(m: AdminModel, enabled: boolean) {
     setError('');
     try {
       await api.call(ModelAccessAdminEndpoints.upsertModel, {
         params: { modelKey: m.modelKey },
-        body: { ...toWrite(m), enabled },
+        body: { ...toWrite(m), expectedRevision: m.catalogRevision, enabled },
       });
       toast.success(enabled ? '已上架' : '已下架');
       refresh();
@@ -600,8 +600,11 @@ export function ModelsTab({
           </Button>
         </Space>
       </div>
-      <ModelsDevBar />
-      <MultiplierBase key={deleteVersion} models={models} onSaved={refresh} />
+      <details className="workspace-options">
+        <summary>参考资料与倍率设置</summary>
+        <ModelsDevBar />
+        <MultiplierBase key={deleteVersion} models={models} onSaved={refresh} />
+      </details>
       {upstreamsError && (
         <Alert
           type="warning"
@@ -639,7 +642,9 @@ export function ModelsTab({
       )}
       <DataTable<AdminModel>
         // 3.27：已删除行给的是删除前的原键，同键可能重新添加过、也可能删过不止一次，行键要带上删除时间区分。
-        rowKey={(m) => (m.deletedAt ? `${m.modelKey}#deleted@${m.deletedAt}` : m.modelKey)}
+        rowKey={(m) =>
+          m.deletedAt ? (m.archiveId ?? `${m.modelKey}#deleted@${m.deletedAt}`) : m.modelKey
+        }
         columns={columns}
         data={tableRows}
         loading={loading}
@@ -651,13 +656,18 @@ export function ModelsTab({
         }}
         rowSelectable={(m) => !m.deletedAt}
         selectedKeys={selected}
+        selectionHint={
+          <Button type="link" size="small" onClick={() => setSelected(list.map((m) => m.modelKey))}>
+            选择全部匹配模型
+          </Button>
+        }
         onSelectionChange={(keys) => setSelected(keys)}
         batchActions={(rows) => (
           <Button
             size="small"
             danger
             onClick={() => {
-              // 勾选会跨筛选 / 翻页保留：按键从全部模型里取
+              // 勾选可跨本筛选下的分页保留：按键从全部模型里取
               const keys = new Set(selected.map(String));
               const picked = models.filter((m) => keys.has(m.modelKey));
               void askDelete(picked.length ? picked : rows);
@@ -673,12 +683,18 @@ export function ModelsTab({
               placeholder="搜索模型名"
               style={{ width: 200 }}
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setSelected([]);
+                setQuery(e.target.value);
+              }}
             />
             <Select
               style={{ width: 130 }}
               value={use}
-              onChange={setUse}
+              onChange={(v) => {
+                setSelected([]);
+                setUse(v);
+              }}
               options={[
                 { value: 'all', label: '全部场景' },
                 ...Object.entries(SCENARIO_LABELS).map(([value, label]) => ({
@@ -690,11 +706,15 @@ export function ModelsTab({
             <Select
               style={{ width: 120 }}
               value={status}
-              onChange={setStatus}
+              onChange={(v) => {
+                setSelected([]);
+                setStatus(v);
+              }}
               options={[
                 { value: 'all', label: '全部状态' },
                 { value: 'on', label: '已上架' },
                 { value: 'off', label: '已下架' },
+                { value: 'archived', label: '已删除档案' },
               ]}
             />
           </>
@@ -1091,6 +1111,7 @@ export function ModelWizard({
       await api.call(ModelAccessAdminEndpoints.upsertModel, {
         params: { modelKey: key },
         body: {
+          expectedRevision: model ? model.catalogRevision : null,
           modelKey: key,
           displayName: values.displayName.trim(),
           vendorName: values.vendorName.trim(),

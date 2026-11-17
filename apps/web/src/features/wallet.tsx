@@ -47,6 +47,7 @@ export function localDay(offset = 0) {
 // ---------- 钱包（6.2） ----------
 
 export function WalletPage() {
+  const rewards = useRemote(BillingEndpoints.rewardStatus);
   const [paymentHistory, setPaymentHistory] = useState(false);
   const wallet = useRemote(BillingEndpoints.getWallet);
   const today = localDay();
@@ -96,6 +97,13 @@ export function WalletPage() {
         <p className="wallet-rate">1 元 = 100 积分</p>
       </section>
       <MenuGroup>
+        {rewards.data?.available && (
+          <MenuRow
+            to="/wallet/check-in"
+            label="每日签到"
+            value={rewards.data.checkedIn ? '今日已签到' : '领赠送积分'}
+          />
+        )}
         <MenuRow to="/ledger" label="积分明细" />
         <MenuRow label="扫码付款记录" onClick={() => setPaymentHistory(true)} />
         <MenuRow

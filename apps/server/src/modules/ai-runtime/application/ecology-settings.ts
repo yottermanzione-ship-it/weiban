@@ -210,6 +210,34 @@ export class EcologySettingsService {
     };
   }
 
+  async usesDecisionModel(keys: readonly string[]) {
+    const [row] = await this.db.db
+      .select({ model: sql<string | null>`${ecologyConfigTable.config}->>'decisionModelKey'` })
+      .from(ecologyConfigTable)
+      .where(eq(ecologyConfigTable.id, 'default'));
+    return !!row?.model && keys.includes(row.model);
+  }
+  async clearDeletedDecision(tx: DbTx, keys: readonly string[], operator: string) {
+    const touched = await tx.db
+      .update(ecologyConfigTable)
+      .set({
+        config: sql`jsonb_set(${ecologyConfigTable.config},'{decisionModelKey}','null'::jsonb)`,
+        updatedBy: operator,
+        updatedAt: this.clock.now(),
+      })
+      .where(
+        and(
+          eq(ecologyConfigTable.id, 'default'),
+          sql`${ecologyConfigTable.config}->>'decisionModelKey' IN (${sql.join(
+            keys.map((key) => sql`${key}`),
+            sql`,`,
+          )})`,
+        ),
+      )
+      .returning({ id: ecologyConfigTable.id });
+    if (touched.length) this.cache = null;
+    return touched.length > 0;
+  }
   async updateConfig(adminUserId: string, input: EcologyConfig): Promise<EcologyAdminOverview> {
     const config = parseContract(EcologyConfig, input);
     if (config.decisionModelKey) {

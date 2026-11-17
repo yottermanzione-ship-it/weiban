@@ -47,6 +47,7 @@ import {
 } from '../features/profile-edit.js';
 import { CharacterRemarkPage } from '../features/contact-edit.js';
 import { SettingsPage } from '../features/settings.js';
+import { RewardCheckInPage } from '../features/reward-checkin.js';
 import { WalletPage, LedgerPage, PricesPage, RechargePage } from '../features/wallet.js';
 import { MembershipPage } from '../features/membership.js';
 import {
@@ -377,6 +378,7 @@ function Shell() {
                   <Route path="/settings" element={<SettingsPage />} />
                   <Route path="/help/guide" element={<OnboardingGuidePage />} />
                   <Route path="/services" element={<ServicesPage />} />
+                  <Route path="/wallet/check-in" element={<RewardCheckInPage />} />
                   <Route path="/wallet" element={<WalletPage />} />
                   <Route path="/membership" element={<MembershipPage />} />
                   <Route path="/wallet/recharge" element={<RechargePage />} />

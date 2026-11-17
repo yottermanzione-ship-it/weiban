@@ -25,6 +25,7 @@ import {
   type AuditLog,
   type Clock,
   type Database,
+  type DbTx,
 } from '../../../platform/index.js';
 import { defaultReplyMicros, weightedPrice, type ModelTextPrices } from '../domain/rules.js';
 import { modelAccessSettings, modelCatalog, usageRecords } from '../infra/db/schema.js';
@@ -174,8 +175,8 @@ export class DisplayPricingService {
   }
 
   /** 保存后台手填倍率（null = 改回自动）。 */
-  async setManual(modelKey: string, value: number | null): Promise<void> {
-    await this.database.db
+  async setManual(modelKey: string, value: number | null, tx?: DbTx): Promise<void> {
+    await (tx ?? this.database).db
       .update(modelCatalog)
       .set({ displayMultiplier: value === null ? null : round2(value) })
       .where(eq(modelCatalog.modelKey, modelKey));

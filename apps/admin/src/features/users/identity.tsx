@@ -139,7 +139,7 @@ export function UserPicker(props: UserPickerProps) {
  * 供只返回 userId 的接口页面使用（例：行为规划、角色生态）。查不到（已注销）时返回 undefined。
  */
 export function useUserDirectory() {
-  const users = useRemote(AdminUsersEndpoints.listUsers);
+  const users = useRemote(AdminUsersEndpoints.labels);
   const byId = useMemo(
     () =>
       new Map<string, AdminUserLabel>(
