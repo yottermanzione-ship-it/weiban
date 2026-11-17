@@ -223,7 +223,9 @@ export class RealtimeVoice<
         this.timing?.({
           phase: 'response_started',
           responseId: event.responseId,
-          ...(this.speechAt ? { sinceSpeechMs: Math.round(this.responseStartedAt - this.speechAt) } : {}),
+          ...(this.speechAt
+            ? { sinceSpeechMs: Math.round(this.responseStartedAt - this.speechAt) }
+            : {}),
         });
         return;
       case 'audio':

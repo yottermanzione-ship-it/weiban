@@ -5,6 +5,7 @@
 import { Logger } from '@nestjs/common';
 import { existsSync, writeFileSync } from 'node:fs';
 import type { GenerateTextInput, UsageQuantities } from '@weiban/contracts';
+import { SystemClock, type Clock } from '../../../platform/index.js';
 
 const NETWORK_LOG = new Logger('TextAdapter');
 
@@ -442,6 +443,8 @@ export class RoutingTextAdapter implements TextAdapter {
 }
 
 export class OpenAiTextAdapter implements TextAdapter {
+  constructor(private readonly clock: Clock = new SystemClock()) {}
+
   async generate(input: Parameters<TextAdapter['generate']>[0]): Promise<TextResult> {
     const control = thinkingControlFor(input.baseUrl, input.model);
     // DeepSeek 不发送 thinking/关思考字段：中转站和官方都没有这个标准参数，直接让它按默认思考跑。
@@ -602,7 +605,7 @@ export class OpenAiTextAdapter implements TextAdapter {
             '/app/.data/empty-output-debug.json',
             JSON.stringify(
               {
-                at: new Date().toISOString(),
+                at: this.clock.now().toISOString(),
                 model: input.model,
                 host: (() => {
                   try {
@@ -631,7 +634,7 @@ export class OpenAiTextAdapter implements TextAdapter {
             '/app/.data/empty-raw-debug.json',
             JSON.stringify(
               {
-                at: new Date().toISOString(),
+                at: this.clock.now().toISOString(),
                 status: response.status,
                 model: input.model,
                 host: (() => {

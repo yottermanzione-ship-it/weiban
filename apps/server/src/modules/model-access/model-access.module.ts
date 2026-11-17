@@ -5,6 +5,7 @@ import { BillingBoundsService } from './application/billing-bounds.js';
  * ModelResolver、UpstreamService.withApiKey / reportStatus、UsageRecorder、ModelStatusService。
  */
 import { Module } from '@nestjs/common';
+import { CLOCK, type Clock } from '../../platform/index.js';
 import { SharedWebSearch } from './application/shared-search.js';
 import { MODEL_WEB_CANDIDATES, SHARED_WEB_SEARCH_PORT } from './tokens.js';
 import { WebCandidateSearch } from './application/web-candidates.js';
@@ -118,7 +119,9 @@ import {
     {
       provide: TEXT_ADAPTER,
       // 3.24：按上游账号协议选 OpenAI 兼容或 Anthropic 原生
-      useFactory: () => new RoutingTextAdapter(new OpenAiTextAdapter(), new AnthropicTextAdapter()),
+      inject: [CLOCK],
+      useFactory: (clock: Clock) =>
+        new RoutingTextAdapter(new OpenAiTextAdapter(clock), new AnthropicTextAdapter()),
     },
     { provide: MODEL_GENERATION_POLICY, useExisting: POLICY_PORT },
     {

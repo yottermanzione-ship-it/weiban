@@ -1499,7 +1499,8 @@ export const ModelAccessAdminEndpoints = {
     summary:
       '7.11：对模型当前启用的每条线路发一条最小文本请求（「你好」、最多 8 token），逐条返回成功/错误码/耗时；不扣用户、不写用量，写审计',
   }),
-  previewDeleteModels: defineEndpoint({    method: 'POST',
+  previewDeleteModels: defineEndpoint({
+    method: 'POST',
     path: `${API_PREFIX}/admin/model/models/delete-preview`,
     auth: 'admin',
     body: DeleteModelsRequest,

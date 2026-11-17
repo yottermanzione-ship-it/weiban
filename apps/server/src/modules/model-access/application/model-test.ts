@@ -10,7 +10,14 @@
  */
 import { Inject, Injectable } from '@nestjs/common';
 import type { AdminModelTestResult, AdminModelTestRoute } from '@weiban/contracts';
-import { AUDIT_LOG, CLOCK, DATABASE, type AuditLog, type Clock, type Database } from '../../../platform/index.js';
+import {
+  AUDIT_LOG,
+  CLOCK,
+  DATABASE,
+  type AuditLog,
+  type Clock,
+  type Database,
+} from '../../../platform/index.js';
 import { anthropicHeaders, anthropicUrl } from '../infra/anthropic-adapter.js';
 import { ModelAdminService } from './models.js';
 import { UpstreamService } from './upstreams.js';
@@ -71,7 +78,11 @@ async function probeText(input: {
     ? anthropicHeaders(input.apiKey)
     : { Authorization: `Bearer ${input.apiKey}`, 'content-type': 'application/json' };
   const body = anthropic
-    ? { model: input.model, max_tokens: PROBE_MAX_TOKENS, messages: [{ role: 'user', content: PROBE_TEXT }] }
+    ? {
+        model: input.model,
+        max_tokens: PROBE_MAX_TOKENS,
+        messages: [{ role: 'user', content: PROBE_TEXT }],
+      }
     : {
         model: input.model,
         max_tokens: PROBE_MAX_TOKENS,
@@ -111,7 +122,7 @@ async function probeText(input: {
       inputTokens: usage.input,
       outputTokens: usage.output,
     };
-  } catch (error) {
+  } catch {
     return {
       statusCode: null,
       errorCode: controller.signal.aborted ? 'timeout' : 'network_error',

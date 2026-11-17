@@ -28,17 +28,17 @@ define(String.prototype, 'at', function at(this: string, index: number) {
   return k < 0 || k >= chars.length ? undefined : chars[k];
 });
 
-define(String.prototype, 'replaceAll', function replaceAll(
-  this: string,
-  search: string | RegExp,
-  replacement: string,
-) {
-  if (search instanceof RegExp) {
-    const flags = search.flags.includes('g') ? search.flags : `${search.flags}g`;
-    return this.replace(new RegExp(search.source, flags), replacement);
-  }
-  return this.split(search).join(replacement);
-});
+define(
+  String.prototype,
+  'replaceAll',
+  function replaceAll(this: string, search: string | RegExp, replacement: string) {
+    if (search instanceof RegExp) {
+      const flags = search.flags.includes('g') ? search.flags : `${search.flags}g`;
+      return this.replace(new RegExp(search.source, flags), replacement);
+    }
+    return this.split(search).join(replacement);
+  },
+);
 
 define(Object, 'hasOwn', (object: object, key: PropertyKey) =>
   Object.prototype.hasOwnProperty.call(object, key),
