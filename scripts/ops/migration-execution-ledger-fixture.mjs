@@ -11,7 +11,7 @@ export async function assertExecutionFixture(database) {
   if (
     url.hostname !== '127.0.0.1' ||
     url.port !== '56389' ||
-    url.pathname !== '/codex_migration_execution_1109' ||
+    !['/codex_migration_execution_1109','/codex_migration_execution_accounts_1109'].includes(url.pathname) ||
     url.username !== 'postgres' ||
     url.search ||
     url.hash
@@ -22,7 +22,7 @@ export async function assertExecutionFixture(database) {
   );
   if (
     result.rows.length !== 1 ||
-    result.rows[0].name !== 'codex_migration_execution_1109' ||
+    result.rows[0].name !== url.pathname.slice(1) ||
     result.rows[0].synthetic !== true
   )
     throw new Error('EXECUTION_FIXTURE_MARKER_REQUIRED');
