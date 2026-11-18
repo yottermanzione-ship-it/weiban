@@ -98,6 +98,7 @@ import {
   TEXT_REPLY_TEMPLATE_VERSION,
 } from '../domain/reply-rules.js';
 import { HealthCareService } from './health-care.js';
+import { repeatedReplyOpening } from '../domain/reply-opening.js';
 import { SocialService } from './social.js';
 import { MediaAiService, imageBudget, type RenderedMedia } from './media-ai.js';
 import { ImageCaptionStore, NO_CAPTIONS, type CaptionMap } from './image-captions.js';
@@ -226,6 +227,7 @@ export const ReplySnapshot = z.object({
   trial: z.boolean().default(false),
   /** 2026-10-30 双兜底：本轮动态检出的习惯词（卡里没有、最近 20 条角色回复里出现 11 条以上），出站过滤用；无则空。 */
   habits: z.array(z.string()).default([]),
+  repeatedOpening: z.string().max(16).nullable().default(null),
   /** 0091：请求开头预计可命中前缀缓存的字符数（写入用量记录，docs/refactor/09 第 6 节）。 */
   stablePrefixChars: z.number().int().nonnegative().default(0),
   /** T-20261103g：这轮提示里给模型分享的那张素材照片（模型写「[照片]」才发）；没有为 null。 */
@@ -831,6 +833,27 @@ export class ReplyContext {
             sensitive: inCare || healthHint.healthUsed,
           })
         : '';
+    const address = userText.trim().replace(/[，,。.!！?？~～]+$/u, '');
+    const calledByName =
+      !!address && (address === role.profile.name || role.profile.aliases.includes(address));
+    const repeatedOpening =
+      row.kind === 'message' &&
+      !voiceCall &&
+      !privateScope &&
+      !inCare &&
+      risk === 'none' &&
+      !calledByName
+        ? repeatedReplyOpening(
+            recent
+              .filter((m) => m.status === 'normal' && !m.labels?.includes('quirk_draft'))
+              .map((m) => ({
+                role: m.senderKind === 'user' ? 'user' : 'assistant',
+                // A sticker or an untranscribed voice message still separates two reply turns.
+                content:
+                  m.senderKind === 'character' && m.content?.type === 'text' ? m.content.text : '',
+              })),
+          )
+        : null;
     const tail: PromptSection[] = [
       // 日期逐轮现取并放在历史之后；大块稳定材料保留前置，避免短对话每轮重复支付整块输入。
       ...brainContext,
@@ -927,6 +950,12 @@ export class ReplyContext {
         text: privateScope
           ? '按本轮情景回应，每轮换着说法。'
           : '按卡里的说话方式回，每轮换着说法。',
+      },
+      {
+        title: '',
+        text: repeatedOpening
+          ? `最近几轮的第一句话多次从这个短语开始：${JSON.stringify(repeatedOpening)}。这是旧回复的片段。这轮直接接对方刚说的具体内容。需要确认在场、沿用称呼或按对方指定的说法回应时，可以自然使用。`
+          : '',
       },
     ];
     // 2026-10-30 双兜底：
@@ -1133,6 +1162,7 @@ export class ReplyContext {
       timeZone: profile.timeZone,
       stablePrefixChars: assembled.stats.stablePrefixChars,
       habits,
+      repeatedOpening,
       photoOffer: photo?.offer ?? null,
       turnUserSeqs: turnUserSeqs(history),
     });

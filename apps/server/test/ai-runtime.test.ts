@@ -1126,6 +1126,63 @@ RETURNING seq::text AS seq, message_id`;
       choice.mockRestore();
     }
   });
+  it('已有私聊从连续相同的开头恢复，保留原文并允许自然确认在场', async () => {
+    const previous = response;
+    const choice = vi.spyOn(engine.quirks, 'choose').mockResolvedValue({
+      kind: 'none',
+      respondAt: null,
+      typingCycles: 0,
+    });
+    try {
+      for (let i = 0; i < 3; i++) {
+        response = `在呢，第${i + 1}份合成菜单已经写好了。`;
+        await finish((await user('你还在吗？')).id);
+      }
+      const before = calls.length;
+      response = '在呢，先把菜单上的土豆切块。';
+      const turn = await user('土豆要怎么处理？');
+      await finish(turn.id);
+      const replies = calls.slice(before).filter((call) => call.purpose === 'chat_reply');
+      expect(replies).toHaveLength(1);
+      expect(replies[0]!.messages.at(-1)?.content).toContain('最近几轮的第一句话');
+      expect(replies[0]!.messages.at(-1)?.content).toContain(JSON.stringify('在呢'));
+      expect(
+        replies[0]!.messages.filter(
+          (m) => m.role === 'assistant' && m.content.startsWith('在呢，第'),
+        ),
+      ).toHaveLength(3);
+      expect(
+        (await repliesAfter(turn.triggerSeq)).map((m: { content: unknown }) => m.content),
+      ).toContainEqual({
+        type: 'text',
+        text: '先把菜单上的土豆切块。',
+      });
+      response = '在呢，正在看菜单。';
+      const check = await user('你现在还在吗？');
+      await finish(check.id);
+      expect(
+        (await repliesAfter(check.triggerSeq)).map((m: { content: unknown }) => m.content),
+      ).toContainEqual({
+        type: 'text',
+        text: response,
+      });
+      response = '好家伙，这口锅真大。';
+      for (let i = 0; i < 3; i++) await finish((await user('请用“好家伙”说说这口锅。')).id);
+      response = '这锅可以用来煮面。';
+      const other = await user('这口锅适合做什么？');
+      const start = calls.length;
+      await finish(other.id);
+      const otherReplies = calls.slice(start).filter((call) => call.purpose === 'chat_reply');
+      expect(otherReplies).toHaveLength(1);
+      expect(otherReplies[0]!.messages.at(-1)?.content).toContain(JSON.stringify('好家伙'));
+      expect(
+        (await repliesAfter(other.triggerSeq)).map((m: { content: unknown }) => m.content),
+      ).toContainEqual({ type: 'text', text: response });
+    } finally {
+      response = previous;
+      choice.mockRestore();
+    }
+  });
   it('生成中删除好友；旧计划不得在恢复的同一会话发言；物理清除与账号清单', async () => {
     const row = await user('再见');
     clock.advance(3000);
