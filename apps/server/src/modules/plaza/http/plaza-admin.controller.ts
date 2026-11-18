@@ -72,6 +72,11 @@ export class PlazaAdminController {
     return this.admin.tightenClassification(p.userId, params.workId, body);
   }
 
+  @Get('reports/pending-count')
+  pendingReportCount() {
+    return this.admin.pendingReportCount();
+  }
+
   @Get('reports')
   listReports(@Query() query: unknown) {
     return this.admin.listReports(query);

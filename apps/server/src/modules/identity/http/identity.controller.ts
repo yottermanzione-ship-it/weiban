@@ -250,6 +250,12 @@ export class IdentityAdminController {
     );
   }
 
+  @Get('account-deletions/count')
+  @RequireAuth(A.pendingDeletionCount.auth)
+  pendingDeletionCount() {
+    return this.deletion.pendingCount();
+  }
+
   @Get('account-deletions')
   @RequireAuth(A.listPendingDeletions.auth)
   async listPendingDeletions(): Promise<{ items: PendingAccountDeletion[] }> {

@@ -26,8 +26,11 @@ export class AdminUsersController {
 
   @Get('overview')
   @RequireAuth(A.overview.auth)
-  overview() {
-    return this.service.overview();
+  overview(
+    @Query(new ContractPipe(A.overview.query!))
+    query: z.output<NonNullable<typeof A.overview.query>>,
+  ) {
+    return this.service.overview(query.view === 'counts');
   }
   @Get('labels')
   @RequireAuth(A.labels.auth)

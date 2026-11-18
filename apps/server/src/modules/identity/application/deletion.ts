@@ -114,6 +114,10 @@ export class DeletionService implements OnModuleInit, UserDataOwner {
 
   // ---------- 管理接口：注销未完成的账号（security-and-privacy.md 5.1 第 2 条，契约 1.2） ----------
 
+  async pendingCount() {
+    return { total: await this.database.db.$count(users, eq(users.status, 'deleting')) };
+  }
+
   /** 全部「注销中」的账号，按申请时间从早到晚，含每个模块的删除进度。 */
   async listPending(): Promise<PendingAccountDeletion[]> {
     const rows = await this.database.db

@@ -70,8 +70,8 @@ export function TodoProvider({ children }: { children: ReactNode }) {
       const [requests, support, reports, deletions, alerts] = await Promise.all([
         safe(api.call(RoleRequestAdminEndpoints.list, { query: { status: 'pending', limit: 1 } })),
         safe(api.call(SupportAdminEndpoints.list, { query: { status: 'open', limit: 1 } })),
-        safe(api.call(PlazaAdminEndpoints.listReports, { query: { status: 'pending' } })),
-        safe(api.call(IdentityAdminEndpoints.listPendingDeletions)),
+        safe(api.call(PlazaAdminEndpoints.pendingReportCount)),
+        safe(api.call(IdentityAdminEndpoints.pendingDeletionCount)),
         safe(
           api.call(PushAdminEndpoints.listAdminAlerts, {
             query: { status: 'open', view: 'actionable', limit: 1 },
@@ -85,8 +85,8 @@ export function TodoProvider({ children }: { children: ReactNode }) {
       setCounts({
         roleRequests: requests?.pendingCount ?? 0,
         support: support?.openCount ?? 0,
-        reports: reports?.items.length ?? 0,
-        deletions: deletions?.items.length ?? 0,
+        reports: reports?.total ?? 0,
+        deletions: deletions?.total ?? 0,
         alerts: alerts?.openCount ?? 0,
       });
       setLoading(false);

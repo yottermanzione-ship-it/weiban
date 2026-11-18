@@ -49,6 +49,7 @@ export const AdminUserFilter = z.object({
 export type AdminUserFilter = z.infer<typeof AdminUserFilter>;
 
 export const AdminUserOverview = z.object({
+  expiringSoonCount: z.number().int().nonnegative().optional(),
   /** 状态为 active 的账号数（不含注销中）。 */
   totalUsers: z.number().int().nonnegative(),
   /** 当前有效的 PRO+ 会员数。 */
@@ -105,6 +106,7 @@ export const AdminUsersEndpoints = {
     method: 'GET',
     path: API_PREFIX + '/admin/users/overview',
     auth: 'admin',
+    query: z.object({ view: z.literal('counts').optional() }),
     response: AdminUserOverview,
     summary: '3.21：总用户数、PRO+ 会员数、7 天内到期名单',
   }),

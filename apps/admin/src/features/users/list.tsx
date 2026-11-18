@@ -27,7 +27,7 @@ export function UserListPage() {
   const [searchParams] = useSearchParams();
   const linkedUser = searchParams.get('userId');
   const linkedTab = searchParams.get('tab');
-  const overview = useRemote(AdminUsersEndpoints.overview);
+  const overview = useRemote(AdminUsersEndpoints.overview, { query: { view: 'counts' } });
   const [query, setQuery] = useState('');
   const [quick, setQuick] = useState<Quick>('all');
   const [openId, setOpenId] = useState<string | null>(null);
@@ -318,7 +318,9 @@ export function UserListPage() {
                 { value: 'pro', label: ov ? 'PRO+ · ' + ov.proPlusUsers : 'PRO+' },
                 {
                   value: 'expiring',
-                  label: ov ? '7 天内到期 · ' + ov.expiringSoon.length : '7 天内到期',
+                  label: ov
+                    ? '7 天内到期 · ' + (ov.expiringSoonCount ?? ov.expiringSoon.length)
+                    : '7 天内到期',
                 },
                 { value: 'banned', label: '已封禁' },
               ]}

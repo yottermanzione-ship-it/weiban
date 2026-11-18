@@ -11,6 +11,7 @@ import {
   ModelAdminService,
   CatalogService,
   UpstreamService,
+  UsageRecorder,
   LeaderboardService,
 } from '../src/modules/model-access/testing.js';
 import { ModelDeletionService } from '../src/modules/model-access/index.js';
@@ -132,6 +133,36 @@ describeDb('后台模型目录、上游账号与文本榜回归', () => {
       ).rows[0]!.id,
     ).toBe(previousPrice);
     const preview = await del.preview([keys[0]!]);
+    const usage = app.get(UsageRecorder);
+    const { record } = await usage.start({
+      input: {
+        userId: admin,
+        purpose: 'admin_eval',
+        billingOwner: 'platform',
+        modelRole: 'chat',
+        idempotencyKey: 'test-history-survives-deletion',
+      },
+      modelKey: keys[0]!,
+      upstreamId: exclusive,
+      upstreamModelId: 'demo',
+      countsAsBackground: false,
+    });
+    await usage.finish(record.id, {
+      status: 'succeeded',
+      inputTokens: 320,
+      cachedInputTokens: 80,
+      outputTokens: 45,
+      estimated: false,
+      latencyMs: 1200,
+      retryCount: 0,
+    });
+    await usage.writeSettleSnapshot(record.id, {
+      ledgerEntryId: newId(),
+      amountMicros: 750,
+      costMicros: 430,
+      costKnown: true,
+    });
+    const historicalUsage = await usage.byId(record.id);
     expect(preview.ecologyDecision).toBe(true);
     expect(preview.upstreamAccounts).toEqual(
       expect.arrayContaining([
@@ -172,6 +203,10 @@ describeDb('后台模型目录、上游账号与文本榜回归', () => {
       del.delete(admin, [keys[0]!], { expectedRevision: preview.revision }),
     ).rejects.toMatchObject({ code: 'conflict' });
     await del.delete(admin, [keys[0]!]);
+    expect(await usage.byId(record.id)).toEqual(historicalUsage);
+    expect(
+      (await db.query('SELECT 1 FROM billing.price_versions WHERE id=$1', [previousPrice])).rows,
+    ).toHaveLength(1);
     expect(
       (
         await db.query<{ n: number }>(

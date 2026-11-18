@@ -164,23 +164,34 @@ export class AdminUsersService implements IdentityAdminDirectoryPort {
     return rows.map((r) => this.toSummary(r, now));
   }
 
-  async overview(): Promise<AdminUserOverview> {
+  async overview(countsOnly = false): Promise<AdminUserOverview> {
     const now = this.clock.now();
     const soon = new Date(now.getTime() + 7 * DAY_MS);
-    const { rows: counts } = await this.database.query<{ total: string; pro: string }>(
-      `SELECT (SELECT count(*) FROM identity.users WHERE status = 'active') AS total,
-              (SELECT count(*) FROM identity.memberships m JOIN identity.users u ON u.id = m.user_id
-                WHERE u.status = 'active' AND m.pro_plus_until > $1) AS pro`,
-      [now],
-    );
-    const { rows } = await this.database.query<Row>(
-      `${SELECT} WHERE u.status = 'active' AND m.pro_plus_until > $1 AND m.pro_plus_until <= $2
-        ORDER BY m.pro_plus_until, u.id LIMIT 500`,
+    const { rows: counts } = await this.database.query<{
+      total: number;
+      pro: number;
+      expiring: number;
+    }>(
+      `SELECT count(*)::int AS total,
+              count(*) FILTER (WHERE m.pro_plus_until > $1)::int AS pro,
+              count(*) FILTER (WHERE m.pro_plus_until > $1 AND m.pro_plus_until <= $2)::int AS expiring
+       FROM identity.users u LEFT JOIN identity.memberships m ON m.user_id = u.id
+       WHERE u.status = 'active'`,
       [now, soon],
     );
+    const rows = countsOnly
+      ? []
+      : (
+          await this.database.query<Row>(
+            `${SELECT} WHERE u.status = 'active' AND m.pro_plus_until > $1 AND m.pro_plus_until <= $2
+           ORDER BY m.pro_plus_until, u.id LIMIT 500`,
+            [now, soon],
+          )
+        ).rows;
     return {
       totalUsers: Number(counts[0]?.total ?? 0),
       proPlusUsers: Number(counts[0]?.pro ?? 0),
+      expiringSoonCount: counts[0]?.expiring ?? 0,
       expiringSoon: rows.map((r) => ({
         userId: r.id,
         username: r.current_alias ?? r.username,
