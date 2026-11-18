@@ -55,6 +55,15 @@ function ModelConfiguration({ tab }: { tab: string }) {
         <UpstreamsTab
           upstreams={liveUpstreams}
           models={liveModels}
+          bindingStatus={
+            models.error
+              ? '关联模型读取失败，请刷新重试。'
+              : models.loading
+                ? '正在读取关联模型…'
+                : parsedModels.issues.length
+                  ? '部分关联模型资料无法读取，请在模型目录核对。'
+                  : ''
+          }
           loading={upstreams.loading}
           loadError={upstreams.error}
           refresh={() => {
@@ -66,6 +75,7 @@ function ModelConfiguration({ tab }: { tab: string }) {
         <ModelsTab
           models={liveModels}
           upstreams={liveUpstreams}
+          accountDirectory={allUpstreams}
           loading={models.loading}
           loadError={models.error}
           upstreamsError={upstreams.error}

@@ -25,6 +25,7 @@ export interface ArenaDataset {
   publishedAt: string;
   sourceUrl: string;
   totalRows: number;
+  revision?: string;
 }
 export type DatasetFetch = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -169,30 +170,49 @@ async function backoff(
  * records the failing page (page number, offset, HTTP status, elapsed time, retry count
  * and last error) so the existing sync status keeps a diagnosable record.
  */
+interface FetchOptions {
+  pageTimeoutMs?: number;
+  syncTimeoutMs?: number;
+  pageIntervalMs?: number;
+  maxRateLimitRetries?: number;
+  maxTransientRetries?: number;
+  transientRetryBackoffMs?: readonly number[];
+  clock?: Pick<Clock, 'nowMs'>;
+}
+export interface VerifiedArenaRevision {
+  revision: string;
+  totalRows: number;
+}
+export function fetchArenaDataset(
+  fetchPage?: DatasetFetch,
+  options?: FetchOptions,
+): Promise<ArenaDataset>;
+export function fetchArenaDataset(
+  fetchPage: DatasetFetch,
+  options: FetchOptions,
+  verified: VerifiedArenaRevision | undefined,
+): Promise<ArenaDataset | 'unchanged'>;
 export async function fetchArenaDataset(
   fetchPage: DatasetFetch = fetch,
-  options: {
-    pageTimeoutMs?: number;
-    syncTimeoutMs?: number;
-    pageIntervalMs?: number;
-    maxRateLimitRetries?: number;
-    maxTransientRetries?: number;
-    transientRetryBackoffMs?: readonly number[];
-    clock?: Pick<Clock, 'nowMs'>;
-  } = {},
-): Promise<ArenaDataset> {
+  options: FetchOptions = {},
+  verified?: VerifiedArenaRevision,
+): Promise<ArenaDataset | 'unchanged'> {
   const clock = options.clock ?? new SystemClock();
   const deadline = AbortSignal.timeout(options.syncTimeoutMs ?? SYNC_TIMEOUT_MS);
   const maxTransientRetries = options.maxTransientRetries ?? 2;
   const transientBackoff = options.transientRetryBackoffMs ?? [2_000, 5_000];
   const rows: Record<string, unknown>[] = [];
+  let lastRequestStarted = clock.nowMs();
   let total: number | null = null;
   let revision: string | null | undefined;
   for (let offset = 0; total === null || offset < total; offset += PAGE_SIZE) {
     // Official service is rate-limited: pace pages rather than burst through the split.
     if (offset > 0) {
       try {
-        await delay(options.pageIntervalMs ?? 2_500, deadline);
+        await delay(
+          Math.max(0, (options.pageIntervalMs ?? 2_500) - (clock.nowMs() - lastRequestStarted)),
+          deadline,
+        );
       } catch {
         throw syncTimeoutFailure(offset, 0, 0, null);
       }
@@ -204,6 +224,7 @@ export async function fetchArenaDataset(
     let lastError: string | null;
     for (;;) {
       const startedAt = clock.nowMs();
+      lastRequestStarted = startedAt;
       const signal = AbortSignal.any([
         deadline,
         AbortSignal.timeout(options.pageTimeoutMs ?? PAGE_TIMEOUT_MS),
@@ -327,6 +348,15 @@ export async function fetchArenaDataset(
         text(row.category, 'category');
         rows.push(row);
       }
+      // 只对之前已经完整校验过的同一官方提交和行数复用快照。
+      if (
+        offset === 0 &&
+        verified &&
+        /^[0-9a-f]{40}$/.test(pageRevision ?? '') &&
+        verified.revision === pageRevision &&
+        verified.totalRows === count
+      )
+        return 'unchanged';
     } catch (e) {
       throw withPageOffset(e, offset);
     }
@@ -344,5 +374,6 @@ export async function fetchArenaDataset(
     publishedAt: entries[0]!.publishedAt,
     sourceUrl: ARENA_DATASET_SOURCE,
     totalRows: total!,
+    ...(revision && /^[0-9a-f]{40}$/.test(revision) ? { revision } : {}),
   };
 }

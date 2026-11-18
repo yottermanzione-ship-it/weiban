@@ -90,6 +90,7 @@ import {
   type VoiceCallAvailability,
 } from './voice-call-composite.js';
 import { isRealtimeCallEntry } from './realtime-call.js';
+import { isMimoChatAudioModel } from '../infra/media-adapter.js';
 
 type CatalogRow = typeof modelCatalog.$inferSelect;
 type CatalogWrite = z.infer<typeof AdminCatalogEntryWrite>;
@@ -121,6 +122,7 @@ export interface LeaderboardSnapshot {
   entries: LeaderboardEntry[];
   publishedAt?: string | null;
   totalRows?: number | null;
+  revision?: string;
   previousEntries?: LeaderboardEntry[];
   lastAttemptAt: string | null;
   lastError: string | null;
@@ -597,6 +599,7 @@ export class CatalogService {
         : [],
       publishedAt: typeof value.publishedAt === 'string' ? value.publishedAt : null,
       totalRows: typeof value.totalRows === 'number' ? value.totalRows : null,
+      ...(typeof value.revision === 'string' ? { revision: value.revision } : {}),
       previousEntries: Array.isArray(value.previousEntries)
         ? value.previousEntries.filter(
             (e) => e && typeof e.name === 'string' && Number.isInteger(e.rank) && e.rank > 0,
@@ -1185,10 +1188,19 @@ export class CatalogService {
         upstreamModelId: modelRoutes.upstreamModelId,
         streak: modelRoutes.usageMissingStreak,
         since: modelRoutes.usageMissingSince,
+        scenarios: modelCatalog.scenarios,
       })
       .from(modelRoutes)
+      .innerJoin(modelCatalog, eq(modelCatalog.modelKey, modelRoutes.modelKey))
       .where(and(inArray(modelRoutes.modelKey, keys), gt(modelRoutes.usageMissingStreak, 0)));
     for (const r of rows) {
+      // 原生合成按字符本地计量，历史计数包含按此单位正常结算的成功调用。
+      if (
+        r.scenarios.length === 1 &&
+        r.scenarios[0] === 'voice_message' &&
+        isMimoChatAudioModel(r.upstreamModelId)
+      )
+        continue;
       const list = out.get(r.modelKey) ?? [];
       list.push({
         upstreamId: r.upstreamId,
@@ -1232,28 +1244,50 @@ export class CatalogService {
       const beforeRoutes = await tx.db
         .select()
         .from(modelRoutes)
-        .where(eq(modelRoutes.modelKey, modelKey));
+        .where(eq(modelRoutes.modelKey, modelKey))
+        .for('update');
       const now = this.clock.now();
-      await tx.db.delete(modelRoutes).where(eq(modelRoutes.modelKey, modelKey));
-      await tx.db.insert(modelRoutes).values(
-        routes.map((r) => ({
-          modelKey,
-          upstreamId: r.upstreamId,
+      const removed = beforeRoutes.filter((old) => !ids.includes(old.upstreamId));
+      if (removed.length)
+        await tx.db.delete(modelRoutes).where(
+          and(
+            eq(modelRoutes.modelKey, modelKey),
+            inArray(
+              modelRoutes.upstreamId,
+              removed.map((r) => r.upstreamId),
+            ),
+          ),
+        );
+      for (const r of routes) {
+        const old = beforeRoutes.find((item) => item.upstreamId === r.upstreamId);
+        const same = old?.upstreamModelId === r.upstreamModelId;
+        const values = {
           upstreamModelId: r.upstreamModelId,
           billingBounds:
-            r.billingBounds !== undefined
-              ? r.billingBounds
-              : (beforeRoutes.find(
-                  (old) =>
-                    old.upstreamId === r.upstreamId && old.upstreamModelId === r.upstreamModelId,
-                )?.billingBounds ?? null),
+            r.billingBounds === undefined && same ? old.billingBounds : (r.billingBounds ?? null),
           priority: r.priority,
           weight: r.weight,
           enabled: r.enabled,
-          createdAt: now,
           updatedAt: now,
-        })),
-      );
+        };
+        if (old) {
+          await tx.db
+            .update(modelRoutes)
+            .set({
+              ...values,
+              ...(same
+                ? {}
+                : { usageMissingStreak: 0, usageMissingSince: null, usageMissingAlertedAt: null }),
+            })
+            .where(
+              and(eq(modelRoutes.modelKey, modelKey), eq(modelRoutes.upstreamId, r.upstreamId)),
+            );
+        } else {
+          await tx.db
+            .insert(modelRoutes)
+            .values({ modelKey, upstreamId: r.upstreamId, createdAt: now, ...values });
+        }
+      }
       await this.audit.record(
         {
           module: 'model_access',
@@ -1339,7 +1373,14 @@ export class CatalogService {
       if (mine.upstreamModelId !== upstreamModelId || billingBounds !== undefined)
         await tx.db
           .update(modelRoutes)
-          .set({ upstreamModelId, updatedAt: now, billingBounds: billingBounds ?? null })
+          .set({
+            upstreamModelId,
+            updatedAt: now,
+            billingBounds: billingBounds ?? null,
+            ...(mine.upstreamModelId !== upstreamModelId
+              ? { usageMissingStreak: 0, usageMissingSince: null, usageMissingAlertedAt: null }
+              : {}),
+          })
           .where(and(eq(modelRoutes.modelKey, modelKey), eq(modelRoutes.upstreamId, upstreamId)));
       return;
     }

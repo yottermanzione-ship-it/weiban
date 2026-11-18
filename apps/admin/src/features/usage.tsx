@@ -102,7 +102,12 @@ export function UsagePage() {
                   range,
                   upstreamId: params.get('upstream') ?? '',
                   modelKey: params.get('model') ?? '',
-                  status: params.get('status') === 'failed' ? 'failed' : '',
+                  status:
+                    params.get('status') === 'failed'
+                      ? 'failed'
+                      : params.get('status') === 'succeeded'
+                        ? 'succeeded'
+                        : '',
                   quality: quality === 'estimated' || quality === 'cost_pending' ? quality : '',
                 }}
               />

@@ -66,12 +66,14 @@ import { useFormFeedback } from '../../data/form-feedback.js';
 export function UpstreamsTab({
   upstreams,
   models,
+  bindingStatus = '',
   loading = false,
   loadError = '',
   refresh,
 }: {
   upstreams: Upstream[];
   models: AdminModel[];
+  bindingStatus?: string;
   /** 3.27：列表还在读取；读的过程中不能显示成「还没有上游账号」。 */
   loading?: boolean;
   /** 3.27：列表接口失败的原因（原先只显示操作错误，请求失败会被当成空列表）。 */
@@ -529,17 +531,25 @@ export function UpstreamsTab({
           </>
         }
         emptyTitle={
-          loadError ? '上游账号没加载出来' : loading ? '正在读取上游账号…' : '还没有上游账号'
+          loadError
+            ? '上游账号没加载出来'
+            : loading
+              ? '正在读取上游账号…'
+              : upstreams.length
+                ? '没有符合筛选的上游账号'
+                : '还没有上游账号'
         }
         emptyHint={
           loadError
             ? '原因见上方红条；点「刷新」重试。'
             : loading
               ? undefined
-              : '点右上角「添加上游账号」，填入服务商给的 API 密钥；系统会先测试连通，通了才保存。'
+              : upstreams.length
+                ? '请调整名称、供应商或状态筛选。'
+                : '点右上角「添加上游账号」，填入服务商给的 API 密钥；系统会先测试连通，通了才保存。'
         }
         emptyAction={
-          loading || loadError ? undefined : (
+          loading || loadError || upstreams.length ? undefined : (
             <Button type="primary" onClick={() => setEditing('new')}>
               添加第一条
             </Button>
@@ -559,6 +569,7 @@ export function UpstreamsTab({
       )}
       {detail && (
         <UpstreamDetail
+          bindingStatus={bindingStatus}
           upstream={upstreams.find((u) => u.upstreamId === detail.upstreamId) ?? detail}
           models={models.filter(
             (m) =>
@@ -873,10 +884,12 @@ function KindAwareBaseUrl({
 function UpstreamDetail({
   upstream,
   models,
+  bindingStatus,
   onClose,
 }: {
   upstream: Upstream;
   models: AdminModel[];
+  bindingStatus: string;
   onClose: () => void;
 }) {
   const [week, setWeek] = useState<AdminUsageSummary>();
@@ -980,8 +993,9 @@ function UpstreamDetail({
         <TrendBars labels={labels} values={values} format={(v) => `${formatInt(v)} 次`} />
       )}
       <div className="detail-section">用这条线路的模型</div>
+      {bindingStatus && <div className="detail-muted">{bindingStatus}</div>}
       {models.length === 0 ? (
-        <div className="detail-muted">还没有模型路由到这个账号。</div>
+        !bindingStatus && <div className="detail-muted">还没有模型路由到这个账号。</div>
       ) : (
         <div className="chip-list">
           {models.map((m) => (

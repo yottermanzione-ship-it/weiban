@@ -109,7 +109,7 @@ export function LeaderboardSourceCard({ onChanged }: { onChanged?: () => void })
         return;
       }
       if (next.lastError) toast.warning('这次没抓到，已保留上次的榜单');
-      else toast.success(`已更新榜单，共 ${next.snapshot?.entries ?? 0} 条`);
+      else toast.success(`榜单同步完成，共 ${next.snapshot?.entries ?? 0} 条`);
       onChanged?.();
     } catch (e) {
       setError(errorText(e));
@@ -142,6 +142,7 @@ export function LeaderboardSourceCard({ onChanged }: { onChanged?: () => void })
       {remote.error && (
         <Alert type="error" showIcon message={remote.error} style={{ marginBottom: 12 }} />
       )}
+      {statusRemote.error && <Alert type="error" showIcon message={statusRemote.error} />}
       {current && <SnapshotStatus status={current} onStatus={setStatus} onChanged={onChanged} />}
       <details className="workspace-options">
         <summary>榜单来源设置</summary>
@@ -230,6 +231,9 @@ function SnapshotStatus({
           <span>还没有有效榜单数据（用户端显示暂无排名）</span>
         )}
       </div>
+      {status.lastAttemptAt && !status.lastError && status.snapshot?.method === 'fetch' && (
+        <div className="cell-sub">最近成功核验 {fmt(status.lastAttemptAt)}</div>
+      )}
       {status.lastError && (
         <Alert
           type="warning"

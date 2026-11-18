@@ -124,22 +124,23 @@ export class BillingBoundsService {
   /**
    * 3.26（G3-2）：记录一次上游调用有没有返回用量（取代原「用量未知 → 暂停线路」）。
    * - reported：上游报了用量，这条线路的连续缺用量计数清零；
-   * - missing：上游没报（已按本地估算计费，或进程中断后成本待核），计数 +1。连续达到
+   * - missing：成功返回但缺少完整用量，计数 +1。连续达到
    *   USAGE_MISSING_ALERT_STREAK 次时写审计、发一条管理员提醒（info，只进后台列表），本轮不再重复提醒；
    *   **不停用线路**（总经理 10-21 确认）。
-   * 同一上游模型名可能挂在多个模型下（按上游 + 上游模型名一起更新）。
+   * 按目录模型、账号和上游模型名确定线路，避免同账号的其他模型累计或清除本线路的告警。
    */
   async recordUsage(
     modelKey: string,
     route: { upstreamId: string; upstreamModelId: string },
-    state: 'reported' | 'missing',
+    state: 'reported' | 'local' | 'missing',
     transaction?: DbTx,
   ): Promise<void> {
     const where = and(
+      eq(modelRoutes.modelKey, modelKey),
       eq(modelRoutes.upstreamId, route.upstreamId),
       eq(modelRoutes.upstreamModelId, route.upstreamModelId),
     );
-    if (state === 'reported') {
+    if (state !== 'missing') {
       const db = transaction?.db ?? this.db.db;
       await db
         .update(modelRoutes)
@@ -149,7 +150,7 @@ export class BillingBoundsService {
     }
     const run = async (tx: DbTx) => {
       const now = this.clock.now();
-      const rows = await tx.db
+      const [updated] = await tx.db
         .update(modelRoutes)
         .set({
           usageMissingStreak: sql`${modelRoutes.usageMissingStreak} + 1`,
@@ -157,14 +158,12 @@ export class BillingBoundsService {
         })
         .where(where)
         .returning({
-          modelKey: modelRoutes.modelKey,
           streak: modelRoutes.usageMissingStreak,
           alertedAt: modelRoutes.usageMissingAlertedAt,
         });
-      const due = rows.filter((r) => r.streak >= USAGE_MISSING_ALERT_STREAK && !r.alertedAt);
-      if (!due.length) return;
+      if (!updated || updated.streak < USAGE_MISSING_ALERT_STREAK || updated.alertedAt) return;
       await tx.db.update(modelRoutes).set({ usageMissingAlertedAt: now }).where(where);
-      const streak = Math.max(...due.map((r) => r.streak));
+      const streak = updated.streak;
       const name =
         route.upstreamModelId.length > 60
           ? `${route.upstreamModelId.slice(0, 57)}...`
@@ -173,11 +172,11 @@ export class BillingBoundsService {
         kind: 'upstream_usage_missing',
         severity: 'info',
         dedupeKey: `upstream_usage_missing:${route.upstreamId}:${createHash('sha256')
-          .update(route.upstreamModelId)
+          .update(JSON.stringify([modelKey, route.upstreamModelId]))
           .digest('hex')
           .slice(0, 16)}`,
-        summary: `线路「${name}」连续 ${streak} 次没有返回用量，已按本地估算计费（线路照常使用）。可检查上游是否返回 usage。`,
-        refs: { upstreamId: route.upstreamId },
+        summary: `线路「${name}」连续 ${streak} 次成功调用缺少完整供应商用量。可在调用明细核对本地估算。`,
+        refs: { upstreamId: route.upstreamId, modelKey },
       });
       await this.audit.record(
         {
@@ -190,7 +189,7 @@ export class BillingBoundsService {
             upstreamId: route.upstreamId,
             upstreamModelId: route.upstreamModelId,
             streak,
-            models: due.map((r) => r.modelKey),
+            models: [modelKey],
           },
         },
         tx,

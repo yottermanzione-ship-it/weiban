@@ -3,9 +3,9 @@ import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Button, Segmented, Select } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
-import { PushAdminEndpoints, type AdminAlert } from '@weiban/contracts';
+import { ModelAccessAdminEndpoints, PushAdminEndpoints, type AdminAlert } from '@weiban/contracts';
 import { api } from '../data/client.js';
-import { errorText } from '../data/hooks.js';
+import { errorText, useRemote } from '../data/hooks.js';
 import { type ProColumns } from '../ui/table.js';
 import { Page, StatusTag, useToast } from '../ui/page.js';
 import { formatDateTime, formatInt } from '../ui/format.js';
@@ -26,6 +26,7 @@ const KIND_LABELS: Record<string, string> = {
 
 export function AlertsPage() {
   const toast = useToast();
+  const upstreams = useRemote(ModelAccessAdminEndpoints.listUpstreams);
   const [params, setParams] = useSearchParams();
   const view = params.get('view') === 'info' ? 'info' : 'actionable';
   const [status, setStatus] = useState<'open' | 'all'>('open');
@@ -67,6 +68,7 @@ export function AlertsPage() {
 
   function reset() {
     setItems([]);
+    upstreams.refresh();
     setCursors([undefined]);
     setRevision((n) => n + 1);
   }
@@ -111,7 +113,17 @@ export function AlertsPage() {
       render: (_, row) => (
         <div className="cell-main">
           <strong>{KIND_LABELS[row.kind] ?? row.kind}</strong>
+          {row.refs?.upstreamId && (
+            <span>
+              上游账号 ·{' '}
+              {upstreams.data?.items.find((u) => u.upstreamId === row.refs?.upstreamId)?.name ??
+                (upstreams.loading ? '读取中…' : '名称不可用')}
+            </span>
+          )}
           <span>{row.summary}</span>
+          {row.kind === 'upstream_usage_missing' && !row.refs?.modelKey && (
+            <span className="cell-sub">历史提醒的估算可能包含网络中断，详见调用记录。</span>
+          )}
         </div>
       ),
     },
@@ -129,13 +141,18 @@ export function AlertsPage() {
       title: '操作',
       width: 174,
       render: (_, row) => {
-        const auditPath = row.refs?.upstreamId
-          ? `/usage?view=records&upstream=${row.refs.upstreamId}${row.kind === 'upstream_usage_missing' ? '&quality=estimated' : '&status=failed'}`
-          : row.kind === 'reconciliation_flagged'
-            ? row.refs?.day
-              ? `/billing?day=${row.refs.day}`
-              : '/billing'
-            : null;
+        let auditPath: string | null = null;
+        if (row.refs?.upstreamId) {
+          const filters = new URLSearchParams({ view: 'records', upstream: row.refs.upstreamId });
+          if (row.refs.modelKey) filters.set('model', row.refs.modelKey);
+          if (row.kind === 'upstream_usage_missing') {
+            filters.set('quality', 'estimated');
+            if (row.refs.modelKey) filters.set('status', 'succeeded');
+          } else filters.set('status', 'failed');
+          auditPath = '/usage?' + filters.toString();
+        } else if (row.kind === 'reconciliation_flagged') {
+          auditPath = row.refs?.day ? '/billing?day=' + row.refs.day : '/billing';
+        }
         return (
           <div className="alert-actions">
             {auditPath && (

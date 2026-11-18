@@ -63,6 +63,41 @@ describe('official Dataset Viewer adapter', () => {
     const init = fetcher.mock.calls[0];
     expect(init?.[0]).toContain('config=text_style_control&split=latest');
   });
+  it('reuses only a validated identical official revision and row count', async () => {
+    const revision = 'a'.repeat(40);
+    const read = vi.fn(async (url: string) => {
+      const offset = Number(new URL(url).searchParams.get('offset'));
+      return Response.json(
+        page(offset, 101, (i) => raw(i, i === 100 ? 'overall' : 'other')),
+        { headers: { 'x-revision': revision } },
+      );
+    });
+    expect(await fetchArenaDataset(read, noDelay, { revision, totalRows: 101 })).toBe('unchanged');
+    expect(read).toHaveBeenCalledTimes(1);
+    for (const old of [
+      { revision: 'b'.repeat(40), totalRows: 101 },
+      { revision, totalRows: 100 },
+    ]) {
+      read.mockClear();
+      expect(await fetchArenaDataset(read, noDelay, old)).toMatchObject({
+        revision,
+        totalRows: 101,
+        entries: [{ name: 'Example Model 100' }],
+      });
+      expect(read).toHaveBeenCalledTimes(2);
+    }
+    await expect(
+      fetchArenaDataset(
+        async () =>
+          Response.json(
+            { ...page(0, 101), partial: true },
+            { headers: { 'x-revision': revision } },
+          ),
+        noDelay,
+        { revision, totalRows: 101 },
+      ),
+    ).rejects.toThrow('分页不完整');
+  });
   it('does not stop after finding overall in the first page', async () => {
     const fetcher = vi.fn(async (url: string) => {
       const offset = Number(new URL(url).searchParams.get('offset'));

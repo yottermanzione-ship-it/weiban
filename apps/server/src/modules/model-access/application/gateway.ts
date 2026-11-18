@@ -785,12 +785,6 @@ export class ModelGateway implements ModelGatewayPort {
           answer.ok ? null : answer.category,
           known ? 'reported' : answer.usage || failureUsage?.estimated ? 'estimated' : 'unknown',
         );
-        if (sent && (answer.ok || known || answer.usage || failureUsage?.estimated))
-          await this.bounds!.recordUsage(
-            model.modelKey,
-            route,
-            known ? 'reported' : 'missing',
-          ).catch(() => undefined);
         const latencyMs = Math.round(performance.now() - wallStart);
         // 批 EJ：调用方要求抢救时，正文 JSON 没写完就交回已写出的部分（照常计费），不加大额度重试；
         // 由调用方只取其中已完整的条目、其余拆小批或延后。
@@ -804,6 +798,13 @@ export class ModelGateway implements ModelGatewayPort {
             ? { text: answer.partialText, usage: answer.usage }
             : null;
         if (partial) answer = { ok: true, text: partial.text, usage: partial.usage };
+        // 成功交付并缺少回执才累计；网络中断的估算成本由结算单独记录。
+        if (sent && (answer.ok || known))
+          await this.bounds!.recordUsage(
+            model.modelKey,
+            route,
+            known ? 'reported' : 'missing',
+          ).catch(() => undefined);
         if (answer.ok) {
           const result: CachedResult = {
             ok: true,

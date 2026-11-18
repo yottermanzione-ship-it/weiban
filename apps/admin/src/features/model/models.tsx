@@ -27,7 +27,6 @@ import { ApiFailure } from '@weiban/client-core';
 import {
   ModelAccessAdminEndpoints,
   RouteBillingBounds,
-  USAGE_MISSING_ALERT_STREAK,
   type AdminModel,
   type AdminModelTestResult,
   type ModelScenario,
@@ -130,11 +129,6 @@ const BOUNDS_DETAILS = [
   'output_limit_too_small',
 ];
 
-/** 3.26（G3-2）：连续多次没返回用量的线路（达到提示阈值才在后台显示，不停用）。 */
-function usageMissingOf(m: AdminModel) {
-  return (m.usageMissing ?? []).filter((r) => r.streak >= USAGE_MISSING_ALERT_STREAK);
-}
-
 /** 3.24：文本聊天 / 私密模式模型缺识图能力（用户发的图片会发不出去）。 */
 function lacksVision(scenarios: readonly string[] | undefined, capabilities: readonly string[]) {
   return (
@@ -146,6 +140,7 @@ function lacksVision(scenarios: readonly string[] | undefined, capabilities: rea
 export function ModelsTab({
   models,
   upstreams,
+  accountDirectory = upstreams,
   loading = false,
   loadError = '',
   upstreamsError = '',
@@ -156,6 +151,7 @@ export function ModelsTab({
   /** 只传未删除的模型（编辑、上架 / 下架、批量删除都只作用于它们）。 */
   models: AdminModel[];
   upstreams: Upstream[];
+  accountDirectory?: Upstream[];
   /** 3.27：列表还在读取。读的过程中不能把「还没有结果」当成「没有模型」。 */
   loading?: boolean;
   /** 3.27：列表接口失败的原因（非 2xx、响应不符合契约、超时都会走到这里）。有值时只报错 + 重试，不显示空状态。 */
@@ -208,8 +204,7 @@ export function ModelsTab({
     refresh();
   });
 
-  const upstreamName = (id: string) =>
-    upstreams.find((u) => u.upstreamId === id)?.name ?? '未知账号';
+  const accountById = new Map(accountDirectory.map((account) => [account.upstreamId, account]));
 
   const matchesQuery = (m: AdminModel) => {
     const q = query.trim();
@@ -324,29 +319,58 @@ export function ModelsTab({
                 缺识图能力
               </span>
             )}
-            {usageMissingOf(m).map((r) => (
-              <span
-                key={`${r.upstreamId}:${r.upstreamModelId}`}
-                className="status-reason warn"
-                title={`线路「${upstreamName(r.upstreamId)} · ${r.upstreamModelId}」${
-                  r.since ? `从 ${dayjs(r.since).format('MM-DD HH:mm')} 起` : ''
-                }连续 ${r.streak} 次没有返回用量，系统按本地估算计费（标记「估算」），线路照常使用。可检查上游 / 中转是否返回 usage，或在「调用记录」里看估算的调用。`}
-              >
-                连续 {r.streak} 次没返回用量 · 按估算计费
-              </span>
-            ))}
           </div>
         );
       },
     },
     {
-      title: '上游线路（按顺序切换）',
-      width: 160,
+      title: '上游线路',
+      width: 225,
       render: (_, m) => {
-        const routes = [...(m.routes ?? [])].sort((a, b) => a.priority - b.priority);
-        return (routes.length ? routes.map((r) => r.upstreamId) : [m.upstreamId])
-          .map(upstreamName)
-          .join(' → ');
+        const routes = m.routes?.length
+          ? m.routes
+          : [
+              {
+                upstreamId: m.upstreamId,
+                upstreamModelId: m.upstreamModelId,
+                enabled: true,
+                priority: 1,
+              },
+            ];
+        return routes.map((r) => {
+          const account = accountById.get(r.upstreamId);
+          const missing = m.usageMissing?.find(
+            (item) =>
+              item.upstreamId === r.upstreamId && item.upstreamModelId === r.upstreamModelId,
+          );
+          return (
+            <div key={r.upstreamId} className="cell-main">
+              <span>
+                优先级 {r.priority} · {account?.name ?? '账号名称未读取'}
+              </span>
+              <span className="cell-sub">
+                {account?.deletedAt
+                  ? '账号已删除'
+                  : !r.enabled
+                    ? '线路已停用'
+                    : account
+                      ? '账号' + UPSTREAM_STATE_LABELS[upstreamState(account)]
+                      : '账号状态未读取'}{' '}
+                · <span className="mono">{r.upstreamModelId}</span>
+              </span>
+              {missing && (
+                <span
+                  className="status-reason warn"
+                  title={
+                    missing.since ? dayjs(missing.since).format('YYYY-MM-DD HH:mm') : undefined
+                  }
+                >
+                  连续 {missing.streak} 次成功调用缺少完整用量
+                </span>
+              )}
+            </div>
+          );
+        });
       },
     },
     {
@@ -596,7 +620,7 @@ export function ModelsTab({
           showIcon
           style={{ marginBottom: 12 }}
           message="上游账号列表没加载出来"
-          description={`${upstreamsError}（线路名称会显示「未知账号」，先点「刷新」重试再添加模型）`}
+          description={`${upstreamsError}（可刷新重新读取账号名称）`}
         />
       )}
       {invalidModels.length > 0 && (
@@ -741,7 +765,7 @@ export function ModelsTab({
           >
             <Space size={8} wrap>
               <Tag color={r.ok ? 'green' : 'red'}>{r.ok ? '成功' : '失败'}</Tag>
-              <span>{r.upstreamName}</span>
+              <span>{accountById.get(r.upstreamId)?.name ?? r.upstreamName}</span>
               <span className="mono">{r.upstreamModelId}</span>
               <span>{r.latencyMs} ms</span>
               {r.statusCode !== null && <span>HTTP {r.statusCode}</span>}

@@ -34,7 +34,6 @@ import {
   webToolLimits,
 } from '../infra/db/schema.js';
 import { UsageReconciliationService } from './reconciliation.js';
-import { BillingBoundsService } from './billing-bounds.js';
 import { MODEL_ACCESS_CHARGE_QUERY, type ChargeQuery } from '../tokens.js';
 
 /** 每天 3:45（北京时间）对前一天做用量对账（billing.md 8.2 第 ② 层；billing 的第 ①③ 层在 3:30）。 */
@@ -52,7 +51,6 @@ export class ModelAccessLifecycle implements OnModuleInit, UserDataOwner {
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
     @Inject(UsageReconciliationService)
     private readonly reconciliation: UsageReconciliationService,
-    @Optional() @Inject(BillingBoundsService) private readonly billingBounds?: BillingBoundsService,
     @Optional() @Inject(MODEL_ACCESS_CHARGE_QUERY) private readonly charges?: ChargeQuery,
   ) {}
 
@@ -105,15 +103,6 @@ export class ModelAccessLifecycle implements OnModuleInit, UserDataOwner {
           )
           .returning({ id: usageRecords.id });
         if (!updated.length) throw new Error('用量状态已变化，稍后重试权威快照同步');
-      },
-    });
-    this.bus.subscribe({
-      consumer: 'model_access.on_call_cost_unknown',
-      eventType: 'billing.call_cost_unknown',
-      handle: async (event, tx) => {
-        if (!this.billingBounds) throw new Error('计费边界服务不可用，未知风险事件不得确认');
-        // 3.26（G3-2）：成本待核（多为进程中断）不再暂停线路，只计入连续缺用量；待核风险由后台核实。
-        await this.billingBounds.recordUsage(event.payload.modelKey, event.payload, 'missing', tx);
       },
     });
     this.bus.subscribe({

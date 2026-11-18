@@ -58,7 +58,7 @@ export function RecordsTab({
   initial: {
     upstreamId: string;
     modelKey: string;
-    status: '' | 'failed';
+    status: '' | 'succeeded' | 'failed';
     quality: RecordQuality;
     range: RangeKey;
   };

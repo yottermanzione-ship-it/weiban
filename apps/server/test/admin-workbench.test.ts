@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import type { INestApplication } from '@nestjs/common';
 import type { AdminCatalogEntryWrite } from '@weiban/contracts';
@@ -10,6 +11,7 @@ import { IdentityCommands } from '../src/modules/identity/index.js';
 import {
   ModelAdminService,
   CatalogService,
+  BillingBoundsService,
   UpstreamService,
   UsageRecorder,
   LeaderboardService,
@@ -42,6 +44,143 @@ describeDb('后台模型目录、上游账号与文本榜回归', () => {
   afterAll(async () => {
     await app?.close();
     await fixtureUpstream.close();
+  });
+  it('按模型、账号与上游模型隔离回执，账号改名和调序保留同一线路记录', async () => {
+    const up = app.get(UpstreamService);
+    const catalog = app.get(CatalogService);
+    const bounds = app.get(BillingBoundsService);
+    const ids: string[] = [];
+    for (const name of ['线路甲', '线路乙', '线路丙']) {
+      ids.push(
+        (
+          await up.create(admin, {
+            name,
+            provider: 'openai_compatible',
+            kind: 'openai_compatible',
+            baseUrl: upstreamUrl,
+            apiKey: 'fixture-local-key',
+          })
+        ).upstreamId,
+      );
+    }
+    const keys = ['fixture/first', 'fixture/second'];
+    const prices = app.get(PriceService);
+    const version = await prices.createDraft(admin, {
+      versionLabel: 'fixture-route-rates',
+      note: '本地测试',
+      items: keys.map((modelKey) => ({
+        modelKey,
+        unit: 'input_tokens_per_million',
+        band: null,
+        priceMicros: 1000000,
+        costMicros: 1000000,
+      })),
+    });
+    await prices.activate(admin, version.priceVersionId, null);
+
+    const routes = ids.map((upstreamId, index) => ({
+      upstreamId,
+      upstreamModelId: 'shared-wire',
+      priority: index + 1,
+      weight: 100,
+      enabled: true,
+    }));
+    for (const modelKey of keys) {
+      await catalog.upsert(admin, modelKey, {
+        modelKey,
+        displayName: modelKey,
+        vendorName: 'Fixture',
+        upstreamId: modelKey === keys[0] ? ids[0]! : ids[1]!,
+        upstreamModelId: 'shared-wire',
+        capabilities: [],
+        tags: [],
+        leaderboardRank: null,
+        defaultFor: [],
+        scenarios: ['chat'],
+        enabled: true,
+        sortOrder: 1,
+      });
+      await catalog.replaceRoutes(admin, modelKey, modelKey === keys[0] ? routes : [routes[1]!]);
+    }
+    const target = routes[1]!;
+    for (let i = 0; i < 5; i++) await bounds.recordUsage(keys[0]!, target, 'missing');
+    await bounds.recordUsage(keys[1]!, target, 'reported');
+    await up.update(admin, target.upstreamId, { name: '线路乙改名' });
+    const updated = routes.map((r) => ({ ...r, priority: 4 - r.priority }));
+    await catalog.replaceRoutes(admin, keys[0]!, updated);
+    expect((await up.list()).find((u) => u.upstreamId === target.upstreamId)?.name).toBe(
+      '线路乙改名',
+    );
+    const missing = await catalog.usageMissing(keys);
+    expect(missing.get(keys[0]!)).toEqual([
+      expect.objectContaining({ upstreamId: target.upstreamId, streak: 5 }),
+    ]);
+    expect(missing.has(keys[1]!)).toBe(false);
+    expect((await catalog.routes(keys)).get(keys[0]!)?.map((r) => r.upstreamId)).toEqual(
+      [...ids].reverse(),
+    );
+    const preview = await app.get(ModelDeletionService).preview([keys[0]!]);
+    expect(preview.upstreamAccounts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          upstreamId: target.upstreamId,
+          name: '线路乙改名',
+          shared: true,
+        }),
+        expect.objectContaining({ upstreamId: ids[0], shared: false }),
+        expect.objectContaining({ upstreamId: ids[2], shared: false }),
+      ]),
+    );
+    await catalog.replaceRoutes(
+      admin,
+      keys[0]!,
+      updated.map((r) =>
+        r.upstreamId === target.upstreamId ? { ...r, upstreamModelId: 'replacement' } : r,
+      ),
+    );
+    expect((await catalog.usageMissing(keys)).size).toBe(0);
+    const migration = (suffix: string) =>
+      readFileSync(
+        new URL(`../drizzle/0166_correct_network_usage_streaks${suffix}.sql`, import.meta.url),
+        'utf8',
+      );
+    await db.transaction(async (tx) => {
+      const modelKey = keys[0]!;
+      await tx.query(
+        'UPDATE model_access.model_routes SET usage_missing_streak=1, usage_missing_since=now() WHERE model_key=$1',
+        [modelKey],
+      );
+      const attempt = async (
+        upstreamId: string,
+        wire: string,
+        errorCode: string | null,
+        after = false,
+      ) =>
+        tx.query(
+          `INSERT INTO model_access.generation_attempts
+          (id,generation_id,user_id,ordinal,model_key,upstream_id,upstream_model_id,phase,bound_snapshot,usage_state,error_code,created_at,finished_at)
+         VALUES ($1,$2,$3,1,$4,$5,$6,'finished','{}','estimated',$7,now() + $8 * interval '1 second',now() + $8 * interval '1 second')`,
+          [newId(), newId(), admin, modelKey, upstreamId, wire, errorCode, after ? 1 : -1],
+        );
+      const streaks = async () =>
+        (
+          await tx.query<{ n: number }>(
+            'SELECT usage_missing_streak AS n FROM model_access.model_routes WHERE model_key=$1 ORDER BY priority DESC',
+            [modelKey],
+          )
+        ).rows.map((r) => r.n);
+      await attempt(ids[0]!, 'shared-wire', 'network_error');
+      await attempt(ids[1]!, 'replacement', null);
+      await tx.query(migration(''));
+      expect(await streaks()).toEqual([0, 1, 1]); // 真正成功缺回执与没有证据的线路均保留。
+      await tx.query(migration('.down'));
+      expect(await streaks()).toEqual([1, 1, 1]);
+      await tx.query(migration(''));
+      await attempt(ids[0]!, 'shared-wire', null, true);
+      await tx.query(migration('.down'));
+      // 不恢复校正后已经有新回执的线路。
+      expect(await streaks()).toEqual([0, 1, 1]);
+    });
   });
   it('排行榜按场景匹配，删除保护共享与新建模型，路由和价目一起清理', async () => {
     const up = app.get(UpstreamService),

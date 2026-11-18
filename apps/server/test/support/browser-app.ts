@@ -253,6 +253,7 @@ await app.get<Database>(DATABASE).transaction(async (tx) => {
     severity: 'info',
     dedupeKey: 'browser-alert-usage-info',
     summary: '浏览器示例供应商缺少用量回执',
+    refs: { upstreamId: upstream.upstreamId },
   });
 });
 const sample = JSON.parse(
