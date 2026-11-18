@@ -1,8 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import { summaryFloorSeq, uncoveredHistoryEnd } from './memory-window.js';
-import { importantMemoryIntent, renderChatSummary, validateSummaryAnswer } from './chat-summary.js';
+import {
+  fitSummaryPiece,
+  importantMemoryIntent,
+  renderChatSummary,
+  validateSummaryAnswer,
+} from './chat-summary.js';
 
 describe('滚动总结的来源与权益', () => {
+  it('超长旧消息按实际 JSON 字节连续分片，符号及中文不丢失', () => {
+    const text = '汉字"😀\\\n'.repeat(90);
+    const source = { messageId: 'source', at: '2026-11-18', sender: 'user' };
+    let offset = 0,
+      rebuilt = '';
+    while (offset < text.length) {
+      const piece = fitSummaryPiece(source, text, offset, 113, 153);
+      expect(piece).not.toBeNull();
+      expect(piece!.bytes).toBeLessThanOrEqual(153);
+      expect(piece!.end).toBeGreaterThan(offset);
+      expect(piece!.item.text).not.toMatch(/[\uD800-\uDBFF]$/);
+      rebuilt += piece!.item.text;
+      offset = piece!.end;
+    }
+    expect(rebuilt).toBe(text);
+    expect(fitSummaryPiece(source, text, 0, 32, 1)).toBeNull();
+  });
   it('免费档摘要起点不早于 summaryDays 窗口', () => {
     const history = [
       { seq: 1, createdAt: '2026-10-21T04:11:39.150Z' },

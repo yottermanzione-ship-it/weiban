@@ -19,6 +19,39 @@ export const SummaryAnswer = z.object({
     .max(30),
 });
 
+/** 只截取当前旧消息中预算能容纳的连续片段。ID 和游标均为原文中的 UTF-16 偏移。 */
+export function fitSummaryPiece(
+  source: { messageId: string; at: string; sender: string },
+  text: string,
+  start: number,
+  maxChars: number,
+  availableBytes: number,
+) {
+  const make = (end: number) => {
+    const item = {
+      id: `${source.messageId}:${start}:${end}`,
+      ...source,
+      text: text.slice(start, end),
+    };
+    return { item, end, bytes: Buffer.byteLength(JSON.stringify(item), 'utf8') };
+  };
+  let low = start,
+    high = Math.min(text.length, start + maxChars);
+  if (high <= start) return null;
+  if (make(high).bytes > availableBytes) {
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      if (make(middle).bytes <= availableBytes) low = middle;
+      else high = middle - 1;
+    }
+  }
+  // 不能在一对代理字符之间分片。
+  const prev = text.charCodeAt(high - 1),
+    next = text.charCodeAt(high);
+  if (prev >= 0xd800 && prev <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) high--;
+  return high > start ? make(high) : null;
+}
+
 export function renderChatSummary(items: readonly ChatSummaryItem[], since: string | null): string {
   return items
     .filter((i) => !since || i.at >= since)

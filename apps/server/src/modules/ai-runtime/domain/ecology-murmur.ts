@@ -14,8 +14,6 @@ import { healthPrivate } from './memory.js';
 
 /** 碎碎念最多多少字（按字符计，emoji 等算一个）。 */
 export const MURMUR_MAX_CHARS = 60;
-/** 写碎碎念的输出上限：给足一两句话的余量，长了由服务端截断，不靠模型自己停。 */
-export const MURMUR_MAX_OUTPUT_TOKENS = 200;
 
 /** 素材里不能出现的第三人称称呼（运营口吻）。 */
 const MATERIAL_BANNED = /对方|用户|角色/u;

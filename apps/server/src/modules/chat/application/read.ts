@@ -262,8 +262,15 @@ export class ChatReadService implements ChatReadPort {
         .limit(query.limit);
       rows.sort((a, b) => a.seq - b.seq);
       const result: Message[] = [];
+      const contents = await this.store.pageContents(tx, row, rows);
       for (const message of rows) {
-        const value = await this.store.message(tx, row, message, view);
+        const value = await this.store.message(
+          tx,
+          row,
+          message,
+          view,
+          contents.get(message.id) ?? null,
+        );
         // 0030 之前的旧消息没有 content_type，解密后再按类型过滤；撤回的旧消息无法判断类型，跳过。
         if (
           types?.length &&

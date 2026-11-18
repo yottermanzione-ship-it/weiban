@@ -8,13 +8,18 @@ describe('模型容量与切换保护', () => {
   it('实时电话按实时线路容量和输出预留计算，不能误用同模型的文字额度', async () => {
     const service = Object.create(ModelGateway.prototype) as ModelGateway;
     const entry = {
+      modelKey: 'realtime',
+      upstreamId: 'account',
+      upstreamModelId: 'sku',
       tags: ['pipeline:rt'],
       scenarios: ['voice_call'],
       capabilities: ['voice_input', 'voice_output'],
     };
     Object.assign(service, {
       resolver: { pick: vi.fn(async () => ({ facts: { modelKey: 'realtime', entry } })) },
+      scheduler: { plan: vi.fn(async () => [{ upstreamId: 'account', upstreamModelId: 'sku' }]) },
       bounds: {
+        get: vi.fn(async () => ({ text: { contextTokens: 128000, maxOutputTokens: 200 } })),
         profiles: vi.fn(async () => [
           {
             text: { contextTokens: 128000, maxOutputTokens: 200 },
@@ -38,6 +43,26 @@ describe('模型容量与切换保护', () => {
       contextBudget('realtime', [{ contextTokens: 128000, maxOutputTokens: 200 }], 200),
     );
   });
+  it('普通文字准备历史时只取调度可用线路，暂停的小线路不缩减窗口', async () => {
+    const service = Object.create(ModelGateway.prototype) as ModelGateway;
+    const profile = { text: { contextTokens: 1000000, maxOutputTokens: 32000 } };
+    const entry = { modelKey: 'configured', upstreamId: 'enabled', upstreamModelId: 'sku' };
+    const get = vi.fn(async () => profile);
+    Object.assign(service, {
+      resolver: { pick: async () => ({ facts: { modelKey: entry.modelKey, entry } }) },
+      scheduler: { plan: async () => [{ upstreamId: 'enabled', upstreamModelId: 'sku' }] },
+      bounds: {
+        get,
+        profiles: () => {
+          throw new Error('must not include inactive routes');
+        },
+      },
+    });
+    expect(
+      await service.getContextBudget({ userId: 'u', modelRole: 'chat', purpose: 'chat_reply' }),
+    ).toEqual(contextBudget('configured', [profile.text]));
+    expect(get).toHaveBeenCalledExactlyOnceWith('configured', 'enabled', 'sku');
+  });
   it('容量按模型缩放，取线路下界并扣掉输出和安全余量', () => {
     const small = contextBudget('small', [{ contextTokens: 32000, maxOutputTokens: 4000 }])!;
     const large = contextBudget('large', [{ contextTokens: 128000, maxOutputTokens: 4000 }])!;
@@ -52,6 +77,18 @@ describe('模型容量与切换保护', () => {
     expect(contextBudget('missing', [])).toBeNull();
     expect(contextBudget('bad', [{ contextTokens: 1000, maxOutputTokens: 1000 }])).toBeNull();
   });
+  it('不同容量线路分别扣出自己的保留额度，混合线路不会被虚构为零输入', () => {
+    const mixed = contextBudget('mixed', [
+      { contextTokens: 32000, maxOutputTokens: 2048 },
+      { contextTokens: 1000000, maxOutputTokens: 32000 },
+    ]);
+    expect(mixed).toMatchObject({
+      contextTokens: 32000,
+      reservedOutputTokens: 2048,
+      inputTokens: 28992,
+    });
+  });
+
   it('中文、图片、消息结构都占预算，不把字数当作精确容量', () => {
     expect(contextTokens([{ content: '中'.repeat(100) }])).toBeGreaterThan(100);
     expect(
@@ -67,6 +104,9 @@ describe('模型容量与切换保护', () => {
       { role: 'system', content: '本轮指令' },
     ];
     expect(compactablePrefix(messages, 30)).toEqual({ start: 1, end: 3 });
+    expect(
+      compactablePrefix([{ role: 'system', content: '第二项固定信息' }, ...messages], 30),
+    ).toEqual({ start: 2, end: 4 });
     messages[1]!.images = [{ mediaId: 'image', ownerUserId: 'owner' }];
     expect(compactablePrefix(messages, 30)).toBeNull();
   });
