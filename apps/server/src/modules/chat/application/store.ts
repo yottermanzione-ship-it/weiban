@@ -122,11 +122,36 @@ export class ChatStore {
       plain.fill(0);
     }
   }
+  /** 同一页共用一次 DEK 读取，每条密文仍使用自己的 AAD；撤回消息不解封。 */
+  async pageContents(
+    tx: DbTx,
+    row: ConversationRow,
+    rows: MessageRow[],
+  ): Promise<Map<string, MessageContent>> {
+    const ids: string[] = [];
+    const encrypted = rows.flatMap((m) => {
+      if (m.status === 'recalled' || !m.contentCiphertext) return [];
+      ids.push(m.id);
+      return [{ aad: `chat:message:${m.id}`, sealed: m.contentCiphertext }];
+    });
+    const plains = await this.crypto.openMany(row.ownerUserId, encrypted, tx);
+    try {
+      return new Map(
+        plains.map((plain, i) => [
+          ids[i]!,
+          MessageContent.parse(JSON.parse(plain.toString('utf8'))),
+        ]),
+      );
+    } finally {
+      plains.forEach((plain) => plain.fill(0));
+    }
+  }
   async message(
     tx: DbTx,
     row: ConversationRow,
     stored: MessageRow,
     view: MessageView,
+    pageContent?: MessageContent | null,
   ): Promise<Message> {
     let quote: Message['quote'] = null;
     if (stored.quoteMessageId && stored.status !== 'recalled') {
@@ -156,7 +181,7 @@ export class ChatStore {
       seq: stored.seq,
       senderParticipantId: stored.senderParticipantId,
       senderKind: stored.senderKind,
-      content: await this.content(tx, row, stored),
+      content: pageContent === undefined ? await this.content(tx, row, stored) : pageContent,
       quote,
       status: stored.status,
       scope: stored.scope,

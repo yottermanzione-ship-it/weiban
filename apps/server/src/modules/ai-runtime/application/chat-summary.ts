@@ -32,6 +32,7 @@ import {
   CHAT_SUMMARY_PROMPT,
   ChatSummaryItems,
   renderChatSummary,
+  fitSummaryPiece,
   validateSummaryAnswer,
   type ChatSummaryItem,
 } from '../domain/chat-summary.js';
@@ -335,6 +336,12 @@ export class ChatSummaryService {
         const baseChars = budget ? Math.max(12000, Math.floor(budget.triggerTokens * 1.1)) : 12000;
         // 失败重试仍缩批，避免同一超大输入反复失败；首次按模型预算一次读完。
         const maxChars = claimed.attempts >= 2 ? Math.min(6000, baseChars) : baseChars;
+        // contextTokens 对每条消息计算 ceil(UTF-8字节数/2)+12，空数组的信封先统一扣除。
+        const payloadBytes = budget
+          ? (budget.triggerTokens - contextTokens([{ content: CHAT_SUMMARY_PROMPT }]) - 12) * 2
+          : Infinity;
+        let remainingBytes =
+          payloadBytes - Buffer.byteLength(JSON.stringify({ previous, messages: [] }), 'utf8');
         let chars = 0,
           toSeq = claimed.coveredSeq,
           offset = 0,
@@ -353,26 +360,20 @@ export class ChatSummaryService {
             continue;
           }
           const start = m.messageId === claimed.partialMessageId ? claimed.partialOffset : 0;
-          const end = Math.min(text.length, start + maxChars - chars);
-          if (end <= start) break;
-          const piece = text.slice(start, end);
-          const item = {
-            id: `${m.messageId}:${start}:${end}`,
-            messageId: m.messageId,
-            at: m.createdAt.slice(0, 10),
-            sender: m.senderKind,
-            text: piece,
-          };
-          const payload = JSON.stringify({ previous, messages: [...messages, item] });
-          if (
-            budget &&
-            contextTokens([{ content: CHAT_SUMMARY_PROMPT }, { content: payload }]) >
-              budget.triggerTokens
-          )
-            break;
+          const comma = messages.length ? 1 : 0;
+          const piece = fitSummaryPiece(
+            { messageId: m.messageId, at: m.createdAt.slice(0, 10), sender: m.senderKind },
+            text,
+            start,
+            maxChars - chars,
+            remainingBytes - comma,
+          );
+          if (!piece) break;
+          const { item, end, bytes } = piece;
+          remainingBytes -= bytes + comma;
           messages.push(item);
           fingerprints.push({ id: m.messageId, hash: fingerprint(m) });
-          chars += piece.length;
+          chars += item.text.length;
           if (end < text.length) {
             offset = end;
             partialMessageId = m.messageId;

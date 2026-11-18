@@ -74,8 +74,13 @@ it('仅给官方直连的请求加缓存标识，消息内容保持原样', asyn
     JSON.parse(init.body as string),
   );
   // 已上线策略仅对官方直连接口发送关思考参数；代理和伪装域名不附加。
-  expect(direct).toEqual({ ...other, reasoning_effort: 'none', prompt_cache_key: key });
+  expect(direct).toEqual({
+    ...other,
+    stream: false,
+    reasoning_effort: 'none',
+    prompt_cache_key: key,
+  });
   expect(other).toEqual(lookalike);
-  expect(ordinary).toEqual({ ...other, reasoning_effort: 'none' });
+  expect(ordinary).toEqual({ ...other, stream: false, reasoning_effort: 'none' });
   expect(direct.messages).toEqual(messages);
 });

@@ -1,7 +1,12 @@
 /** 全系统调用上游的唯一出口：选型/闸门→占位→冻结→调用→保存结果→结算。 */
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { contextBudget, contextTokens, compactablePrefix } from '../domain/context-budget.js';
+import {
+  contextBudget,
+  contextTokens,
+  usableContextTokens,
+  compactablePrefix,
+} from '../domain/context-budget.js';
 import {
   BACKGROUND_PURPOSES,
   BUDGET_EXEMPT_PURPOSES,
@@ -286,6 +291,37 @@ export class ModelGateway implements ModelGatewayPort {
    * internal 只供网关自己的降级使用（不属于契约）：fallbackModelKey = 普通后台任务备用模型。
    * 每个备用仍完整执行鉴权、上下文容量、预算、幂等、预留与结算流程。
    */
+  private async availableRoutes(
+    model: Pick<ResolvedModel, 'modelKey' | 'upstreamId' | 'upstreamModelId'>,
+    affinity: string | null,
+  ) {
+    let candidates = await this.scheduler.plan(model.modelKey, affinity);
+    if (candidates.length === 0) {
+      // 没有路由（理论上 0089 已迁移）：沿用目录上的主上游，状态必须正常
+      const primary = await this.upstreams.get(model.upstreamId).catch(() => null);
+      const now = this.clock.nowMs();
+      if (
+        primary &&
+        primary.enabled &&
+        primary.status === 'active' &&
+        !this.scheduler.isRouteCooling(model.modelKey, primary.id) &&
+        !(primary.cooldownUntil && primary.cooldownUntil.getTime() > now)
+      )
+        candidates = [
+          {
+            upstreamId: primary.id,
+            upstreamModelId: model.upstreamModelId,
+            baseUrl: primary.baseUrl,
+            kind: primary.kind,
+            maxConcurrency: primary.maxConcurrency,
+            rpmLimit: primary.rpmLimit,
+            probing: false,
+          },
+        ];
+    }
+    return candidates;
+  }
+
   /** 容量只读查询：使用核准线路的下界，不拿财务 ceiling 的上界作输入许可。 */
   async getContextBudget(input: Parameters<NonNullable<ModelGatewayPort['getContextBudget']>>[0]) {
     const selected = await this.resolver.pick(
@@ -298,8 +334,16 @@ export class ModelGateway implements ModelGatewayPort {
       },
     );
     if (!selected?.facts.entry) return null;
-    const profiles = (await this.bounds?.profiles(selected.facts.modelKey)) ?? [];
     const realtime = input.scenario === 'voice_call' && isRealtimeCallEntry(selected.facts.entry);
+    const profiles = realtime
+      ? ((await this.bounds?.profiles(selected.facts.modelKey)) ?? [])
+      : (
+          await Promise.all(
+            (await this.availableRoutes(selected.facts.entry, null)).map((r) =>
+              this.bounds?.get(selected.facts.modelKey, r.upstreamId, r.upstreamModelId),
+            ),
+          )
+        ).filter((p) => p != null);
     const output =
       input.maxOutputTokens === undefined
         ? undefined
@@ -354,15 +398,12 @@ export class ModelGateway implements ModelGatewayPort {
     // 一次切换最多四个有界摘要请求；不使用队列十次重试放大收费。
     for (let attempt = 0; at < selected.length && attempt < 4; attempt++) {
       const chunk: typeof selected = [];
+      let chunkTokens = Math.ceil(Buffer.byteLength(summary, 'utf8') / 2) + 1400;
       while (at + chunk.length < selected.length) {
         const next = selected[at + chunk.length]!;
-        if (
-          contextTokens([...chunk, next]) +
-            Math.ceil(Buffer.byteLength(summary, 'utf8') / 2) +
-            1400 >
-          budget.inputTokens * 0.65
-        )
-          break;
+        const nextTokens = contextTokens([next]);
+        if (chunkTokens + nextTokens > budget.inputTokens * 0.65) break;
+        chunkTokens += nextTokens;
         chunk.push(next);
       }
       if (!chunk.length) return null;
@@ -514,30 +555,7 @@ export class ModelGateway implements ModelGatewayPort {
       input.billingOwner === 'user' && input.characterId
         ? `brain:${input.userId}:${input.characterId}`
         : (input.conversationId ?? null);
-    let candidates = await this.scheduler.plan(model.modelKey, affinity);
-    if (candidates.length === 0) {
-      // 没有路由（理论上 0089 已迁移）：沿用目录上的主上游，状态必须正常
-      const primary = await this.upstreams.get(model.upstreamId).catch(() => null);
-      const now = this.clock.nowMs();
-      if (
-        primary &&
-        primary.enabled &&
-        primary.status === 'active' &&
-        !this.scheduler.isRouteCooling(model.modelKey, primary.id) &&
-        !(primary.cooldownUntil && primary.cooldownUntil.getTime() > now)
-      )
-        candidates = [
-          {
-            upstreamId: primary.id,
-            upstreamModelId: model.upstreamModelId,
-            baseUrl: primary.baseUrl,
-            kind: primary.kind,
-            maxConcurrency: primary.maxConcurrency,
-            rpmLimit: primary.rpmLimit,
-            probing: false,
-          },
-        ];
-    }
+    const candidates = await this.availableRoutes(model, affinity);
     const requested = input.maxOutputTokens ?? DEFAULT_TOKENS[input.purpose] ?? 8000;
     const verified = await this.bounds?.text(
       model.modelKey,
@@ -597,6 +615,7 @@ export class ModelGateway implements ModelGatewayPort {
     const maximum = input.maxOutputTokens ?? DEFAULT_TOKENS[input.purpose] ?? 8000;
     const modelOutputLimit = usesModelOutputLimit(input);
     // 3.24：Anthropic 原生协议自己处理系统消息（顶层 system + 缓存断点）；OpenAI 兼容按模型的系统消息放法改写。
+    const fittedInputTokens = contextTokens(input.messages);
     const baseWire = await this.wireMessages(input);
     const wire = applySystemMessageMode(baseWire, model.systemMessageMode);
     const promptCacheKey = privateChatPromptCacheKey(input, model.modelKey);
@@ -642,12 +661,14 @@ export class ModelGateway implements ModelGatewayPort {
       const attemptOutputLimit = Math.min(
         32000,
         route.billingBounds.text!.maxOutputTokens,
+        usableContextTokens(route.billingBounds.text!.contextTokens) - fittedInputTokens,
         modelOutputLimit
           ? route.billingBounds.text!.maxOutputTokens
           : outputBudget + thinkingBudget,
       );
       const key = 'gateway:' + row.id + ':attempt:' + ordinal;
       const startedAt = this.clock.now();
+      const attemptStart = performance.now();
       const usage = await this.recorder.start({
         input: { ...input, idempotencyKey: key },
         ...model,
@@ -724,6 +745,7 @@ export class ModelGateway implements ModelGatewayPort {
         );
         const sent =
           !!currentProof &&
+          budgetMs - (performance.now() - wallStart) > 0 &&
           boundsEvidence(currentProof) === boundsEvidence(route.billingBounds) &&
           !!this.billing.beginCall &&
           (await this.billing.beginCall({
@@ -753,8 +775,9 @@ export class ModelGateway implements ModelGatewayPort {
                     // 开思考的后台整理单次常超 20 秒（10-27 生产：记忆整理 3 次 20 秒超时把整条上游判为不可用），放宽到 55 秒。
                     timeoutMs: Math.min(
                       thinkingBudget > 0 || modelOutputLimit ? 55000 : 20000,
-                      remaining,
+                      Math.max(1, Math.floor(budgetMs - (performance.now() - wallStart))),
                     ),
+                    deadlineMs: Math.max(1, Math.floor(budgetMs - (performance.now() - wallStart))),
                     ...(thinkingBudget > 0
                       ? { thinking: 'on' as const, thinkingBudget }
                       : { thinking: 'off' as const }),
@@ -778,14 +801,20 @@ export class ModelGateway implements ModelGatewayPort {
         // 失败且连估算都没有（HTTP 报错、网络中断）时：上游明确拒绝的错误按 0 计；其余按估算的输入 token 由平台吸收。
         const known = !!answer.usage && !answer.usage.estimated;
         const failureUsage = sent && !answer.ok ? this.failureUsage(answer, wire) : undefined;
+        const errorCode = answer.ok
+          ? null
+          : (answer.diagnostic ??
+            (answer.category === 'truncated' && answer.truncation
+              ? `truncated_${answer.truncation}`
+              : answer.category));
         await this.recorder.finishAttempt(
           attemptId,
           answer.usage ?? failureUsage?.usage ?? null,
           known,
-          answer.ok ? null : answer.category,
+          errorCode,
           known ? 'reported' : answer.usage || failureUsage?.estimated ? 'estimated' : 'unknown',
         );
-        const latencyMs = Math.round(performance.now() - wallStart);
+        const latencyMs = Math.round(performance.now() - attemptStart);
         // 批 EJ：调用方要求抢救时，正文 JSON 没写完就交回已写出的部分（照常计费），不加大额度重试；
         // 由调用方只取其中已完整的条目、其余拆小批或延后。
         const partial =
@@ -815,7 +844,7 @@ export class ModelGateway implements ModelGatewayPort {
               ...(model.usedVisionDefault ? { usedVisionDefault: true } : {}),
               usage: answer.usage,
               chargedMicros: 0,
-              latencyMs,
+              latencyMs: Math.round(performance.now() - wallStart),
               usageRecordId: usage.record.id,
             },
           };
@@ -852,11 +881,7 @@ export class ModelGateway implements ModelGatewayPort {
         await this.recorder.finish(usage.record.id, {
           status: 'failed',
           // 批 EJ：截断带上诊断后缀（truncated_reasoning / _whitespace / _repeat），便于后台按元数据判断原因。
-          errorCode: sent
-            ? answer.category === 'truncated' && answer.truncation
-              ? `truncated_${answer.truncation}`
-              : answer.category
-            : 'route_risk_blocked',
+          errorCode: sent ? errorCode : 'route_risk_blocked',
           ...(answer.usage ??
             (failureUsage?.estimated
               ? {
@@ -1043,6 +1068,10 @@ export class ModelGateway implements ModelGatewayPort {
     return out;
   }
   private valid(i: GenerateTextInput, trustedPlatform = false): boolean {
+    const budgetedText =
+      i.purpose === 'chat_reply' ||
+      (i.purpose === 'memory' &&
+        ['context-fit-v2', 'chat-summary-v2'].includes(i.meta?.promptTemplateVersion ?? ''));
     return (
       Id.safeParse(i.userId).success &&
       ModelPurpose.safeParse(i.purpose).success &&
@@ -1062,8 +1091,8 @@ export class ModelGateway implements ModelGatewayPort {
       i.idempotencyKey.length <= 200 &&
       Array.isArray(i.messages) &&
       i.messages.length > 0 &&
-      // 663 historical messages + system/depth notes; token and 200k-char guards remain.
-      i.messages.length <= 700 &&
+      // 聊天及旧段摘要按真实线路校验；其它短任务仍有自己的资源保护。
+      (budgetedText || i.messages.length <= 700) &&
       i.messages.every(
         (m) =>
           m &&
@@ -1075,7 +1104,7 @@ export class ModelGateway implements ModelGatewayPort {
               m.images.length <= 4 &&
               m.images.every((img) => Id.safeParse(img?.mediaId).success))),
       ) &&
-      i.messages.reduce((n, m) => n + m.content.length, 0) <= 200000 &&
+      (budgetedText || i.messages.reduce((n, m) => n + m.content.length, 0) <= 200000) &&
       (i.deadlineAt === undefined || Timestamp.safeParse(i.deadlineAt).success) &&
       (i.maxOutputTokens === undefined ||
         (Number.isInteger(i.maxOutputTokens) &&

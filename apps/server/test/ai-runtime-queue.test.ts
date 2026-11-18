@@ -17,6 +17,8 @@ import { AppModule } from '../src/app.module.js';
 import { createWorker } from '../src/main.js';
 import {
   DATABASE,
+  ENVELOPE_CRYPTO,
+  type EnvelopeCrypto,
   newId,
   type Database,
   JOB_QUEUE,
@@ -279,6 +281,47 @@ describeDb('AI真实HTTP网关/计费与跨应用持久队列', () => {
     app = next.createNestApplication({ logger: false });
     await app.init();
     await app.get<JobQueue>(JOB_QUEUE).start();
+    // 导入合成历史而不触发 2,202 个旧回复任务。新消息仍经真实聊天、队列、上下文和假 HTTP 上游。
+    const history = Array.from({ length: 2202 }, (_, index) => ({
+      id: newId(),
+      text: `历史样本${index.toString(36)}`,
+    }));
+    const storedConversation = (await app.get<ChatReadPort>(CHAT_READ_PORT).getConversation(cid))!;
+    const member = (kind: 'user' | 'character') =>
+      storedConversation.participants.find((p) => p.kind === kind)!.participantId;
+    const envelope = app.get<EnvelopeCrypto>(ENVELOPE_CRYPTO);
+    const seededLastSeq = await app.get<Database>(DATABASE).transaction(async (tx) => {
+      const encrypted = await envelope.sealMany(
+        userId,
+        history.map(({ id, text }) => ({
+          aad: `chat:message:${id}`,
+          plaintext: JSON.stringify({ type: 'text', text }),
+        })),
+        tx,
+      );
+      const result = await tx.query<{ last_seq: string }>(
+        'UPDATE chat.conversations SET last_seq=last_seq+$2 WHERE id=$1 RETURNING last_seq',
+        [cid, history.length],
+      );
+      const end = Number(result.rows[0]!.last_seq);
+      await tx.query(
+        `INSERT INTO chat.messages
+        (id,conversation_id,seq,sender_participant_id,sender_kind,client_msg_id,content_ciphertext,status,scope,content_type,created_at)
+        SELECT id,$1::uuid,$2::bigint+n,CASE WHEN n%2=1 THEN $3::uuid ELSE $4::uuid END,
+          CASE WHEN n%2=1 THEN 'user' ELSE 'character' END,id::text,body,'normal','normal','text',$7
+        FROM unnest($5::uuid[],$6::bytea[]) WITH ORDINALITY AS seeded(id,body,n)`,
+        [
+          cid,
+          end - history.length,
+          member('user'),
+          member('character'),
+          history.map((m) => m.id),
+          encrypted,
+          clock.now(),
+        ],
+      );
+      return end;
+    });
     const deliveredAt = clock.nowMs();
     for (const text of ['第二轮你好', '我又说了一句'])
       await app
@@ -298,13 +341,17 @@ describeDb('AI真实HTTP网关/计费与跨应用持久队列', () => {
         expect(
           (
             await resumed.readMessages({ conversationId: cid, scopes: ['normal'], limit: 50 })
-          ).filter((m) => m.senderKind === 'character'),
-        ).toHaveLength(4);
+          ).filter((m) => m.senderKind === 'character' && m.seq > seededLastSeq),
+        ).toHaveLength(2);
       },
       { timeout: 20000, interval: 100 },
     );
     expect(clock.nowMs() - deliveredAt).toBeLessThan(60000);
     expect(bodies).toHaveLength(2);
+    const sent = (bodies[1]!.messages as Array<{ role: string; content: string }>).filter((m) =>
+      m.content.startsWith('历史样本'),
+    );
+    expect(sent.map((m) => m.content)).toEqual(history.map((m) => m.text));
     const ledger = await worker
       .get<Database>(DATABASE)
       .query("SELECT id FROM billing.ledger_entries WHERE type='charge'");
