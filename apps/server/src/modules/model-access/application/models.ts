@@ -10,11 +10,13 @@ import { participatesInTextArena } from '../domain/leaderboard.js';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import {
   AdminModelWrite,
+  ModelAccessAdminEndpoints,
   microsToPoints,
   type ActiveModelServiceRate,
   type ActiveModelTokenRates,
   type AdminCatalogEntry,
   type AdminModel,
+  type AdminModelPreview,
   type BillingModelRatePort,
   type ModelDiscountSetting,
   type ModelRates,
@@ -101,6 +103,42 @@ export function toAdminModel(
   };
 }
 
+function toAdminModelPreview(model: AdminModel): AdminModelPreview {
+  return {
+    modelKey: model.modelKey,
+    displayName: model.displayName,
+    vendorName: model.vendorName,
+    upstreamId: model.upstreamId,
+    upstreamModelId: model.upstreamModelId,
+    enabled: model.enabled,
+    capabilities: model.capabilities,
+    scenarios: model.scenarios,
+    sortOrder: model.sortOrder,
+    deletedAt: model.deletedAt,
+    rates: model.rates,
+    serviceRates: model.serviceRates?.map(({ unit, price, hasTimeBands }) => ({
+      unit,
+      price,
+      hasTimeBands,
+    })),
+    hasTimeBands: model.hasTimeBands,
+    pointsPerReply: model.pointsPerReply,
+    displayMultiplier: model.displayMultiplier,
+    displayMultiplierManual: model.displayMultiplierManual,
+    discount: model.discount,
+    discountActive: model.discountActive,
+    availability: model.availability,
+    usageMissing: model.usageMissing,
+    routes: model.routes?.map(({ upstreamId, upstreamModelId, priority, weight, enabled }) => ({
+      upstreamId,
+      upstreamModelId,
+      priority,
+      weight,
+      enabled,
+    })),
+  };
+}
+
 /** 主路由 = 启用的路由里优先级最小、权重最大的那条（没有启用的就取第一条）。 */
 export function primaryRoute(routes: ModelRoute[]): ModelRoute {
   const sorted = [...routes].sort(
@@ -136,8 +174,48 @@ export class ModelAdminService {
       : { available: false, detail: voiceCallFailureDetail(availability.failure) };
   }
 
-  async list(): Promise<AdminModel[]> {
-    const entries = await this.catalog.adminList();
+  async list(activeOnly = false): Promise<AdminModel[]> {
+    return this.hydrate(await this.catalog.adminList(activeOnly));
+  }
+
+  async page(query: z.output<NonNullable<typeof ModelAccessAdminEndpoints.modelPage.query>>) {
+    const offset = (query.page - 1) * query.pageSize;
+    const field = query.sort.startsWith('reply_')
+      ? 'pointsPerReply'
+      : query.sort.startsWith('multiplier_')
+        ? 'displayMultiplier'
+        : null;
+    const { entries, total } = await this.catalog.adminPage(
+      query,
+      field
+        ? undefined
+        : {
+            offset,
+            limit: query.pageSize,
+            sort: query.sort,
+          },
+    );
+    const items = await this.hydrate(entries);
+    if (field) {
+      const direction = query.sort.endsWith('_desc') ? -1 : 1;
+      items.sort((a, b) => direction * ((a[field] ?? 0) - (b[field] ?? 0)));
+      return {
+        items: items.slice(offset, offset + query.pageSize).map(toAdminModelPreview),
+        total,
+      };
+    }
+    return { items: items.map(toAdminModelPreview), total };
+  }
+
+  async detail(key: string) {
+    const entry = await this.catalog.adminDetail(key);
+    if (!entry) throw new AppError('not_found', '模型不存在');
+    const [item] = await this.hydrate([entry]);
+    return item!;
+  }
+
+  private async hydrate(entries: AdminCatalogEntry[]): Promise<AdminModel[]> {
+    if (!entries.length) return [];
     // 3.23：已删除的模型不查价格 / 线路 / 折扣（同键可能已重新添加，按键查会串到新模型上）
     const keys = entries.filter((e) => !e.deletedAt).map((e) => e.modelKey);
     const rates = await this.rates.getActiveTokenRates(keys);

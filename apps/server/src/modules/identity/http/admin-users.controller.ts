@@ -38,6 +38,15 @@ export class AdminUsersController {
     return this.service.labels();
   }
 
+  @Get('lookup-labels')
+  @RequireAuth(A.lookupLabels.auth)
+  lookupLabels(
+    @Query(new ContractPipe(A.lookupLabels.query!))
+    query: z.output<NonNullable<typeof A.lookupLabels.query>>,
+  ) {
+    return this.service.lookupLabels(query);
+  }
+
   @Get('selection')
   @RequireAuth(A.selectableUsers.auth)
   selection(

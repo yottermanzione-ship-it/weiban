@@ -33,12 +33,17 @@ interface Loaded {
 const PAGE = 100;
 
 export function MembershipRecordsPage() {
-  const users = useUserDirectory();
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [plan, setPlan] = useState<PlanFilter>('all');
   const [first, setFirst] = useState<'all' | 'true' | 'false'>('all');
   const [query, setQuery] = useState('');
   const [loaded, setLoaded] = useState<Loaded | null>(null);
+  const users = useUserDirectory(
+    [...(loaded?.orders ?? []), ...(loaded?.changes ?? [])].flatMap((row) => [
+      row.userId,
+      row.operatorUserId,
+    ]),
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);

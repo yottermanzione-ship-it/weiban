@@ -1,8 +1,12 @@
 import 'reflect-metadata';
 import { readFileSync } from 'node:fs';
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import type { INestApplication } from '@nestjs/common';
-import type { AdminCatalogEntryWrite } from '@weiban/contracts';
+import {
+  AdminModelLabel,
+  type AdminCatalogEntryWrite,
+  type ModelQuotePort,
+} from '@weiban/contracts';
 import type { z } from 'zod';
 import { createApp } from '../src/main.js';
 import { Database, DATABASE, TestClock, newId } from '../src/platform/index.js';
@@ -16,7 +20,8 @@ import {
   UsageRecorder,
   LeaderboardService,
 } from '../src/modules/model-access/testing.js';
-import { ModelDeletionService } from '../src/modules/model-access/index.js';
+import { ModelDeletionService, MODEL_QUOTE_PORT } from '../src/modules/model-access/index.js';
+import { EcologySettingsService } from '../src/modules/ai-runtime/testing.js';
 import { FlowUpstream } from './support/server-flow-fixture.js';
 import { describeDb, resetTestDatabase } from './support/db.js';
 import { testConfig, captureLogger, testKekRing } from './support/fixtures.js';
@@ -200,6 +205,132 @@ describeDb('后台模型目录、上游账号与文本榜回归', () => {
       expect(await streaks()).toEqual([0, 1, 1]);
     });
   });
+  it('删除持锁时固定模型和生态保存等待，提交后均拒绝已删除键', async () => {
+    const modelKey = 'fixture/config-race';
+    const catalog = app.get(CatalogService),
+      ecology = app.get(EcologySettingsService);
+    const prices = app.get(PriceService);
+    const draft = await prices.createDraft(admin, {
+      versionLabel: 'config-race',
+      note: null,
+      items: [
+        {
+          modelKey,
+          unit: 'input_tokens_per_million',
+          band: null,
+          priceMicros: 1000000,
+          costMicros: 1000000,
+        },
+      ],
+    });
+    await prices.activate(admin, draft.priceVersionId, null);
+    const account = await app.get(UpstreamService).create(admin, {
+      name: '并发设置测试',
+      kind: 'openai_compatible',
+      baseUrl: upstreamUrl,
+      apiKey: 'local-test-only',
+    });
+    await catalog.upsert(admin, modelKey, {
+      modelKey,
+      displayName: '配置测试',
+      vendorName: 'Test',
+      upstreamId: account.upstreamId,
+      upstreamModelId: 'config-fixture',
+      capabilities: [],
+      tags: [],
+      leaderboardRank: null,
+      defaultFor: [],
+      scenarios: ['chat', 'private'],
+      enabled: true,
+      sortOrder: 1,
+    });
+    await Promise.all([
+      catalog.setModelUses(admin, { recommended: { chat: modelKey }, internal: {} }),
+      catalog.setModelUses(admin, { recommended: {}, internal: { safety: modelKey } }),
+    ]);
+    expect(await catalog.modelUses()).toMatchObject({
+      recommended: { chat: modelKey },
+      internal: { safety: modelKey },
+    });
+    const config = { ...(await ecology.config()), decisionModelKey: modelKey };
+    await db.query(
+      "INSERT INTO ai_runtime.ecology_config(id,config,updated_at) VALUES('default',$1,now()) ON CONFLICT(id) DO UPDATE SET config=excluded.config",
+      [{ ...config, retained: 'fixture' }],
+    );
+    let entered!: () => void;
+    let resume!: () => void;
+    const deleting = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const release = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    const clear = ecology.clearDeletedDecision.bind(ecology);
+    const paused = vi
+      .spyOn(ecology, 'clearDeletedDecision')
+      .mockImplementationOnce(async (tx, keys, operator) => {
+        const result = await clear(tx, keys, operator);
+        entered();
+        await release;
+        return result;
+      });
+    const decision = vi.spyOn(ecology, 'decisionProblem').mockResolvedValueOnce(null);
+    const quote = vi
+      .spyOn(app.get<ModelQuotePort>(MODEL_QUOTE_PORT), 'quote')
+      .mockResolvedValueOnce({
+        ok: true,
+        value: { modelKey, amountMicros: 0, priceVersionId: draft.priceVersionId },
+      });
+    const deleted = app.get(ModelDeletionService).delete(admin, [modelKey]);
+    try {
+      await Promise.race([
+        deleting,
+        deleted.then(() => {
+          throw Error('删除未进入预期事务');
+        }),
+      ]);
+      const writes = Promise.allSettled([
+        catalog.setModelUses(admin, {
+          recommended: {},
+          internal: {},
+          fixed: { private: modelKey },
+        }),
+        ecology.updateConfig(admin, config),
+      ]);
+      try {
+        await vi.waitFor(
+          async () => {
+            const result = await db.query<{ n: number }>(
+              `SELECT count(*)::int n FROM pg_locks WHERE locktype='advisory' AND NOT granted AND database=(SELECT oid FROM pg_database WHERE datname=current_database())`,
+            );
+            expect(result.rows[0]?.n).toBe(2);
+          },
+          { timeout: 3000, interval: 25 },
+        );
+      } finally {
+        resume();
+      }
+      await deleted;
+      expect(await writes).toEqual([
+        { status: 'rejected', reason: expect.objectContaining({ code: 'bad_request' }) },
+        { status: 'rejected', reason: expect.objectContaining({ code: 'conflict' }) },
+      ]);
+      expect((await catalog.modelUses()).fixed?.private).toBeFalsy();
+      expect(
+        (
+          await db.query<{ config: object }>(
+            "SELECT config FROM ai_runtime.ecology_config WHERE id='default'",
+          )
+        ).rows[0]?.config,
+      ).toMatchObject({ decisionModelKey: null, retained: 'fixture' });
+    } finally {
+      resume();
+      await deleted;
+      paused.mockRestore();
+      decision.mockRestore();
+      quote.mockRestore();
+    }
+  });
   it('排行榜按场景匹配，删除保护共享与新建模型，路由和价目一起清理', async () => {
     const up = app.get(UpstreamService),
       catalog = app.get(CatalogService),
@@ -253,6 +384,13 @@ describeDb('后台模型目录、上游账号与文本榜回归', () => {
       { upstreamId: exclusive, upstreamModelId: 'demo', priority: 1, weight: 1, enabled: true },
     ];
     await catalog.replaceRoutes(admin, keys[0]!, routes);
+    expect(await catalog.upstreamModelReferences([exclusive])).toEqual([
+      expect.objectContaining({
+        upstreamId: exclusive,
+        modelKey: keys[0],
+        upstreamModelId: 'demo',
+      }),
+    ]);
     const ranking = app.get(LeaderboardService);
     const ranked = await ranking.importText(admin, 'rank,model\n2,Qwen Chat');
     expect(ranked.matched.map((m) => m.modelKey)).toContain(keys[0]);
@@ -269,6 +407,25 @@ describeDb('后台模型目录、上游账号与文本榜回归', () => {
       [{ decisionModelKey: keys[0], testMarker: '其他字段保留' }],
     );
     const modelAdmin = app.get(ModelAdminService);
+    const page = await modelAdmin.page({ page: 1, pageSize: 1, sort: 'name_asc', q: 'lab/' });
+    expect(page.total).toBe(3);
+    expect(page.items.map((m) => m.modelKey)).toEqual([keys[2]]);
+    const second = await modelAdmin.page({ page: 2, pageSize: 1, sort: 'name_asc', q: 'lab/' });
+    expect(second.items.map((m) => m.modelKey)).toEqual([keys[0]]);
+    expect(
+      (
+        await modelAdmin.page({
+          page: 1,
+          pageSize: 20,
+          sort: 'priority',
+          q: 'QWEN',
+          scenario: 'chat',
+        })
+      ).items.map((m) => m.modelKey),
+    ).toEqual([keys[0]]);
+    expect((await modelAdmin.detail(keys[0]!)).routes).toEqual(
+      expect.arrayContaining(routes.map((route) => expect.objectContaining(route))),
+    );
     const opened = (await catalog.adminList()).find((m) => m.modelKey === keys[0]!)!;
     expect(opened.catalogRevision).toEqual(expect.any(String));
     const edit = {
@@ -361,6 +518,29 @@ describeDb('后台模型目录、上游账号与文本榜回归', () => {
     ).rejects.toMatchObject({ code: 'conflict' });
     await del.delete(admin, [keys[0]!]);
     expect(await usage.byId(record.id)).toEqual(historicalUsage);
+    expect(
+      (await modelAdmin.page({ page: 1, pageSize: 20, sort: 'priority', q: 'lab/' })).items.map(
+        (m) => m.modelKey,
+      ),
+    ).toEqual(keys.slice(1));
+    expect((await catalog.adminSelection({ q: 'lab/' })).map((m) => m.modelKey)).toEqual(
+      keys.slice(1),
+    );
+    expect(await catalog.upstreamModelReferences([exclusive])).toEqual([]);
+    expect(await catalog.upstreamModelReferences([other])).toEqual([
+      expect.objectContaining({ upstreamId: other, modelKey: keys[2] }),
+    ]);
+    expect(
+      (await catalog.adminList(true))
+        .map((m) => m.modelKey)
+        .filter((key) => key.startsWith('lab/')),
+    ).toEqual(keys.slice(1));
+    await expect(modelAdmin.detail(keys[0]!)).rejects.toMatchObject({ code: 'not_found' });
+    const labels = AdminModelLabel.array().parse(await catalog.adminLabels());
+    const archived = labels.filter((item) => item.modelKey === keys[0]);
+    expect(archived).toHaveLength(2);
+    expect(archived.every((item) => item.deletedAt && item.archiveId)).toBe(true);
+    expect(archived[0]?.displayName).toBe('Qwen Chat');
     expect(
       (await db.query('SELECT 1 FROM billing.price_versions WHERE id=$1', [previousPrice])).rows,
     ).toHaveLength(1);

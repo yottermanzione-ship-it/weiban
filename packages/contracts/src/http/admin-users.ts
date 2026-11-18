@@ -87,6 +87,24 @@ export const AdminUsersEndpoints = {
     response: z.object({ items: z.array(AdminUserLabel.extend({ userId: Id })) }),
     summary: '后台选择器使用的账号编号、登录名和昵称。',
   }),
+  lookupLabels: defineEndpoint({
+    method: 'GET',
+    path: API_PREFIX + '/admin/users/lookup-labels',
+    auth: 'admin',
+    query: z.object({
+      q: z.string().trim().max(200).optional(),
+      ids: z
+        .string()
+        .max(5650)
+        .refine(
+          (value) => value.split(',').every((id) => Id.safeParse(id).success),
+          '用户编号格式无效',
+        )
+        .optional(),
+    }),
+    response: z.object({ items: z.array(AdminUserLabel.extend({ userId: Id })) }),
+    summary: '按编号批量补齐记录中的账号名称，或按输入搜索最多 20 名用户。',
+  }),
   selectableUsers: defineEndpoint({
     method: 'GET',
     path: API_PREFIX + '/admin/users/selection',

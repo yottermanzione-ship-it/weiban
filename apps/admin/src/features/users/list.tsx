@@ -10,6 +10,7 @@ import { AdminUsersEndpoints, BillingAdminEndpoints } from '@weiban/contracts';
 import { api } from '../../data/client.js';
 import { useRemote } from '../../data/hooks.js';
 import { Page } from '../../ui/page.js';
+import { RecordDrawer } from '../../ui/drawer.js';
 import { DataTable, type ProColumns } from '../../ui/table.js';
 import {
   BatchBar,
@@ -18,7 +19,13 @@ import {
   type BatchFailure,
 } from '../../ui/batch-operation.js';
 import { formatDate, formatPoints, formatYuan, relativeTime } from '../../ui/format.js';
-import { AccountStateTag, MembershipTag, displayName, type UserRow } from './shared.js';
+import {
+  AccountStateTag,
+  MembershipTag,
+  displayName,
+  useSelectedUser,
+  type UserRow,
+} from './shared.js';
 import { UserDetailDrawer } from './detail.js';
 
 type Quick = 'all' | 'pro' | 'expiring' | 'banned';
@@ -222,13 +229,15 @@ export function UserListPage() {
   ];
 
   const ov = overview.data;
-  const openRow = openId ? list.find((r) => r.userId === openId) : undefined;
+  const detail = useSelectedUser(openId);
+  const openRow = detail.row;
 
   return (
     <Page title="用户列表">
       {overview.error && <Alert type="error" showIcon message={overview.error} />}
       <BatchFailureAlert failures={failures} onDismiss={() => setFailures([])} />
       <DataTable<UserRow>
+        showTools
         rowKey="userId"
         columns={columns}
         data={list}
@@ -412,6 +421,20 @@ export function UserListPage() {
           )}
         </BatchOperationModal>
       )}
+      {openId && !openRow && (
+        <RecordDrawer open title="用户详情" onClose={() => setOpenId(null)}>
+          {detail.error ? (
+            <Alert
+              type="error"
+              showIcon
+              message={detail.error}
+              action={<Button onClick={detail.refresh}>重试</Button>}
+            />
+          ) : (
+            '正在读取…'
+          )}
+        </RecordDrawer>
+      )}
       {openRow && (
         <UserDetailDrawer
           key={openRow.userId}
@@ -419,7 +442,10 @@ export function UserListPage() {
           nameOf={nameOf}
           initialTab={openTab}
           onClose={() => setOpenId(null)}
-          onChanged={refreshAll}
+          onChanged={() => {
+            refreshAll();
+            detail.refresh();
+          }}
         />
       )}
     </Page>

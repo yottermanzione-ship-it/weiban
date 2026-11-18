@@ -531,6 +531,18 @@ export const BillingAdminEndpoints = {
     }),
     summary: '按全局筛选和排序分页读取用户，合并当前页的余额和近 30 天消耗。',
   }),
+  userDetail: defineEndpoint({
+    method: 'GET',
+    path: API_PREFIX + '/admin/billing/users/:userId',
+    auth: 'admin',
+    params: z.object({ userId: Id }),
+    response: z.object({
+      userId: Id,
+      user: AdminUserSummary,
+      account: AdminAccountSummary.optional(),
+    }),
+    summary: '按用户编号读取账号与钱包详情。',
+  }),
   resolveUnknownCost: defineEndpoint({
     method: 'POST',
     path: `${API_PREFIX}/admin/billing/holds/:holdId/cost-resolution`,

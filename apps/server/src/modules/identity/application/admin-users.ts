@@ -109,6 +109,22 @@ export class AdminUsersService implements IdentityAdminDirectoryPort {
     );
     return { items: rows };
   }
+  async lookupLabels({ q, ids }: { q?: string; ids?: string }) {
+    const { where, values } = this.filtered({ q });
+    const { rows } = await this.database.query<{
+      userId: string;
+      username: string;
+      nickname: string | null;
+    }>(
+      `SELECT u.id AS "userId", coalesce(u.current_alias,u.username) AS username,p.nickname
+       FROM identity.users u LEFT JOIN identity.profiles p ON p.user_id=u.id
+       WHERE ${ids ? 'u.id = ANY($1::uuid[])' : where}
+       ORDER BY u.created_at DESC,u.id ${ids ? '' : 'LIMIT 20'}`,
+      ids ? [ids.split(',')] : values,
+    );
+    return { items: rows };
+  }
+
   private filtered(filter: AdminUserFilter) {
     const values: unknown[] = [];
     const clauses = ['true'];

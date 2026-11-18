@@ -438,6 +438,7 @@ describe('后台决策模型只允许 Jev 类', () => {
     const svc = Object.create(EcologySettingsService.prototype) as EcologySettingsService;
     Object.assign(svc, {
       media: { decisionModelStatus: vi.fn().mockResolvedValue(status) },
+      catalog: { enabledRevision: vi.fn().mockResolvedValue('test-revision') },
       quotes: { quote: vi.fn().mockResolvedValue({ ok: true, value: { amountMicros: 1 } }) },
     });
     return svc;

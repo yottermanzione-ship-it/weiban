@@ -955,6 +955,50 @@ export const AdminModel = AdminCatalogEntry.extend({
 });
 export type AdminModel = z.infer<typeof AdminModel>;
 
+export const AdminModelPreview = AdminModel.pick({
+  modelKey: true,
+  displayName: true,
+  vendorName: true,
+  upstreamId: true,
+  upstreamModelId: true,
+  enabled: true,
+  capabilities: true,
+  scenarios: true,
+  sortOrder: true,
+  deletedAt: true,
+  rates: true,
+  hasTimeBands: true,
+  pointsPerReply: true,
+  displayMultiplier: true,
+  displayMultiplierManual: true,
+  discount: true,
+  discountActive: true,
+  availability: true,
+  usageMissing: true,
+}).extend({
+  routes: z.array(ModelRoute.omit({ billingBounds: true })).optional(),
+  serviceRates: z
+    .array(ModelServiceRate.omit({ cost: true }).strip())
+    .max(32)
+    .optional(),
+});
+export type AdminModelPreview = z.infer<typeof AdminModelPreview>;
+
+export const AdminModelLabel = AdminCatalogEntry.pick({
+  modelKey: true,
+  displayName: true,
+  deletedAt: true,
+  archiveId: true,
+});
+export type AdminModelLabel = z.infer<typeof AdminModelLabel>;
+
+export const AdminModelDirectoryFilter = z.object({
+  q: z.string().trim().max(200).optional(),
+  scenario: ModelScenario.optional(),
+  status: z.enum(['on', 'off']).optional(),
+});
+export type AdminModelDirectoryFilter = z.infer<typeof AdminModelDirectoryFilter>;
+
 /**
  * 7.11：后台「测试模型」——对模型当前启用的每条线路发一条最小文本请求（固定「你好」、最多 8 token），
  * 直接反映「账号测试通过但模型调用失败」的情况。不发用户账单、不写用量记录，只写审计。
@@ -1383,6 +1427,31 @@ export const ModelAccessAdminEndpoints = {
     response: ModelsDevLookupResponse,
     summary: '3.26：按模型名（可带出品方）批量检索 models.dev，用于添加 / 编辑模型、导入配置时预填',
   }),
+  upstreamModelReferences: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/model/upstreams/model-references`,
+    auth: 'admin',
+    query: z.object({
+      ids: z
+        .string()
+        .max(5650)
+        .refine(
+          (value) => value.split(',').every((id) => Id.safeParse(id).success),
+          '上游账号编号格式无效',
+        ),
+    }),
+    response: z.object({
+      items: z.array(
+        z.object({
+          upstreamId: Id,
+          modelKey: AdminModelKey,
+          displayName: z.string(),
+          upstreamModelId: z.string(),
+        }),
+      ),
+    }),
+    summary: '按上游账号读取现存模型的线路引用摘要，含已下架模型。',
+  }),
   listUpstreams: defineEndpoint({
     method: 'GET',
     path: `${API_PREFIX}/admin/model/upstreams`,
@@ -1467,10 +1536,18 @@ export const ModelAccessAdminEndpoints = {
     response: GatewayLimits,
     summary: 'v3.4：修改每用户限流与账号健康参数（写审计）',
   }),
+  modelLabels: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/model/model-labels`,
+    auth: 'admin',
+    response: z.object({ items: z.array(AdminModelLabel) }),
+    summary: '按模型键显示用量历史所需的名称，含已删除模型。',
+  }),
   listCatalog: defineEndpoint({
     method: 'GET',
     path: `${API_PREFIX}/admin/model/catalog`,
     auth: 'admin',
+    query: z.object({ view: z.literal('active').optional() }),
     response: z.object({ items: z.array(AdminCatalogEntry) }),
     summary: '模型目录（含停用的）',
   }),
@@ -1488,9 +1565,54 @@ export const ModelAccessAdminEndpoints = {
     method: 'GET',
     path: `${API_PREFIX}/admin/model/models`,
     auth: 'admin',
+    query: z.object({ view: z.literal('active').optional() }),
     response: z.object({ items: z.array(AdminModel) }),
     summary:
       'v3.3：后台「模型」页：目录条目 + 倍率（输入 / 输出 / 缓存，元 / 百万 token）+ 约每条积分',
+  }),
+  modelPage: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/model/models/page`,
+    auth: 'admin',
+    query: AdminModelDirectoryFilter.extend({
+      page: z.coerce.number().int().min(1).max(1_000_000).default(1),
+      pageSize: z.coerce.number().int().min(1).max(100).default(20),
+      sort: z
+        .enum([
+          'priority',
+          'priority_desc',
+          'name_asc',
+          'name_desc',
+          'reply_asc',
+          'reply_desc',
+          'multiplier_asc',
+          'multiplier_desc',
+        ])
+        .default('priority'),
+    }),
+    response: z.object({
+      items: z.array(AdminModelPreview),
+      total: z.number().int().nonnegative(),
+    }),
+    summary: '当前模型目录分页，已删除项仅在历史显示。',
+  }),
+  modelSelection: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/model/models/selection`,
+    auth: 'admin',
+    query: AdminModelDirectoryFilter,
+    response: z.object({
+      items: z.array(AdminModelLabel.omit({ deletedAt: true, archiveId: true })),
+    }),
+    summary: '明确选择全部匹配模型时读取目录键和名称。',
+  }),
+  modelDetail: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/model/models/:modelKey`,
+    auth: 'admin',
+    params: z.object({ modelKey: z.string().min(1) }),
+    response: AdminModel,
+    summary: '读取指定现存模型的完整配置。',
   }),
   upsertModel: defineEndpoint({
     method: 'PUT',

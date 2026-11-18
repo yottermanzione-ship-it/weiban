@@ -43,7 +43,6 @@ const date = (s: string | null) =>
   s ? new Date(s).toLocaleString('zh-CN', { hour12: false }) : '尚未连接';
 
 export function ScanPaymentsPage() {
-  const directory = useUserDirectory();
   const settings = useRemote(A.settings);
   const devices = useRemote(A.devices);
   const [oc, setOc] = useState<string | undefined>();
@@ -68,6 +67,10 @@ export function ScanPaymentsPage() {
   const [draft, setDraft] = useState<ScanPaymentSettings | null>(null);
   const [busy, setBusy] = useState(false);
   const [manual, setManual] = useState<ScanOrder | null>(null);
+  const directory = useUserDirectory([
+    ...(orders.data?.items ?? []).map((item) => item.userId),
+    manual?.userId,
+  ]);
   const [bankRef, setBankRef] = useState('');
   const [actualMoney, setActualMoney] = useState('');
   const [manualReason, setManualReason] = useState('');

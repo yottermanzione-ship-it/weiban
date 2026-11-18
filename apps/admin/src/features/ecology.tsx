@@ -98,7 +98,7 @@ export function EcologyAdminPage() {
 function EcologyConfigTab() {
   const toast = useToast();
   const overview = useRemote(EcologyAdminEndpoints.getOverview);
-  const models = useRemote(ModelAccessAdminEndpoints.listModels);
+  const models = useRemote(ModelAccessAdminEndpoints.listModels, { query: { view: 'active' } });
   const [form] = Form.useForm<EcologyConfig>();
   const feedback = useFormFeedback(form);
   const [saving, setSaving] = useState(false);
@@ -243,7 +243,6 @@ function EcologyConfigTab() {
 
 function EcologyRunsTab() {
   // 运行记录接口只返回 userId（ai-runtime 提供），这里用后台账号目录一次批量补昵称。
-  const directory = useUserDirectory();
   const [userId, setUserId] = useState('');
   const [status, setStatus] = useState<EcologyRunStatus | undefined>();
   const [applied, setApplied] = useState<{ userId: string; status?: EcologyRunStatus }>({
@@ -251,6 +250,7 @@ function EcologyRunsTab() {
   });
   const [cursors, setCursors] = useState<Array<string | undefined>>([undefined]);
   const [items, setItems] = useState<EcologyRunRecord[]>([]);
+  const directory = useUserDirectory(items.map((item) => item.userId));
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -322,7 +322,7 @@ function EcologyRunsTab() {
   return (
     <div className="tab-body">
       <div className="filter-panel">
-        <UserPicker directory={directory} value={userId} onChange={setUserId} />
+        <UserPicker value={userId} onChange={setUserId} />
         <Select
           style={{ width: 150 }}
           allowClear

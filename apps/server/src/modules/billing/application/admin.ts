@@ -159,6 +159,16 @@ export class BillingAdminService {
       );
       ids = rows.map((r) => r.id);
     }
+    return { total: match.total, items: await this.userRows(ids) };
+  }
+
+  async userDetail(userId: string) {
+    const [row] = await this.userRows([userId]);
+    if (!row) throw new AppError('not_found', '账号不存在');
+    return row;
+  }
+
+  private async userRows(ids: string[]) {
     const users = await this.adminDirectory.summariesFor(ids);
     const accounts = await this.listAccounts(
       ids,
@@ -166,13 +176,10 @@ export class BillingAdminService {
     );
     const byId = new Map(users.map((u) => [u.userId, u]));
     const wallets = new Map(accounts.map((a) => [a.userId, a]));
-    return {
-      total: match.total,
-      items: ids.flatMap((userId) => {
-        const user = byId.get(userId);
-        return user ? [{ userId, user, account: wallets.get(userId) }] : [];
-      }),
-    };
+    return ids.flatMap((userId) => {
+      const user = byId.get(userId);
+      return user ? [{ userId, user, account: wallets.get(userId) }] : [];
+    });
   }
 
   /** 3.27（H1 先用后扣）：欠费用户（余额 < 0）与欠费金额，欠得多的在前（最多 500 个）。 */

@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react';
 import { Alert, Button, Select } from 'antd';
 import {
   ModelAccessAdminEndpoints,
-  type AdminModel,
+  type AdminCatalogEntry,
   type ModelScenario,
   type ModelScenarioSettings,
 } from '@weiban/contracts';
@@ -47,7 +47,7 @@ const INTERNAL_ORDER: InternalUse[] = [
   'web_search',
 ];
 
-export function ScenarioSettingsCard({ models }: { models: AdminModel[] }) {
+export function ScenarioSettingsCard({ models }: { models: AdminCatalogEntry[] }) {
   const toast = useToast();
   const remote = useRemote(ModelAccessAdminEndpoints.getScenarioSettings);
   const [draft, setDraft] = useState<ModelScenarioSettings>({ recommended: {}, internal: {} });

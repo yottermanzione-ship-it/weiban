@@ -1,3 +1,4 @@
+import type { z } from 'zod';
 import {
   Controller,
   Get,
@@ -104,6 +105,13 @@ export class CharacterAdminController {
     query: { status?: string; q?: string; page?: number; pageSize: number },
   ) {
     return this.service.adminDirectory(me.userId, query);
+  }
+  @Get('lookup')
+  @RequireAuth(A.lookup.auth)
+  lookup(
+    @Query(new ContractPipe(A.lookup.query!)) query: z.output<NonNullable<typeof A.lookup.query>>,
+  ) {
+    return this.service.adminLookup(query);
   }
   @Get(':characterId/detail')
   @RequireAuth(A.getCharacter.auth)
