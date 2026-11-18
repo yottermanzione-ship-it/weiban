@@ -153,95 +153,112 @@ test('model directory reads one page, sorts globally and fetches exact detail', 
     { length: 22 },
     (_, i) => `browser/list-model-${String(i).padStart(2, '0')}`,
   );
-  for (const [i, modelKey] of keys.entries()) {
-    const created = await page.request.put(
-      `/api/v1/admin/model/catalog/${encodeURIComponent(modelKey)}`,
-      {
-        headers,
-        data: {
-          modelKey,
-          displayName: `List fixture ${String(21 - i).padStart(2, '0')}`,
-          vendorName: 'Browser',
-          upstreamId,
-          upstreamModelId: 'browser-test',
-          enabled: false,
-          capabilities: [],
-          tags: [],
-          leaderboardRank: null,
-          defaultFor: [],
-          sortOrder: 10 + i,
+  const activeKeys = new Set<string>();
+  try {
+    for (const [i, modelKey] of keys.entries()) {
+      const created = await page.request.put(
+        `/api/v1/admin/model/catalog/${encodeURIComponent(modelKey)}`,
+        {
+          headers,
+          data: {
+            modelKey,
+            displayName: `List fixture ${String(21 - i).padStart(2, '0')}`,
+            vendorName: 'Browser',
+            upstreamId,
+            upstreamModelId: 'browser-test',
+            enabled: false,
+            capabilities: [],
+            tags: [],
+            leaderboardRank: null,
+            defaultFor: [],
+            sortOrder: 10 + i,
+          },
         },
-      },
+      );
+      expect(created.ok(), await created.text()).toBe(true);
+      activeKeys.add(modelKey);
+    }
+    const archived = keys[0]!;
+    const deleted = await page.request.post('/api/v1/admin/model/models/delete', {
+      headers,
+      data: { modelKeys: [archived] },
+    });
+    expect(deleted.ok(), await deleted.text()).toBe(true);
+    activeKeys.delete(archived);
+    const requests = apiRequests(page);
+    const firstModel = observe(page, '/model/models/page');
+    await page.goto('/model');
+    const response = await firstModel;
+    expect(response.ok()).toBe(true);
+    const result = await response.json();
+    expect(result.items.length).toBeGreaterThan(0);
+    expect(result.items).toHaveLength(20);
+    expect(result.items[0]).not.toHaveProperty('costRates');
+    expect(result.items[0]).not.toHaveProperty('billingBounds');
+    expect(result.total).toBeGreaterThan(20);
+    expect(result.items.every((item: { deletedAt?: string }) => !item.deletedAt)).toBe(true);
+    const rows = page.locator('tbody tr[data-row-key]');
+    await expect(rows).toHaveCount(result.items.length);
+    expect(
+      requests.map((u) => u.pathname).filter((p) => p.startsWith('/api/v1/admin/model/models')),
+    ).toEqual(['/api/v1/admin/model/models/page']);
+    const sorted = observe(page, '/model/models/page');
+    await page.getByRole('columnheader', { name: '模型', exact: true }).click();
+    const sortedResponse = await sorted;
+    expect(new URL(sortedResponse.url()).searchParams.get('sort')).toBe('name_asc');
+    const ordered = await sortedResponse.json();
+    expect(ordered.items.map((item: { modelKey: string }) => item.modelKey)).not.toContain(
+      archived,
     );
-    expect(created.ok(), await created.text()).toBe(true);
+    expect(
+      ordered.items.find((item: { modelKey: string }) =>
+        item.modelKey.startsWith('browser/list-model'),
+      )?.modelKey,
+    ).toBe(keys.at(-1));
+    const item = ordered.items[0];
+    const detail = observe(page, `/model/models/${encodeURIComponent(item.modelKey)}`);
+    await page
+      .locator(`tr[data-row-key="${item.modelKey}"]`)
+      .getByRole('button', { name: '编辑', exact: true })
+      .click();
+    const detailResponse = await detail;
+    expect(detailResponse.ok()).toBe(true);
+    expect(await detailResponse.json()).toHaveProperty('costRates');
+    await expect(page.getByRole('button', { name: '保存', exact: true })).toBeVisible();
+    expect(requests.some((url) => url.pathname.endsWith('/models/selection'))).toBe(false);
+    requests.length = 0;
+    const accounts = observe(page, '/model/upstreams');
+    await page.goto('/model?tab=upstreams');
+    expect((await accounts).ok()).toBe(true);
+    const account = page.locator(`tr[data-row-key="${item.upstreamId}"]`);
+    await expect(account).toBeVisible();
+    expect(
+      requests.some((url) => /\/model\/(models|upstreams\/model-references)/.test(url.pathname)),
+    ).toBe(false);
+    const references = observe(page, '/model/upstreams/model-references');
+    await account.click();
+    const referenceResponse = await references;
+    expect(referenceResponse.ok()).toBe(true);
+    expect(new URL(referenceResponse.url()).searchParams.get('ids')).toBe(item.upstreamId);
+    const referencesBody = await referenceResponse.json();
+    expect(referencesBody.items).toContainEqual(
+      expect.objectContaining({ modelKey: item.modelKey }),
+    );
+    expect(
+      referencesBody.items.some((row: { modelKey: string }) => row.modelKey === archived),
+    ).toBe(false);
+    expect(referencesBody.items[0]).not.toHaveProperty('rates');
+    await test.info().attach('observed-model-page', {
+      contentType: 'application/json',
+      body: JSON.stringify({ rows: result.items.length, total: result.total }),
+    });
+  } finally {
+    if (activeKeys.size) {
+      const removed = await page.request.post('/api/v1/admin/model/models/delete', {
+        headers,
+        data: { modelKeys: [...activeKeys] },
+      });
+      expect(removed.ok(), await removed.text()).toBe(true);
+    }
   }
-  const archived = keys[0]!;
-  const deleted = await page.request.post('/api/v1/admin/model/models/delete', {
-    headers,
-    data: { modelKeys: [archived] },
-  });
-  expect(deleted.ok(), await deleted.text()).toBe(true);
-  const requests = apiRequests(page);
-  const firstModel = observe(page, '/model/models/page');
-  await page.goto('/model');
-  const response = await firstModel;
-  expect(response.ok()).toBe(true);
-  const result = await response.json();
-  expect(result.items.length).toBeGreaterThan(0);
-  expect(result.items).toHaveLength(20);
-  expect(result.items[0]).not.toHaveProperty('costRates');
-  expect(result.items[0]).not.toHaveProperty('billingBounds');
-  expect(result.total).toBeGreaterThan(20);
-  expect(result.items.every((item: { deletedAt?: string }) => !item.deletedAt)).toBe(true);
-  const rows = page.locator('tbody tr[data-row-key]');
-  await expect(rows).toHaveCount(result.items.length);
-  expect(
-    requests.map((u) => u.pathname).filter((p) => p.startsWith('/api/v1/admin/model/models')),
-  ).toEqual(['/api/v1/admin/model/models/page']);
-  const sorted = observe(page, '/model/models/page');
-  await page.getByRole('columnheader', { name: '模型', exact: true }).click();
-  const sortedResponse = await sorted;
-  expect(new URL(sortedResponse.url()).searchParams.get('sort')).toBe('name_asc');
-  const ordered = await sortedResponse.json();
-  expect(ordered.items.map((item: { modelKey: string }) => item.modelKey)).not.toContain(archived);
-  expect(
-    ordered.items.find((item: { modelKey: string }) =>
-      item.modelKey.startsWith('browser/list-model'),
-    )?.modelKey,
-  ).toBe(keys.at(-1));
-  const item = ordered.items[0];
-  const detail = observe(page, `/model/models/${encodeURIComponent(item.modelKey)}`);
-  await page
-    .locator(`tr[data-row-key="${item.modelKey}"]`)
-    .getByRole('button', { name: '编辑', exact: true })
-    .click();
-  const detailResponse = await detail;
-  expect(detailResponse.ok()).toBe(true);
-  expect(await detailResponse.json()).toHaveProperty('costRates');
-  await expect(page.getByRole('button', { name: '保存', exact: true })).toBeVisible();
-  expect(requests.some((url) => url.pathname.endsWith('/models/selection'))).toBe(false);
-  requests.length = 0;
-  const accounts = observe(page, '/model/upstreams');
-  await page.goto('/model?tab=upstreams');
-  expect((await accounts).ok()).toBe(true);
-  const account = page.locator(`tr[data-row-key="${item.upstreamId}"]`);
-  await expect(account).toBeVisible();
-  expect(
-    requests.some((url) => /\/model\/(models|upstreams\/model-references)/.test(url.pathname)),
-  ).toBe(false);
-  const references = observe(page, '/model/upstreams/model-references');
-  await account.click();
-  const referenceResponse = await references;
-  expect(referenceResponse.ok()).toBe(true);
-  expect(new URL(referenceResponse.url()).searchParams.get('ids')).toBe(item.upstreamId);
-  const referencesBody = await referenceResponse.json();
-  expect(referencesBody.items).toContainEqual(expect.objectContaining({ modelKey: item.modelKey }));
-  expect(referencesBody.items.some((row: { modelKey: string }) => row.modelKey === archived)).toBe(
-    false,
-  );
-  expect(referencesBody.items[0]).not.toHaveProperty('rates');
-  await test.info().attach('observed-model-page', {
-    contentType: 'application/json',
-    body: JSON.stringify({ rows: result.items.length, total: result.total }),
-  });
 });

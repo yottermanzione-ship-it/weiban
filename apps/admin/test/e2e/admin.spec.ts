@@ -541,7 +541,8 @@ test('账号改名后旧名称搜索、模型线路和已有提醒使用正确�
     await search.fill(current);
     await expect(page.getByText(current, { exact: true })).toBeVisible();
     await page.goto('/model?tab=models');
-    await expect(page.getByText(`优先级 1 · ${current}`)).toBeVisible();
+    const chatRow = page.getByRole('row').filter({ hasText: 'browser/chat-fixture' });
+    await expect(chatRow.getByText(`优先级 1 · ${current}`, { exact: true })).toBeVisible();
     await page.goto('/admin/alerts?view=info');
     await expect(page.getByText(`上游账号 · ${current}`)).toBeVisible();
     await expect(page.getByRole('link', { name: '查看明细' })).toHaveAttribute(
