@@ -154,13 +154,27 @@ describeDb('后台模型目录、上游账号与文本榜回归', () => {
         upstreamId: string,
         wire: string,
         errorCode: string | null,
-        after = false,
+        options: {
+          offset?: number;
+          state?: 'unknown' | 'reported' | 'estimated';
+          key?: string;
+        } = {},
       ) =>
         tx.query(
           `INSERT INTO model_access.generation_attempts
           (id,generation_id,user_id,ordinal,model_key,upstream_id,upstream_model_id,phase,bound_snapshot,usage_state,error_code,created_at,finished_at)
-         VALUES ($1,$2,$3,1,$4,$5,$6,'finished','{}','estimated',$7,now() + $8 * interval '1 second',now() + $8 * interval '1 second')`,
-          [newId(), newId(), admin, modelKey, upstreamId, wire, errorCode, after ? 1 : -1],
+         VALUES ($1,$2,$3,1,$4,$5,$6,'finished','{}',$9,$7,now() + $8 * interval '1 second',now() + $8 * interval '1 second')`,
+          [
+            newId(),
+            newId(),
+            admin,
+            options.key ?? modelKey,
+            upstreamId,
+            wire,
+            errorCode,
+            options.offset ?? -1,
+            options.state ?? 'estimated',
+          ],
         );
       const streaks = async () =>
         (
@@ -170,13 +184,17 @@ describeDb('后台模型目录、上游账号与文本榜回归', () => {
           )
         ).rows.map((r) => r.n);
       await attempt(ids[0]!, 'shared-wire', 'network_error');
-      await attempt(ids[1]!, 'replacement', null);
+      await attempt(ids[1]!, 'replacement', 'network_error', { offset: -2 });
+      await attempt(ids[1]!, 'replacement', null, { state: 'unknown', offset: 0 });
+      await attempt(ids[2]!, 'shared-wire', 'network_error', { offset: -2 });
+      await attempt(ids[2]!, 'shared-wire', null, { state: 'reported', key: keys[1]! });
+      await attempt(ids[2]!, 'shared-wire', null, { state: 'unknown', offset: 0 });
       await tx.query(migration(''));
-      expect(await streaks()).toEqual([0, 1, 1]); // 真正成功缺回执与没有证据的线路均保留。
+      expect(await streaks()).toEqual([0, 1, 1]); // 成功无回执与共用线路混合更新都不能认定为网络误报。
       await tx.query(migration('.down'));
       expect(await streaks()).toEqual([1, 1, 1]);
       await tx.query(migration(''));
-      await attempt(ids[0]!, 'shared-wire', null, true);
+      await attempt(ids[0]!, 'shared-wire', null, { state: 'reported', key: keys[1]!, offset: 1 });
       await tx.query(migration('.down'));
       // 不恢复校正后已经有新回执的线路。
       expect(await streaks()).toEqual([0, 1, 1]);

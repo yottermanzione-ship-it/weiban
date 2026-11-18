@@ -14,6 +14,6 @@ WHERE r.model_key = old.model_key AND r.upstream_id = old.upstream_id AND r.upst
   AND r.updated_at = old.updated_at AND r.usage_missing_streak = 0
   AND NOT EXISTS (
     SELECT 1 FROM model_access.generation_attempts a
-    WHERE a.model_key = r.model_key AND a.upstream_id = r.upstream_id AND a.upstream_model_id = r.upstream_model_id
+    WHERE a.upstream_id = r.upstream_id AND a.upstream_model_id = r.upstream_model_id
       AND (a.created_at >= saved.corrected_at OR a.finished_at >= saved.corrected_at)
   );
