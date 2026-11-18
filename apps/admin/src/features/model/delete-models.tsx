@@ -46,7 +46,7 @@ export function useDeleteModels(onDone: (deletedKeys: string[]) => void) {
   const { modal } = App.useApp();
   const toast = useToast();
 
-  return async function askDelete(targets: AdminModel[]) {
+  return async function askDelete(targets: Pick<AdminModel, 'modelKey'>[]) {
     const modelKeys = targets.map((m) => m.modelKey);
     if (modelKeys.length === 0) return;
     let impact: ModelDeletionImpact;

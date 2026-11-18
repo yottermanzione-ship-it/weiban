@@ -35,11 +35,11 @@ function KindTag({ kind }: { kind: Kind }) {
 const PAGE = 100;
 
 export function TopupRecordsPage() {
-  const users = useUserDirectory();
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [kind, setKind] = useState<Kind | 'all'>('all');
   const [query, setQuery] = useState('');
   const [items, setItems] = useState<AdminTopupEntry[]>([]);
+  const users = useUserDirectory(items.flatMap((item) => [item.userId, item.operatorUserId]));
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Button, Segmented, Select, Tabs } from 'antd';
 import { ArrowRightOutlined, ReloadOutlined } from '@ant-design/icons';
@@ -14,7 +14,6 @@ import { DataTable, type ProColumns } from '../ui/table.js';
 import { Page } from '../ui/page.js';
 import { formatInt, formatPercent, formatYuan, pointsOf } from '../ui/format.js';
 import { PURPOSE_LABELS, modelLabel, rangeOf, type RangeKey } from './model/shared.js';
-import { listAllModels, parseAdminModels } from './model/list-parse.js';
 import { RecordsTab } from './model/records.js';
 import { UserIdentity } from './users/identity.js';
 
@@ -39,18 +38,12 @@ export function UsagePage() {
   const range = RANGES.find((item) => item.value === params.get('range'))?.value ?? '7d';
   const group = GROUPS.find((item) => item.value === params.get('group'))?.value ?? 'model';
   const view = params.get('view') === 'records' ? 'records' : 'summary';
-  const modelsRemote = useRemote(listAllModels);
-  const { models, issues } = useMemo(
-    () => parseAdminModels(modelsRemote.data?.items),
-    [modelsRemote.data],
-  );
+  const modelsRemote = useRemote(ModelAccessAdminEndpoints.modelLabels);
+  const models = modelsRemote.data?.items ?? [];
   const upstreamsRemote = useRemote(ModelAccessAdminEndpoints.listUpstreams);
   const upstreams = upstreamsRemote.data?.items ?? [];
   const quality = params.get('quality');
-  const lookupIssue =
-    modelsRemote.error ||
-    upstreamsRemote.error ||
-    (issues.length > 0 ? `${issues.length} 条目录项格式有误。可在模型管理查看详情。` : '');
+  const lookupIssue = modelsRemote.error || upstreamsRemote.error;
 
   function changeParam(key: string, value: string) {
     setParams((current) => {

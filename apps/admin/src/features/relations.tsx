@@ -6,13 +6,13 @@ import { useState } from 'react';
 import { Alert, Button, Form, Input, Select, Space } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import {
-  CharacterAdminEndpoints,
   RelationAdminEndpoints,
   type CharacterRelation,
   type RelationCloseness,
   type RelationType,
 } from '@weiban/contracts';
 import { ApiFailure } from '@weiban/client-core';
+import { CharacterPicker, useCharacterLabels } from './character-picker.js';
 import { api } from '../data/client.js';
 import { errorText, useRemote } from '../data/hooks.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
@@ -40,7 +40,6 @@ const CLOSENESS_LABELS: Record<RelationCloseness, string> = {
 export function RelationsPage() {
   const toast = useToast();
   const confirm = useDangerConfirm();
-  const characters = useRemote(CharacterAdminEndpoints.directory);
   const [characterId, setCharacterId] = useState('');
   const [typeFilter, setTypeFilter] = useState<RelationType | ''>('');
   const list = useRemote(RelationAdminEndpoints.listRelations, {
@@ -49,8 +48,10 @@ export function RelationsPage() {
   const [editing, setEditing] = useState<CharacterRelation | 'new' | null>(null);
   const [error, setError] = useState('');
 
-  const all = characters.data?.items ?? [];
-  const nameOf = (id: string) => all.find((c) => c.characterId === id)?.name ?? id.slice(0, 8);
+  const all = useCharacterLabels(
+    (list.data?.items ?? []).flatMap((row) => [row.characterAId, row.characterBId]),
+  );
+  const nameOf = (id: string) => all.get(id)?.name ?? id.slice(0, 8);
 
   const rows = (list.data?.items ?? [])
     .filter((r) => r.ownerUserId === null)
@@ -156,15 +157,12 @@ export function RelationsPage() {
         onRowClick={(row) => setEditing(row)}
         filters={
           <>
-            <Select
+            <CharacterPicker
               allowClear
-              showSearch
-              optionFilterProp="label"
               placeholder="按角色筛选"
               style={{ width: 200 }}
               value={characterId || undefined}
               onChange={(value) => setCharacterId(value ?? '')}
-              options={all.map((c) => ({ value: c.characterId, label: c.name }))}
             />
             <Select
               allowClear
@@ -187,11 +185,6 @@ export function RelationsPage() {
       {editing && (
         <RelationDrawer
           relation={editing === 'new' ? null : editing}
-          characters={all.map((c) => ({
-            value: c.characterId,
-            label: `${c.name}${c.classification.basis === 'real_person' ? '（真人）' : ''}`,
-            basis: c.classification.basis,
-          }))}
           onClose={() => setEditing(null)}
           onSaved={() => {
             toast.success('已保存');
@@ -214,12 +207,10 @@ interface RelationForm {
 
 function RelationDrawer({
   relation,
-  characters,
   onClose,
   onSaved,
 }: {
   relation: CharacterRelation | null;
-  characters: Array<{ value: string; label: string; basis: string }>;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -229,8 +220,10 @@ function RelationDrawer({
   const [error, setError] = useState('');
   const a = Form.useWatch('characterAId', form);
   const b = Form.useWatch('characterBId', form);
-  const basisOf = (id?: string) => characters.find((c) => c.value === id)?.basis;
-  const mixed = !!a && !!b && (basisOf(a) === 'real_person') !== (basisOf(b) === 'real_person');
+  const labels = useCharacterLabels([a, b]);
+  const basisA = a ? labels.get(a)?.classification.basis : undefined;
+  const basisB = b ? labels.get(b)?.classification.basis : undefined;
+  const mixed = basisA && basisB && (basisA === 'real_person') !== (basisB === 'real_person');
 
   async function save() {
     const values = await feedback.validate();
@@ -300,12 +293,7 @@ function RelationDrawer({
             label="角色 A"
             rules={[{ required: true, message: '选择角色' }]}
           >
-            <Select
-              showSearch
-              optionFilterProp="label"
-              options={characters}
-              disabled={!!relation}
-            />
+            <CharacterPicker disabled={!!relation} />
           </Form.Item>
           <Form.Item
             name="characterBId"
@@ -320,12 +308,7 @@ function RelationDrawer({
               },
             ]}
           >
-            <Select
-              showSearch
-              optionFilterProp="label"
-              options={characters}
-              disabled={!!relation}
-            />
+            <CharacterPicker disabled={!!relation} />
           </Form.Item>
         </div>
         <FormSection title="关系内容" />

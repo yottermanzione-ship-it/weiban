@@ -47,15 +47,16 @@ export function displayName(user: AdminUserLabel | undefined): string {
 
 /** 在运营记录里点开单人后才读取其钱包和账号详情。 */
 export function useSelectedUser(id: string | null) {
-  const page = useRemote(
-    BillingAdminEndpoints.userPage,
-    { query: { q: id ?? '', page: 1, pageSize: 1, sort: 'newest' } },
+  const detail = useRemote(
+    BillingAdminEndpoints.userDetail,
+    { params: { userId: id ?? '' } },
     !!id,
   );
   return {
-    row: page.data?.items.find((r) => r.userId === id),
-    refresh: page.refresh,
-    error: page.error,
+    row: detail.data,
+    refresh: detail.refresh,
+    error: detail.error,
+    loading: detail.loading,
   };
 }
 

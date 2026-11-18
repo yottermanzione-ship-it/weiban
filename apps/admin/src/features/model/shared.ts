@@ -1,4 +1,4 @@
-import type { AdminModel, Upstream } from '@weiban/contracts';
+import type { AdminModel, AdminModelLabel, Upstream } from '@weiban/contracts';
 
 export const PURPOSE_LABELS: Record<string, string> = {
   chat_reply: '聊天回复',
@@ -268,9 +268,9 @@ export function modelDisplayName(m: Pick<AdminModel, 'displayName'>): string {
  * 3.23：按模型键找显示名。已删除的模型（deletedAt 非空）只给历史记录显示名字，加「（已删除）」；
  * 同键重新添加过时优先用现存的那个。找不到时原样显示键。
  */
-export function modelLabel(models: readonly AdminModel[], key: string): string {
+export function modelLabel(models: readonly AdminModelLabel[], key: string): string {
   const live = models.find((m) => m.modelKey === key && !m.deletedAt);
   if (live) return modelDisplayName(live);
-  const gone = models.find((m) => m.modelKey === key);
+  const gone = models.find((m) => m.archiveId === key) ?? models.find((m) => m.modelKey === key);
   return gone ? `${modelDisplayName(gone)}（已删除）` : key;
 }

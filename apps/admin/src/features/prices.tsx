@@ -84,7 +84,7 @@ export function PricesPage() {
   const toast = useToast();
   const confirm = useDangerConfirm();
   const list = useRemote(BillingAdminEndpoints.listPriceVersions);
-  const catalog = useRemote(ModelAccessAdminEndpoints.listCatalog);
+  const catalog = useRemote(ModelAccessAdminEndpoints.listCatalog, { query: { view: 'active' } });
   const [editing, setEditing] = useState<{
     mode: 'new' | 'edit' | 'copy';
     version?: PriceVersion;

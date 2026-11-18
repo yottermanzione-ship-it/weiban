@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import type { INestApplication } from '@nestjs/common';
-import type { AdminCatalogEntryWrite, ModelQuotePort } from '@weiban/contracts';
+import { AdminModelLabel, type AdminCatalogEntryWrite, type ModelQuotePort } from '@weiban/contracts';
 import type { z } from 'zod';
 import { createApp } from '../src/main.js';
 import { Database, DATABASE, TestClock, newId } from '../src/platform/index.js';
@@ -380,6 +380,13 @@ describeDb('后台模型目录、上游账号与文本榜回归', () => {
       { upstreamId: exclusive, upstreamModelId: 'demo', priority: 1, weight: 1, enabled: true },
     ];
     await catalog.replaceRoutes(admin, keys[0]!, routes);
+    expect(await catalog.upstreamModelReferences([exclusive])).toEqual([
+      expect.objectContaining({
+        upstreamId: exclusive,
+        modelKey: keys[0],
+        upstreamModelId: 'demo',
+      }),
+    ]);
     const ranking = app.get(LeaderboardService);
     const ranked = await ranking.importText(admin, 'rank,model\n2,Qwen Chat');
     expect(ranked.matched.map((m) => m.modelKey)).toContain(keys[0]);
@@ -396,6 +403,25 @@ describeDb('后台模型目录、上游账号与文本榜回归', () => {
       [{ decisionModelKey: keys[0], testMarker: '其他字段保留' }],
     );
     const modelAdmin = app.get(ModelAdminService);
+    const page = await modelAdmin.page({ page: 1, pageSize: 1, sort: 'name_asc', q: 'lab/' });
+    expect(page.total).toBe(3);
+    expect(page.items.map((m) => m.modelKey)).toEqual([keys[2]]);
+    const second = await modelAdmin.page({ page: 2, pageSize: 1, sort: 'name_asc', q: 'lab/' });
+    expect(second.items.map((m) => m.modelKey)).toEqual([keys[0]]);
+    expect(
+      (
+        await modelAdmin.page({
+          page: 1,
+          pageSize: 20,
+          sort: 'priority',
+          q: 'QWEN',
+          scenario: 'chat',
+        })
+      ).items.map((m) => m.modelKey),
+    ).toEqual([keys[0]]);
+    expect((await modelAdmin.detail(keys[0]!)).routes).toEqual(
+      expect.arrayContaining(routes.map((route) => expect.objectContaining(route))),
+    );
     const opened = (await catalog.adminList()).find((m) => m.modelKey === keys[0]!)!;
     expect(opened.catalogRevision).toEqual(expect.any(String));
     const edit = {
@@ -488,6 +514,23 @@ describeDb('后台模型目录、上游账号与文本榜回归', () => {
     ).rejects.toMatchObject({ code: 'conflict' });
     await del.delete(admin, [keys[0]!]);
     expect(await usage.byId(record.id)).toEqual(historicalUsage);
+    expect(
+      (await modelAdmin.page({ page: 1, pageSize: 20, sort: 'priority' })).items.map(
+        (m) => m.modelKey,
+      ),
+    ).toEqual(keys.slice(1));
+    expect((await catalog.adminSelection({})).map((m) => m.modelKey)).toEqual(keys.slice(1));
+    expect(await catalog.upstreamModelReferences([exclusive])).toEqual([]);
+    expect(await catalog.upstreamModelReferences([other])).toEqual([
+      expect.objectContaining({ upstreamId: other, modelKey: keys[2] }),
+    ]);
+    expect((await catalog.adminList(true)).map((m) => m.modelKey)).toEqual(keys.slice(1));
+    await expect(modelAdmin.detail(keys[0]!)).rejects.toMatchObject({ code: 'not_found' });
+    const labels = AdminModelLabel.array().parse(await catalog.adminLabels());
+    const archived = labels.filter((item) => item.modelKey === keys[0]);
+    expect(archived).toHaveLength(2);
+    expect(archived.every((item) => item.deletedAt && item.archiveId)).toBe(true);
+    expect(archived[0]?.displayName).toBe('Qwen Chat');
     expect(
       (await db.query('SELECT 1 FROM billing.price_versions WHERE id=$1', [previousPrice])).rows,
     ).toHaveLength(1);

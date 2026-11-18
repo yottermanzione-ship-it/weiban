@@ -17,7 +17,6 @@ import { ApiFailure } from '@weiban/client-core';
 import {
   ModelAccessAdminEndpoints,
   ModelAccessAdminUsageEndpoints,
-  type AdminModel,
   type AdminUsageOverview,
   type AdminUsageSummary,
   type GatewayLimits,
@@ -65,15 +64,11 @@ import { useFormFeedback } from '../../data/form-feedback.js';
 
 export function UpstreamsTab({
   upstreams,
-  models,
-  bindingStatus = '',
   loading = false,
   loadError = '',
   refresh,
 }: {
   upstreams: Upstream[];
-  models: AdminModel[];
-  bindingStatus?: string;
   /** 3.27：列表还在读取；读的过程中不能显示成「还没有上游账号」。 */
   loading?: boolean;
   /** 3.27：列表接口失败的原因（原先只显示操作错误，请求失败会被当成空列表）。 */
@@ -142,12 +137,27 @@ export function UpstreamsTab({
     }
   }
 
-  /** 引用这条线路的模型（主上游或任一路由，含停用的模型）。 */
-  const usersOf = (upstreamId: string) =>
-    models.filter(
-      (m) =>
-        m.upstreamId === upstreamId || (m.routes ?? []).some((r) => r.upstreamId === upstreamId),
-    );
+  const [checkingReferences, setCheckingReferences] = useState(false);
+  async function references(ids: string[]) {
+    setCheckingReferences(true);
+    setError('');
+    try {
+      const queries = [];
+      for (let offset = 0; offset < ids.length; offset += 150) {
+        queries.push(
+          api.call(ModelAccessAdminEndpoints.upstreamModelReferences, {
+            query: { ids: ids.slice(offset, offset + 150).join(',') },
+          }),
+        );
+      }
+      return (await Promise.all(queries)).flatMap((page) => page.items);
+    } catch (e) {
+      setError(errorText(e));
+      return null;
+    } finally {
+      setCheckingReferences(false);
+    }
+  }
 
   function blocked(u: Upstream, names: string[]) {
     modal.warning({
@@ -169,8 +179,9 @@ export function UpstreamsTab({
     });
   }
 
-  function askDelete(u: Upstream) {
-    const using = usersOf(u.upstreamId);
+  async function askDelete(u: Upstream) {
+    const using = await references([u.upstreamId]);
+    if (!using) return;
     if (using.length > 0) {
       blocked(
         u,
@@ -210,11 +221,16 @@ export function UpstreamsTab({
    * 3.23：批量删除。还被模型（含已下架的；已删除的模型不算）使用的账号跳过并列出；
    * 其余逐个删除，最后汇总成功 / 失败。
    */
-  function askBatchDelete(ids: string[]) {
+  async function askBatchDelete(ids: string[]) {
     const targets = upstreams.filter((u) => ids.includes(u.upstreamId));
     if (!targets.length) return;
+    const using = await references(targets.map((target) => target.upstreamId));
+    if (!using) return;
     const blockedList = targets
-      .map((u) => ({ u, names: usersOf(u.upstreamId).map((m) => m.displayName) }))
+      .map((u) => ({
+        u,
+        names: using.filter((row) => row.upstreamId === u.upstreamId).map((row) => row.displayName),
+      }))
       .filter((x) => x.names.length > 0);
     const deletable = targets.filter((u) => !blockedList.some((b) => b.u === u));
     const blockedView = (
@@ -420,7 +436,13 @@ export function UpstreamsTab({
               停用
             </Button>
           )}
-          <Button type="link" size="small" danger onClick={() => askDelete(u)}>
+          <Button
+            type="link"
+            size="small"
+            danger
+            disabled={checkingReferences}
+            onClick={() => void askDelete(u)}
+          >
             删除
           </Button>
         </Space>
@@ -483,7 +505,12 @@ export function UpstreamsTab({
             >
               批量停用
             </Button>
-            <Button size="small" danger onClick={() => askBatchDelete(selected.map(String))}>
+            <Button
+              size="small"
+              danger
+              loading={checkingReferences}
+              onClick={() => void askBatchDelete(selected.map(String))}
+            >
               批量删除
             </Button>
           </>
@@ -569,13 +596,7 @@ export function UpstreamsTab({
       )}
       {detail && (
         <UpstreamDetail
-          bindingStatus={bindingStatus}
           upstream={upstreams.find((u) => u.upstreamId === detail.upstreamId) ?? detail}
-          models={models.filter(
-            (m) =>
-              (m.routes ?? []).some((r) => r.upstreamId === detail.upstreamId) ||
-              m.upstreamId === detail.upstreamId,
-          )}
           onClose={() => setDetail(null)}
         />
       )}
@@ -881,17 +902,11 @@ function KindAwareBaseUrl({
   );
 }
 
-function UpstreamDetail({
-  upstream,
-  models,
-  bindingStatus,
-  onClose,
-}: {
-  upstream: Upstream;
-  models: AdminModel[];
-  bindingStatus: string;
-  onClose: () => void;
-}) {
+function UpstreamDetail({ upstream, onClose }: { upstream: Upstream; onClose: () => void }) {
+  const refs = useRemote(ModelAccessAdminEndpoints.upstreamModelReferences, {
+    query: { ids: upstream.upstreamId },
+  });
+  const models = refs.data?.items ?? [];
   const [week, setWeek] = useState<AdminUsageSummary>();
   const [overview, setOverview] = useState<AdminUsageOverview>();
   const [loading, setLoading] = useState(true);
@@ -993,18 +1008,23 @@ function UpstreamDetail({
         <TrendBars labels={labels} values={values} format={(v) => `${formatInt(v)} 次`} />
       )}
       <div className="detail-section">用这条线路的模型</div>
-      {bindingStatus && <div className="detail-muted">{bindingStatus}</div>}
-      {models.length === 0 ? (
-        !bindingStatus && <div className="detail-muted">还没有模型路由到这个账号。</div>
+      {refs.error ? (
+        <Alert
+          type="error"
+          showIcon
+          message={refs.error}
+          action={<Button onClick={refs.refresh}>重试</Button>}
+        />
+      ) : refs.loading ? (
+        <div className="detail-muted">正在读取关联模型…</div>
+      ) : models.length === 0 ? (
+        <div className="detail-muted">还没有模型路由到这个账号。</div>
       ) : (
         <div className="chip-list">
           {models.map((m) => (
             <span className="chip" key={m.modelKey}>
               {m.displayName}
-              <span className="chip-sub mono">
-                {(m.routes ?? []).find((r) => r.upstreamId === upstream.upstreamId)
-                  ?.upstreamModelId ?? m.upstreamModelId}
-              </span>
+              <span className="chip-sub mono">{m.upstreamModelId}</span>
             </span>
           ))}
         </div>

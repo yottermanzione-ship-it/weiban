@@ -796,6 +796,31 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     });
     return { items, total: counts?.[0]?.n ?? items.length };
   }
+  async adminLookup(query: { q?: string; ids?: string; status?: string; basis?: string }) {
+    const filters: SQL[] = [eq(characters.kind, 'preset')];
+    if (query.ids) filters.push(inArray(characters.id, query.ids.split(',')));
+    if (query.status) filters.push(eq(characters.status, query.status));
+    if (query.basis) filters.push(eq(characters.basis, query.basis));
+    if (query.q) {
+      const q = query.q.toLowerCase();
+      filters.push(
+        sql`(strpos(lower(${characters.searchText}), ${q}) > 0 OR strpos(${characters.id}::text, ${q}) > 0)`,
+      );
+    }
+    const statement = this.database.db
+      .select({
+        characterId: characters.id,
+        name: characters.name,
+        status: characters.status,
+        basis: characters.basis,
+      })
+      .from(characters)
+      .where(and(...filters))
+      .orderBy(desc(characters.updatedAt), characters.id);
+    const rows = await (query.ids ? statement : statement.limit(20));
+    return { items: rows.map(({ basis, ...row }) => ({ ...row, classification: { basis } })) };
+  }
+
   async adminDetail(adminId: string, id: string) {
     return this.admin(adminId, await this.presetRow(id));
   }

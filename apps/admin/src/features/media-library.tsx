@@ -19,7 +19,6 @@ import {
 import { PlusOutlined, UploadOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import {
   CardTemplateAdminEndpoints,
-  CharacterAdminEndpoints,
   MediaAdminEndpoints,
   StickerAdminEndpoints,
   VoiceAdminEndpoints,
@@ -29,6 +28,7 @@ import {
   type StickerPack,
   type WorkLink,
 } from '@weiban/contracts';
+import { CharacterPicker, useCharacterLabels } from './character-picker.js';
 import { api } from '../data/client.js';
 import { adminMediaUrl } from '../data/media-url.js';
 import { errorText, useRemote } from '../data/hooks.js';
@@ -47,14 +47,6 @@ import {
 import { formatDateTime } from '../ui/format.js';
 import { useFormFeedback } from '../data/form-feedback.js';
 
-function useCharacters() {
-  const characters = useRemote(CharacterAdminEndpoints.directory);
-  return (characters.data?.items ?? []).map((c) => ({
-    value: c.characterId,
-    label: `${c.name}${c.status === 'published' ? '' : '（未上架）'}`,
-  }));
-}
-
 async function uploadMedia(file: File, purpose: string) {
   return api.call(MediaAdminEndpoints.adminUpload, { query: { purpose: purpose as never }, file });
 }
@@ -65,12 +57,14 @@ export function StickerLibraryPage() {
   const toast = useToast();
   const confirm = useDangerConfirm();
   const packs = useRemote(StickerAdminEndpoints.listPacks);
-  const characters = useCharacters();
   const [editing, setEditing] = useState<StickerPack | 'new' | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [error, setError] = useState('');
 
-  const nameOf = (id: string) => characters.find((c) => c.value === id)?.label ?? id.slice(0, 8);
+  const characters = useCharacterLabels(
+    (packs.data?.items ?? []).flatMap((pack) => pack.characterIds),
+  );
+  const nameOf = (id: string) => characters.get(id)?.name ?? id.slice(0, 8);
 
   const columns: ProColumns<StickerPack>[] = [
     {
@@ -173,7 +167,6 @@ export function StickerLibraryPage() {
       {editing && (
         <StickerPackDrawer
           pack={editing === 'new' ? null : editing}
-          characters={characters}
           onClose={() => setEditing(null)}
           onChanged={() => {
             packs.refresh();
@@ -189,7 +182,6 @@ export function StickerLibraryPage() {
 
 function StickerPackDrawer({
   pack,
-  characters,
   onClose,
   onChanged,
   onError,
@@ -197,7 +189,6 @@ function StickerPackDrawer({
   confirm,
 }: {
   pack: StickerPack | null;
-  characters: Array<{ value: string; label: string }>;
   onClose: () => void;
   onChanged: () => void;
   onError: (message: string) => void;
@@ -348,13 +339,7 @@ function StickerPackDrawer({
               label="给哪些角色用"
               extra={<FieldHelp>不选 = 所有角色可用。</FieldHelp>}
             >
-              <Select
-                mode="multiple"
-                showSearch
-                optionFilterProp="label"
-                options={characters}
-                placeholder="所有角色"
-              />
+              <CharacterPicker multiple placeholder="所有角色" />
             </Form.Item>
           </div>
           <Form.Item
@@ -1045,15 +1030,12 @@ function CardDrawer({
 export function WorkLinksPage() {
   const toast = useToast();
   const confirm = useDangerConfirm();
-  const characters = useRemote(CharacterAdminEndpoints.directory);
   const [characterId, setCharacterId] = useState('');
   const [items, setItems] = useState<WorkLink[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState<WorkLink | 'new' | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
-
-  const published = (characters.data?.items ?? []).filter((c) => c.status === 'published');
 
   async function load() {
     if (!characterId) {
@@ -1168,9 +1150,8 @@ export function WorkLinksPage() {
       desc="角色的音乐、视频、网页作品。保存后系统会检查链接能不能打开；打不开的链接角色不再分享。"
       extra={
         <Space>
-          <Select
-            showSearch
-            optionFilterProp="label"
+          <CharacterPicker
+            status="published"
             style={{ width: 220 }}
             placeholder="选择角色"
             value={characterId || undefined}
@@ -1178,7 +1159,6 @@ export function WorkLinksPage() {
               setSelected([]);
               setCharacterId(value ?? '');
             }}
-            options={published.map((c) => ({ value: c.characterId, label: c.name }))}
           />
           <Button
             type="primary"

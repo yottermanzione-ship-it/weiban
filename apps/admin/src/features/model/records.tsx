@@ -6,7 +6,7 @@ import {
   ModelAccessAdminUsageEndpoints,
   Id,
   ModelKey,
-  type AdminModel,
+  type AdminModelLabel,
   type AdminUsageFilter,
   type AdminUsageRecord,
   type Upstream,
@@ -17,13 +17,7 @@ import { DataTable, type ProColumns } from '../../ui/table.js';
 import { RecordDrawer } from '../../ui/drawer.js';
 import { StatusTag, useToast } from '../../ui/page.js';
 import { formatDateTime, formatInt, formatYuan, pointsOf } from '../../ui/format.js';
-import {
-  UserIdentity,
-  shortUserId,
-  userDisplayName,
-  UserPicker,
-  useUserDirectory,
-} from '../users/identity.js';
+import { UserIdentity, shortUserId, userDisplayName, UserPicker } from '../users/identity.js';
 import {
   ERROR_LABELS,
   PURPOSE_LABELS,
@@ -54,7 +48,7 @@ export function RecordsTab({
   initial,
 }: {
   upstreams: Upstream[];
-  models: AdminModel[];
+  models: AdminModelLabel[];
   initial: {
     upstreamId: string;
     modelKey: string;
@@ -64,7 +58,6 @@ export function RecordsTab({
   };
 }) {
   const toast = useToast();
-  const directory = useUserDirectory();
   const [period, setPeriod] = useState(() => rangeOf(initial.range));
   const range: [Dayjs, Dayjs] = [dayjs(toLocalInput(period.from)), dayjs(toLocalInput(period.to))];
   const [userIds, setUserIds] = useState<string[]>([]);
@@ -138,7 +131,7 @@ export function RecordsTab({
     return u ? (u.deletedAt ? `${u.name}（已删除）` : u.name) : '未知账号';
   };
   /**
-   * 3.27：历史调用记录的模型键可能带 `#deleted:<随机>` 后缀或没有厂商前缀（契约已放宽，见 AdminModelKey）。
+   * 3.27：历史调用记录的模型键可能带 `#deleted:<随机>` 后缀或没有厂商前缀（契约已放宽，见 AdminModelLabelKey）。
    * 显示名去掉后缀；完整键留在副行 / 详情里供核对，不因为键不规范丢掉整行。
    */
   const modelName = (key: string) => stripDeletedSuffix(modelLabel(models, key));
@@ -346,7 +339,6 @@ export function RecordsTab({
         />
         <UserPicker
           multiple
-          directory={directory}
           placeholder="用户（可多选昵称、账号或编号）"
           value={userIds}
           onChange={(ids) => {

@@ -1,8 +1,8 @@
-import { Alert, Button, Card, Space } from 'antd';
-import { ReloadOutlined } from '@ant-design/icons';
+import { Alert, Button, Card, InputNumber, Popover, Segmented, Space } from 'antd';
+import { ColumnWidthOutlined, ReloadOutlined } from '@ant-design/icons';
 import { ProTable, type ProColumns } from '@ant-design/pro-components';
 import type { TablePaginationConfig } from 'antd';
-import type { Key, ReactNode } from 'react';
+import { Children, isValidElement, useState, type Key, type ReactNode } from 'react';
 import { EmptyHint } from './page.js';
 
 export type { ProColumns };
@@ -60,7 +60,6 @@ export interface DataTableProps<T extends Record<string, unknown>> {
   onSort?: (key: string, direction: 'ascend' | 'descend' | null) => void;
   footer?: ReactNode;
   size?: 'small' | 'middle';
-  scrollX?: number | string;
   showTools?: boolean;
 }
 
@@ -90,14 +89,90 @@ export function DataTable<T extends Record<string, unknown>>({
   pagination,
   footer,
   size = 'middle',
-  scrollX = 'max-content',
   showTools = false,
   onSort,
 }: DataTableProps<T>) {
+  const [density, setDensity] = useState<'small' | 'middle' | 'large'>(size);
+  const [widths, setWidths] = useState<Record<string, number>>({});
+  const layout = columns.map((column, index) => {
+    const title =
+      typeof column.title === 'string'
+        ? column.title
+        : isValidElement<{ children?: ReactNode }>(column.title)
+          ? Children.toArray(column.title.props.children)
+              .filter((child) => typeof child === 'string' || typeof child === 'number')
+              .join('')
+              .trim()
+          : '';
+    const key = String(column.key ?? column.dataIndex ?? (title || index));
+    const defaultWidth = typeof column.width === 'number' ? column.width : 160;
+    return { key, title: title || `第 ${index + 1} 列`, width: widths[key] ?? defaultWidth };
+  });
+  const tableWidth = layout.reduce((sum, { width }) => sum + width, onSelectionChange ? 44 : 0);
+  const tools = showTools && (
+    <Popover
+      trigger="click"
+      placement="bottomRight"
+      title="表格显示"
+      content={
+        <div className="table-layout-settings">
+          <Segmented
+            aria-label="表格密度"
+            value={density}
+            onChange={setDensity}
+            options={[
+              { value: 'small', label: '紧凑' },
+              { value: 'middle', label: '适中' },
+              { value: 'large', label: '宽松' },
+            ]}
+          />
+          {layout.map(({ key, title, width }) => (
+            <label className="table-width-setting" key={key}>
+              <span>{title}</span>
+              <InputNumber
+                aria-label={`${title}列宽（像素）`}
+                size="small"
+                min={64}
+                max={800}
+                step={16}
+                value={width}
+                onChange={(value) => {
+                  if (value != null && value >= 64 && value <= 800) {
+                    setWidths((current) => ({ ...current, [key]: value }));
+                  }
+                }}
+              />
+            </label>
+          ))}
+          <Button
+            size="small"
+            onClick={() => {
+              setDensity(size);
+              setWidths({});
+            }}
+          >
+            恢复默认
+          </Button>
+        </div>
+      }
+    >
+      <Button icon={<ColumnWidthOutlined />} aria-label="调整列宽和密度">
+        显示设置
+      </Button>
+    </Popover>
+  );
   return (
-    <div className="table-card">
-      {(filters || onRefresh || toolbarExtra) && (
-        <FilterBar onRefresh={onRefresh} extra={toolbarExtra}>
+    <div className={showTools ? 'table-card adjustable-table' : 'table-card'}>
+      {(filters || onRefresh || toolbarExtra || tools) && (
+        <FilterBar
+          onRefresh={onRefresh}
+          extra={
+            <>
+              {toolbarExtra}
+              {tools}
+            </>
+          }
+        >
           {filters}
         </FilterBar>
       )}
@@ -111,17 +186,18 @@ export function DataTable<T extends Record<string, unknown>>({
         />
       )}
       <ProTable<T>
-        columns={columns}
+        columns={
+          showTools ? columns.map((column, i) => ({ ...column, width: layout[i]!.width })) : columns
+        }
         dataSource={data ?? []}
         rowKey={rowKey as string}
         loading={loading}
         search={false}
         cardProps={false}
-        size={size}
-        scroll={{ x: scrollX }}
-        options={
-          showTools ? { reload: false, density: true, setting: true, fullScreen: false } : false
-        }
+        size={showTools ? density : size}
+        tableLayout={showTools ? 'fixed' : undefined}
+        scroll={{ x: showTools ? tableWidth : 'max-content' }}
+        options={false}
         pagination={
           pagination === false
             ? false
@@ -155,6 +231,7 @@ export function DataTable<T extends Record<string, unknown>>({
           onSelectionChange
             ? {
                 selectedRowKeys: selectedKeys,
+                ...(showTools ? { columnWidth: 44 } : {}),
                 onChange: (keys, rows) => onSelectionChange(keys, rows),
                 preserveSelectedRowKeys: preserveSelection,
                 getCheckboxProps: rowSelectable

@@ -756,7 +756,35 @@ export const AdminCharacterPurgeResult = z.object({
 });
 export type AdminCharacterPurgeResult = z.infer<typeof AdminCharacterPurgeResult>;
 
+export const AdminCharacterLabel = AdminCharacterIndexItem.pick({
+  characterId: true,
+  name: true,
+  status: true,
+  classification: true,
+});
+export type AdminCharacterLabel = z.infer<typeof AdminCharacterLabel>;
+
 export const CharacterAdminEndpoints = {
+  lookup: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/characters/lookup`,
+    auth: 'admin',
+    query: z.object({
+      q: z.string().trim().max(200).optional(),
+      status: CharacterPublishStatus.optional(),
+      basis: CharacterBasis.optional(),
+      ids: z
+        .string()
+        .max(5650)
+        .refine(
+          (value) => value.split(',').every((id) => Id.safeParse(id).success),
+          '角色编号格式无效',
+        )
+        .optional(),
+    }),
+    response: z.object({ items: z.array(AdminCharacterLabel) }),
+    summary: '按编号补齐预设角色名称，或搜索最多 20 张预设角色的标签。',
+  }),
   directory: defineEndpoint({
     method: 'GET',
     path: `${API_PREFIX}/admin/characters/directory`,

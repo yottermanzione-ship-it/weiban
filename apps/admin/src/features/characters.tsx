@@ -484,6 +484,7 @@ export function CharactersPage() {
         <BatchFailureAlert failures={failures} onDismiss={() => setFailures([])} />
       )}
       <DataTable<AdminCharacterIndexItem>
+        showTools
         rowKey="characterId"
         columns={columns}
         data={rows}

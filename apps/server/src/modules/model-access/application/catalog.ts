@@ -32,7 +32,7 @@ import {
   ModelScenarioSettings,
   RouteBillingBounds,
 } from '@weiban/contracts';
-import { and, asc, eq, gt, inArray, isNull, sql, getTableColumns } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, sql, getTableColumns } from 'drizzle-orm';
 import type { z } from 'zod';
 import {
   AUDIT_LOG,
@@ -733,16 +733,129 @@ export class CatalogService {
   }
 
   /** 后台目录（含停用的；3.23 起也含已删除的，deletedAt 非空，排在最后）。 */
-  async adminList(): Promise<AdminCatalogEntry[]> {
+  async adminList(activeOnly = false): Promise<AdminCatalogEntry[]> {
     const rows = await this.database.db
       .select(adminSelection)
       .from(modelCatalog)
+      .where(activeOnly ? isNull(modelCatalog.deletedAt) : undefined)
       .orderBy(
         sql`${modelCatalog.deletedAt} is not null`,
         asc(modelCatalog.sortOrder),
         asc(modelCatalog.modelKey),
       );
     return rows.map(toAdminEntry);
+  }
+
+  async upstreamModelReferences(ids: string[]) {
+    const { rows } = await this.database.query<{
+      upstreamId: string;
+      modelKey: string;
+      displayName: string;
+      upstreamModelId: string;
+    }>(
+      `WITH refs AS (
+         SELECT r.upstream_id, c.model_key, c.display_name, r.upstream_model_id, false AS mirror
+           FROM model_access.model_routes r
+           JOIN model_access.model_catalog c USING (model_key)
+          WHERE c.deleted_at IS NULL AND r.upstream_id = ANY($1::uuid[])
+         UNION ALL
+         SELECT c.upstream_id, c.model_key, c.display_name, c.upstream_model_id, true
+           FROM model_access.model_catalog c
+          WHERE c.deleted_at IS NULL AND c.upstream_id = ANY($1::uuid[])
+       )
+       SELECT DISTINCT ON (upstream_id, model_key)
+              upstream_id AS "upstreamId", model_key AS "modelKey",
+              display_name AS "displayName", upstream_model_id AS "upstreamModelId"
+         FROM refs ORDER BY upstream_id, model_key, mirror`,
+      [ids],
+    );
+    return rows;
+  }
+
+  async adminLabels() {
+    const rows = await this.database.db
+      .select({
+        modelKey: modelCatalog.modelKey,
+        displayName: modelCatalog.displayName,
+        originalModelKey: modelCatalog.originalModelKey,
+        deletedAt: modelCatalog.deletedAt,
+      })
+      .from(modelCatalog)
+      .orderBy(
+        sql`${modelCatalog.deletedAt} IS NOT NULL`,
+        desc(modelCatalog.deletedAt),
+        asc(modelCatalog.modelKey),
+      );
+    return rows.map((row) => {
+      const deletedAt = row.deletedAt?.toISOString() ?? null;
+      return {
+        modelKey: row.originalModelKey ?? row.modelKey,
+        displayName: row.displayName,
+        deletedAt,
+        ...(deletedAt ? { archiveId: row.modelKey } : {}),
+      };
+    });
+  }
+
+  private directoryFilter(filter: import('@weiban/contracts').AdminModelDirectoryFilter) {
+    const q = filter.q?.toLowerCase();
+    return and(
+      isNull(modelCatalog.deletedAt),
+      q
+        ? sql`(strpos(lower(${modelCatalog.displayName}), ${q}) > 0
+        OR strpos(lower(${modelCatalog.modelKey}), ${q}) > 0)`
+        : undefined,
+      filter.scenario ? sql`${filter.scenario} = ANY(${modelCatalog.scenarios})` : undefined,
+      filter.status ? eq(modelCatalog.enabled, filter.status === 'on') : undefined,
+    );
+  }
+
+  async adminSelection(filter: import('@weiban/contracts').AdminModelDirectoryFilter) {
+    return this.database.db
+      .select({ modelKey: modelCatalog.modelKey, displayName: modelCatalog.displayName })
+      .from(modelCatalog)
+      .where(this.directoryFilter(filter))
+      .orderBy(asc(modelCatalog.sortOrder), asc(modelCatalog.modelKey));
+  }
+
+  async adminPage(
+    filter: import('@weiban/contracts').AdminModelDirectoryFilter,
+    page: { offset: number; limit: number; sort: string } | undefined,
+  ) {
+    const where = this.directoryFilter(filter);
+    const primary =
+      page?.sort === 'name_asc'
+        ? asc(sql`lower(${modelCatalog.displayName})`)
+        : page?.sort === 'name_desc'
+          ? desc(sql`lower(${modelCatalog.displayName})`)
+          : page?.sort === 'priority_desc'
+            ? desc(modelCatalog.sortOrder)
+            : asc(modelCatalog.sortOrder);
+    const query = this.database.db
+      .select(adminSelection)
+      .from(modelCatalog)
+      .where(where)
+      .orderBy(primary, asc(modelCatalog.modelKey));
+    if (!page) {
+      const rows = await query;
+      return { entries: rows.map(toAdminEntry), total: rows.length };
+    }
+    const [rows, [count]] = await Promise.all([
+      query.limit(page.limit).offset(page.offset),
+      this.database.db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(modelCatalog)
+        .where(where),
+    ]);
+    return { entries: rows.map(toAdminEntry), total: count?.total ?? 0 };
+  }
+
+  async adminDetail(modelKey: string) {
+    const [row] = await this.database.db
+      .select(adminSelection)
+      .from(modelCatalog)
+      .where(and(eq(modelCatalog.modelKey, modelKey), isNull(modelCatalog.deletedAt)));
+    return row ? toAdminEntry(row) : null;
   }
 
   async withCatalogWrite<T>(work: (tx: DbTx) => Promise<T>): Promise<T> {

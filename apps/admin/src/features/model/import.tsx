@@ -283,12 +283,12 @@ function fieldLabelOf(key: string): string {
 }
 
 export function ImportModelsButton({
-  models,
+  loadModels,
   upstreams,
   onDone,
   icon,
 }: {
-  models: AdminModel[];
+  loadModels: () => Promise<AdminModel[]>;
   upstreams: Upstream[];
   onDone: () => void;
   icon?: ReactNode;
@@ -296,7 +296,8 @@ export function ImportModelsButton({
   const { message } = App.useApp();
   const fileInput = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState('');
-  const [rows, setRows] = useState<ImportRow[] | null>(null);
+  const [preview, setPreview] = useState<{ rows: ImportRow[]; models: AdminModel[] } | null>(null);
+  const [loading, setLoading] = useState(false);
 
   async function onFile(file: File | undefined) {
     if (!file) return;
@@ -319,8 +320,16 @@ export function ImportModelsButton({
       });
       return;
     }
-    setFileName(file.name);
-    setRows(rowsFromFile(parsed.data));
+    setLoading(true);
+    try {
+      const models = await loadModels();
+      setFileName(file.name);
+      setPreview({ rows: rowsFromFile(parsed.data), models });
+    } catch (e) {
+      void message.error(errorText(e));
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -336,17 +345,17 @@ export function ImportModelsButton({
         }}
       />
       <Tooltip title="从本地 JSON 文件批量添加 / 更新模型，导入前会先预览">
-        <Button icon={icon} onClick={() => fileInput.current?.click()}>
+        <Button icon={icon} loading={loading} onClick={() => fileInput.current?.click()}>
           导入配置
         </Button>
       </Tooltip>
-      {rows && (
+      {preview && (
         <ImportPreview
           fileName={fileName}
-          initialRows={rows}
-          models={models}
+          initialRows={preview.rows}
+          models={preview.models}
           upstreams={upstreams}
-          onClose={() => setRows(null)}
+          onClose={() => setPreview(null)}
           onDone={onDone}
         />
       )}
