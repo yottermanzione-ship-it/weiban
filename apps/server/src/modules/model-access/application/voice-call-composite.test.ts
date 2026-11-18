@@ -379,7 +379,7 @@ describe('catalog price exemption for the composite entry', () => {
       charges,
       database: { transaction },
     });
-    return { catalog, transaction, inserted };
+    return { catalog, transaction, tx, inserted };
   }
 
   it('exempts only the tagged voice/cascade-call entry from the price requirement', () => {
@@ -398,14 +398,17 @@ describe('catalog price exemption for the composite entry', () => {
   });
 
   it('still refuses to enable a normal model without an active price', async () => {
-    const { catalog, transaction } = catalogForUpsert({
-      listActivePricedModelKeys: async () => [],
-    });
+    const listActivePricedModelKeys = vi.fn(async () => []);
+    const { catalog, transaction, tx } = catalogForUpsert({ listActivePricedModelKeys });
+    const insert = vi.spyOn(tx.db, 'insert');
+    const remove = vi.spyOn(tx.db, 'delete');
     await expect(
       catalog.upsert('admin', 'text/other', writeFor('text/other', [])),
     ).rejects.toMatchObject({ code: 'model_unavailable', status: 422 });
-    // 价格检查在事务之前失败：没有写入任何东西。
-    expect(transaction).not.toHaveBeenCalled();
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(listActivePricedModelKeys).toHaveBeenCalledWith(tx);
+    expect(insert).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
   });
 
   it('enables the tagged composite without asking the price list at all', async () => {
