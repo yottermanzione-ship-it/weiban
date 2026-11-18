@@ -41,7 +41,11 @@ import {
   IDENTITY_ACCOUNT_STATUS_PORT,
   IDENTITY_MEMBERSHIP_READ_PORT,
 } from '../../identity/index.js';
-import { MODEL_GATEWAY_MEDIA_PORT, MODEL_QUOTE_PORT } from '../../model-access/index.js';
+import {
+  CatalogService,
+  MODEL_GATEWAY_MEDIA_PORT,
+  MODEL_QUOTE_PORT,
+} from '../../model-access/index.js';
 import {
   ACTION_DEF,
   DEFAULT_ECOLOGY_CONFIG,
@@ -109,6 +113,7 @@ export class EcologySettingsService {
     @Inject(MODEL_QUOTE_PORT) private readonly quotes: ModelQuotePort,
     @Inject(MODEL_GATEWAY_MEDIA_PORT) private readonly media: ModelGatewayMediaPort,
     @Inject(BILLING_READ_PORT) private readonly billing: BillingReadPort,
+    @Inject(CatalogService) private readonly catalog: CatalogService,
   ) {}
 
   // =========================================================================
@@ -240,21 +245,32 @@ export class EcologySettingsService {
   }
   async updateConfig(adminUserId: string, input: EcologyConfig): Promise<EcologyAdminOverview> {
     const config = parseContract(EcologyConfig, input);
+    let revision: string | null = null;
     if (config.decisionModelKey) {
+      revision = await this.catalog.enabledRevision(config.decisionModelKey);
+      if (revision === null) throw new AppError('bad_request', '决策模型不在模型目录或已下架');
       const problem = await this.decisionProblem(config.decisionModelKey);
       if (problem) throw new AppError('bad_request', `决策模型${problem}`);
       const amount = await this.quoteDecision(adminUserId, config.decisionModelKey);
       if (amount === null)
         throw new AppError('bad_request', '决策模型不在模型目录、已下架或没有价格');
     }
-    const now = this.clock.now();
-    await this.db.db
-      .insert(ecologyConfigTable)
-      .values({ id: 'default', config, updatedBy: adminUserId, updatedAt: now })
-      .onConflictDoUpdate({
-        target: ecologyConfigTable.id,
-        set: { config, updatedBy: adminUserId, updatedAt: now },
-      });
+    await this.catalog.withCatalogWrite(async (tx) => {
+      if (config.decisionModelKey)
+        await this.catalog.assertRevision(tx, config.decisionModelKey, revision);
+      const now = this.clock.now();
+      await tx.db
+        .insert(ecologyConfigTable)
+        .values({ id: 'default', config, updatedBy: adminUserId, updatedAt: now })
+        .onConflictDoUpdate({
+          target: ecologyConfigTable.id,
+          set: {
+            config: sql`${ecologyConfigTable.config} || excluded.config`,
+            updatedBy: adminUserId,
+            updatedAt: now,
+          },
+        });
+    });
     this.cache = null;
     return this.adminOverview(adminUserId);
   }
