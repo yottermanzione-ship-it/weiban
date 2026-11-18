@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type Key } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import dayjs from 'dayjs';
 import {
   Alert,
@@ -27,8 +27,9 @@ import { ApiFailure } from '@weiban/client-core';
 import {
   ModelAccessAdminEndpoints,
   RouteBillingBounds,
-  USAGE_MISSING_ALERT_STREAK,
   type AdminModel,
+  type AdminModelLabel,
+  type AdminModelPreview,
   type AdminModelTestResult,
   type ModelScenario,
   type ModelRates,
@@ -40,6 +41,8 @@ import { api } from '../../data/client.js';
 import { errorText, useRemote } from '../../data/hooks.js';
 import { useFormFeedback } from '../../data/form-feedback.js';
 import type { IssuePath } from '../../data/issues.js';
+import { useListSelection } from '../../data/list-selection.js';
+import { listModelPage, parseAdminModelPreviews } from './list-parse.js';
 import { DataTable, type ProColumns } from '../../ui/table.js';
 import { DrawerActions, RecordDrawer } from '../../ui/drawer.js';
 import {
@@ -95,10 +98,6 @@ import {
 /** 3.22：按场景筛选（模型「可用于哪些场景」）。 */
 type UseFilter = 'all' | ModelScenario;
 
-function matchesUse(m: AdminModel, use: UseFilter): boolean {
-  return use === 'all' || (m.scenarios ?? []).includes(use);
-}
-
 /** 3.22：限时折扣「5 折」写法。 */
 function discountLabel(rate: number) {
   const tenth = Math.round(rate * 100) / 10;
@@ -130,11 +129,6 @@ const BOUNDS_DETAILS = [
   'output_limit_too_small',
 ];
 
-/** 3.26（G3-2）：连续多次没返回用量的线路（达到提示阈值才在后台显示，不停用）。 */
-function usageMissingOf(m: AdminModel) {
-  return (m.usageMissing ?? []).filter((r) => r.streak >= USAGE_MISSING_ALERT_STREAK);
-}
-
 /** 3.24：文本聊天 / 私密模式模型缺识图能力（用户发的图片会发不出去）。 */
 function lacksVision(scenarios: readonly string[] | undefined, capabilities: readonly string[]) {
   return (
@@ -144,59 +138,98 @@ function lacksVision(scenarios: readonly string[] | undefined, capabilities: rea
 }
 
 export function ModelsTab({
-  models,
-  deletedModels = [],
   upstreams,
-  loading = false,
-  loadError = '',
+  accountDirectory = upstreams,
   upstreamsError = '',
-  invalidModels = [],
-  refresh,
-  onDeleted,
+  refreshUpstreams,
 }: {
-  /** 只传未删除的模型（编辑、上架 / 下架、批量删除都只作用于它们）。 */
-  models: AdminModel[];
-  /**
-   * 3.27：已删除（软删）的模型。真实目录里有软删除行，现在按契约也能读出来了：
-   * 排在列表最后、标「已删除」，只供核对历史（不能编辑 / 上架 / 再删除）。
-   */
-  deletedModels?: AdminModel[];
   upstreams: Upstream[];
-  /** 3.27：列表还在读取。读的过程中不能把「还没有结果」当成「没有模型」。 */
-  loading?: boolean;
-  /** 3.27：列表接口失败的原因（非 2xx、响应不符合契约、超时都会走到这里）。有值时只报错 + 重试，不显示空状态。 */
-  loadError?: string;
-  /** 3.27：上游账号列表失败。空状态让管理员先加线路，线路没读出来时要说明白，免得重复添加。 */
+  accountDirectory?: Upstream[];
   upstreamsError?: string;
-  /** 3.27：响应里不符合契约、因此没能展示的行（模型键 + 第一个不符合的字段）。 */
-  invalidModels?: Array<{ modelKey: string; message: string }>;
-  refresh: () => void;
-  /** 3.23：删除模型后通知外层（场景推荐 / 平台内部模型卡片重新读取）。 */
-  onDeleted?: () => void;
+  refreshUpstreams: () => void;
 }) {
   const toast = useToast();
   const confirm = useDangerConfirm();
   const [use, setUse] = useState<UseFilter>('all');
   const [status, setStatus] = useState<'all' | 'on' | 'off'>('all');
   const [query, setQuery] = useState('');
-  const [editing, setEditing] = useState<AdminModel | 'new' | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [sort, setSort] = useState<
+    | 'priority'
+    | 'priority_desc'
+    | 'name_asc'
+    | 'name_desc'
+    | 'reply_asc'
+    | 'reply_desc'
+    | 'multiplier_asc'
+    | 'multiplier_desc'
+  >('priority');
+  const filter = {
+    q: query.trim(),
+    scenario: use === 'all' ? undefined : use,
+    status: status === 'all' ? undefined : status,
+  };
+  const remote = useRemote(listModelPage, { query: { ...filter, page, pageSize, sort } });
+  const { models: parsed, issues: invalidModels } = parseAdminModelPreviews(remote.data?.items);
+  const list = parsed.filter((m) => !m.deletedAt);
+  const loading = remote.loading;
+  const loadError = remote.error;
+  const selection = useListSelection<Pick<AdminModelLabel, 'modelKey' | 'displayName'>>(
+    JSON.stringify(filter),
+    list,
+    (m) => m.modelKey,
+  );
+
+  const [editing, setEditing] = useState<string | null>(null);
+  const [savingNew, setSavingNew] = useState(false);
   const [focusBounds, setFocusBounds] = useState(false);
-  const openEditor = (target: AdminModel | 'new', bounds = false) => {
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const detail = useRemote(
+    ModelAccessAdminEndpoints.modelDetail,
+    { params: { modelKey: editing ?? '' } },
+    !!editing,
+  );
+  const modelKeys = useRemote(ModelAccessAdminEndpoints.modelSelection, {}, savingNew);
+  const openEditor = (target: AdminModelPreview | 'new', bounds = false) => {
     setFocusBounds(bounds);
-    setEditing(target);
+    if (target === 'new') setSavingNew(true);
+    else setEditing(target.modelKey);
+  };
+  const closeEditor = () => {
+    setEditing(null);
+    setSavingNew(false);
   };
   const [error, setError] = useState('');
-  // 3.23：勾选批量删除；删除后让展示倍率基准卡片重新读取（基准模型可能被清空）
-  const [selected, setSelected] = useState<Key[]>([]);
   const [deleteVersion, setDeleteVersion] = useState(0);
+  const refresh = () => {
+    remote.refresh();
+    refreshUpstreams();
+  };
+  useEffect(() => {
+    if (!remote.data) return;
+    const lastPage = Math.max(1, Math.ceil(remote.data.total / pageSize));
+    if (page > lastPage) setPage(lastPage);
+  }, [page, pageSize, remote.data]);
+
+  async function selectMatching() {
+    try {
+      await selection.selectAll(
+        async () =>
+          (await api.call(ModelAccessAdminEndpoints.modelSelection, { query: filter })).items,
+      );
+    } catch (e) {
+      toast.error(errorText(e));
+    }
+  }
   // 7.11：逐条线路测试模型（账号测试通过但模型调用失败的定位入口）。
   const [testing, setTesting] = useState<{
-    model: AdminModel;
+    model: AdminModelPreview;
     loading: boolean;
     result: AdminModelTestResult | null;
     error: string;
   } | null>(null);
-  const runModelTest = async (m: AdminModel) => {
+  const runModelTest = async (m: AdminModelPreview) => {
     setTesting({ model: m, loading: true, result: null, error: '' });
     try {
       const result = await api.call(ModelAccessAdminEndpoints.testModel, {
@@ -208,40 +241,23 @@ export function ModelsTab({
     }
   };
   const askDelete = useDeleteModels((keys) => {
-    setSelected((cur) => cur.filter((k) => !keys.includes(String(k))));
+    selection.select(selection.keys.filter((key) => !keys.includes(String(key))));
     setDeleteVersion((v) => v + 1);
-    onDeleted?.();
+    modelKeys.refresh();
     refresh();
   });
 
-  const upstreamName = (id: string) =>
-    upstreams.find((u) => u.upstreamId === id)?.name ?? '未知账号';
+  const accountById = new Map(accountDirectory.map((account) => [account.upstreamId, account]));
 
-  const matchesQuery = (m: AdminModel) => {
-    const q = query.trim();
-    return !q || modelDisplayName(m).includes(q) || m.modelKey.includes(q);
-  };
-  const list = models
-    .filter((m) => matchesUse(m, use))
-    .filter((m) => status === 'all' || (status === 'on' ? m.enabled : !m.enabled))
-    .filter(matchesQuery)
-    .sort((a, b) => a.sortOrder - b.sortOrder);
-  // 3.27：已删除的行照旧排在最后。它们恒为停用，所以「已上架」筛选里不出现。
-  const deletedList =
-    status === 'on'
-      ? []
-      : deletedModels
-          .filter((m) => matchesUse(m, use))
-          .filter(matchesQuery)
-          .sort((a, b) => a.sortOrder - b.sortOrder);
-  const tableRows = [...list, ...deletedList];
-
-  async function setEnabled(m: AdminModel, enabled: boolean) {
+  async function setEnabled(m: AdminModelPreview, enabled: boolean) {
     setError('');
     try {
+      const model = await api.call(ModelAccessAdminEndpoints.modelDetail, {
+        params: { modelKey: m.modelKey },
+      });
       await api.call(ModelAccessAdminEndpoints.upsertModel, {
         params: { modelKey: m.modelKey },
-        body: { ...toWrite(m), enabled },
+        body: { ...toWrite(model), expectedRevision: model.catalogRevision, enabled },
       });
       toast.success(enabled ? '已上架' : '已下架');
       refresh();
@@ -250,17 +266,19 @@ export function ModelsTab({
     }
   }
 
-  const columns: ProColumns<AdminModel>[] = [
+  const columns: ProColumns<AdminModelPreview>[] = [
     {
       title: '模型',
+      key: 'name',
+      sorter: true,
+      sortOrder: sort === 'name_asc' ? 'ascend' : sort === 'name_desc' ? 'descend' : null,
       fixed: 'left',
-      width: 210,
+      width: 265,
       render: (_, m) => (
         <div className="cell-main">
           <span className="cell-title">
             {/* 3.27：显示名去掉 `#deleted:` 后缀；副行照原样显示完整模型键，方便核对。 */}
             {modelDisplayName(m)}
-            {m.deletedAt && <StatusTag tone="default">已删除</StatusTag>}
           </span>
           <span className="cell-sub">
             {m.vendorName} · <span className="mono">{m.modelKey}</span>
@@ -269,6 +287,15 @@ export function ModelsTab({
       ),
     },
     {
+      title: '优先级',
+      key: 'priority',
+      sorter: true,
+      sortOrder: sort === 'priority' ? 'ascend' : sort === 'priority_desc' ? 'descend' : null,
+      width: 85,
+      render: (_, m) => m.sortOrder,
+    },
+    {
+      key: 'state',
       title: (
         <span>
           状态
@@ -277,30 +304,7 @@ export function ModelsTab({
       ),
       width: 190,
       render: (_, m) => {
-        // 3.27：已删除的行只显示「已删除」，不再按停用线路 / 计费上限给出误导性的原因。
-        if (m.deletedAt) {
-          return (
-            <div className="cell-main model-status">
-              <span>
-                <StatusTag tone="default">已删除</StatusTag>
-              </span>
-              <span className="cell-sub">历史记录仍显示模型名，不能重新上架</span>
-            </div>
-          );
-        }
-        // 3.24：具体原因来自服务器（availability）；旧服务器不带时按线路计费上限判断
-        const detail =
-          m.availability?.detail ??
-          (m.availability
-            ? null
-            : !(m.routes?.length
-                  ? m.routes.some(
-                      (route) =>
-                        route.enabled && route.billingBounds && !route.billingBounds.pauseReason,
-                    )
-                  : m.billingBounds && !m.billingBounds.pauseReason)
-              ? 'billing_bounds_missing'
-              : null);
+        const detail = m.availability?.detail;
         const showDetail = m.enabled && detail && detail !== 'model_removed';
         return (
           <div className="cell-main model-status">
@@ -339,34 +343,63 @@ export function ModelsTab({
                 缺识图能力
               </span>
             )}
-            {usageMissingOf(m).map((r) => (
-              <span
-                key={`${r.upstreamId}:${r.upstreamModelId}`}
-                className="status-reason warn"
-                title={`线路「${upstreamName(r.upstreamId)} · ${r.upstreamModelId}」${
-                  r.since ? `从 ${dayjs(r.since).format('MM-DD HH:mm')} 起` : ''
-                }连续 ${r.streak} 次没有返回用量，系统按本地估算计费（标记「估算」），线路照常使用。可检查上游 / 中转是否返回 usage，或在「调用记录」里看估算的调用。`}
-              >
-                连续 {r.streak} 次没返回用量 · 按估算计费
-              </span>
-            ))}
           </div>
         );
       },
     },
     {
-      title: '上游线路（按顺序切换）',
-      width: 160,
+      title: '上游线路',
+      width: 245,
       render: (_, m) => {
-        const routes = [...(m.routes ?? [])].sort((a, b) => a.priority - b.priority);
-        return (routes.length ? routes.map((r) => r.upstreamId) : [m.upstreamId])
-          .map(upstreamName)
-          .join(' → ');
+        const routes = m.routes?.length
+          ? m.routes
+          : [
+              {
+                upstreamId: m.upstreamId,
+                upstreamModelId: m.upstreamModelId,
+                enabled: true,
+                priority: 1,
+              },
+            ];
+        return routes.map((r) => {
+          const account = accountById.get(r.upstreamId);
+          const missing = m.usageMissing?.find(
+            (item) =>
+              item.upstreamId === r.upstreamId && item.upstreamModelId === r.upstreamModelId,
+          );
+          return (
+            <div key={r.upstreamId} className="cell-main">
+              <span>
+                优先级 {r.priority} · {account?.name ?? '账号名称未读取'}
+              </span>
+              <span className="cell-sub">
+                {account?.deletedAt
+                  ? '账号已删除'
+                  : !r.enabled
+                    ? '线路已停用'
+                    : account
+                      ? '账号' + UPSTREAM_STATE_LABELS[upstreamState(account)]
+                      : '账号状态未读取'}{' '}
+                · <span className="mono">{r.upstreamModelId}</span>
+              </span>
+              {missing && (
+                <span
+                  className="status-reason warn"
+                  title={
+                    missing.since ? dayjs(missing.since).format('YYYY-MM-DD HH:mm') : undefined
+                  }
+                >
+                  连续 {missing.streak} 次成功调用缺少完整用量
+                </span>
+              )}
+            </div>
+          );
+        });
       },
     },
     {
       title: '能力',
-      width: 140,
+      width: 100,
       render: (_, m) =>
         ['文字', ...m.capabilities.map((c) => CAPABILITY_LABELS[c] ?? c)].join(' · '),
     },
@@ -428,7 +461,9 @@ export function ModelsTab({
     {
       title: '约每条回复',
       width: 100,
-      sorter: (a, b) => (a.pointsPerReply ?? 0) - (b.pointsPerReply ?? 0),
+      key: 'reply',
+      sorter: true,
+      sortOrder: sort === 'reply_asc' ? 'ascend' : sort === 'reply_desc' ? 'descend' : null,
       render: (_, m) =>
         m.pointsPerReply == null ? '—' : `${formatPoints(m.pointsPerReply * 10_000)} 积分`,
     },
@@ -467,7 +502,10 @@ export function ModelsTab({
         </span>
       ),
       width: 100,
-      sorter: (a, b) => (a.displayMultiplier ?? 0) - (b.displayMultiplier ?? 0),
+      key: 'multiplier',
+      sorter: true,
+      sortOrder:
+        sort === 'multiplier_asc' ? 'ascend' : sort === 'multiplier_desc' ? 'descend' : null,
       render: (_, m) =>
         m.displayMultiplier == null ? (
           '—'
@@ -482,75 +520,71 @@ export function ModelsTab({
       title: '操作',
       width: 180,
       fixed: 'right',
-      // 3.27：已删除的行没有可操作的动作（再编辑 / 上架 / 删除都没有意义，接口也不接受这些键）。
-      render: (_, m) =>
-        m.deletedAt ? (
-          <span className="cell-sub">已删除，仅供核对</span>
-        ) : (
-          <Space size={4}>
-            <Button
-              type="link"
-              size="small"
-              onClick={(e) => {
-                e.stopPropagation();
-                void runModelTest(m);
-              }}
-            >
-              测试
-            </Button>
-            <Button
-              type="link"
-              size="small"
-              onClick={(e) => {
-                e.stopPropagation();
-                openEditor(m);
-              }}
-            >
-              编辑
-            </Button>
-            {m.enabled ? (
-              <Button
-                type="link"
-                size="small"
-                danger
-                onClick={(e) => {
-                  e.stopPropagation();
-                  confirm({
-                    title: `下架「${modelDisplayName(m)}」？`,
-                    content:
-                      '下架后，选了这个模型的场景会显示「暂不可用」，用户需要重新选择（不会自动换成别的模型）。',
-                    okText: '下架',
-                    onOk: () => setEnabled(m, false),
-                  });
-                }}
-              >
-                下架
-              </Button>
-            ) : (
-              <Button
-                type="link"
-                size="small"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void setEnabled(m, true);
-                }}
-              >
-                上架
-              </Button>
-            )}
+      render: (_, m) => (
+        <Space size={4} wrap>
+          <Button
+            type="link"
+            size="small"
+            onClick={(e) => {
+              e.stopPropagation();
+              void runModelTest(m);
+            }}
+          >
+            测试
+          </Button>
+          <Button
+            type="link"
+            size="small"
+            onClick={(e) => {
+              e.stopPropagation();
+              openEditor(m);
+            }}
+          >
+            编辑
+          </Button>
+          {m.enabled ? (
             <Button
               type="link"
               size="small"
               danger
               onClick={(e) => {
                 e.stopPropagation();
-                void askDelete([m]);
+                confirm({
+                  title: `下架「${modelDisplayName(m)}」？`,
+                  content:
+                    '下架后，选了这个模型的场景会显示「暂不可用」，用户需要重新选择（不会自动换成别的模型）。',
+                  okText: '下架',
+                  onOk: () => setEnabled(m, false),
+                });
               }}
             >
-              删除
+              下架
             </Button>
-          </Space>
-        ),
+          ) : (
+            <Button
+              type="link"
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation();
+                void setEnabled(m, true);
+              }}
+            >
+              上架
+            </Button>
+          )}
+          <Button
+            type="link"
+            size="small"
+            danger
+            onClick={(e) => {
+              e.stopPropagation();
+              void askDelete([m]);
+            }}
+          >
+            删除
+          </Button>
+        </Space>
+      ),
     },
   ];
 
@@ -565,7 +599,7 @@ export function ModelsTab({
       }
     : loading
       ? { emptyTitle: '正在读取模型…' }
-      : models.length > 0 || deletedModels.length > 0
+      : filter.q || filter.status || filter.scenario
         ? {
             emptyTitle: '没有符合筛选的模型',
             emptyHint: '模型是有的，只是当前的搜索词 / 场景 / 状态没匹配到；换个条件试试。',
@@ -590,7 +624,10 @@ export function ModelsTab({
         </div>
         <Space size={8}>
           <ImportModelsButton
-            models={models}
+            loadModels={async () =>
+              (await api.call(ModelAccessAdminEndpoints.listModels, { query: { view: 'active' } }))
+                .items
+            }
             upstreams={upstreams}
             onDone={refresh}
             icon={<UploadOutlined />}
@@ -600,15 +637,25 @@ export function ModelsTab({
           </Button>
         </Space>
       </div>
-      <ModelsDevBar />
-      <MultiplierBase key={deleteVersion} models={models} onSaved={refresh} />
+      <details
+        className="workspace-options"
+        onToggle={(event) => setOptionsOpen(event.currentTarget.open)}
+      >
+        <summary>参考资料与倍率设置</summary>
+        {optionsOpen && (
+          <>
+            <ModelsDevBar />
+            <MultiplierBase key={deleteVersion} onSaved={refresh} />
+          </>
+        )}
+      </details>
       {upstreamsError && (
         <Alert
           type="warning"
           showIcon
           style={{ marginBottom: 12 }}
           message="上游账号列表没加载出来"
-          description={`${upstreamsError}（线路名称会显示「未知账号」，先点「刷新」重试再添加模型）`}
+          description={`${upstreamsError}（可刷新重新读取账号名称）`}
         />
       )}
       {invalidModels.length > 0 && (
@@ -637,33 +684,49 @@ export function ModelsTab({
           }
         />
       )}
-      <DataTable<AdminModel>
-        // 3.27：已删除行给的是删除前的原键，同键可能重新添加过、也可能删过不止一次，行键要带上删除时间区分。
-        rowKey={(m) => (m.deletedAt ? `${m.modelKey}#deleted@${m.deletedAt}` : m.modelKey)}
+      <DataTable<AdminModelPreview>
+        showTools
+        rowKey="modelKey"
         columns={columns}
-        data={tableRows}
+        data={list}
         loading={loading}
         error={error || loadError}
         onRefresh={refresh}
-        // 3.27：已删除的行只能看，点开编辑没有意义（写入接口也不接受软删除键）。
-        onRowClick={(m) => {
-          if (!m.deletedAt) openEditor(m);
+        onRowClick={openEditor}
+        selectedKeys={selection.keys}
+        selectionHint={
+          <Button type="link" size="small" onClick={() => void selectMatching()}>
+            选择全部匹配模型
+          </Button>
+        }
+        onSelectionChange={(keys) => selection.select(keys)}
+        pagination={{
+          current: page,
+          pageSize,
+          total: remote.data?.total ?? 0,
+          pageSizeOptions: [20, 50, 100],
+          onChange: (p, n) => {
+            selection.changePage();
+            setPage(n === pageSize ? p : 1);
+            setPageSize(n);
+          },
         }}
-        rowSelectable={(m) => !m.deletedAt}
-        selectedKeys={selected}
-        onSelectionChange={(keys) => setSelected(keys)}
-        batchActions={(rows) => (
+        onSort={(key, direction) => {
+          setPage(1);
+          if (key === 'priority') setSort(direction === 'descend' ? 'priority_desc' : 'priority');
+          else if (!direction) setSort('priority');
+          else if (key === 'name' || key === 'reply' || key === 'multiplier') {
+            setSort(`${key}_${direction === 'ascend' ? 'asc' : 'desc'}`);
+          }
+        }}
+        batchActions={() => (
           <Button
             size="small"
             danger
-            onClick={() => {
-              // 勾选会跨筛选 / 翻页保留：按键从全部模型里取
-              const keys = new Set(selected.map(String));
-              const picked = models.filter((m) => keys.has(m.modelKey));
-              void askDelete(picked.length ? picked : rows);
-            }}
+            disabled={loading}
+            onClick={() => void askDelete(selection.rows)}
           >
-            批量删除
+            批量删除（{selection.rows.length}）
           </Button>
         )}
         filters={
@@ -673,12 +736,18 @@ export function ModelsTab({
               placeholder="搜索模型名"
               style={{ width: 200 }}
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setPage(1);
+                setQuery(e.target.value);
+              }}
             />
             <Select
               style={{ width: 130 }}
               value={use}
-              onChange={setUse}
+              onChange={(v) => {
+                setPage(1);
+                setUse(v);
+              }}
               options={[
                 { value: 'all', label: '全部场景' },
                 ...Object.entries(SCENARIO_LABELS).map(([value, label]) => ({
@@ -690,7 +759,10 @@ export function ModelsTab({
             <Select
               style={{ width: 120 }}
               value={status}
-              onChange={setStatus}
+              onChange={(v) => {
+                setPage(1);
+                setStatus(v);
+              }}
               options={[
                 { value: 'all', label: '全部状态' },
                 { value: 'on', label: '已上架' },
@@ -703,20 +775,45 @@ export function ModelsTab({
         emptyHint={emptyState.emptyHint}
         emptyAction={emptyState.emptyAction}
       />
-      {editing && (
-        <ModelWizard
-          model={editing === 'new' ? null : editing}
-          existingKeys={models.map((m) => m.modelKey)}
-          upstreams={upstreams}
-          focusBounds={focusBounds}
-          onClose={() => setEditing(null)}
-          onSaved={() => {
-            setEditing(null);
-            toast.success('已保存，价目表已自动更新');
-            refresh();
-          }}
-        />
-      )}
+      {(savingNew || editing) &&
+        ((savingNew ? modelKeys.data : detail.data) ? (
+          <ModelWizard
+            key={editing ?? 'new'}
+            model={savingNew ? null : detail.data!}
+            existingKeys={(modelKeys.data?.items ?? []).map((m) => m.modelKey)}
+            upstreams={upstreams}
+            focusBounds={focusBounds}
+            onClose={closeEditor}
+            onSaved={() => {
+              closeEditor();
+              modelKeys.refresh();
+              toast.success('已保存，价目表已自动更新');
+              refresh();
+            }}
+          />
+        ) : (
+          <RecordDrawer open title="模型配置" onClose={closeEditor}>
+            {detail.error || modelKeys.error ? (
+              <Alert
+                type="error"
+                showIcon
+                message={detail.error || modelKeys.error}
+                action={
+                  <Button
+                    onClick={() => {
+                      detail.refresh();
+                      modelKeys.refresh();
+                    }}
+                  >
+                    重试
+                  </Button>
+                }
+              />
+            ) : (
+              '正在读取…'
+            )}
+          </RecordDrawer>
+        ))}
       <Modal
         open={!!testing}
         title={testing ? `测试模型：${modelDisplayName(testing.model)}` : '测试模型'}
@@ -737,7 +834,7 @@ export function ModelsTab({
           >
             <Space size={8} wrap>
               <Tag color={r.ok ? 'green' : 'red'}>{r.ok ? '成功' : '失败'}</Tag>
-              <span>{r.upstreamName}</span>
+              <span>{accountById.get(r.upstreamId)?.name ?? r.upstreamName}</span>
               <span className="mono">{r.upstreamModelId}</span>
               <span>{r.latencyMs} ms</span>
               {r.statusCode !== null && <span>HTTP {r.statusCode}</span>}
@@ -757,7 +854,8 @@ export function ModelsTab({
 }
 
 /** 3.17：展示倍率的基准模型（倍率 = 1.00 的那个，16 号文档建议 GPT-6 Sol）。 */
-function MultiplierBase({ models, onSaved }: { models: AdminModel[]; onSaved: () => void }) {
+function MultiplierBase({ onSaved }: { onSaved: () => void }) {
+  const models = useRemote(ModelAccessAdminEndpoints.listModels, { query: { view: 'active' } });
   const toast = useToast();
   const remote = useRemote(ModelAccessAdminEndpoints.getDisplayMultiplierSettings);
   const [value, setValue] = useState<string | null | undefined>(undefined);
@@ -794,8 +892,9 @@ function MultiplierBase({ models, onSaved }: { models: AdminModel[]; onSaved: ()
           placeholder="未设置（自动倍率不显示）"
           value={current ?? undefined}
           onChange={(v?: string) => setValue(v ?? null)}
-          options={models
-            .filter((m) => m.rates)
+          loading={models.loading}
+          options={(models.data?.items ?? [])
+            .filter((m) => !m.deletedAt && m.rates)
             .map((m) => ({ value: m.modelKey, label: `${m.displayName}（${m.modelKey}）` }))}
         />
         <Button loading={saving} disabled={value === undefined} onClick={() => void save()}>
@@ -1091,6 +1190,7 @@ export function ModelWizard({
       await api.call(ModelAccessAdminEndpoints.upsertModel, {
         params: { modelKey: key },
         body: {
+          expectedRevision: model ? model.catalogRevision : null,
           modelKey: key,
           displayName: values.displayName.trim(),
           vendorName: values.vendorName.trim(),

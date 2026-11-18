@@ -15,8 +15,9 @@ import { api } from '../../data/client.js';
 import { errorText } from '../../data/hooks.js';
 import { Page } from '../../ui/page.js';
 import { DataTable } from '../../ui/table.js';
-import { displayName, mergeSubRecords, useUserRows, type SubRecord } from './shared.js';
+import { displayName, mergeSubRecords, useSelectedUser, type SubRecord } from './shared.js';
 import { SubRecordDrawer, subColumns } from './sub-records.js';
+import { useUserDirectory } from './identity.js';
 import { UserDetailDrawer } from './detail.js';
 
 type PlanFilter = 'all' | 'month' | 'quarter' | 'year' | 'adjust';
@@ -32,12 +33,17 @@ interface Loaded {
 const PAGE = 100;
 
 export function MembershipRecordsPage() {
-  const users = useUserRows();
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [plan, setPlan] = useState<PlanFilter>('all');
   const [first, setFirst] = useState<'all' | 'true' | 'false'>('all');
   const [query, setQuery] = useState('');
   const [loaded, setLoaded] = useState<Loaded | null>(null);
+  const users = useUserDirectory(
+    [...(loaded?.orders ?? []), ...(loaded?.changes ?? [])].flatMap((row) => [
+      row.userId,
+      row.operatorUserId,
+    ]),
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
@@ -132,21 +138,22 @@ export function MembershipRecordsPage() {
   const nameOf = (id: string | null) => {
     if (!id) return '系统';
     const row = users.byId.get(id);
-    return row ? displayName(row.user) : `${id.slice(0, 8)}…`;
+    return row ? displayName(row) : `${id.slice(0, 8)}…`;
   };
 
   const q = query.trim().toLowerCase();
   const records = mergeSubRecords(loaded?.orders ?? [], loaded?.changes ?? []).filter((r) => {
     if (!q) return true;
-    const u = users.byId.get(r.userId)?.user;
+    const u = users.byId.get(r.userId);
     return (
       r.userId.includes(q) ||
-      !!u?.username.toLowerCase().includes(q) ||
+      !!u?.username?.toLowerCase().includes(q) ||
       !!u?.nickname?.toLowerCase().includes(q)
     );
   });
   const hasMore = !!loaded?.orderCursor || !!loaded?.changeCursor;
-  const openUser = openUserId ? users.byId.get(openUserId) : undefined;
+  const selectedUser = useSelectedUser(openUserId);
+  const openUser = selectedUser.row;
 
   return (
     <Page
@@ -215,6 +222,7 @@ export function MembershipRecordsPage() {
       {selected && (
         <SubRecordDrawer record={selected} nameOf={nameOf} onClose={() => setSelected(null)} />
       )}
+      {openUserId && selectedUser.error && <p role="alert">{selectedUser.error}</p>}
       {openUser && (
         <UserDetailDrawer
           row={openUser}
@@ -222,6 +230,7 @@ export function MembershipRecordsPage() {
           onClose={() => setOpenUserId(null)}
           onChanged={() => {
             users.refresh();
+            selectedUser.refresh();
             setRevision((v) => v + 1);
           }}
         />

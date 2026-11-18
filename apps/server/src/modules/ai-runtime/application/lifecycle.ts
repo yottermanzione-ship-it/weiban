@@ -12,6 +12,7 @@ import {
   type JobQueue,
   type UserDataRegistry,
 } from '../../../platform/index.js';
+import { ModelDeletionService } from '../../model-access/index.js';
 import { CHAT_READ_PORT } from '../../chat/index.js';
 import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { CHARACTER_TRIAL_READ_PORT } from '../../characters/index.js';
@@ -124,6 +125,7 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
     @Inject(CompanionSettingsService) readonly companion: CompanionSettingsService,
     @Inject(PlayAiService) readonly playAi: PlayAiService,
     @Inject(EcologyService) readonly ecology: EcologyService,
+    @Inject(ModelDeletionService) readonly catalogDeletion: ModelDeletionService,
     @Inject(EcologySettingsService) readonly ecologySettings: EcologySettingsService,
     @Inject(PrivateDigestService) readonly privateDigest: PrivateDigestService,
     @Inject(ImageCaptionStore) readonly captions: ImageCaptionStore,
@@ -133,6 +135,10 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       await this.jobs.send('ai.reconcile', {}, { retryLimit: 10, retryBackoff: true });
   }
   async onModuleInit(): Promise<void> {
+    this.catalogDeletion.bindEcology({
+      isReferenced: (keys) => this.ecologySettings.usesDecisionModel(keys),
+      clear: (tx, keys, operator) => this.ecologySettings.clearDeletedDecision(tx, keys, operator),
+    });
     this.registry.register({
       module: 'ai_runtime',
       purgeUser: (id) => this.store.purgeUser(id),

@@ -84,7 +84,7 @@ export function PricesPage() {
   const toast = useToast();
   const confirm = useDangerConfirm();
   const list = useRemote(BillingAdminEndpoints.listPriceVersions);
-  const catalog = useRemote(ModelAccessAdminEndpoints.listCatalog);
+  const catalog = useRemote(ModelAccessAdminEndpoints.listCatalog, { query: { view: 'active' } });
   const [editing, setEditing] = useState<{
     mode: 'new' | 'edit' | 'copy';
     version?: PriceVersion;
@@ -353,7 +353,12 @@ export function PricesPage() {
                   {
                     title: '成本',
                     width: 110,
-                    render: (_, item) => formatYuan(item.costMicros, 4),
+                    render: (_, item) =>
+                      item.costMicros === 0 ? (
+                        <StatusTag tone="success">¥0 · 零成本</StatusTag>
+                      ) : (
+                        formatYuan(item.costMicros, 4)
+                      ),
                   },
                   {
                     title: '分时价',

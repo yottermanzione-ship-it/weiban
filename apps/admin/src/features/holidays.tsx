@@ -1,3 +1,4 @@
+import { BulkTable } from '../ui/bulk-table.js';
 /**
  * 节日清单：角色会在节日当天主动问候（可选发节日卡）。
  * 日期规则只有三种：每年公历、每年农历、只此一次。
@@ -9,7 +10,7 @@ import dayjs from 'dayjs';
 import { HolidayAdminEndpoints, type HolidayDateType, type HolidayEvent } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { errorText } from '../data/hooks.js';
-import { DataTable, type ProColumns } from '../ui/table.js';
+import { type ProColumns } from '../ui/table.js';
 import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
 import { FieldHelp, FormSection, Page, useDangerConfirm, useToast } from '../ui/page.js';
 
@@ -225,7 +226,20 @@ export function HolidaysPage() {
         </Button>
       }
     >
-      <DataTable<HolidayEvent>
+      <BulkTable<HolidayEvent>
+        scope={JSON.stringify([enabled, romantic])}
+        nameOf={(row) => row.name}
+        afterBatch={() => void load()}
+        operations={[true, false].map((value) => ({
+          label: value ? '批量启用' : '批量停用',
+          danger: !value,
+          applies: (row) => row.enabled !== value,
+          run: (row) =>
+            api.call(HolidayAdminEndpoints.update, {
+              params: { holidayId: row.holidayId },
+              body: { enabled: value },
+            }),
+        }))}
         rowKey="holidayId"
         columns={columns}
         data={rows}

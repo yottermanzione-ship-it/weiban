@@ -1,3 +1,4 @@
+import { BulkTable } from '../ui/bulk-table.js';
 /**
  * 公告、更新说明、版本策略。
  * 公告：用户打开应用或回到前台时拉取；弹窗公告对未读用户自动弹一次。
@@ -209,7 +210,29 @@ export function AnnouncementsPage() {
       }
     >
       {error && <Alert type="error" showIcon message={error} />}
-      <DataTable<AdminAnnouncement>
+      <BulkTable<AdminAnnouncement>
+        scope="announcements"
+        nameOf={(r) => r.title}
+        afterBatch={list.refresh}
+        operations={[
+          {
+            label: '批量发布',
+            applies: (r) => r.status === 'draft',
+            run: (r) =>
+              api.call(AnnouncementAdminEndpoints.publishAnnouncement, {
+                params: { announcementId: r.announcementId },
+              }),
+          },
+          {
+            label: '批量撤回',
+            danger: true,
+            applies: (r) => r.status === 'published',
+            run: (r) =>
+              api.call(AnnouncementAdminEndpoints.withdrawAnnouncement, {
+                params: { announcementId: r.announcementId },
+              }),
+          },
+        ]}
         rowKey="announcementId"
         columns={columns}
         data={list.data?.items ?? []}

@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, DatePicker, Input, Select, Space, Tag, Typography } from 'antd';
-import { DownloadOutlined } from '@ant-design/icons';
+import { Button, DatePicker, Input, Select, Space, Tag, Typography } from 'antd';
+import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
 import {
   ModelAccessAdminUsageEndpoints,
-  type AdminModel,
+  Id,
+  ModelKey,
+  type AdminModelLabel,
   type AdminUsageFilter,
   type AdminUsageRecord,
   type Upstream,
@@ -15,13 +17,7 @@ import { DataTable, type ProColumns } from '../../ui/table.js';
 import { RecordDrawer } from '../../ui/drawer.js';
 import { StatusTag, useToast } from '../../ui/page.js';
 import { formatDateTime, formatInt, formatYuan, pointsOf } from '../../ui/format.js';
-import {
-  UserIdentity,
-  shortUserId,
-  userDisplayName,
-  UserPicker,
-  useUserDirectory,
-} from '../users/identity.js';
+import { UserIdentity, shortUserId, userDisplayName, UserPicker } from '../users/identity.js';
 import {
   ERROR_LABELS,
   PURPOSE_LABELS,
@@ -30,9 +26,21 @@ import {
   rangeOf,
   stripDeletedSuffix,
   toLocalInput,
+  type RangeKey,
 } from './shared.js';
 
 const PAGE_SIZE = 50;
+export type RecordQuality = '' | 'estimated' | 'cost_pending';
+
+function usageSource(record: AdminUsageRecord) {
+  if (record.estimated) {
+    if (record.ttsChars !== undefined) return '按字数计量';
+    return '本地估算';
+  }
+  return record.status === 'failed' && !record.inputTokens && !record.outputTokens
+    ? '未记录'
+    : '已计量';
+}
 
 export function RecordsTab({
   upstreams,
@@ -40,22 +48,27 @@ export function RecordsTab({
   initial,
 }: {
   upstreams: Upstream[];
-  models: AdminModel[];
-  initial: { upstreamId: string; modelKey: string; status: '' | 'failed' };
+  models: AdminModelLabel[];
+  initial: {
+    upstreamId: string;
+    modelKey: string;
+    status: '' | 'succeeded' | 'failed';
+    quality: RecordQuality;
+    range: RangeKey;
+  };
 }) {
   const toast = useToast();
-  const directory = useUserDirectory();
-  const start = rangeOf('7d');
-  const [range, setRange] = useState<[Dayjs, Dayjs]>([
-    dayjs(toLocalInput(start.from)),
-    dayjs(toLocalInput(start.to)),
-  ]);
+  const [period, setPeriod] = useState(() => rangeOf(initial.range));
+  const range: [Dayjs, Dayjs] = [dayjs(toLocalInput(period.from)), dayjs(toLocalInput(period.to))];
   const [userIds, setUserIds] = useState<string[]>([]);
-  const [characterId, setCharacterId] = useState('');
-  const [modelKey, setModelKey] = useState(initial.modelKey);
-  const [upstreamId, setUpstreamId] = useState(initial.upstreamId);
+  const [characterInput, setCharacterInput] = useState('');
+  const [characterIds, setCharacterIds] = useState<string[]>([]);
+  const [modelKey, setModelKey] = useState(() => ModelKey.safeParse(initial.modelKey).data ?? '');
+  const [upstreamId, setUpstreamId] = useState(() => Id.safeParse(initial.upstreamId).data ?? '');
   const [purpose, setPurpose] = useState('');
   const [status, setStatus] = useState<'' | 'succeeded' | 'failed'>(initial.status);
+  const [quality, setQuality] = useState(initial.quality);
+  const [revision, setRevision] = useState(0);
   const [cursors, setCursors] = useState<Array<string | undefined>>([undefined]);
   const [page, setPage] = useState<{ items: AdminUsageRecord[]; nextCursor: string | null }>();
   const [loading, setLoading] = useState(false);
@@ -64,18 +77,17 @@ export function RecordsTab({
 
   const filter = useMemo<AdminUsageFilter>(
     () => ({
-      from: fromLocalInput(range[0].format('YYYY-MM-DDTHH:mm')),
-      to: fromLocalInput(range[1].format('YYYY-MM-DDTHH:mm')),
+      ...period,
       ...(userIds.length ? { userIds } : {}),
-      ...(characterId.trim()
-        ? { characterIds: characterId.split(/[,，\s]+/).filter(Boolean) }
-        : {}),
+      ...(characterIds.length ? { characterIds } : {}),
       ...(modelKey ? { modelKeys: [modelKey] } : {}),
       ...(upstreamId ? { upstreamIds: [upstreamId] } : {}),
       ...(purpose ? { purposes: [purpose as never] } : {}),
       ...(status ? { status } : {}),
+      ...(quality === 'estimated' ? { estimated: true } : {}),
+      ...(quality === 'cost_pending' ? { costKnown: false } : {}),
     }),
-    [range, userIds, characterId, modelKey, upstreamId, purpose, status],
+    [period, userIds, characterIds, modelKey, upstreamId, purpose, status, quality],
   );
 
   const cursor = cursors.at(-1);
@@ -94,14 +106,32 @@ export function RecordsTab({
     return () => {
       active = false;
     };
-  }, [filter, cursor]);
+  }, [filter, cursor, revision]);
+
+  function applyCharacterFilter() {
+    const ids = [
+      ...new Set(
+        characterInput
+          .trim()
+          .split(/[,，\s]+/)
+          .filter(Boolean),
+      ),
+    ];
+    if (ids.length > 50 || ids.some((id) => !Id.safeParse(id).success)) {
+      toast.warning('请输入有效的角色 ID，最多 50 个。');
+      return;
+    }
+    setCharacterIds(ids);
+    setCursors([undefined]);
+    setRevision((value) => value + 1);
+  }
 
   const upstreamName = (id: string) => {
     const u = upstreams.find((x) => x.upstreamId === id);
     return u ? (u.deletedAt ? `${u.name}（已删除）` : u.name) : '未知账号';
   };
   /**
-   * 3.27：历史调用记录的模型键可能带 `#deleted:<随机>` 后缀或没有厂商前缀（契约已放宽，见 AdminModelKey）。
+   * 3.27：历史调用记录的模型键可能带 `#deleted:<随机>` 后缀或没有厂商前缀（契约已放宽，见 AdminModelLabelKey）。
    * 显示名去掉后缀；完整键留在副行 / 详情里供核对，不因为键不规范丢掉整行。
    */
   const modelName = (key: string) => stripDeletedSuffix(modelLabel(models, key));
@@ -125,10 +155,15 @@ export function RecordsTab({
         '缓存写入5分钟token',
         '缓存写入1小时token',
         '输出token',
+        '其中思考token',
         '音频输入token',
         '音频输出token',
+        '合成字数',
+        '识别秒数',
+        '用量来源',
         '耗时ms',
-        '上游成本(元)',
+        '已记上游成本(元)',
+        '成本状态',
         '用户扣除(积分)',
         '状态',
         '错误类型',
@@ -148,15 +183,25 @@ export function RecordsTab({
           x.cacheWrite5mTokens ?? 0,
           x.cacheWrite1hTokens ?? 0,
           x.outputTokens,
+          x.reasoningTokens ?? '',
           x.audioInputTokens ?? '',
           x.audioOutputTokens ?? '',
+          x.ttsChars ?? '',
+          x.asrSeconds ?? '',
+          usageSource(x),
           x.latencyMs,
           (x.costMicros / 1_000_000).toFixed(4),
+          x.costKnown === false ? '待核' : x.costKnown ? '已记' : '未知',
           pointsOf(x.chargedMicros).toFixed(2),
           x.status === 'succeeded' ? '成功' : '失败',
           x.errorCode ?? '',
         ]
-          .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+          .map((v) => {
+            const text = String(v);
+            const safe =
+              typeof v === 'string' && /^[\s]*[=+\-@\t\r\n]/.test(text) ? `'${text}` : text;
+            return `"${safe.replace(/"/g, '""')}"`;
+          })
           .join(','),
       );
       const blob = new Blob(['\ufeff' + [header.join(','), ...lines].join('\n')], {
@@ -178,12 +223,19 @@ export function RecordsTab({
     {
       title: '时间',
       width: 150,
-      render: (_, r) => formatDateTime(r.createdAt),
-    },
-    {
-      title: '用途',
-      width: 100,
-      render: (_, r) => PURPOSE_LABELS[r.purpose] ?? r.purpose,
+      render: (_, r) => (
+        <button
+          type="button"
+          className="usage-record-open"
+          aria-label={`查看 ${formatDateTime(r.createdAt)} 调用详情`}
+          onClick={(event) => {
+            event.stopPropagation();
+            setDetail(r);
+          }}
+        >
+          {formatDateTime(r.createdAt)}
+        </button>
+      ),
     },
     {
       title: '模型',
@@ -193,58 +245,57 @@ export function RecordsTab({
           {/* 3.27：显示名去掉 `#deleted:` 后缀；副行保留完整键 + 线路，方便和账本核对。 */}
           <span className="cell-title">{modelName(r.modelKey)}</span>
           <span className="cell-sub">
-            <span className="mono">{r.modelKey}</span> · {upstreamName(r.upstreamId)}
+            {upstreamName(r.upstreamId)} · {PURPOSE_LABELS[r.purpose] ?? r.purpose}
           </span>
         </div>
       ),
     },
     {
       title: '用户',
-      width: 140,
+      width: 112,
       render: (_, r) => (
-        <UserIdentity userId={r.userId} label={{ nickname: r.nickname, username: r.username }} />
+        <UserIdentity
+          compact
+          userId={r.userId}
+          label={{ nickname: r.nickname, username: r.username }}
+        />
       ),
     },
     {
-      title: '输入 / 输出 token',
+      title: '用量',
       width: 150,
-      // 3.26：上游没返回用量、按本地估算计费的调用标「估算」
       render: (_, r) => (
-        <span>
-          {formatInt(r.inputTokens)} / {formatInt(r.outputTokens)}
-          {r.estimated && (
-            <Tag
-              bordered={false}
-              color="orange"
-              style={{ marginLeft: 4 }}
-              title="上游没返回用量，按本地分词估算计费"
-            >
-              估算
-            </Tag>
-          )}
-        </span>
+        <div className="cell-main">
+          <span>
+            {r.ttsChars !== undefined
+              ? `${formatInt(r.ttsChars)} 字`
+              : r.asrSeconds !== undefined
+                ? `${r.asrSeconds} 秒`
+                : r.inputTokens || r.cachedInputTokens || r.outputTokens
+                  ? `${formatInt(r.inputTokens + r.cachedInputTokens + (r.cacheWrite5mTokens ?? 0) + (r.cacheWrite1hTokens ?? 0))} / ${formatInt(r.outputTokens)} token`
+                  : '—'}
+          </span>
+          <span className={r.estimated ? 'usage-estimate-label' : 'cell-sub'}>
+            {usageSource(r)}
+          </span>
+        </div>
       ),
     },
     {
-      title: '耗时',
-      width: 90,
-      sorter: (a, b) => a.latencyMs - b.latencyMs,
-      render: (_, r) => `${formatInt(r.latencyMs)} ms`,
-    },
-    {
-      title: '上游成本',
+      title: '已记上游成本',
       width: 110,
       render: (_, r) => (
         <span className="cell-main">
-          <span>{formatYuan(r.costMicros, 4)}</span>
-          {r.costKnown !== true && <span className="cell-sub">待核</span>}
+          <span>{r.costKnown === false && !r.costMicros ? '—' : formatYuan(r.costMicros, 4)}</span>
+          {r.costKnown === false && <span className="usage-estimate-label">成本待核</span>}
         </span>
       ),
     },
     {
       title: '用户扣除',
       width: 110,
-      render: (_, r) => `${pointsOf(r.chargedMicros).toFixed(2)} 积分`,
+      render: (_, r) =>
+        r.billingOwner === 'platform' ? '平台承担' : `${pointsOf(r.chargedMicros).toFixed(2)} 积分`,
     },
     {
       title: '状态',
@@ -261,26 +312,26 @@ export function RecordsTab({
   ];
 
   return (
-    <div className="tab-body">
-      <div className="tab-head">
-        <div className="tab-desc">
-          <strong>调用记录</strong>
-          <span>每一次模型调用的明细；不显示消息内容，只看花了多少、快不快、有没有失败。</span>
-        </div>
+    <div className="admin-stack">
+      <div className="usage-record-actions">
+        <span>点时间查看单次调用的用量和费用。</span>
         <Space size={8}>
           <Button icon={<DownloadOutlined />} onClick={() => void exportCsv()}>
             导出 CSV
           </Button>
         </Space>
       </div>
-      <div className="filter-panel">
+      <div className="filter-panel usage-filters">
         <DatePicker.RangePicker
           showTime={{ format: 'HH:mm' }}
           format="YYYY-MM-DD HH:mm"
           value={range}
           onChange={(v) => {
             if (v?.[0] && v[1]) {
-              setRange([v[0], v[1]]);
+              setPeriod({
+                from: fromLocalInput(v[0].format('YYYY-MM-DDTHH:mm')),
+                to: fromLocalInput(v[1].format('YYYY-MM-DDTHH:mm')),
+              });
               setCursors([undefined]);
             }
           }}
@@ -288,7 +339,6 @@ export function RecordsTab({
         />
         <UserPicker
           multiple
-          directory={directory}
           placeholder="用户（可多选昵称、账号或编号）"
           value={userIds}
           onChange={(ids) => {
@@ -299,16 +349,28 @@ export function RecordsTab({
         <Input
           style={{ width: 160 }}
           placeholder="角色 ID（可多个）"
-          value={characterId}
-          onChange={(e) => setCharacterId(e.target.value)}
+          aria-label="角色 ID"
+          value={characterInput}
+          onChange={(e) => setCharacterInput(e.target.value)}
+          onPressEnter={applyCharacterFilter}
         />
         <Select
           style={{ width: 170 }}
           value={modelKey}
-          onChange={setModelKey}
+          aria-label="模型筛选"
+          onChange={(value) => {
+            setModelKey(value);
+            setCursors([undefined]);
+          }}
           options={[
             { value: '', label: '全部模型' },
-            ...[...new Set(models.map((m) => m.modelKey))].map((key) => ({
+            ...[
+              ...new Set(
+                [modelKey, ...models.map((m) => m.modelKey)].filter(
+                  (key) => ModelKey.safeParse(key).success,
+                ),
+              ),
+            ].map((key) => ({
               value: key,
               label: modelName(key),
             })),
@@ -317,7 +379,11 @@ export function RecordsTab({
         <Select
           style={{ width: 150 }}
           value={upstreamId}
-          onChange={setUpstreamId}
+          aria-label="上游账号筛选"
+          onChange={(value) => {
+            setUpstreamId(value);
+            setCursors([undefined]);
+          }}
           options={[
             { value: '', label: '全部上游账号' },
             ...upstreams.map((u) => ({ value: u.upstreamId, label: upstreamName(u.upstreamId) })),
@@ -326,7 +392,11 @@ export function RecordsTab({
         <Select
           style={{ width: 130 }}
           value={purpose}
-          onChange={setPurpose}
+          aria-label="用途筛选"
+          onChange={(value) => {
+            setPurpose(value);
+            setCursors([undefined]);
+          }}
           options={[
             { value: '', label: '全部用途' },
             ...Object.entries(PURPOSE_LABELS).map(([value, label]) => ({ value, label })),
@@ -335,23 +405,42 @@ export function RecordsTab({
         <Select
           style={{ width: 110 }}
           value={status}
-          onChange={setStatus}
+          aria-label="调用结果筛选"
+          onChange={(value) => {
+            setStatus(value);
+            setCursors([undefined]);
+          }}
           options={[
             { value: '', label: '全部状态' },
             { value: 'succeeded', label: '成功' },
             { value: 'failed', label: '失败' },
           ]}
         />
-        <Button type="primary" onClick={() => setCursors([undefined])}>
-          查询
+        <Select<RecordQuality>
+          style={{ width: 156 }}
+          value={quality}
+          aria-label="用量与成本筛选"
+          onChange={(value) => {
+            setQuality(value);
+            setCursors([undefined]);
+          }}
+          options={[
+            { value: '', label: '全部计量状态' },
+            { value: 'estimated', label: '本地计量或估算' },
+            { value: 'cost_pending', label: '成本待核' },
+          ]}
+        />
+        <Button icon={<ReloadOutlined />} onClick={applyCharacterFilter}>
+          刷新
         </Button>
       </div>
-      {error && <Alert type="error" showIcon message={error} />}
       <DataTable<AdminUsageRecord>
         rowKey="usageRecordId"
         columns={columns}
+        showTools={false}
         data={page?.items ?? []}
         loading={loading}
+        error={error}
         pagination={false}
         onRowClick={(r) => setDetail(r)}
         emptyTitle="这段时间没有调用"
@@ -440,9 +529,24 @@ export function RecordsTab({
               </span>
             </div>
             <div>
-              <span className="detail-label">token</span>
+              <span className="detail-label">计量来源</span>
+              <span>{usageSource(detail)}</span>
+            </div>
+            {(detail.ttsChars !== undefined || detail.asrSeconds !== undefined) && (
+              <div>
+                <span className="detail-label">语音用量</span>
+                <span>
+                  {detail.ttsChars !== undefined
+                    ? `合成 ${formatInt(detail.ttsChars)} 字`
+                    : `识别 ${detail.asrSeconds} 秒`}
+                </span>
+              </div>
+            )}
+            <div>
+              <span className="detail-label">文字 token</span>
               <span>
-                输入 {formatInt(detail.inputTokens)}（缓存读取 {formatInt(detail.cachedInputTokens)}
+                未命中输入 {formatInt(detail.inputTokens)}（缓存读取{' '}
+                {formatInt(detail.cachedInputTokens)}
                 {(detail.cacheWrite5mTokens ?? 0) + (detail.cacheWrite1hTokens ?? 0) > 0
                   ? ` · 缓存写入 ${formatInt(detail.cacheWrite5mTokens ?? 0)}${
                       detail.cacheWrite1hTokens
@@ -451,7 +555,9 @@ export function RecordsTab({
                     }`
                   : ''}
                 ）· 输出 {formatInt(detail.outputTokens)}
-                {detail.estimated ? (detail.costKnown ? '（估算）' : '（用量待核）') : ''}
+                {detail.reasoningTokens !== undefined
+                  ? `（含思考 ${formatInt(detail.reasoningTokens)}）`
+                  : ''}
               </span>
             </div>
             {(detail.audioInputTokens !== undefined || detail.audioOutputTokens !== undefined) && (
@@ -479,16 +585,20 @@ export function RecordsTab({
               </span>
             </div>
             <div>
-              <span className="detail-label">上游成本</span>
+              <span className="detail-label">已记上游成本</span>
               <span>
-                {formatYuan(detail.costMicros, 4)}
-                {detail.costKnown !== true ? '（仅已核部分，仍待核）' : ''}
+                {detail.costKnown === false && !detail.costMicros
+                  ? '—'
+                  : formatYuan(detail.costMicros, 4)}
+                {detail.costKnown === false ? '（成本待核）' : ''}
               </span>
             </div>
             <div>
               <span className="detail-label">用户扣除</span>
               <span>
-                {pointsOf(detail.chargedMicros).toFixed(2)} 积分
+                {detail.billingOwner === 'platform'
+                  ? '平台承担'
+                  : `${pointsOf(detail.chargedMicros).toFixed(2)} 积分`}
                 {detail.absorbedCostMicros
                   ? ` · 平台吸收 ${formatYuan(detail.absorbedCostMicros, 4)}`
                   : ''}

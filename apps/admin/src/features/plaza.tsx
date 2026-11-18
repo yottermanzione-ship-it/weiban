@@ -22,13 +22,13 @@ import {
   AdminPlazaOfficialComment,
   AdminPlazaReport,
   AdminPlazaWork,
-  CharacterAdminEndpoints,
   PlazaAdminEndpoints,
   PlazaOfficialAdminEndpoints,
   type PlazaSnapshot,
 } from '@weiban/contracts';
+import { CharacterPicker, useCharacterLabels } from './character-picker.js';
 import { api } from '../data/client.js';
-import { errorText, useRemote } from '../data/hooks.js';
+import { errorText } from '../data/hooks.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
 import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
 import { FieldHelp, FormSection, Page, SectionCard, StatusTag, useToast } from '../ui/page.js';
@@ -137,7 +137,6 @@ function SnapshotView({ snapshot }: { snapshot: PlazaSnapshot }) {
 }
 
 function WorksTab() {
-  const directory = useUserDirectory();
   const [authorUserId, setAuthorUserId] = useState('');
   const [status, setStatus] = useState('');
   const [minReports, setMinReports] = useState<number | null>(null);
@@ -251,7 +250,6 @@ function WorksTab() {
         filters={
           <>
             <UserPicker
-              directory={directory}
               placeholder="作者（昵称、账号或编号）"
               value={authorUserId}
               onChange={setAuthorUserId}
@@ -576,7 +574,6 @@ function WorkDrawer({
 
 function OfficialCommentsTab() {
   const toast = useToast();
-  const characters = useRemote(CharacterAdminEndpoints.list);
   const [characterId, setCharacterId] = useState('');
   const [items, setItems] = useState<OfficialComment[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -607,8 +604,8 @@ function OfficialCommentsTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [characterId]);
 
-  const nameOf = (id: string) =>
-    (characters.data?.items ?? []).find((c) => c.characterId === id)?.name ?? id.slice(0, 8);
+  const characters = useCharacterLabels(items.map((item) => item.characterId));
+  const nameOf = (id: string) => characters.get(id)?.name ?? id.slice(0, 8);
 
   async function remove() {
     if (!target) return;
@@ -666,17 +663,13 @@ function OfficialCommentsTab() {
         error={error}
         onRefresh={() => void load()}
         filters={
-          <Select
+          <CharacterPicker
+            status="published"
             allowClear
-            showSearch
-            optionFilterProp="label"
             style={{ width: 220 }}
             placeholder="全部微伴角色"
             value={characterId || undefined}
             onChange={(value) => setCharacterId(value ?? '')}
-            options={(characters.data?.items ?? [])
-              .filter((c) => c.status === 'published')
-              .map((c) => ({ value: c.characterId, label: c.name }))}
           />
         }
         emptyTitle="还没有评论"
@@ -983,7 +976,7 @@ function BansTab() {
   const feedback = useFormFeedback(form);
   const [saving, setSaving] = useState(false);
   // 停权接口只带广场昵称，登录名按契约注释另经 identity 目录取。
-  const directory = useUserDirectory();
+  const directory = useUserDirectory(items.map((item) => item.userId));
 
   const labelOf = (row: Ban) =>
     row.nickname
@@ -1116,7 +1109,7 @@ function BansTab() {
             rules={[{ required: true, message: '请选择用户' }]}
             extra={<FieldHelp>按昵称、账号或编号选择；同名时请核对账号编号。</FieldHelp>}
           >
-            <UserPicker directory={directory} style={{ width: '100%' }} />
+            <UserPicker style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item name="period" label="期限">
             <Radio.Group>

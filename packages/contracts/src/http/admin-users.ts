@@ -42,7 +42,14 @@ export const AdminUserSummary = z.object({
 });
 export type AdminUserSummary = z.infer<typeof AdminUserSummary>;
 
+export const AdminUserFilter = z.object({
+  q: z.string().trim().max(200).optional(),
+  group: z.enum(['all', 'pro', 'expiring', 'banned']).optional(),
+});
+export type AdminUserFilter = z.infer<typeof AdminUserFilter>;
+
 export const AdminUserOverview = z.object({
+  expiringSoonCount: z.number().int().nonnegative().optional(),
   /** 状态为 active 的账号数（不含注销中）。 */
   totalUsers: z.number().int().nonnegative(),
   /** 当前有效的 PRO+ 会员数。 */
@@ -73,6 +80,39 @@ export const AdminDeleteUserRequest = z
   .strict();
 
 export const AdminUsersEndpoints = {
+  labels: defineEndpoint({
+    method: 'GET',
+    path: API_PREFIX + '/admin/users/labels',
+    auth: 'admin',
+    response: z.object({ items: z.array(AdminUserLabel.extend({ userId: Id })) }),
+    summary: '后台选择器使用的账号编号、登录名和昵称。',
+  }),
+  lookupLabels: defineEndpoint({
+    method: 'GET',
+    path: API_PREFIX + '/admin/users/lookup-labels',
+    auth: 'admin',
+    query: z.object({
+      q: z.string().trim().max(200).optional(),
+      ids: z
+        .string()
+        .max(5650)
+        .refine(
+          (value) => value.split(',').every((id) => Id.safeParse(id).success),
+          '用户编号格式无效',
+        )
+        .optional(),
+    }),
+    response: z.object({ items: z.array(AdminUserLabel.extend({ userId: Id })) }),
+    summary: '按编号批量补齐记录中的账号名称，或按输入搜索最多 20 名用户。',
+  }),
+  selectableUsers: defineEndpoint({
+    method: 'GET',
+    path: API_PREFIX + '/admin/users/selection',
+    auth: 'admin',
+    query: AdminUserFilter,
+    response: z.object({ items: z.array(AdminUserSummary) }),
+    summary: '显式选择全部匹配项时返回合资格普通账号的快照。',
+  }),
   listUsers: defineEndpoint({
     method: 'GET',
     path: API_PREFIX + '/admin/users',
@@ -84,6 +124,7 @@ export const AdminUsersEndpoints = {
     method: 'GET',
     path: API_PREFIX + '/admin/users/overview',
     auth: 'admin',
+    query: z.object({ view: z.literal('counts').optional() }),
     response: AdminUserOverview,
     summary: '3.21：总用户数、PRO+ 会员数、7 天内到期名单',
   }),

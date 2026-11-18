@@ -248,6 +248,13 @@ await app.get<Database>(DATABASE).transaction(async (tx) => {
       dedupeKey: `browser-alert-${index}`,
       summary: `浏览器运行提醒 ${index}`,
     });
+  await app.get(AdminAlertService).raise(tx, {
+    kind: 'upstream_usage_missing',
+    severity: 'info',
+    dedupeKey: 'browser-alert-usage-info',
+    summary: '浏览器示例供应商缺少用量回执',
+    refs: { upstreamId: upstream.upstreamId },
+  });
 });
 const sample = JSON.parse(
   readFileSync(

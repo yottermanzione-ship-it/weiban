@@ -410,6 +410,19 @@ export const AdminCharacter = z.object({
 });
 export type AdminCharacter = z.infer<typeof AdminCharacter>;
 
+export const AdminCharacterIndexItem = AdminCharacter.pick({
+  characterId: true,
+  status: true,
+  name: true,
+  updatedAt: true,
+}).extend({
+  format: CharacterCardFormat,
+  classification: z.object({ basis: CharacterBasis }),
+  avatarUrl: z.string().nullable().optional(),
+  revision: z.number().int().positive(),
+});
+export type AdminCharacterIndexItem = z.infer<typeof AdminCharacterIndexItem>;
+
 /** 角色库的可写字段（不带默认值）。 */
 const adminCharacterFields = {
   name: z.string().min(1).max(32),
@@ -743,7 +756,59 @@ export const AdminCharacterPurgeResult = z.object({
 });
 export type AdminCharacterPurgeResult = z.infer<typeof AdminCharacterPurgeResult>;
 
+export const AdminCharacterLabel = AdminCharacterIndexItem.pick({
+  characterId: true,
+  name: true,
+  status: true,
+  classification: true,
+});
+export type AdminCharacterLabel = z.infer<typeof AdminCharacterLabel>;
+
 export const CharacterAdminEndpoints = {
+  lookup: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/characters/lookup`,
+    auth: 'admin',
+    query: z.object({
+      q: z.string().trim().max(200).optional(),
+      status: CharacterPublishStatus.optional(),
+      basis: CharacterBasis.optional(),
+      ids: z
+        .string()
+        .max(5650)
+        .refine(
+          (value) => value.split(',').every((id) => Id.safeParse(id).success),
+          '角色编号格式无效',
+        )
+        .optional(),
+    }),
+    response: z.object({ items: z.array(AdminCharacterLabel) }),
+    summary: '按编号补齐预设角色名称，或搜索最多 20 张预设角色的标签。',
+  }),
+  directory: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/characters/directory`,
+    auth: 'admin',
+    query: z.object({
+      status: CharacterPublishStatus.optional(),
+      q: z.string().trim().max(200).optional(),
+      page: z.coerce.number().int().min(1).max(1000000).optional(),
+      pageSize: z.coerce.number().int().min(1).max(100).default(20),
+    }),
+    response: z.object({
+      items: z.array(AdminCharacterIndexItem),
+      total: z.number().int().nonnegative(),
+    }),
+    summary: '预设角色的轻量目录。分页显示缩略图，选取全部匹配项时只返回索引字段。',
+  }),
+  getCharacter: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/characters/:characterId/detail`,
+    auth: 'admin',
+    params: z.object({ characterId: Id }),
+    response: AdminCharacter,
+    summary: '按需读取一张预设角色卡。',
+  }),
   list: defineEndpoint({
     method: 'GET',
     path: `${API_PREFIX}/admin/characters`,

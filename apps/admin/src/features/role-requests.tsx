@@ -18,12 +18,12 @@ import {
   Timeline,
 } from 'antd';
 import {
-  CharacterAdminEndpoints,
   RoleRequestAdminEndpoints,
   type AdminRoleRequest,
   type RoleRequestStatus,
 } from '@weiban/contracts';
 import { ApiFailure } from '@weiban/client-core';
+import { CharacterPicker } from './character-picker.js';
 import { api } from '../data/client.js';
 import { errorText, useRemote } from '../data/hooks.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
@@ -31,7 +31,7 @@ import { RecordDrawer } from '../ui/drawer.js';
 import { FieldHelp, FormSection, Page, SectionCard, StatusTag, useToast } from '../ui/page.js';
 import { formatDateTime } from '../ui/format.js';
 import { useFormFeedback } from '../data/form-feedback.js';
-import { UserIdentity, userDisplayName, UserPicker, useUserDirectory } from './users/identity.js';
+import { UserIdentity, userDisplayName, UserPicker } from './users/identity.js';
 
 const STATUS_LABELS: Record<string, string> = {
   pending: '待处理',
@@ -72,7 +72,6 @@ export function RoleRequestsPage() {
 }
 
 function RequestList() {
-  const directory = useUserDirectory();
   const [status, setStatus] = useState<'' | RoleRequestStatus>('pending');
   const [userId, setUserId] = useState('');
   const [applied, setApplied] = useState<{ status: '' | RoleRequestStatus; userId: string }>({
@@ -201,7 +200,6 @@ function RequestList() {
               ]}
             />
             <UserPicker
-              directory={directory}
               value={userId}
               onChange={(value) => {
                 setUserId(value);
@@ -250,7 +248,6 @@ function RequestDrawer({
 }) {
   const toast = useToast();
   const remote = useRemote(RoleRequestAdminEndpoints.get, { params: { requestId } });
-  const characters = useRemote(CharacterAdminEndpoints.list);
   const [data, setData] = useState<AdminRoleRequest | null>(null);
   const [action, setAction] = useState<Action | null>(null);
   const [text, setText] = useState('');
@@ -478,15 +475,11 @@ function RequestDrawer({
                   required
                   extra={<FieldHelp>只能选已经上架的官方角色。</FieldHelp>}
                 >
-                  <Select
-                    showSearch
-                    optionFilterProp="label"
+                  <CharacterPicker
+                    status="published"
                     value={characterId || undefined}
                     onChange={setCharacterId}
                     placeholder="选择已上架角色"
-                    options={(characters.data?.items ?? [])
-                      .filter((c) => c.status === 'published')
-                      .map((c) => ({ value: c.characterId, label: c.name }))}
                   />
                 </Form.Item>
                 <Checkbox

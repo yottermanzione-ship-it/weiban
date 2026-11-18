@@ -182,6 +182,20 @@ export class BillingAdminController {
     return { items: await this.admin.listAccounts() };
   }
 
+  @Get('users')
+  @RequireAuth(A.userPage.auth)
+  userPage(@Query(new ContractPipe(schema(A.userPage.query))) query: Out<typeof A.userPage.query>) {
+    return this.admin.userPage(query);
+  }
+
+  @Get('users/:userId')
+  @RequireAuth(A.userDetail.auth)
+  userDetail(
+    @Param(new ContractPipe(schema(A.userDetail.params))) params: Out<typeof A.userDetail.params>,
+  ) {
+    return this.admin.userDetail(params.userId);
+  }
+
   @Post('accounts/:userId/adjustments')
   @HttpCode(201)
   @RequireAuth(A.adjustBalance.auth)

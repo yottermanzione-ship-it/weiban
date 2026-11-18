@@ -7,17 +7,17 @@
  * - 角色别名：官方角色的搜索别名先「添加（待审核）」，通过后才进站内搜索；人设里的别名可以从搜索里去掉 / 恢复。
  * 每次修改都要写原因，记审计（谁、何时、改了什么、原因），对应角色的搜索投影随后自动刷新。
  */
-import { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Checkbox, Drawer, Input, Modal, Select, Space, Tabs, Tag } from 'antd';
+import { useEffect, useState } from 'react';
+import { Alert, Button, Checkbox, Drawer, Input, Modal, Space, Tabs, Tag } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import {
-  CharacterAdminEndpoints,
   SearchAdminEndpoints,
   type AdminSearchAliasOp,
   type AdminSearchCorrection,
   type AdminSearchEntity,
   type AdminSearchEntityDetail,
 } from '@weiban/contracts';
+import { CharacterPicker } from './character-picker.js';
 import { api } from '../data/client.js';
 import { errorText, useRemote } from '../data/hooks.js';
 import { formatDateTime } from '../ui/format.js';
@@ -48,19 +48,6 @@ export function SearchEntitiesPage() {
         ]}
       />
     </Page>
-  );
-}
-
-/** 官方角色下拉（角色库里的全部官方角色）。 */
-function useCharacterOptions() {
-  const list = useRemote(CharacterAdminEndpoints.list);
-  return useMemo(
-    () =>
-      (list.data?.items ?? []).map((c) => ({
-        value: c.characterId,
-        label: `${c.name}${c.status === 'published' ? '' : '（未上架）'}`,
-      })),
-    [list.data],
   );
 }
 
@@ -207,7 +194,6 @@ function CreateEntityModal({
   onCreated: (detail: AdminSearchEntityDetail) => void;
 }) {
   const toast = useToast();
-  const options = useCharacterOptions();
   const [displayName, setDisplayName] = useState('');
   const [identity, setIdentity] = useState('');
   const [identifiers, setIdentifiers] = useState('');
@@ -282,14 +268,12 @@ function CreateEntityModal({
           value={sources}
           onChange={(e) => setSources(e.target.value)}
         />
-        <Select
-          mode="multiple"
+        <CharacterPicker
+          multiple
           style={{ width: '100%' }}
           placeholder="关联的官方角色（选填）"
-          options={options}
           value={characterIds}
           onChange={setCharacterIds}
-          optionFilterProp="label"
         />
         <ReasonInput value={reason} onChange={setReason} />
         <div className="field-note">
@@ -452,7 +436,6 @@ function LinksForm({
   entity: AdminSearchEntity;
   onSaved: (detail: AdminSearchEntityDetail) => void;
 }) {
-  const options = useCharacterOptions();
   const [removeIds, setRemoveIds] = useState<string[]>([]);
   const [removeChars, setRemoveChars] = useState<string[]>([]);
   const [addIds, setAddIds] = useState('');
@@ -528,14 +511,13 @@ function LinksForm({
           />
           {!entity.characters.length && <div className="detail-muted">没有关联的官方角色</div>}
         </div>
-        <Select
-          mode="multiple"
+        <CharacterPicker
+          exclude={linked}
+          multiple
           style={{ width: '100%' }}
           placeholder="新增关联的官方角色"
-          options={options.filter((o) => !linked.has(o.value))}
           value={addChars}
           onChange={setAddChars}
-          optionFilterProp="label"
         />
         <ReasonInput value={reason} onChange={setReason} />
         <Button type="primary" loading={action.busy} onClick={save}>
@@ -651,21 +633,17 @@ function MergeSplitForm({
 // ---------- 角色别名 ----------
 
 function AliasesTab() {
-  const options = useCharacterOptions();
   const [characterId, setCharacterId] = useState<string | null>(null);
   return (
     <SectionCard
       title="官方角色的搜索别名"
       desc="新加的别名先待审核，通过后才进站内搜索；人设里的别名可以从搜索里去掉（不改人设本身）。"
     >
-      <Select
-        showSearch
+      <CharacterPicker
         style={{ width: 360, marginBottom: 14 }}
         placeholder="选择官方角色"
-        options={options}
         value={characterId}
         onChange={setCharacterId}
-        optionFilterProp="label"
       />
       {characterId && <AliasEditor key={characterId} characterId={characterId} />}
     </SectionCard>

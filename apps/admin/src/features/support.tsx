@@ -1,12 +1,13 @@
 /**
  * 帮助与反馈：用户提交的反馈与投诉。回复会通知用户；标记解决会关闭工单。
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Checkbox, Input, Select, Space, Timeline } from 'antd';
 import { SupportAdminEndpoints, type AdminSupportTicket } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { errorText } from '../data/hooks.js';
-import { DataTable, type ProColumns } from '../ui/table.js';
+import { BulkTable, collectPages } from '../ui/bulk-table.js';
+import { type ProColumns } from '../ui/table.js';
 import { RecordDrawer } from '../ui/drawer.js';
 import { TicketRuntimeLogs } from './client-logs.js';
 import { FieldHelp, Page, SectionCard, StatusTag, useToast } from '../ui/page.js';
@@ -30,7 +31,13 @@ export function SupportAdminPage() {
   const [error, setError] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
 
+  const latestRequest = useRef(0);
   async function load(after?: string) {
+    const request = ++latestRequest.current;
+    if (!after) {
+      setItems([]);
+      setCursor(null);
+    }
     setLoading(true);
     setError('');
     try {
@@ -42,18 +49,22 @@ export function SupportAdminPage() {
           cursor: after,
         },
       });
+      if (request !== latestRequest.current) return;
       setItems((prev) => (after ? [...prev, ...page.items] : page.items));
       setOpenCount(page.openCount);
       setCursor(page.nextCursor);
     } catch (e) {
-      setError(errorText(e));
+      if (request === latestRequest.current) setError(errorText(e));
     } finally {
-      setLoading(false);
+      if (request === latestRequest.current) setLoading(false);
     }
   }
 
   useEffect(() => {
     void load();
+    return () => {
+      latestRequest.current += 1;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, kind]);
 
@@ -108,7 +119,37 @@ export function SupportAdminPage() {
       desc="用户提交的反馈与投诉。点一行看详情并回复；回复会推送给用户。"
       extra={<Button onClick={() => void load()}>刷新</Button>}
     >
-      <DataTable<AdminSupportTicket>
+      <BulkTable<AdminSupportTicket>
+        scope={status + '|' + kind}
+        nameOf={(r) => r.text.slice(0, 36)}
+        afterBatch={() => void load()}
+        allMatching={() =>
+          collectPages(
+            (cursor) =>
+              api.call(SupportAdminEndpoints.list, {
+                query: {
+                  status,
+                  kind: (kind || undefined) as 'feedback' | undefined,
+                  limit: 100,
+                  cursor,
+                },
+              }),
+            (r) => r.ticketId,
+          )
+        }
+        operations={[
+          {
+            label: status === 'resolved' ? '批量重新打开' : '批量标记解决',
+            applies: () => true,
+            run: (r) =>
+              api.call(
+                status === 'resolved'
+                  ? SupportAdminEndpoints.reopen
+                  : SupportAdminEndpoints.resolve,
+                { params: { ticketId: r.ticketId } },
+              ),
+          },
+        ]}
         rowKey="ticketId"
         columns={columns}
         data={items}

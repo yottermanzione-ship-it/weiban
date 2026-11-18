@@ -24,7 +24,7 @@ const dataset: ArenaDataset = {
   totalRows: 11066,
 };
 function harness(
-  fetcher: (url: string) => Promise<ArenaDataset>,
+  fetcher: (url: string) => Promise<ArenaDataset | 'unchanged'>,
   initial: LeaderboardSnapshot | null = null,
 ) {
   let snapshot = initial;
@@ -126,6 +126,26 @@ describe('Arena snapshot refresh coordinator', () => {
       totalRows: old.totalRows,
       lastError: 'HTTP 429',
       lastAttemptAt: '2026-10-22T10:00:00.000Z',
+    });
+  });
+  it('records a successful revision check without replacing history or publication time', async () => {
+    const verified = {
+      ...old,
+      revision: 'a'.repeat(40),
+      previousEntries: [{ name: 'Earlier', rank: 2 }],
+      lastError: 'temporary',
+    };
+    const fetcher = vi.fn(async () => 'unchanged' as const);
+    const h = harness(fetcher, verified);
+    await h.service.refresh(null);
+    expect(fetcher).toHaveBeenCalledWith(expect.any(String), {
+      revision: verified.revision,
+      totalRows: verified.totalRows,
+    });
+    expect(h.saved[0]).toEqual({
+      ...verified,
+      lastAttemptAt: '2026-10-22T10:00:00.000Z',
+      lastError: null,
     });
   });
   it('merges concurrent manual and scheduled refreshes into one request', async () => {

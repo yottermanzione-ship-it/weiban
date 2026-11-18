@@ -24,6 +24,7 @@ export { UsageReconciliationService } from './application/reconciliation.js';
 export { ModelAccessLifecycle, RECONCILE_USAGE_JOB } from './application/lifecycle.js';
 export type { ModelTextPrices } from './domain/rules.js';
 
+export { BillingBoundsService } from './application/billing-bounds.js';
 export { CatalogService } from './application/catalog.js';
 
 export { TEXT_ADAPTER, MODEL_GENERATION_POLICY, GATEWAY_RETRY_WAIT } from './tokens.js';
@@ -52,3 +53,5 @@ export {
 export { structureCandidates, candidateIdFor } from './domain/web-candidates.js';
 export { WebCandidateSearch } from './application/web-candidates.js';
 export { applySystemMessageMode } from './domain/system-messages.js';
+
+export { ModelAdminService } from './application/models.js';

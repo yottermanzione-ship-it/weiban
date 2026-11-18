@@ -409,6 +409,13 @@ export const IdentityAdminEndpoints = {
     response: z.object({ items: z.array(Invite) }),
     summary: '已停用：始终返回空列表，历史邀请码表仅保留审计',
   }),
+  pendingDeletionCount: defineEndpoint({
+    method: 'GET',
+    path: API_PREFIX + '/admin/account-deletions/count',
+    auth: 'admin',
+    response: z.object({ total: z.number().int().nonnegative() }),
+    summary: '注销待办角标，只读取数量。',
+  }),
   listPendingDeletions: defineEndpoint({
     method: 'GET',
     path: `${API_PREFIX}/admin/account-deletions`,

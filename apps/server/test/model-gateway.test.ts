@@ -134,6 +134,10 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
         res.writeHead(403).end(JSON.stringify({ error: { message: key } }));
         return;
       }
+      if (mode === 'disconnect') {
+        res.destroy();
+        return;
+      }
       if (mode === 'slow') {
         res.writeHead(200, { 'Content-Type': 'application/json' }).write('{');
         return;
@@ -619,6 +623,22 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
     expect(again.ok).toBe(true);
     expect(calls).toBe(1);
     spy.mockRestore();
+  });
+  it('只累计成功缺用量，同一条线路收到完整回执后自动清零', async () => {
+    const streak = async () =>
+      (await app.get(CatalogService).usageMissing([modelKey])).get(modelKey)?.[0]?.streak ?? 0;
+    mode = 'ok';
+    expect((await gateway.generateText(input())).ok).toBe(true);
+    mode = 'estimated';
+    expect((await gateway.generateText(input())).ok).toBe(true);
+    expect(await streak()).toBe(1);
+    mode = 'disconnect';
+    expect((await gateway.generateText(input())).ok).toBe(false);
+    expect(await streak()).toBe(1);
+    await resetUpstream();
+    mode = 'ok';
+    expect((await gateway.generateText(input())).ok).toBe(true);
+    expect(await streak()).toBe(0);
   });
   it('无usage时按约定估算；24h后回收缓存；故障恢复探测恢复状态', async () => {
     mode = 'estimated';

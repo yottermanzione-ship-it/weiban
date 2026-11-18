@@ -327,7 +327,6 @@ interface DecisionFilters {
 
 function PlannerDecisions() {
   // 决策记录接口只返回 userId（ai-runtime 提供），这里用后台账号目录一次批量补昵称。
-  const directory = useUserDirectory();
   const [filters, setFilters] = useState<DecisionFilters>({ userId: '', characterId: '' });
   const [applied, setApplied] = useState<DecisionFilters>({ userId: '', characterId: '' });
   const [items, setItems] = useState<Decision[]>([]);
@@ -336,6 +335,7 @@ function PlannerDecisions() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [detail, setDetail] = useState<Decision | null>(null);
+  const directory = useUserDirectory([detail?.userId]);
   const cursor = cursors.at(-1);
 
   useEffect(() => {
@@ -409,7 +409,6 @@ function PlannerDecisions() {
     <div className="tab-body">
       <div className="filter-panel">
         <UserPicker
-          directory={directory}
           value={filters.userId}
           onChange={(userId) => setFilters({ ...filters, userId })}
         />

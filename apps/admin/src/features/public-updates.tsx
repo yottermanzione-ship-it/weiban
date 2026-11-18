@@ -6,7 +6,6 @@ import { Alert, Button, DatePicker, Form, Input, Modal, Select, Space, Switch, T
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import {
-  CharacterAdminEndpoints,
   PublicUpdateAdminEndpoints,
   type PublicUpdate,
   type PublicUpdateKind,
@@ -14,6 +13,7 @@ import {
   type PublicUpdateStatus,
 } from '@weiban/contracts';
 import { ApiFailure } from '@weiban/client-core';
+import { CharacterPicker } from './character-picker.js';
 import { api } from '../data/client.js';
 import { errorText, useRemote } from '../data/hooks.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
@@ -80,7 +80,6 @@ export function PublicUpdatesPage() {
   const [status, setStatus] = useState<PublicUpdateStatus | ''>('');
   const [source, setSource] = useState<PublicUpdateSource | ''>('');
   const [characterId, setCharacterId] = useState('');
-  const characters = useRemote(CharacterAdminEndpoints.list);
   const settings = useRemote(PublicUpdateAdminEndpoints.getSettings);
   const list = useRemote(PublicUpdateAdminEndpoints.list, {
     query:
@@ -103,10 +102,6 @@ export function PublicUpdatesPage() {
   const [error, setError] = useState('');
   const [searchTarget, setSearchTarget] = useState('');
   const [searching, setSearching] = useState(false);
-
-  const realPeople = (characters.data?.items ?? []).filter(
-    (c) => c.classification.basis === 'real_person' && c.status === 'published',
-  );
 
   const rows =
     tab === 'pending'
@@ -265,14 +260,13 @@ export function PublicUpdatesPage() {
       desc="真人角色的新作品、活动、获奖。自动搜索到的候选要人工审核，通过后角色才会「知道」这件事。"
       extra={
         <Space>
-          <Select
-            showSearch
-            optionFilterProp="label"
+          <CharacterPicker
+            status="published"
+            basis="real_person"
             style={{ width: 200 }}
             placeholder="选择真人角色"
             value={searchTarget || undefined}
             onChange={(value) => setSearchTarget(value ?? '')}
-            options={realPeople.map((c) => ({ value: c.characterId, label: c.name }))}
           />
           <Button
             icon={<SearchOutlined />}
@@ -334,18 +328,12 @@ export function PublicUpdatesPage() {
                   { value: 'manual', label: '手动录入' },
                 ]}
               />
-              <Select
+              <CharacterPicker
                 allowClear
-                showSearch
-                optionFilterProp="label"
                 style={{ width: 180 }}
                 placeholder="按角色筛选"
                 value={characterId || undefined}
                 onChange={(value) => setCharacterId(value ?? '')}
-                options={(characters.data?.items ?? []).map((c) => ({
-                  value: c.characterId,
-                  label: c.name,
-                }))}
               />
             </>
           ) : undefined
@@ -381,10 +369,6 @@ export function PublicUpdatesPage() {
         <UpdateDrawer
           item={editing.item}
           draft={editing.draft}
-          characters={(characters.data?.items ?? []).map((c) => ({
-            value: c.characterId,
-            label: `${c.name}${c.classification.basis === 'real_person' ? '（真人）' : ''}`,
-          }))}
           saving={saving}
           error={error}
           onClose={() => setEditing(null)}
@@ -486,7 +470,6 @@ function draftOf(item: PublicUpdate): Draft {
 function UpdateDrawer({
   item,
   draft,
-  characters,
   saving,
   error,
   onClose,
@@ -494,7 +477,6 @@ function UpdateDrawer({
 }: {
   item: PublicUpdate | null;
   draft: Draft;
-  characters: Array<{ value: string; label: string }>;
   saving: boolean;
   error: string;
   onClose: () => void;
@@ -542,13 +524,10 @@ function UpdateDrawer({
             required
             extra={<FieldHelp>只有真人角色才有公开动态。</FieldHelp>}
           >
-            <Select
-              showSearch
-              optionFilterProp="label"
+            <CharacterPicker
               disabled={!!item}
               value={values.characterId || undefined}
               onChange={(value) => patch({ characterId: value })}
-              options={characters}
               placeholder="选择角色"
             />
           </Form.Item>

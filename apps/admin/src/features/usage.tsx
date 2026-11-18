@@ -1,219 +1,313 @@
-/**
- * 用量与花费：按用户 / 模型 / 用途 / 角色看这段时间调用了多少、扣了多少积分、花了多少成本。
- * 明细在「模型管理 › 调用记录」，这里只看汇总。
- */
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Button, Segmented, Select, Space } from 'antd';
-import { ReloadOutlined } from '@ant-design/icons';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Button, Segmented, Select, Tabs } from 'antd';
+import { ArrowRightOutlined, ReloadOutlined } from '@ant-design/icons';
 import {
   ModelAccessAdminEndpoints,
   ModelAccessAdminUsageEndpoints,
+  ModelKey,
   type AdminUsageSummary,
-  type AdminUsageDimension,
 } from '@weiban/contracts';
 import { api } from '../data/client.js';
-import { settle } from '../data/use-async.js';
-import { useRemote } from '../data/hooks.js';
+import { errorText, useRemote } from '../data/hooks.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
-import { Page, useToast } from '../ui/page.js';
-import { Money, formatInt, formatPercent, formatYuan, pointsOf } from '../ui/format.js';
+import { Page } from '../ui/page.js';
+import { formatInt, formatPercent, formatYuan, pointsOf } from '../ui/format.js';
 import { PURPOSE_LABELS, modelLabel, rangeOf, type RangeKey } from './model/shared.js';
+import { RecordsTab } from './model/records.js';
 import { UserIdentity } from './users/identity.js';
 
-type GroupKey = 'user' | 'model' | 'purpose' | 'character';
-
-const GROUP_LABELS: Record<GroupKey, string> = {
-  user: '按用户',
-  model: '按模型',
-  purpose: '按用途',
-  character: '按角色',
-};
+type Group = 'model' | 'upstream' | 'user' | 'purpose' | 'character' | 'day';
+const GROUPS: { value: Group; label: string; column: string }[] = [
+  { value: 'model', label: '按模型', column: '模型' },
+  { value: 'upstream', label: '按上游账号', column: '上游账号' },
+  { value: 'purpose', label: '按用途', column: '用途' },
+  { value: 'user', label: '按用户', column: '用户' },
+  { value: 'character', label: '按角色', column: '角色' },
+  { value: 'day', label: '按日期', column: '日期' },
+];
+const RANGES: { value: RangeKey; label: string }[] = [
+  { value: 'today', label: '今天' },
+  { value: '7d', label: '近 7 天' },
+  { value: '30d', label: '近 30 天' },
+  { value: 'month', label: '本月' },
+];
 
 export function UsagePage() {
-  const navigate = useNavigate();
-  const toast = useToast();
-  const [range, setRange] = useState<RangeKey>('7d');
-  const [group, setGroup] = useState<GroupKey>('user');
+  const [params, setParams] = useSearchParams();
+  const range = RANGES.find((item) => item.value === params.get('range'))?.value ?? '7d';
+  const group = GROUPS.find((item) => item.value === params.get('group'))?.value ?? 'model';
+  const view = params.get('view') === 'records' ? 'records' : 'summary';
+  const modelsRemote = useRemote(ModelAccessAdminEndpoints.modelLabels);
+  const models = modelsRemote.data?.items ?? [];
+  const upstreamsRemote = useRemote(ModelAccessAdminEndpoints.listUpstreams);
+  const upstreams = upstreamsRemote.data?.items ?? [];
+  const quality = params.get('quality');
+  const lookupIssue = modelsRemote.error || upstreamsRemote.error;
+
+  function changeParam(key: string, value: string) {
+    setParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set(key, value);
+      if (key === 'view' && value === 'summary') {
+        for (const filter of ['model', 'upstream', 'status', 'quality']) next.delete(filter);
+      }
+      return next;
+    });
+  }
+
+  return (
+    <Page title="用量与成本" desc="北京时间 · 可按模型、线路或用户追查每笔调用">
+      {lookupIssue && (
+        <p className="usage-directory-note" role="status">
+          目录读取提示 · {lookupIssue}
+        </p>
+      )}
+      <Tabs
+        className="admin-page-tabs"
+        activeKey={view}
+        onChange={(key) => changeParam('view', key)}
+        destroyOnHidden
+        items={[
+          {
+            key: 'summary',
+            label: '用量汇总',
+            children: (
+              <UsageSummary
+                range={range}
+                group={group}
+                onRange={(next) => changeParam('range', next)}
+                onGroup={(next) => changeParam('group', next)}
+                modelName={(key) => modelLabel(models, key)}
+                upstreamName={(id) => upstreams.find((item) => item.upstreamId === id)?.name ?? id}
+              />
+            ),
+          },
+          {
+            key: 'records',
+            label: '调用明细',
+            children: (
+              <RecordsTab
+                key={params.toString()}
+                models={models}
+                upstreams={upstreams}
+                initial={{
+                  range,
+                  upstreamId: params.get('upstream') ?? '',
+                  modelKey: params.get('model') ?? '',
+                  status:
+                    params.get('status') === 'failed'
+                      ? 'failed'
+                      : params.get('status') === 'succeeded'
+                        ? 'succeeded'
+                        : '',
+                  quality: quality === 'estimated' || quality === 'cost_pending' ? quality : '',
+                }}
+              />
+            ),
+          },
+        ]}
+      />
+    </Page>
+  );
+}
+
+function UsageSummary({
+  range,
+  group,
+  onRange,
+  onGroup,
+  modelName,
+  upstreamName,
+}: {
+  range: RangeKey;
+  group: Group;
+  onRange: (value: RangeKey) => void;
+  onGroup: (value: Group) => void;
+  modelName: (key: string) => string;
+  upstreamName: (id: string) => string;
+}) {
   const [data, setData] = useState<AdminUsageSummary>();
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
-  const models = useRemote(ModelAccessAdminEndpoints.listModels);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     let active = true;
     setLoading(true);
+    setData(undefined);
     setError('');
-    const { from, to } = rangeOf(range);
-    void settle(
-      api.call(ModelAccessAdminUsageEndpoints.usageSummary, {
+    void api
+      .call(ModelAccessAdminUsageEndpoints.usageSummary, {
         body: {
-          filter: { from, to },
-          groupBy: [group as AdminUsageDimension],
-          sort: 'charged_desc',
+          filter: rangeOf(range),
+          groupBy: [group],
+          sort: group === 'day' ? 'key_asc' : 'charged_desc',
           limit: 200,
         },
-      }),
-    )
-      .then((result) => {
-        if (!active) return;
-        if (!result) setError('用量数据没加载出来，请稍后重试');
-        setData(result);
       })
-      .finally(() => active && setLoading(false));
+      .then((result) => {
+        if (active) setData(result);
+      })
+      .catch((e: unknown) => {
+        if (active) setError(errorText(e));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
     return () => {
       active = false;
     };
   }, [range, group, revision]);
 
-  const modelName = (key: string) => modelLabel(models.data?.items ?? [], key);
-
-  function labelOf(key: string): string {
-    if (group === 'model') return modelName(key);
-    if (group === 'purpose') return PURPOSE_LABELS[key] ?? key;
-    if (group === 'character') return key || '（无角色）';
-    return key;
-  }
-
-  const rows = data?.rows ?? [];
   const totals = data?.totals;
-
+  const recordPath = `/usage?view=records&range=${range}`;
+  const refresh = () => setRevision((value) => value + 1);
   const columns: ProColumns<AdminUsageSummary['rows'][number]>[] = [
     {
-      title: GROUP_LABELS[group].replace('按', ''),
+      title: GROUPS.find((item) => item.value === group)?.column,
       render: (_, row) => {
-        const key = String(row.keys[0] ?? '');
-        // 「按用户」显示昵称（没有昵称退回登录名，都没有才显示 ID 短码）；复制完整 UUID 走 title。
-        if (group === 'user') return <UserIdentity userId={key} label={data?.userLabels?.[key]} />;
-        return (
-          <div className="cell-main">
-            <span className="cell-title">{labelOf(key)}</span>
-          </div>
-        );
+        const key = row.keys[0] ?? '';
+        if (group === 'user') return <UserIdentity userId={key} label={data?.userLabels[key]} />;
+        if (group === 'upstream')
+          return (
+            <Link to={`${recordPath}&upstream=${encodeURIComponent(key)}`}>
+              {upstreamName(key)}
+            </Link>
+          );
+        if (group === 'model')
+          return ModelKey.safeParse(key).success ? (
+            <Link to={`${recordPath}&model=${encodeURIComponent(key)}`}>{modelName(key)}</Link>
+          ) : (
+            modelName(key)
+          );
+        if (group === 'purpose') return PURPOSE_LABELS[key] ?? key;
+        return key || '无关联角色';
       },
     },
     {
-      title: '调用次数',
-      width: 100,
+      title: '调用',
+      width: 88,
+      align: 'right',
       sorter: (a, b) => a.calls - b.calls,
-      render: (_, row) => formatInt(row.calls),
+      render: (_, r) => formatInt(r.calls),
     },
     {
       title: '失败',
-      width: 90,
+      width: 95,
+      align: 'right',
       sorter: (a, b) => a.failedCalls - b.failedCalls,
-      render: (_, row) =>
-        row.failedCalls > 0 ? (
-          <span className="warn-text">
-            {formatInt(row.failedCalls)}（{formatPercent(row.failureRate)}）
-          </span>
-        ) : (
-          '0'
-        ),
+      render: (_, r) => formatInt(r.failedCalls),
     },
     {
-      title: '输入 / 输出 token',
-      width: 160,
-      render: (_, row) => `${formatInt(row.inputTokens)} / ${formatInt(row.outputTokens)}`,
+      title: '本地计量或估算',
+      width: 132,
+      align: 'right',
+      sorter: (a, b) => (a.estimatedCalls ?? 0) - (b.estimatedCalls ?? 0),
+      render: (_, r) => (r.estimatedCalls === undefined ? '—' : formatInt(r.estimatedCalls)),
     },
     {
-      title: '用户扣除',
-      width: 150,
+      title: '用户扣除（积分）',
+      width: 134,
+      align: 'right',
       sorter: (a, b) => a.chargedMicros - b.chargedMicros,
-      render: (_, row) => <Money micros={row.chargedMicros} />,
+      render: (_, r) => pointsOf(r.chargedMicros).toFixed(2),
     },
     {
-      title: '上游成本',
-      width: 110,
+      title: '已记上游成本',
+      width: 128,
+      align: 'right',
       sorter: (a, b) => a.costMicros - b.costMicros,
-      render: (_, row) => formatYuan(row.costMicros),
+      render: (_, r) => formatYuan(r.costMicros, 4),
     },
     {
-      title: '毛利',
-      width: 110,
-      sorter: (a, b) => a.chargedMicros - a.costMicros - (b.chargedMicros - b.costMicros),
-      render: (_, row) => (
-        <span className={row.chargedMicros - row.costMicros < 0 ? 'warn-text' : ''}>
-          {formatYuan(row.chargedMicros - row.costMicros - row.absorbedCostMicros)}
-        </span>
-      ),
+      title: '成本待核',
+      width: 100,
+      align: 'right',
+      sorter: (a, b) => (a.unknownCostCalls ?? 0) - (b.unknownCostCalls ?? 0),
+      render: (_, r) => (r.unknownCostCalls === undefined ? '—' : formatInt(r.unknownCostCalls)),
     },
     {
-      title: '缓存命中率',
-      width: 110,
-      render: (_, row) => formatPercent(row.cacheHitRate),
-    },
-    {
-      title: '理论可缓存（估算）',
-      width: 160,
-      render: (_, row) => formatPercent(row.stablePrefixRate),
+      title: '缓存命中',
+      width: 97,
+      align: 'right',
+      render: (_, r) =>
+        r.inputTokens || r.cachedInputTokens ? formatPercent(r.cacheHitRate) : '—',
     },
   ];
 
   return (
-    <Page
-      title="用量与花费"
-      desc="这段时间谁在用、用了多少、扣了多少积分、平台赚了多少。看单次调用请去「模型管理 › 调用记录」。"
-      extra={
-        <Space size={8}>
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={() => {
-              setRevision((v) => v + 1);
-              toast.success('已刷新');
-            }}
-          >
-            刷新
-          </Button>
-          <Button type="primary" onClick={() => navigate('/model?tab=records')}>
-            看调用记录
-          </Button>
-        </Space>
-      }
-    >
-      <div className="filter-panel">
+    <div className="admin-stack">
+      <div className="filter-panel usage-filters">
         <Segmented<RangeKey>
           value={range}
-          onChange={setRange}
-          options={[
-            { value: 'today', label: '今天' },
-            { value: '7d', label: '近 7 天' },
-            { value: '30d', label: '近 30 天' },
-            { value: 'month', label: '本月' },
-          ]}
+          onChange={onRange}
+          options={RANGES}
+          aria-label="统计范围"
         />
-        <Select
-          style={{ width: 140 }}
+        <Select<Group>
+          className="usage-group"
           value={group}
-          onChange={setGroup}
-          options={[
-            { value: 'user', label: '按用户' },
-            { value: 'model', label: '按模型' },
-            { value: 'purpose', label: '按用途' },
-            { value: 'character', label: '按角色' },
-          ]}
+          onChange={onGroup}
+          options={GROUPS}
+          aria-label="汇总维度"
         />
-        {totals && (
-          <span className="filter-summary">
-            合计：{formatInt(totals.calls)} 次调用 · {formatInt(pointsOf(totals.chargedMicros))}{' '}
-            积分 · 成本 {formatYuan(totals.costMicros)} · 失败率 {formatPercent(totals.failureRate)}
-          </span>
-        )}
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={refresh} aria-label="刷新汇总">
+          刷新
+        </Button>
       </div>
+      {totals && (
+        <div className="workbench-metrics usage-metrics">
+          <div className="workbench-metric">
+            <span>模型调用</span>
+            <strong>
+              {formatInt(totals.calls)} <small>次</small>
+            </strong>
+            <small>
+              {formatInt(totals.failedCalls)} 次失败 · {formatPercent(totals.failureRate)}
+            </small>
+          </div>
+          <div className="workbench-metric">
+            <span>用户原扣费</span>
+            <strong>
+              {pointsOf(totals.chargedMicros).toFixed(2)} <small>积分</small>
+            </strong>
+            <small>折合 {formatYuan(totals.chargedMicros)}</small>
+          </div>
+          <div className="workbench-metric">
+            <span>已记上游成本</span>
+            <strong>{formatYuan(totals.costMicros)}</strong>
+            <small>含平台吸收 {formatYuan(totals.absorbedCostMicros)}</small>
+          </div>
+          <div className="workbench-metric">
+            <span>模型差额</span>
+            <strong>{formatYuan(totals.chargedMicros - totals.costMicros)}</strong>
+            <small>原扣费减去已记上游成本</small>
+          </div>
+        </div>
+      )}
+      {totals && (
+        <div className="usage-quality" aria-label="用量质量">
+          <Link to={`${recordPath}&quality=estimated`}>
+            本地计量或估算 <b>{totals.estimatedCalls ?? '—'}</b> <ArrowRightOutlined />
+          </Link>
+          <Link to={`${recordPath}&quality=cost_pending`}>
+            成本待核 <b>{totals.unknownCostCalls ?? '—'}</b> <ArrowRightOutlined />
+          </Link>
+        </div>
+      )}
       <DataTable<AdminUsageSummary['rows'][number]>
         rowKey={(row) => String(row.keys[0] ?? '')}
         columns={columns}
-        data={rows}
+        data={data?.rows ?? []}
+        showTools={false}
         loading={loading}
         error={error}
-        onRefresh={() => setRevision((v) => v + 1)}
+        onRefresh={error ? refresh : undefined}
         emptyTitle="这段时间没有调用"
-        emptyHint="换一个时间范围试试；如果刚上线还没有用户聊天，这里就是空的。"
-        footer={
-          data?.truncated ? '结果太多，只显示前 200 组。缩小时间范围可以看到全部。' : undefined
-        }
+        emptyHint="可扩大统计范围。"
+        footer={data?.truncated ? '仅显示前 200 组。可缩小时间范围查看其余记录。' : undefined}
       />
-    </Page>
+    </div>
   );
 }

@@ -810,6 +810,8 @@ export const AdminCatalogEntry = z.object({
    * 后台的模型表格与各处模型选择应隐藏它。删除后可以用同一个键重新添加（与已删除的记录互不影响）。
    */
   deletedAt: Timestamp.nullable().optional(),
+  archiveId: z.string().optional(),
+  catalogRevision: z.string().optional(),
 });
 export type AdminCatalogEntry = z.infer<typeof AdminCatalogEntry>;
 
@@ -821,6 +823,8 @@ export type AdminCatalogEntry = z.infer<typeof AdminCatalogEntry>;
 export const AdminCatalogEntryWrite = AdminCatalogEntry.omit({
   updatedAt: true,
   deletedAt: true,
+  archiveId: true,
+  catalogRevision: true,
 }).extend({
   modelKey: CanonicalModelKey,
   // 7.3：模型/厂商显示名采用英文；读取仍兼容历史记录，生产名称独立核对后更名。
@@ -951,6 +955,50 @@ export const AdminModel = AdminCatalogEntry.extend({
 });
 export type AdminModel = z.infer<typeof AdminModel>;
 
+export const AdminModelPreview = AdminModel.pick({
+  modelKey: true,
+  displayName: true,
+  vendorName: true,
+  upstreamId: true,
+  upstreamModelId: true,
+  enabled: true,
+  capabilities: true,
+  scenarios: true,
+  sortOrder: true,
+  deletedAt: true,
+  rates: true,
+  hasTimeBands: true,
+  pointsPerReply: true,
+  displayMultiplier: true,
+  displayMultiplierManual: true,
+  discount: true,
+  discountActive: true,
+  availability: true,
+  usageMissing: true,
+}).extend({
+  routes: z.array(ModelRoute.omit({ billingBounds: true })).optional(),
+  serviceRates: z
+    .array(ModelServiceRate.omit({ cost: true }).strip())
+    .max(32)
+    .optional(),
+});
+export type AdminModelPreview = z.infer<typeof AdminModelPreview>;
+
+export const AdminModelLabel = AdminCatalogEntry.pick({
+  modelKey: true,
+  displayName: true,
+  deletedAt: true,
+  archiveId: true,
+});
+export type AdminModelLabel = z.infer<typeof AdminModelLabel>;
+
+export const AdminModelDirectoryFilter = z.object({
+  q: z.string().trim().max(200).optional(),
+  scenario: ModelScenario.optional(),
+  status: z.enum(['on', 'off']).optional(),
+});
+export type AdminModelDirectoryFilter = z.infer<typeof AdminModelDirectoryFilter>;
+
 /**
  * 7.11：后台「测试模型」——对模型当前启用的每条线路发一条最小文本请求（固定「你好」、最多 8 token），
  * 直接反映「账号测试通过但模型调用失败」的情况。不发用户账单、不写用量记录，只写审计。
@@ -991,6 +1039,8 @@ export type AdminModelTestResult = z.infer<typeof AdminModelTestResult>;
 export const USAGE_MISSING_ALERT_STREAK = 5;
 
 export const AdminModelWrite = AdminCatalogEntryWrite.extend({
+  /** null 表示新建，修订值用于拒绝过期编辑。 */
+  expectedRevision: z.string().min(1).max(32).nullable().optional(),
   /** 3.36：省略不改；只替换传入单位（含分时价）为全天价，其他单位完整保留。 */
   serviceRates: ServiceRatesWrite.optional(),
   /**
@@ -1067,6 +1117,11 @@ export type DeleteModelsRequest = z.infer<typeof DeleteModelsRequest>;
  * 用户的场景配置 / 角色设置被清掉后回到「未配置」/「跟随」，由首次引导重新选。
  */
 export const ModelDeletionImpact = z.object({
+  ecologyDecision: z.boolean().optional(),
+  revision: z.string().optional(),
+  upstreamAccounts: z
+    .array(z.object({ upstreamId: Id, name: z.string(), shared: z.boolean() }))
+    .optional(),
   models: z.array(z.object({ modelKey: ModelKey, displayName: z.string(), enabled: z.boolean() })),
   /** 场景配置里用到这些模型的用户数（去重）与配置条数。 */
   users: z.number().int().nonnegative(),
@@ -1097,6 +1152,7 @@ export type DisplayMultiplierSettings = z.infer<typeof DisplayMultiplierSettings
  * 网站开启人机验证等原因抓不到时保留上次结果、写明原因，可改用「粘贴榜单文本 / CSV」导入。
  */
 export const LeaderboardSnapshotStatus = z.object({
+  eligibleCount: z.number().int().nonnegative().optional(),
   source: ModelLeaderboardSource.nullable(),
   /** 当前生效的榜单快照（没有为 null）。 */
   snapshot: z
@@ -1371,6 +1427,31 @@ export const ModelAccessAdminEndpoints = {
     response: ModelsDevLookupResponse,
     summary: '3.26：按模型名（可带出品方）批量检索 models.dev，用于添加 / 编辑模型、导入配置时预填',
   }),
+  upstreamModelReferences: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/model/upstreams/model-references`,
+    auth: 'admin',
+    query: z.object({
+      ids: z
+        .string()
+        .max(5650)
+        .refine(
+          (value) => value.split(',').every((id) => Id.safeParse(id).success),
+          '上游账号编号格式无效',
+        ),
+    }),
+    response: z.object({
+      items: z.array(
+        z.object({
+          upstreamId: Id,
+          modelKey: AdminModelKey,
+          displayName: z.string(),
+          upstreamModelId: z.string(),
+        }),
+      ),
+    }),
+    summary: '按上游账号读取现存模型的线路引用摘要，含已下架模型。',
+  }),
   listUpstreams: defineEndpoint({
     method: 'GET',
     path: `${API_PREFIX}/admin/model/upstreams`,
@@ -1455,10 +1536,18 @@ export const ModelAccessAdminEndpoints = {
     response: GatewayLimits,
     summary: 'v3.4：修改每用户限流与账号健康参数（写审计）',
   }),
+  modelLabels: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/model/model-labels`,
+    auth: 'admin',
+    response: z.object({ items: z.array(AdminModelLabel) }),
+    summary: '按模型键显示用量历史所需的名称，含已删除模型。',
+  }),
   listCatalog: defineEndpoint({
     method: 'GET',
     path: `${API_PREFIX}/admin/model/catalog`,
     auth: 'admin',
+    query: z.object({ view: z.literal('active').optional() }),
     response: z.object({ items: z.array(AdminCatalogEntry) }),
     summary: '模型目录（含停用的）',
   }),
@@ -1476,9 +1565,54 @@ export const ModelAccessAdminEndpoints = {
     method: 'GET',
     path: `${API_PREFIX}/admin/model/models`,
     auth: 'admin',
+    query: z.object({ view: z.literal('active').optional() }),
     response: z.object({ items: z.array(AdminModel) }),
     summary:
       'v3.3：后台「模型」页：目录条目 + 倍率（输入 / 输出 / 缓存，元 / 百万 token）+ 约每条积分',
+  }),
+  modelPage: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/model/models/page`,
+    auth: 'admin',
+    query: AdminModelDirectoryFilter.extend({
+      page: z.coerce.number().int().min(1).max(1_000_000).default(1),
+      pageSize: z.coerce.number().int().min(1).max(100).default(20),
+      sort: z
+        .enum([
+          'priority',
+          'priority_desc',
+          'name_asc',
+          'name_desc',
+          'reply_asc',
+          'reply_desc',
+          'multiplier_asc',
+          'multiplier_desc',
+        ])
+        .default('priority'),
+    }),
+    response: z.object({
+      items: z.array(AdminModelPreview),
+      total: z.number().int().nonnegative(),
+    }),
+    summary: '当前模型目录分页，已删除项仅在历史显示。',
+  }),
+  modelSelection: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/model/models/selection`,
+    auth: 'admin',
+    query: AdminModelDirectoryFilter,
+    response: z.object({
+      items: z.array(AdminModelLabel.omit({ deletedAt: true, archiveId: true })),
+    }),
+    summary: '明确选择全部匹配模型时读取目录键和名称。',
+  }),
+  modelDetail: defineEndpoint({
+    method: 'GET',
+    path: `${API_PREFIX}/admin/model/models/:modelKey`,
+    auth: 'admin',
+    params: z.object({ modelKey: z.string().min(1) }),
+    response: AdminModel,
+    summary: '读取指定现存模型的完整配置。',
   }),
   upsertModel: defineEndpoint({
     method: 'PUT',
@@ -1511,7 +1645,12 @@ export const ModelAccessAdminEndpoints = {
     method: 'POST',
     path: `${API_PREFIX}/admin/model/models/delete`,
     auth: 'admin',
-    body: DeleteModelsRequest,
+    body: DeleteModelsRequest.extend({
+      expectedRevision: z
+        .string()
+        .regex(/^[a-f0-9]{64}$/)
+        .optional(),
+    }),
     response: ModelDeletionImpact,
     summary:
       '3.23：删除模型（软删，可批量）：删线路，清用户场景配置 / 角色设置 / 场景推荐 / 平台内部模型 / 展示倍率基准 / 折扣，发布不含它们的新价目表（历史版本保留）；历史调用记录仍显示模型名；同键可重新添加。写审计',
@@ -1550,6 +1689,9 @@ export const AdminUsageFilter = z.object({
   billingOwner: BillingOwner.optional(),
   status: AdminUsageCallStatus.optional(),
   upstreamIds: z.array(Id).min(1).max(50).optional(),
+  /** 是否有本地计量或估算的用量。与成本是否待核独立。 */
+  estimated: z.boolean().optional(),
+  costKnown: z.boolean().optional(),
 });
 export type AdminUsageFilter = z.infer<typeof AdminUsageFilter>;
 
@@ -1567,6 +1709,8 @@ export const AdminUsageTotals = z.object({
   totalTokens: z.number().int().nonnegative(),
   /** 其中按估算得出的 token 数（上游没返回用量时），界面据此显示估算占比。 */
   estimatedTokens: z.number().int().nonnegative(),
+  /** 含本地计量的多媒体调用。与 token 估算量分开汇总。 */
+  estimatedCalls: z.number().int().nonnegative().optional(),
   chargedMicros: z.number().int().nonnegative(),
   costMicros: z.number().int().nonnegative(),
   absorbedCostMicros: z.number().int().nonnegative(),
@@ -1621,6 +1765,10 @@ export type AdminUsageSummary = z.infer<typeof AdminUsageSummary>;
 
 /** 一次调用的明细（ADM-08 第 5 条）。没有任何内容字段。 */
 export const AdminUsageRecord = z.object({
+  ttsChars: z.number().int().nonnegative().optional(),
+  asrSeconds: z.number().nonnegative().optional(),
+  /** 已计入输出 token，其中的思考用量。 */
+  reasoningTokens: z.number().int().nonnegative().optional(),
   /** 7.3：实时通话供应商分模态用量；历史未报告时缺省，不伪造为零。 */
   audioInputTokens: z.number().int().nonnegative().optional(),
   audioOutputTokens: z.number().int().nonnegative().optional(),

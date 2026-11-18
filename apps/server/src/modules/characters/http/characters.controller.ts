@@ -1,3 +1,4 @@
+import type { z } from 'zod';
 import {
   Controller,
   Get,
@@ -95,6 +96,30 @@ export class CharacterAdminController {
     @Body(new ContractPipe(A.create.body!)) body: AdminCharacterWrite,
   ) {
     return this.service.create(me.userId, body);
+  }
+  @Get('directory')
+  @RequireAuth(A.directory.auth)
+  directory(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Query(new ContractPipe(A.directory.query!))
+    query: { status?: string; q?: string; page?: number; pageSize: number },
+  ) {
+    return this.service.adminDirectory(me.userId, query);
+  }
+  @Get('lookup')
+  @RequireAuth(A.lookup.auth)
+  lookup(
+    @Query(new ContractPipe(A.lookup.query!)) query: z.output<NonNullable<typeof A.lookup.query>>,
+  ) {
+    return this.service.adminLookup(query);
+  }
+  @Get(':characterId/detail')
+  @RequireAuth(A.getCharacter.auth)
+  detail(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Param(new ContractPipe(A.getCharacter.params!)) p: { characterId: string },
+  ) {
+    return this.service.adminDetail(me.userId, p.characterId);
   }
   @Patch(':characterId')
   @RequireAuth(A.update.auth)

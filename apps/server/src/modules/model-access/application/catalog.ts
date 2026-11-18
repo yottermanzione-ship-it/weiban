@@ -1,3 +1,4 @@
+import { participatesInTextArena } from '../domain/leaderboard.js';
 /**
  * 模型目录（billing.md 3.2）：管理员维护（模型键 → 上游 + 上游模型名、能力、标签、默认标记、启用 / 停用），
  * 用户端模型列表（只列启用的），以及给选择 / 状态 / 网关用的查询。
@@ -31,7 +32,7 @@ import {
   ModelScenarioSettings,
   RouteBillingBounds,
 } from '@weiban/contracts';
-import { and, asc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, sql, getTableColumns } from 'drizzle-orm';
 import type { z } from 'zod';
 import {
   AUDIT_LOG,
@@ -89,6 +90,7 @@ import {
   type VoiceCallAvailability,
 } from './voice-call-composite.js';
 import { isRealtimeCallEntry } from './realtime-call.js';
+import { isMimoChatAudioModel } from '../infra/media-adapter.js';
 
 type CatalogRow = typeof modelCatalog.$inferSelect;
 type CatalogWrite = z.infer<typeof AdminCatalogEntryWrite>;
@@ -120,6 +122,7 @@ export interface LeaderboardSnapshot {
   entries: LeaderboardEntry[];
   publishedAt?: string | null;
   totalRows?: number | null;
+  revision?: string;
   previousEntries?: LeaderboardEntry[];
   lastAttemptAt: string | null;
   lastError: string | null;
@@ -150,10 +153,16 @@ const DETAIL_PRIORITY: readonly ModelUnavailableDetail[] = [
 /** 目录写入串行化的咨询锁键（任意固定数字）。 */
 export const CATALOG_LOCK_KEY = 72_270_008;
 
-export function toAdminEntry(row: CatalogRow): AdminCatalogEntry {
+const adminSelection = {
+  ...getTableColumns(modelCatalog),
+  catalogRevision: sql<string>`xmin::text`,
+};
+export function toAdminEntry(row: CatalogRow & { catalogRevision?: string }): AdminCatalogEntry {
   return {
     // 3.23：已删除的行 model_key 已改名，对外仍给原键（历史记录按原键找名字）
     modelKey: row.originalModelKey ?? row.modelKey,
+    catalogRevision: row.catalogRevision,
+    ...(row.deletedAt ? { archiveId: row.modelKey } : {}),
     displayName: row.displayName,
     vendorName: row.vendorName,
     upstreamId: row.upstreamId,
@@ -205,8 +214,8 @@ export class CatalogService {
 
   // ---------- 3.22 场景推荐模型 / 平台内部模型 ----------
 
-  async modelUses(): Promise<ModelScenarioSettings> {
-    const [row] = await this.database.db
+  async modelUses(tx?: DbTx): Promise<ModelScenarioSettings> {
+    const [row] = await (tx ?? this.database).db
       .select()
       .from(modelAccessSettings)
       .where(eq(modelAccessSettings.key, MODEL_USES_KEY));
@@ -234,7 +243,36 @@ export class CatalogService {
     operatorUserId: string,
     input: ModelScenarioSettings,
   ): Promise<ModelScenarioSettings> {
-    const current = await this.modelUses();
+    return this.withCatalogWrite((tx) => this.writeModelUses(tx, operatorUserId, input));
+  }
+
+  private async writeModelUses(
+    tx: DbTx,
+    operatorUserId: string,
+    input: ModelScenarioSettings,
+  ): Promise<ModelScenarioSettings> {
+    const current = await this.modelUses(tx);
+    const keys = [
+      ...new Set(
+        [
+          ...Object.values(input.recommended),
+          ...Object.values(input.internal),
+          input.fixed?.private,
+        ].filter((key): key is string => typeof key === 'string'),
+      ),
+    ];
+    const rows = keys.length
+      ? await tx.db
+          .select({
+            key: modelCatalog.modelKey,
+            enabled: modelCatalog.enabled,
+            scenarios: modelCatalog.scenarios,
+            capabilities: modelCatalog.capabilities,
+          })
+          .from(modelCatalog)
+          .where(and(inArray(modelCatalog.modelKey, keys), isNull(modelCatalog.deletedAt)))
+      : [];
+    const entries = new Map(rows.map((row) => [row.key, row]));
     const next: ModelScenarioSettings = {
       recommended: { ...current.recommended },
       internal: { ...current.internal },
@@ -247,13 +285,13 @@ export class CatalogService {
       // 3.24：图片识别场景已去掉，忽略写入
       if (key === undefined || !ALL_SCENARIOS.includes(scenario)) continue;
       if (key !== null) {
-        const f = await this.fact(key);
-        if (!f.entry?.enabled || !f.entry.scenarios.includes(scenario))
+        const entry = entries.get(key);
+        if (!entry?.enabled || !entry.scenarios.includes(scenario))
           throw new AppError('bad_request', `推荐模型 ${key} 未启用或没有勾选可用于这个场景`, {
             status: 422,
             details: { field: `recommended.${scenario}` },
           });
-        if (scenario !== 'private' && hasAdultContent(f.entry.capabilities))
+        if (scenario !== 'private' && hasAdultContent(entry.capabilities))
           throw new AppError('model_not_allowed', '无审查模型只能推荐给私密模式', { status: 422 });
       }
       next.recommended[scenario] = key;
@@ -264,13 +302,13 @@ export class CatalogService {
     ][]) {
       if (key === undefined || use === 'adult_check') continue;
       if (key !== null) {
-        const f = await this.fact(key);
-        if (!f.entry?.enabled)
+        const entry = entries.get(key);
+        if (!entry?.enabled)
           throw new AppError('bad_request', `平台内部模型 ${key} 不存在或未启用`, {
             status: 422,
             details: { field: `internal.${use}` },
           });
-        if (hasAdultContent(f.entry.capabilities))
+        if (hasAdultContent(entry.capabilities))
           throw new AppError('model_not_allowed', '无审查模型不能做平台内部模型', {
             status: 422,
           });
@@ -281,8 +319,8 @@ export class CatalogService {
     if (input.fixed?.private !== undefined) {
       const key = input.fixed.private;
       if (key !== null) {
-        const f = await this.fact(key);
-        if (!f.entry?.enabled || f.entry.deletedAt || !f.entry.scenarios.includes('private'))
+        const entry = entries.get(key);
+        if (!entry?.enabled || !entry.scenarios.includes('private'))
           throw new AppError('bad_request', `固定私密模型 ${key} 未启用或没有勾选用于私密模式`, {
             status: 422,
             details: { field: 'fixed.private' },
@@ -290,28 +328,26 @@ export class CatalogService {
       }
       next.fixed = { private: key };
     }
-    await this.database.transaction(async (tx) => {
-      const now = this.clock.now();
-      await tx.db
-        .insert(modelAccessSettings)
-        .values({ key: MODEL_USES_KEY, value: next, updatedAt: now, updatedBy: operatorUserId })
-        .onConflictDoUpdate({
-          target: modelAccessSettings.key,
-          set: { value: next, updatedAt: now, updatedBy: operatorUserId },
-        });
-      await this.audit.record(
-        {
-          module: 'model_access',
-          action: 'model_uses.updated',
-          actorType: 'admin',
-          actorId: operatorUserId,
-          targetType: 'model_settings',
-          targetId: null,
-          details: { before: current, after: next },
-        },
-        tx,
-      );
-    });
+    const now = this.clock.now();
+    await tx.db
+      .insert(modelAccessSettings)
+      .values({ key: MODEL_USES_KEY, value: next, updatedAt: now, updatedBy: operatorUserId })
+      .onConflictDoUpdate({
+        target: modelAccessSettings.key,
+        set: { value: next, updatedAt: now, updatedBy: operatorUserId },
+      });
+    await this.audit.record(
+      {
+        module: 'model_access',
+        action: 'model_uses.updated',
+        actorType: 'admin',
+        actorId: operatorUserId,
+        targetType: 'model_settings',
+        targetId: null,
+        details: { before: current, after: next },
+      },
+      tx,
+    );
     return next;
   }
 
@@ -484,50 +520,50 @@ export class CatalogService {
    * 已有 `fixed`（包括 `{ private: null }` 主动清空）一律 409。写审计。
    */
   async initializeFixedPrivateModel(operatorUserId: string): Promise<ModelScenarioSettings> {
-    const [row] = await this.database.db
-      .select()
-      .from(modelAccessSettings)
-      .where(eq(modelAccessSettings.key, MODEL_USES_KEY));
-    const raw: Record<string, unknown> =
-      row?.value && typeof row.value === 'object' && !Array.isArray(row.value)
-        ? (row.value as Record<string, unknown>)
-        : {};
-    if (Object.prototype.hasOwnProperty.call(raw, 'fixed'))
-      throw new AppError(
-        'conflict',
-        '固定私密模型已经初始化过（fixed:null 表示管理员主动清空，不会自动复活）',
-        { status: 409 },
-      );
-    const current = await this.modelUses();
-    const key = current.recommended.private ?? null;
-    if (!key)
-      throw new AppError(
-        'bad_request',
-        '当前没有推荐私密模型可复制，请在后台直接选择固定私密模型',
-        {
-          status: 422,
-        },
-      );
-    const f = await this.fact(key);
-    if (!f.entry?.enabled || f.entry.deletedAt || !f.entry.scenarios.includes('private'))
-      throw new AppError('bad_request', `推荐私密模型 ${key} 未启用或没有勾选用于私密模式`, {
-        status: 422,
+    return this.withCatalogWrite(async (tx) => {
+      const [row] = await tx.db
+        .select()
+        .from(modelAccessSettings)
+        .where(eq(modelAccessSettings.key, MODEL_USES_KEY));
+      const raw: Record<string, unknown> =
+        row?.value && typeof row.value === 'object' && !Array.isArray(row.value)
+          ? (row.value as Record<string, unknown>)
+          : {};
+      if (Object.prototype.hasOwnProperty.call(raw, 'fixed'))
+        throw new AppError(
+          'conflict',
+          '固定私密模型已经初始化过（fixed:null 表示管理员主动清空，不会自动复活）',
+          { status: 409 },
+        );
+      const current = await this.modelUses(tx);
+      const key = current.recommended.private ?? null;
+      if (!key)
+        throw new AppError(
+          'bad_request',
+          '当前没有推荐私密模型可复制，请在后台直接选择固定私密模型',
+          {
+            status: 422,
+          },
+        );
+      const next = await this.writeModelUses(tx, operatorUserId, {
+        recommended: {},
+        internal: {},
+        fixed: { private: key },
       });
-    const next = await this.setModelUses(operatorUserId, {
-      recommended: {},
-      internal: {},
-      fixed: { private: key },
+      await this.audit.record(
+        {
+          module: 'model_access',
+          action: 'private_model.initialized',
+          actorType: 'admin',
+          actorId: operatorUserId,
+          targetType: 'model_settings',
+          targetId: null,
+          details: { fixedPrivate: key, copiedFrom: 'recommended.private' },
+        },
+        tx,
+      );
+      return next;
     });
-    await this.audit.record({
-      module: 'model_access',
-      action: 'private_model.initialized',
-      actorType: 'admin',
-      actorId: operatorUserId,
-      targetType: 'model_settings',
-      targetId: null,
-      details: { fixedPrivate: key, copiedFrom: 'recommended.private' },
-    });
-    return next;
   }
 
   // ---------- 管理后台 ----------
@@ -590,6 +626,7 @@ export class CatalogService {
         : [],
       publishedAt: typeof value.publishedAt === 'string' ? value.publishedAt : null,
       totalRows: typeof value.totalRows === 'number' ? value.totalRows : null,
+      ...(typeof value.revision === 'string' ? { revision: value.revision } : {}),
       previousEntries: Array.isArray(value.previousEntries)
         ? value.previousEntries.filter(
             (e) => e && typeof e.name === 'string' && Number.isInteger(e.rank) && e.rank > 0,
@@ -696,10 +733,11 @@ export class CatalogService {
   }
 
   /** 后台目录（含停用的；3.23 起也含已删除的，deletedAt 非空，排在最后）。 */
-  async adminList(): Promise<AdminCatalogEntry[]> {
+  async adminList(activeOnly = false): Promise<AdminCatalogEntry[]> {
     const rows = await this.database.db
-      .select()
+      .select(adminSelection)
       .from(modelCatalog)
+      .where(activeOnly ? isNull(modelCatalog.deletedAt) : undefined)
       .orderBy(
         sql`${modelCatalog.deletedAt} is not null`,
         asc(modelCatalog.sortOrder),
@@ -708,7 +746,154 @@ export class CatalogService {
     return rows.map(toAdminEntry);
   }
 
-  async upsert(adminId: string, pathKey: string, raw: CatalogWrite): Promise<AdminCatalogEntry> {
+  async upstreamModelReferences(ids: string[]) {
+    const { rows } = await this.database.query<{
+      upstreamId: string;
+      modelKey: string;
+      displayName: string;
+      upstreamModelId: string;
+    }>(
+      `WITH refs AS (
+         SELECT r.upstream_id, c.model_key, c.display_name, r.upstream_model_id, false AS mirror
+           FROM model_access.model_routes r
+           JOIN model_access.model_catalog c USING (model_key)
+          WHERE c.deleted_at IS NULL AND r.upstream_id = ANY($1::uuid[])
+         UNION ALL
+         SELECT c.upstream_id, c.model_key, c.display_name, c.upstream_model_id, true
+           FROM model_access.model_catalog c
+          WHERE c.deleted_at IS NULL AND c.upstream_id = ANY($1::uuid[])
+       )
+       SELECT DISTINCT ON (upstream_id, model_key)
+              upstream_id AS "upstreamId", model_key AS "modelKey",
+              display_name AS "displayName", upstream_model_id AS "upstreamModelId"
+         FROM refs ORDER BY upstream_id, model_key, mirror`,
+      [ids],
+    );
+    return rows;
+  }
+
+  async adminLabels() {
+    const rows = await this.database.db
+      .select({
+        modelKey: modelCatalog.modelKey,
+        displayName: modelCatalog.displayName,
+        originalModelKey: modelCatalog.originalModelKey,
+        deletedAt: modelCatalog.deletedAt,
+      })
+      .from(modelCatalog)
+      .orderBy(
+        sql`${modelCatalog.deletedAt} IS NOT NULL`,
+        desc(modelCatalog.deletedAt),
+        asc(modelCatalog.modelKey),
+      );
+    return rows.map((row) => {
+      const deletedAt = row.deletedAt?.toISOString() ?? null;
+      return {
+        modelKey: row.originalModelKey ?? row.modelKey,
+        displayName: row.displayName,
+        deletedAt,
+        ...(deletedAt ? { archiveId: row.modelKey } : {}),
+      };
+    });
+  }
+
+  private directoryFilter(filter: import('@weiban/contracts').AdminModelDirectoryFilter) {
+    const q = filter.q?.toLowerCase();
+    return and(
+      isNull(modelCatalog.deletedAt),
+      q
+        ? sql`(strpos(lower(${modelCatalog.displayName}), ${q}) > 0
+        OR strpos(lower(${modelCatalog.modelKey}), ${q}) > 0)`
+        : undefined,
+      filter.scenario ? sql`${filter.scenario} = ANY(${modelCatalog.scenarios})` : undefined,
+      filter.status ? eq(modelCatalog.enabled, filter.status === 'on') : undefined,
+    );
+  }
+
+  async adminSelection(filter: import('@weiban/contracts').AdminModelDirectoryFilter) {
+    return this.database.db
+      .select({ modelKey: modelCatalog.modelKey, displayName: modelCatalog.displayName })
+      .from(modelCatalog)
+      .where(this.directoryFilter(filter))
+      .orderBy(asc(modelCatalog.sortOrder), asc(modelCatalog.modelKey));
+  }
+
+  async adminPage(
+    filter: import('@weiban/contracts').AdminModelDirectoryFilter,
+    page: { offset: number; limit: number; sort: string } | undefined,
+  ) {
+    const where = this.directoryFilter(filter);
+    const primary =
+      page?.sort === 'name_asc'
+        ? asc(sql`lower(${modelCatalog.displayName})`)
+        : page?.sort === 'name_desc'
+          ? desc(sql`lower(${modelCatalog.displayName})`)
+          : page?.sort === 'priority_desc'
+            ? desc(modelCatalog.sortOrder)
+            : asc(modelCatalog.sortOrder);
+    const query = this.database.db
+      .select(adminSelection)
+      .from(modelCatalog)
+      .where(where)
+      .orderBy(primary, asc(modelCatalog.modelKey));
+    if (!page) {
+      const rows = await query;
+      return { entries: rows.map(toAdminEntry), total: rows.length };
+    }
+    const [rows, [count]] = await Promise.all([
+      query.limit(page.limit).offset(page.offset),
+      this.database.db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(modelCatalog)
+        .where(where),
+    ]);
+    return { entries: rows.map(toAdminEntry), total: count?.total ?? 0 };
+  }
+
+  async adminDetail(modelKey: string) {
+    const [row] = await this.database.db
+      .select(adminSelection)
+      .from(modelCatalog)
+      .where(and(eq(modelCatalog.modelKey, modelKey), isNull(modelCatalog.deletedAt)));
+    return row ? toAdminEntry(row) : null;
+  }
+
+  async withCatalogWrite<T>(work: (tx: DbTx) => Promise<T>): Promise<T> {
+    return this.database.transaction(async (tx) => {
+      await tx.query('SELECT pg_advisory_xact_lock($1)', [CATALOG_LOCK_KEY]);
+      return work(tx);
+    });
+  }
+  /** 生态决策的能力与价格预检在目录写事务外执行，保存时用此版本拒绝删除或同键重建。 */
+  async enabledRevision(key: string): Promise<string | null> {
+    const [row] = await this.database.db
+      .select({ revision: sql<string>`xmin::text` })
+      .from(modelCatalog)
+      .where(
+        and(
+          eq(modelCatalog.modelKey, key),
+          eq(modelCatalog.enabled, true),
+          isNull(modelCatalog.deletedAt),
+        ),
+      );
+    return row?.revision ?? null;
+  }
+  async assertRevision(tx: DbTx, key: string, expected: string | null | undefined) {
+    if (expected === undefined) return;
+    const [row] = await tx.db
+      .select({ revision: sql<string>`xmin::text` })
+      .from(modelCatalog)
+      .where(and(eq(modelCatalog.modelKey, key), isNull(modelCatalog.deletedAt)))
+      .for('update');
+    if ((row?.revision ?? null) !== expected)
+      throw new AppError('conflict', '模型已被其他操作修改或删除，请刷新目录后再保存');
+  }
+  async upsert(
+    adminId: string,
+    pathKey: string,
+    raw: CatalogWrite,
+    transaction?: DbTx,
+  ): Promise<AdminCatalogEntry> {
     this.validateBillingBounds(raw.billingBounds);
     // 3.24：没带核对时间的计费上限记为保存时刻
     const body = { ...raw, billingBounds: this.stampBounds(raw.billingBounds) };
@@ -723,11 +908,9 @@ export class CatalogService {
     const scenarios = body.scenarios?.filter((s) => s !== 'vision');
 
     // 组合通话模型自身不调用上游、没有 token 单价（三组件各自计费），启用时不要求自己的价格。
-    if (body.enabled && requiresCatalogPrice({ modelKey: body.modelKey, tags }))
-      await this.requirePrice(body.modelKey);
-
-    return this.database.transaction(async (tx) => {
-      await tx.query('SELECT pg_advisory_xact_lock($1)', [CATALOG_LOCK_KEY]);
+    const save = async (tx: DbTx) => {
+      if (body.enabled && requiresCatalogPrice({ modelKey: body.modelKey, tags }))
+        await this.requirePrice(body.modelKey, tx);
       const [before] = await tx.db
         .select()
         .from(modelCatalog)
@@ -779,11 +962,11 @@ export class CatalogService {
             .update(modelCatalog)
             .set(values)
             .where(eq(modelCatalog.modelKey, body.modelKey))
-            .returning()
+            .returning(adminSelection)
         : await tx.db
             .insert(modelCatalog)
             .values({ ...values, createdAt: now })
-            .returning();
+            .returning(adminSelection);
       if (!row) throw new Error('数据库没有返回写入的行');
       if (upstream)
         await this.syncPrimaryRoute(
@@ -832,7 +1015,8 @@ export class CatalogService {
         }
       }
       return toAdminEntry(row);
-    });
+    };
+    return transaction ? save(transaction) : this.withCatalogWrite(save);
   }
 
   // ---------- 用户端 ----------
@@ -893,13 +1077,13 @@ export class CatalogService {
     const relative = relativeRanks(
       visible.map(({ entry }) => ({
         key: entry.modelKey,
-        rank: arena.rankOfEntry(entry),
+        rank: participatesInTextArena(entry) ? arena.rankOfEntry(entry) : null,
       })),
     );
     const previous = relativeRanks(
       visible.map(({ entry }) => ({
         key: entry.modelKey,
-        rank: arena.previousRankOfEntry(entry),
+        rank: participatesInTextArena(entry) ? arena.previousRankOfEntry(entry) : null,
       })),
     );
     // 批 V：实时语音 / Omni 通话模型按分钟展示（分钟用量假设 × 价目表），不显示按文字 token 推出的「约每条」与倍率。
@@ -1158,10 +1342,19 @@ export class CatalogService {
         upstreamModelId: modelRoutes.upstreamModelId,
         streak: modelRoutes.usageMissingStreak,
         since: modelRoutes.usageMissingSince,
+        scenarios: modelCatalog.scenarios,
       })
       .from(modelRoutes)
+      .innerJoin(modelCatalog, eq(modelCatalog.modelKey, modelRoutes.modelKey))
       .where(and(inArray(modelRoutes.modelKey, keys), gt(modelRoutes.usageMissingStreak, 0)));
     for (const r of rows) {
+      // 原生合成按字符本地计量，历史计数包含按此单位正常结算的成功调用。
+      if (
+        r.scenarios.length === 1 &&
+        r.scenarios[0] === 'voice_message' &&
+        isMimoChatAudioModel(r.upstreamModelId)
+      )
+        continue;
       const list = out.get(r.modelKey) ?? [];
       list.push({
         upstreamId: r.upstreamId,
@@ -1175,47 +1368,80 @@ export class CatalogService {
   }
 
   /** 整体替换某模型的路由（后台「模型」向导）。账号必须存在、不能重复。 */
-  async replaceRoutes(adminId: string, modelKey: string, raw: ModelRoute[]): Promise<void> {
+  async replaceRoutes(
+    adminId: string,
+    modelKey: string,
+    raw: ModelRoute[],
+    transaction?: DbTx,
+  ): Promise<void> {
     for (const route of raw) this.validateBillingBounds(route.billingBounds);
     const routes = raw.map((r) => ({ ...r, billingBounds: this.stampBounds(r.billingBounds) }));
     const ids = routes.map((r) => r.upstreamId);
     if (new Set(ids).size !== ids.length) {
       throw new AppError('bad_request', '同一个上游账号在路由里出现了两次', { status: 422 });
     }
-    await this.database.transaction(async (tx) => {
-      await tx.query('SELECT pg_advisory_xact_lock($1)', [CATALOG_LOCK_KEY]);
+    const replace = async (tx: DbTx) => {
+      const [live] = await tx.db
+        .select({ key: modelCatalog.modelKey })
+        .from(modelCatalog)
+        .where(and(eq(modelCatalog.modelKey, modelKey), isNull(modelCatalog.deletedAt)));
+      if (!live) throw new AppError('not_found', '模型已经删除或不存在');
       const found = await tx.db
         .select({ id: upstreams.id })
         .from(upstreams)
-        .where(and(inArray(upstreams.id, ids), isNull(upstreams.deletedAt)));
+        .where(and(inArray(upstreams.id, ids), isNull(upstreams.deletedAt)))
+        .orderBy(upstreams.id)
+        .for('share');
       if (found.length !== ids.length) {
         throw new AppError('bad_request', '路由里有不存在的上游账号', { status: 422 });
       }
       const beforeRoutes = await tx.db
         .select()
         .from(modelRoutes)
-        .where(eq(modelRoutes.modelKey, modelKey));
+        .where(eq(modelRoutes.modelKey, modelKey))
+        .for('update');
       const now = this.clock.now();
-      await tx.db.delete(modelRoutes).where(eq(modelRoutes.modelKey, modelKey));
-      await tx.db.insert(modelRoutes).values(
-        routes.map((r) => ({
-          modelKey,
-          upstreamId: r.upstreamId,
+      const removed = beforeRoutes.filter((old) => !ids.includes(old.upstreamId));
+      if (removed.length)
+        await tx.db.delete(modelRoutes).where(
+          and(
+            eq(modelRoutes.modelKey, modelKey),
+            inArray(
+              modelRoutes.upstreamId,
+              removed.map((r) => r.upstreamId),
+            ),
+          ),
+        );
+      for (const r of routes) {
+        const old = beforeRoutes.find((item) => item.upstreamId === r.upstreamId);
+        const same = old?.upstreamModelId === r.upstreamModelId;
+        const values = {
           upstreamModelId: r.upstreamModelId,
           billingBounds:
-            r.billingBounds !== undefined
-              ? r.billingBounds
-              : (beforeRoutes.find(
-                  (old) =>
-                    old.upstreamId === r.upstreamId && old.upstreamModelId === r.upstreamModelId,
-                )?.billingBounds ?? null),
+            r.billingBounds === undefined && same ? old.billingBounds : (r.billingBounds ?? null),
           priority: r.priority,
           weight: r.weight,
           enabled: r.enabled,
-          createdAt: now,
           updatedAt: now,
-        })),
-      );
+        };
+        if (old) {
+          await tx.db
+            .update(modelRoutes)
+            .set({
+              ...values,
+              ...(same
+                ? {}
+                : { usageMissingStreak: 0, usageMissingSince: null, usageMissingAlertedAt: null }),
+            })
+            .where(
+              and(eq(modelRoutes.modelKey, modelKey), eq(modelRoutes.upstreamId, r.upstreamId)),
+            );
+        } else {
+          await tx.db
+            .insert(modelRoutes)
+            .values({ modelKey, upstreamId: r.upstreamId, createdAt: now, ...values });
+        }
+      }
       await this.audit.record(
         {
           module: 'model_access',
@@ -1228,7 +1454,8 @@ export class CatalogService {
         },
         tx,
       );
-    });
+    };
+    return transaction ? replace(transaction) : this.withCatalogWrite(replace);
   }
 
   validateBillingBounds(bounds: RouteBillingBounds | null | undefined): void {
@@ -1300,7 +1527,14 @@ export class CatalogService {
       if (mine.upstreamModelId !== upstreamModelId || billingBounds !== undefined)
         await tx.db
           .update(modelRoutes)
-          .set({ upstreamModelId, updatedAt: now, billingBounds: billingBounds ?? null })
+          .set({
+            upstreamModelId,
+            updatedAt: now,
+            billingBounds: billingBounds ?? null,
+            ...(mine.upstreamModelId !== upstreamModelId
+              ? { usageMissingStreak: 0, usageMissingSince: null, usageMissingAlertedAt: null }
+              : {}),
+          })
           .where(and(eq(modelRoutes.modelKey, modelKey), eq(modelRoutes.upstreamId, upstreamId)));
       return;
     }
@@ -1401,10 +1635,10 @@ export class CatalogService {
    * （billing.md 4.1、ADR-0017 第 1 条）。计费查询端口未接入时 503，不放行。
    * 组合通话模型例外，见 requiresCatalogPrice。
    */
-  private async requirePrice(modelKey: string): Promise<void> {
+  private async requirePrice(modelKey: string, tx: DbTx): Promise<void> {
     let priced: string[];
     try {
-      priced = await this.charges.listActivePricedModelKeys();
+      priced = await this.charges.listActivePricedModelKeys(tx);
     } catch (error) {
       if (error instanceof ChargeQueryUnavailableError) {
         throw new AppError('service_unavailable', '暂时无法查询价目表，模型未启用，请稍后再试');

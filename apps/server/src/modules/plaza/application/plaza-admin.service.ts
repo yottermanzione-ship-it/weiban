@@ -450,6 +450,10 @@ export class PlazaAdminService {
 
   // ---------- 举报 ----------
 
+  async pendingReportCount() {
+    return { total: await this.db.db.$count(reports, eq(reports.status, 'pending')) };
+  }
+
   async listReports(input: unknown) {
     const q = parseContract(
       z.object({

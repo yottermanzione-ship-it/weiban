@@ -2,7 +2,7 @@
  * 批量操作弹窗：先二次确认（写清「将影响 N 项」和后果）→ 逐条执行 → 列出每一条结果。
  * 失败项会保留给页面继续选中；确认和结果分两步，避免一次点击就直接删数据。
  */
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { Alert, Button, Modal, Space, Tag } from 'antd';
 import { errorText } from '../data/hooks.js';
 
@@ -23,7 +23,7 @@ interface BatchResultRow {
 export function BatchBar({ count, children }: { count: number; children: ReactNode }) {
   return (
     <Space size={8} wrap>
-      <span className="cell-sub">已选 {count} 项（仅当前页）</span>
+      <span className="cell-sub">已选 {count} 项</span>
       {children}
     </Space>
   );
@@ -90,6 +90,7 @@ export function BatchOperationModal<T>({
   onFinished: (failures: BatchFailure[]) => void;
   children?: ReactNode;
 }) {
+  const started = useRef(false);
   const [phase, setPhase] = useState<'confirm' | 'running' | 'done'>('confirm');
   const [results, setResults] = useState<BatchResultRow[]>([]);
 
@@ -99,6 +100,8 @@ export function BatchOperationModal<T>({
   const successCount = results.length - failures.length;
 
   async function start() {
+    if (started.current) return;
+    started.current = true;
     setPhase('running');
     setResults([]);
     const collected: BatchResultRow[] = [];

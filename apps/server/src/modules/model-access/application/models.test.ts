@@ -6,6 +6,7 @@ import { ModelAdminService, serviceRatesToYuan, toAdminModel } from './models.js
 import { VOICE_CALL_CASCADE_MODEL_KEY, VOICE_CALL_PIPELINE_TAG } from './voice-call-composite.js';
 
 type Write = z.output<typeof AdminModelWrite>;
+const transaction = { id: 'test-model-transaction' };
 const key = 'deepseek/search';
 const body = {
   modelKey: key,
@@ -34,6 +35,8 @@ function fixture(servicePort = true) {
     getModelDiscounts: vi.fn(async () => new Map()),
   };
   const catalog = {
+    withCatalogWrite: async <T>(work: (tx: typeof transaction) => Promise<T>) => work(transaction),
+    assertRevision: vi.fn(),
     validateBillingBounds: vi.fn(),
     upsert: vi.fn(async (_admin: string, _key: string, entry: unknown) => {
       order.push('catalog');
@@ -58,11 +61,14 @@ describe('ModelAdminService service rates', () => {
     const { svc, rates, catalog, order } = fixture();
     const saved = await svc.upsert('admin', key, body);
     expect(order).toEqual(['publish', 'catalog']);
-    expect(rates.publishModelServiceRates).toHaveBeenCalledWith({
-      operatorUserId: 'admin',
-      modelKey: key,
-      rates: [{ unit: 'search_call', priceMicros: 5000, costMicros: 5000 }],
-    });
+    expect(rates.publishModelServiceRates).toHaveBeenCalledWith(
+      {
+        operatorUserId: 'admin',
+        modelKey: key,
+        rates: [{ unit: 'search_call', priceMicros: 5000, costMicros: 5000 }],
+      },
+      transaction,
+    );
     expect(rates.publishModelTokenRates).not.toHaveBeenCalled();
     expect(catalog.upsert.mock.calls[0]?.[2]).not.toHaveProperty('serviceRates');
     expect(saved.rates).toBeNull();
@@ -87,6 +93,7 @@ describe('ModelAdminService service rates', () => {
       expect.objectContaining({
         rates: [{ unit: 'search_call', priceMicros: 5000, costMicros: 0 }],
       }),
+      transaction,
     );
     await svc.upsert('admin', key, {
       ...body,
@@ -96,6 +103,7 @@ describe('ModelAdminService service rates', () => {
       expect.objectContaining({
         rates: [{ unit: 'search_call', priceMicros: 5000, costMicros: 5000 }],
       }),
+      transaction,
     );
   });
   it('fails explicitly before writing when the service-price port is unavailable or capability mismatches', async () => {
@@ -127,7 +135,7 @@ describe('ModelAdminService service rates', () => {
       serviceRates: undefined,
       displayMultiplierManual: null,
     });
-    expect(display.setManual).toHaveBeenCalledWith(key, null);
+    expect(display.setManual).toHaveBeenCalledWith(key, null, transaction);
   });
   it('uses precise yuan conversion and combines token/service time-band flags', () => {
     expect(

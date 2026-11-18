@@ -76,6 +76,8 @@ import {
 @Module({
   imports: [BillingModule, IdentityModule, MediaModule],
   exports: [
+    CatalogService,
+    ModelDeletionService,
     SHARED_WEB_SEARCH_PORT,
     MODEL_WEB_CANDIDATES,
     MODEL_GATEWAY_PORT,

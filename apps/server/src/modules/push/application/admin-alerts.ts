@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, count, desc, eq, gt, isNull, lt, or } from 'drizzle-orm';
+import { and, count, desc, eq, gt, inArray, isNull, lt, or } from 'drizzle-orm';
 import { z } from 'zod';
 import {
   AdminAlert,
@@ -103,12 +103,19 @@ export class AdminAlertService {
     }
     return this.db.transaction(async (tx) => {
       const retained = gt(adminAlerts.lastRaisedAt, new Date(this.clock.nowMs() - retentionMs));
+      const severity =
+        query.view === 'info'
+          ? eq(adminAlerts.severity, 'info')
+          : query.view === 'actionable'
+            ? inArray(adminAlerts.severity, ['warning', 'critical'])
+            : undefined;
       const rows = await tx.db
         .select()
         .from(adminAlerts)
         .where(
           and(
             retained,
+            severity,
             query.status === 'open' ? isNull(adminAlerts.acknowledgedAt) : undefined,
             cursor
               ? or(
@@ -128,7 +135,7 @@ export class AdminAlertService {
       const [open] = await tx.db
         .select({ n: count() })
         .from(adminAlerts)
-        .where(and(retained, isNull(adminAlerts.acknowledgedAt)));
+        .where(and(retained, severity, isNull(adminAlerts.acknowledgedAt)));
       return PushAdminEndpoints.listAdminAlerts.response.parse({
         items: items.map(dto),
         openCount: open!.n,

@@ -1,3 +1,4 @@
+import { useListSelection } from '../../data/list-selection.js';
 /**
  * 用户列表（10-20 批 E2，参考旧版 UsersPage「搜用户 → 开会员」）：
  * 顶部总用户数、PRO+ 会员数、7 天内到期名单（可点）；搜索账号 / 昵称 / ID；点一行打开用户详情抽屉。
@@ -5,10 +6,11 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Alert, Button, Checkbox, Input, Segmented, Space } from 'antd';
-import { AdminUsersEndpoints } from '@weiban/contracts';
+import { AdminUsersEndpoints, BillingAdminEndpoints } from '@weiban/contracts';
 import { api } from '../../data/client.js';
 import { useRemote } from '../../data/hooks.js';
-import { HelpTip, Page } from '../../ui/page.js';
+import { Page } from '../../ui/page.js';
+import { RecordDrawer } from '../../ui/drawer.js';
 import { DataTable, type ProColumns } from '../../ui/table.js';
 import {
   BatchBar,
@@ -20,9 +22,8 @@ import { formatDate, formatPoints, formatYuan, relativeTime } from '../../ui/for
 import {
   AccountStateTag,
   MembershipTag,
-  daysLeft,
   displayName,
-  useUserRows,
+  useSelectedUser,
   type UserRow,
 } from './shared.js';
 import { UserDetailDrawer } from './detail.js';
@@ -33,13 +34,35 @@ export function UserListPage() {
   const [searchParams] = useSearchParams();
   const linkedUser = searchParams.get('userId');
   const linkedTab = searchParams.get('tab');
-  const users = useUserRows();
-  const overview = useRemote(AdminUsersEndpoints.overview);
+  const overview = useRemote(AdminUsersEndpoints.overview, { query: { view: 'counts' } });
   const [query, setQuery] = useState('');
   const [quick, setQuick] = useState<Quick>('all');
   const [openId, setOpenId] = useState<string | null>(null);
   const [openTab, setOpenTab] = useState<'profile' | 'membership' | 'runtime'>('profile');
-  const [selected, setSelected] = useState<string[]>([]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [sort, setSort] = useState<
+    'newest' | 'oldest' | 'balance_asc' | 'balance_desc' | 'spent_asc' | 'spent_desc'
+  >('newest');
+  const users = useRemote(BillingAdminEndpoints.userPage, {
+    query: { q: query.trim(), group: quick, page, pageSize, sort },
+  });
+  const list = users.data?.items ?? [];
+  const selection = useListSelection<UserRow>(
+    JSON.stringify([query, quick]),
+    list,
+    (r) => r.userId,
+  );
+  const selectedRows = selection.rows;
+  const setSelected = selection.select;
+  function changeQuery(value: string) {
+    setPage(1);
+    setQuery(value);
+  }
+  function changeQuick(value: Quick) {
+    setPage(1);
+    setQuick(value);
+  }
   const [failures, setFailures] = useState<BatchFailure[]>([]);
   const [batch, setBatch] = useState<{
     kind: 'delete' | 'ban' | 'unban';
@@ -54,11 +77,6 @@ export function UserListPage() {
       setOpenTab(linkedTab === 'runtime' ? 'runtime' : 'profile');
     }
   }, [linkedUser, linkedTab]);
-  // 选择只对当前页 / 当前筛选有效：换关键词或快捷筛选时清空。
-  useEffect(() => {
-    setSelected([]);
-  }, [query, quick]);
-
   function refreshAll() {
     users.refresh();
     overview.refresh();
@@ -66,28 +84,26 @@ export function UserListPage() {
 
   function open(userId: string, tab: 'profile' | 'membership' = 'profile') {
     setOpenTab(tab);
+    if (!list.some((r) => r.userId === userId)) {
+      changeQuery(userId);
+      changeQuick('all');
+    }
     setOpenId(userId);
   }
 
-  const q = query.trim().toLowerCase();
-  const list = users.rows.filter(({ user }) => {
-    if (quick === 'pro' && user.membership.tier !== 'pro_plus') return false;
-    if (quick === 'expiring') {
-      const left = daysLeft(user.membership.expiresAt);
-      if (user.membership.tier !== 'pro_plus' || left === null || left > 7) return false;
+  async function selectMatching() {
+    try {
+      await selection.selectAll(async () =>
+        (
+          await api.call(AdminUsersEndpoints.selectableUsers, {
+            query: { q: query.trim(), group: quick },
+          })
+        ).items.map((user) => ({ userId: user.userId, user })),
+      );
+    } catch {
+      setFailures([{ key: 'selection', label: '选择筛选结果', reason: '读取失败，请重试' }]);
     }
-    if (quick === 'banned' && !user.ban) return false;
-    if (!q) return true;
-    return (
-      user.userId.toLowerCase().includes(q) ||
-      user.username.toLowerCase().includes(q) ||
-      !!user.nickname?.toLowerCase().includes(q)
-    );
-  });
-
-  // 只认当前筛选结果里的行：即使组件状态里残留了旧页的 key，也不会作用到看不见的用户。
-  const selectedRows = list.filter(({ userId }) => selected.includes(userId));
-
+  }
   function openBatch(kind: 'delete' | 'ban' | 'unban') {
     if (!selectedRows.length) return;
     setReason('');
@@ -127,7 +143,7 @@ export function UserListPage() {
 
   const nameOf = (id: string | null) => {
     if (!id) return '系统';
-    const row = users.byId.get(id);
+    const row = list.find((r) => r.userId === id);
     return row ? displayName(row.user) : `${id.slice(0, 8)}…`;
   };
 
@@ -164,7 +180,8 @@ export function UserListPage() {
     {
       title: '余额（积分）',
       width: 140,
-      sorter: (a, b) => (a.account?.balanceMicros ?? 0) - (b.account?.balanceMicros ?? 0),
+      key: 'balance',
+      sorter: true,
       render: (_, { account }) =>
         account ? (
           <div className="cell-main">
@@ -178,8 +195,8 @@ export function UserListPage() {
     {
       title: '近 30 天消耗',
       width: 130,
-      sorter: (a, b) =>
-        (a.account?.spentLast30DaysMicros ?? 0) - (b.account?.spentLast30DaysMicros ?? 0),
+      key: 'spent',
+      sorter: true,
       render: (_, { account }) =>
         account ? (
           <div className="cell-main">
@@ -193,7 +210,8 @@ export function UserListPage() {
     {
       title: '注册 / 活跃',
       width: 150,
-      sorter: (a, b) => a.user.createdAt.localeCompare(b.user.createdAt),
+      key: 'created',
+      sorter: true,
       render: (_, { user }) => (
         <div className="cell-main">
           <span>{formatDate(user.createdAt)}</span>
@@ -211,58 +229,15 @@ export function UserListPage() {
   ];
 
   const ov = overview.data;
-  const openRow = openId ? users.byId.get(openId) : undefined;
+  const detail = useSelectedUser(openId);
+  const openRow = detail.row;
 
   return (
-    <Page
-      title="用户列表"
-      desc="搜到用户后点一行：看资料、开通 / 续期会员、加扣积分、看用量、封禁或删除，都在右侧抽屉里完成。"
-      extra={<Button onClick={refreshAll}>刷新</Button>}
-    >
-      <div className="user-overview">
-        <button type="button" className="stat-card stat-button" onClick={() => setQuick('all')}>
-          <div className="stat-label">总用户数</div>
-          <div className="stat-value">{ov ? ov.totalUsers.toLocaleString('zh-CN') : '—'}</div>
-          <div className="stat-delta">不含注销中的账号</div>
-        </button>
-        <button type="button" className="stat-card stat-button" onClick={() => setQuick('pro')}>
-          <div className="stat-label">PRO+ 会员</div>
-          <div className="stat-value">{ov ? ov.proPlusUsers.toLocaleString('zh-CN') : '—'}</div>
-          <div className="stat-delta">当前有效的付费会员</div>
-        </button>
-        <div className="stat-card user-expiring">
-          <div className="stat-label">
-            7 天内到期 {ov ? `· ${ov.expiringSoon.length} 人` : ''}
-            <HelpTip text="点名字打开该用户的会员页，可直接续期。" />
-          </div>
-          {ov && ov.expiringSoon.length === 0 && (
-            <div className="detail-muted">这 7 天没有会员到期</div>
-          )}
-          <div className="chip-list">
-            {ov?.expiringSoon.slice(0, 12).map((u) => (
-              <button
-                key={u.userId}
-                type="button"
-                className="chip chip-button"
-                onClick={() => open(u.userId, 'membership')}
-              >
-                {u.nickname || u.username}
-                <span className="chip-sub">
-                  {daysLeft(u.expiresAt) ?? 0} 天 · {formatDate(u.expiresAt)}
-                </span>
-              </button>
-            ))}
-            {ov && ov.expiringSoon.length > 12 && (
-              <Button size="small" type="link" onClick={() => setQuick('expiring')}>
-                全部 {ov.expiringSoon.length} 人 ›
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
+    <Page title="用户列表">
       {overview.error && <Alert type="error" showIcon message={overview.error} />}
       <BatchFailureAlert failures={failures} onDismiss={() => setFailures([])} />
       <DataTable<UserRow>
+        showTools
         rowKey="userId"
         columns={columns}
         data={list}
@@ -270,11 +245,44 @@ export function UserListPage() {
         error={users.error}
         onRefresh={refreshAll}
         onRowClick={(r) => open(r.userId)}
-        selectedKeys={selected}
+        selectedKeys={selection.keys}
         onSelectionChange={(keys) => setSelected(keys.map(String))}
-        preserveSelection={false}
-        selectionHint="表头勾选只覆盖当前页；换页或改筛选会清空"
-        onPageChange={() => setSelected([])}
+        preserveSelection
+        selectionHint={
+          <Button type="link" size="small" onClick={() => void selectMatching()}>
+            选择全部匹配的可操作用户
+          </Button>
+        }
+        pagination={{
+          current: page,
+          pageSize,
+          total: users.data?.total ?? 0,
+          pageSizeOptions: [20, 50, 100],
+          onChange: (p, n) => {
+            selection.changePage();
+            setPage(n === pageSize ? p : 1);
+            setPageSize(n);
+          },
+        }}
+        onSort={(key, dir) => {
+          setPage(1);
+          const asc = dir === 'ascend';
+          setSort(
+            !dir
+              ? 'newest'
+              : key === 'created'
+                ? asc
+                  ? 'oldest'
+                  : 'newest'
+                : key === 'balance'
+                  ? asc
+                    ? 'balance_asc'
+                    : 'balance_desc'
+                  : asc
+                    ? 'spent_asc'
+                    : 'spent_desc',
+          );
+        }}
         rowSelectable={({ user }) => user.role !== 'admin' && user.status === 'active'}
         batchActions={() => (
           <BatchBar count={selectedRows.length}>
@@ -309,23 +317,28 @@ export function UserListPage() {
               placeholder="搜索账号 / 昵称 / 用户 ID"
               style={{ width: 260 }}
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => changeQuery(e.target.value)}
             />
             <Segmented<Quick>
               value={quick}
-              onChange={setQuick}
+              onChange={changeQuick}
               options={[
-                { value: 'all', label: '全部' },
-                { value: 'pro', label: 'PRO+' },
-                { value: 'expiring', label: '7 天内到期' },
+                { value: 'all', label: '全部账号' },
+                { value: 'pro', label: ov ? 'PRO+ · ' + ov.proPlusUsers : 'PRO+' },
+                {
+                  value: 'expiring',
+                  label: ov
+                    ? '7 天内到期 · ' + (ov.expiringSoonCount ?? ov.expiringSoon.length)
+                    : '7 天内到期',
+                },
                 { value: 'banned', label: '已封禁' },
               ]}
             />
           </Space>
         }
-        emptyTitle={users.rows.length ? '没有符合条件的用户' : '还没有用户'}
+        emptyTitle={query.trim() || quick !== 'all' ? '没有符合条件的用户' : '还没有用户'}
         emptyHint={
-          users.rows.length
+          query.trim() || quick !== 'all'
             ? '换个关键词，或切回「全部」。'
             : '用户在网页端注册后会自动出现在这里，不需要手动添加。'
         }
@@ -408,6 +421,20 @@ export function UserListPage() {
           )}
         </BatchOperationModal>
       )}
+      {openId && !openRow && (
+        <RecordDrawer open title="用户详情" onClose={() => setOpenId(null)}>
+          {detail.error ? (
+            <Alert
+              type="error"
+              showIcon
+              message={detail.error}
+              action={<Button onClick={detail.refresh}>重试</Button>}
+            />
+          ) : (
+            '正在读取…'
+          )}
+        </RecordDrawer>
+      )}
       {openRow && (
         <UserDetailDrawer
           key={openRow.userId}
@@ -415,7 +442,10 @@ export function UserListPage() {
           nameOf={nameOf}
           initialTab={openTab}
           onClose={() => setOpenId(null)}
-          onChanged={refreshAll}
+          onChanged={() => {
+            refreshAll();
+            detail.refresh();
+          }}
         />
       )}
     </Page>

@@ -30,10 +30,16 @@ const EMPTY: TodoCounts = { roleRequests: 0, support: 0, reports: 0, deletions: 
 interface TodoState {
   counts: TodoCounts;
   loading: boolean;
+  partial: boolean;
   refresh: () => void;
 }
 
-const TodoContext = createContext<TodoState>({ counts: EMPTY, loading: true, refresh: () => {} });
+const TodoContext = createContext<TodoState>({
+  counts: EMPTY,
+  loading: true,
+  partial: false,
+  refresh: () => {},
+});
 
 async function safe<T>(work: Promise<T>): Promise<T | undefined> {
   try {
@@ -43,10 +49,11 @@ async function safe<T>(work: Promise<T>): Promise<T | undefined> {
   }
 }
 
-/** 菜单角标与工作台待办共用一份计数，每 60 秒自动刷新。 */
+/** 菜单角标与工作台待办共用一份计数，信息级提示在运行提醒里查阅。 */
 export function TodoProvider({ children }: { children: ReactNode }) {
   const [counts, setCounts] = useState<TodoCounts>(EMPTY);
   const [loading, setLoading] = useState(true);
+  const [partial, setPartial] = useState(false);
   const [revision, setRevision] = useState(0);
   const alive = useRef(true);
 
@@ -63,16 +70,23 @@ export function TodoProvider({ children }: { children: ReactNode }) {
       const [requests, support, reports, deletions, alerts] = await Promise.all([
         safe(api.call(RoleRequestAdminEndpoints.list, { query: { status: 'pending', limit: 1 } })),
         safe(api.call(SupportAdminEndpoints.list, { query: { status: 'open', limit: 1 } })),
-        safe(api.call(PlazaAdminEndpoints.listReports, { query: { status: 'pending' } })),
-        safe(api.call(IdentityAdminEndpoints.listPendingDeletions)),
-        safe(api.call(PushAdminEndpoints.listAdminAlerts, { query: { status: 'open', limit: 1 } })),
+        safe(api.call(PlazaAdminEndpoints.pendingReportCount)),
+        safe(api.call(IdentityAdminEndpoints.pendingDeletionCount)),
+        safe(
+          api.call(PushAdminEndpoints.listAdminAlerts, {
+            query: { status: 'open', view: 'actionable', limit: 1 },
+          }),
+        ),
       ]);
       if (!active || !alive.current) return;
+      setPartial(
+        [requests, support, reports, deletions, alerts].some((value) => value === undefined),
+      );
       setCounts({
         roleRequests: requests?.pendingCount ?? 0,
         support: support?.openCount ?? 0,
-        reports: reports?.items.length ?? 0,
-        deletions: deletions?.items.length ?? 0,
+        reports: reports?.total ?? 0,
+        deletions: deletions?.total ?? 0,
         alerts: alerts?.openCount ?? 0,
       });
       setLoading(false);
@@ -83,12 +97,20 @@ export function TodoProvider({ children }: { children: ReactNode }) {
   }, [revision]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => setRevision((v) => v + 1), 60_000);
-    return () => window.clearInterval(timer);
+    const refresh = () => setRevision((v) => v + 1);
+    const timer = window.setInterval(refresh, 60_000);
+    window.addEventListener('weiban-admin:alerts-changed', refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('weiban-admin:alerts-changed', refresh);
+    };
   }, []);
 
   const refresh = useCallback(() => setRevision((v) => v + 1), []);
-  const value = useMemo(() => ({ counts, loading, refresh }), [counts, loading, refresh]);
+  const value = useMemo(
+    () => ({ counts, loading, refresh, partial }),
+    [counts, loading, refresh, partial],
+  );
   return <TodoContext.Provider value={value}>{children}</TodoContext.Provider>;
 }
 

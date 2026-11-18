@@ -12,6 +12,8 @@ import {
   type AdminTopupEntry,
   type IdentityAccountStatusPort,
   type IdentityDirectoryPort,
+  type IdentityAdminDirectoryPort,
+  type AdminUserFilter,
   type UpstreamBill,
 } from '@weiban/contracts';
 import { and, desc, eq, gte, inArray, isNull, lt, ne, or } from 'drizzle-orm';
@@ -28,7 +30,11 @@ import {
   type Clock,
   type Database,
 } from '../../../platform/index.js';
-import { IDENTITY_ACCOUNT_STATUS_PORT, IDENTITY_DIRECTORY_PORT } from '../../identity/index.js';
+import {
+  IDENTITY_ACCOUNT_STATUS_PORT,
+  IDENTITY_DIRECTORY_PORT,
+  IDENTITY_ADMIN_DIRECTORY_PORT,
+} from '../../identity/index.js';
 import { daysBetween, localDate, PLATFORM_TIME_ZONE } from '../domain/local-time.js';
 import { accounts, ledgerEntries, upstreamBills } from '../infra/db/schema.js';
 import { available, Ledger, type LedgerRow } from './ledger.js';
@@ -65,12 +71,15 @@ export class BillingAdminService {
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Inject(IDENTITY_ADMIN_DIRECTORY_PORT)
+    private readonly adminDirectory: IdentityAdminDirectoryPort,
   ) {}
 
   /**
    * 所有用户钱包概况。用户名通过 identity 目录端口按500个ID分批读取，不复制到计费表。
    */
-  async listAccounts(): Promise<Summary[]> {
+  async listAccounts(ids?: string[], knownNames?: Record<string, string>): Promise<Summary[]> {
+    if (ids && !ids.length) return [];
     const since = new Date(this.clock.nowMs() - 30 * DAY_MS);
     const { rows } = await this.database.query<{
       user_id: string;
@@ -86,12 +95,12 @@ export class BillingAdminService {
                 WHERE l.account_id = a.id AND l.type = 'charge' AND NOT l.absorbed
                   AND l.created_at >= $1) AS spent
          FROM billing.accounts a
-        WHERE a.kind = 'user'
+        WHERE a.kind = 'user' ${ids ? 'AND a.user_id=ANY($2::uuid[])' : ''}
         ORDER BY a.created_at, a.id`,
-      [since],
+      ids ? [since, ids] : [since],
     );
-    const usernames: Record<string, string> = {};
-    for (let offset = 0; offset < rows.length; offset += 500) {
+    const usernames: Record<string, string> = knownNames ?? {};
+    for (let offset = 0; !knownNames && offset < rows.length; offset += 500) {
       Object.assign(
         usernames,
         await this.directory.getUsernames(rows.slice(offset, offset + 500).map((r) => r.user_id)),
@@ -111,6 +120,65 @@ export class BillingAdminService {
         bonusBalancePoints: microsToPoints(Math.max(0, Number(r.bonus ?? 0))),
         updatedAt: new Date(r.updated_at).toISOString(),
       };
+    });
+  }
+
+  async userPage(query: AdminUserFilter & { page: number; pageSize: number; sort: string }) {
+    const byMoney = query.sort.startsWith('balance_') || query.sort.startsWith('spent_');
+    const match = await this.adminDirectory.matchingIds(
+      query,
+      byMoney
+        ? undefined
+        : {
+            page: query.page,
+            pageSize: query.pageSize,
+            oldest: query.sort === 'oldest',
+          },
+    );
+    let ids = match.ids;
+    if (byMoney && ids.length) {
+      const spent = query.sort.startsWith('spent_');
+      const { rows } = await this.database.query<{ id: string }>(
+        `SELECT candidate.id FROM unnest($1::uuid[]) candidate(id)
+         LEFT JOIN billing.accounts a ON a.user_id=candidate.id AND a.kind='user'
+         ${
+           spent
+             ? `LEFT JOIN billing.ledger_entries l ON l.account_id=a.id AND l.type='charge'
+                     AND NOT l.absorbed AND l.created_at >= $4 GROUP BY candidate.id`
+             : ''
+         }
+         ORDER BY ${spent ? 'greatest(0,coalesce(-sum(l.amount_micros),0))' : 'coalesce(a.balance_micros,0)'}
+         ${query.sort.endsWith('_asc') ? 'ASC' : 'DESC'}, candidate.id
+         LIMIT $2 OFFSET $3`,
+        [
+          ids,
+          query.pageSize,
+          (query.page - 1) * query.pageSize,
+          ...(spent ? [new Date(this.clock.nowMs() - 30 * DAY_MS)] : []),
+        ],
+      );
+      ids = rows.map((r) => r.id);
+    }
+    return { total: match.total, items: await this.userRows(ids) };
+  }
+
+  async userDetail(userId: string) {
+    const [row] = await this.userRows([userId]);
+    if (!row) throw new AppError('not_found', '账号不存在');
+    return row;
+  }
+
+  private async userRows(ids: string[]) {
+    const users = await this.adminDirectory.summariesFor(ids);
+    const accounts = await this.listAccounts(
+      ids,
+      Object.fromEntries(users.map((u) => [u.userId, u.username])),
+    );
+    const byId = new Map(users.map((u) => [u.userId, u]));
+    const wallets = new Map(accounts.map((a) => [a.userId, a]));
+    return ids.flatMap((userId) => {
+      const user = byId.get(userId);
+      return user ? [{ userId, user, account: wallets.get(userId) }] : [];
     });
   }
 

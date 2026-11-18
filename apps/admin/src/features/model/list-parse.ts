@@ -1,16 +1,22 @@
 /**
  * 3.27：后台「模型」列表的逐行校验。
  *
- * 背景：`GET /api/v1/admin/model/models` 的响应在 client-core 里是**整包**按契约解析的
+ * 背景：`GET /api/v1/admin/model/models/page` 的响应在 client-core 里是**整包**按契约解析的
  * （`endpoint.response.parse`）。只要其中**任意一行**不符合契约（历史数据、刚改过的枚举 / 计费上限、
  * 服务端漏字段），zod 就抛错，`useRemote` 拿不到任何数据 —— 页面于是显示成「还没有模型」，
  * 一行坏掉、整表消失，而且看不出是哪一行、哪个字段。
  *
- * 这里的做法：请求只要求 `{ items: unknown[] }`，每行单独用契约里的 `AdminModel` 校验。
+ * 这里的做法：请求只要求 `{ items: unknown[] }`，每行单独用契约里的 `AdminModelPreview` 校验。
  * - 合法的照常展示（37 条目录 / 25 条路由该有的行都在）；
  * - 不合法的收敛成一条**可见的警告**（模型键 + 第一个不符合的字段），不静默丢弃、也不补默认值。
  */
-import { AdminModel } from '@weiban/contracts';
+import { AdminModel, AdminModelPreview, ModelAccessAdminEndpoints } from '@weiban/contracts';
+import { z } from 'zod';
+
+export const listModelPage = {
+  ...ModelAccessAdminEndpoints.modelPage,
+  response: z.object({ items: z.array(z.unknown()), total: z.number().int().nonnegative() }),
+};
 
 export interface AdminModelIssue {
   /** 出问题的模型键（行里连模型键都没有时给出占位说明）。 */
@@ -19,8 +25,8 @@ export interface AdminModelIssue {
   message: string;
 }
 
-export interface ParsedAdminModels {
-  models: AdminModel[];
+interface ParsedRows<T> {
+  models: T[];
   issues: AdminModelIssue[];
 }
 
@@ -30,11 +36,11 @@ function describeIssue(issue: { path: readonly PropertyKey[]; message: string })
 }
 
 /** 逐行校验。`items` 不是数组时返回空结果（由调用方按请求错误处理）。 */
-export function parseAdminModels(items: readonly unknown[] | undefined): ParsedAdminModels {
-  const models: AdminModel[] = [];
+function parseRows<T>(items: readonly unknown[] | undefined, schema: z.ZodType<T>): ParsedRows<T> {
+  const models: T[] = [];
   const issues: AdminModelIssue[] = [];
   for (const item of items ?? []) {
-    const parsed = AdminModel.safeParse(item);
+    const parsed = schema.safeParse(item);
     if (parsed.success) {
       models.push(parsed.data);
       continue;
@@ -46,4 +52,12 @@ export function parseAdminModels(items: readonly unknown[] | undefined): ParsedA
     });
   }
   return { models, issues };
+}
+
+export function parseAdminModelPreviews(items: readonly unknown[] | undefined) {
+  return parseRows(items, AdminModelPreview);
+}
+
+export function parseAdminModels(items: readonly unknown[] | undefined) {
+  return parseRows(items, AdminModel);
 }

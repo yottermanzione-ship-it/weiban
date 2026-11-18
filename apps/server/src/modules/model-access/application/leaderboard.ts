@@ -1,7 +1,7 @@
 /** 官方 Arena 数据集六小时同步；完整分页校验后原子替换，失败保留有效快照。 */
 import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import type { LeaderboardSnapshotStatus } from '@weiban/contracts';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
   AUDIT_LOG,
   AppError,
@@ -17,19 +17,29 @@ import {
 } from '../../../platform/index.js';
 import {
   bestArenaRanks,
+  participatesInTextArena,
   normalizeArenaName,
   parseLeaderboard,
   relativeRanks,
   suggestArenaNames,
   type LeaderboardEntry,
 } from '../domain/leaderboard.js';
-import { fetchArenaDataset, type ArenaDataset } from '../infra/arena-dataset.js';
+import {
+  ARENA_DATASET_SOURCE,
+  fetchArenaDataset,
+  type ArenaDataset,
+  type VerifiedArenaRevision,
+} from '../infra/arena-dataset.js';
 import { modelAccessSettings, modelCatalog } from '../infra/db/schema.js';
 import { CatalogService, LEADERBOARD_SNAPSHOT_KEY, type LeaderboardSnapshot } from './catalog.js';
 
 export const REFRESH_LEADERBOARD_JOB = 'model_access.refresh_leaderboard';
-export type LeaderboardFetcher = (url: string) => Promise<ArenaDataset>;
-export const defaultLeaderboardFetcher: LeaderboardFetcher = async () => fetchArenaDataset();
+export type LeaderboardFetcher = (
+  url: string,
+  verified?: VerifiedArenaRevision,
+) => Promise<ArenaDataset | 'unchanged'>;
+export const defaultLeaderboardFetcher: LeaderboardFetcher = async (_url, verified) =>
+  fetchArenaDataset(fetch, {}, verified);
 export const LEADERBOARD_FETCHER = Symbol('weiban.model-access.leaderboard-fetcher');
 const LOCK_ID = 7261022;
 const REFRESH_LEASE_KEY = 'leaderboard_refresh_lease';
@@ -72,10 +82,14 @@ export class LeaderboardService implements OnModuleInit {
           upstreamModelId: modelCatalog.upstreamModelId,
           arenaModelName: modelCatalog.arenaModelName,
           sortOrder: modelCatalog.sortOrder,
+          enabled: modelCatalog.enabled,
+          scenarios: modelCatalog.scenarios,
         })
         .from(modelCatalog)
         .where(and(eq(modelCatalog.enabled, true), isNull(modelCatalog.deletedAt)))
-    ).sort((a, b) => a.sortOrder - b.sortOrder || a.modelKey.localeCompare(b.modelKey));
+    )
+      .filter(participatesInTextArena)
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.modelKey.localeCompare(b.modelKey));
     const matchedRank = (name: string | null) =>
       name ? (byName.get(normalizeArenaName(name)) ?? null) : null;
     // 手动指定优先；没填就用模型显示名 / 上游模型名，管理员不需要逐条维护。
@@ -90,7 +104,7 @@ export class LeaderboardService implements OnModuleInit {
     const relative = relativeRanks(rows.map((r) => ({ key: r.modelKey, rank: rankOfRow(r) })));
     const matched: LeaderboardSnapshotStatus['matched'] = [];
     const unmatched: LeaderboardSnapshotStatus['unmatched'] = [];
-    for (const r of rows) {
+    for (const r of snapshot?.entries.length ? rows : []) {
       const rank = rankOfRow(r);
       if (rank !== null)
         matched.push({
@@ -115,6 +129,7 @@ export class LeaderboardService implements OnModuleInit {
     matched.sort((a, b) => a.relativeRank - b.relativeRank);
     return {
       source,
+      eligibleCount: rows.length,
       snapshot:
         snapshot?.fetchedAt && snapshot.method
           ? {
@@ -142,16 +157,20 @@ export class LeaderboardService implements OnModuleInit {
     modelKey: string,
     arenaModelName: string | null,
   ): Promise<LeaderboardSnapshotStatus> {
-    const [row] = await this.database.db
-      .select({ modelKey: modelCatalog.modelKey })
-      .from(modelCatalog)
-      .where(and(eq(modelCatalog.modelKey, modelKey), isNull(modelCatalog.deletedAt)));
-    if (!row) throw new AppError('not_found', '模型不存在或已删除', { status: 404 });
     await this.database.transaction(async (tx) => {
-      await tx.db
+      const [saved] = await tx.db
         .update(modelCatalog)
         .set({ arenaModelName, updatedAt: this.clock.now() })
-        .where(eq(modelCatalog.modelKey, modelKey));
+        .where(
+          and(
+            eq(modelCatalog.modelKey, modelKey),
+            eq(modelCatalog.enabled, true),
+            isNull(modelCatalog.deletedAt),
+            sql`'chat' = ANY(${modelCatalog.scenarios})`,
+          ),
+        )
+        .returning({ key: modelCatalog.modelKey });
+      if (!saved) throw new AppError('conflict', '该模型当前未参加文本聊天榜单', { status: 409 });
       await this.audit.record(
         {
           module: 'model_access',
@@ -215,9 +234,21 @@ export class LeaderboardService implements OnModuleInit {
       let next: ArenaDataset | null;
       let error: string | null = null;
       try {
-        next = await this.fetcher(source.url);
-        if (!next.entries.length) throw new Error('官方数据集没有有效 Overall 榜单，保留上次结果');
-        if (claim.old?.publishedAt && next.publishedAt < claim.old.publishedAt)
+        const old = claim.old;
+        const verified =
+          old?.method === 'fetch' &&
+          old.sourceUrl === ARENA_DATASET_SOURCE &&
+          old.revision &&
+          old.totalRows &&
+          old.entries.length
+            ? { revision: old.revision, totalRows: old.totalRows }
+            : undefined;
+        const fetched = await this.fetcher(source.url, verified);
+        if (fetched === 'unchanged' && !verified) throw new Error('缺少可复用的官方完整快照');
+        next = fetched === 'unchanged' ? null : fetched;
+        if (next && !next.entries.length)
+          throw new Error('官方数据集没有有效 Overall 榜单，保留上次结果');
+        if (next && claim.old?.publishedAt && next.publishedAt < claim.old.publishedAt)
           throw new Error('官方响应日期早于当前有效榜单，保留上次结果');
       } catch (e) {
         next = null;
@@ -311,6 +342,7 @@ export class LeaderboardService implements OnModuleInit {
       sourceUrl: string;
       publishedAt: string | null;
       totalRows: number;
+      revision?: string;
     } | null,
     error: string | null,
     adminId: string | null,
@@ -326,6 +358,7 @@ export class LeaderboardService implements OnModuleInit {
           entries: next.entries,
           publishedAt: next.publishedAt,
           totalRows: next.totalRows,
+          ...(next.revision ? { revision: next.revision } : {}),
           previousEntries:
             old?.method === next.method
               ? changed
@@ -342,6 +375,7 @@ export class LeaderboardService implements OnModuleInit {
           entries: old?.entries ?? [],
           publishedAt: old?.publishedAt ?? null,
           totalRows: old?.totalRows ?? null,
+          ...(old?.revision ? { revision: old.revision } : {}),
           previousEntries: old?.previousEntries ?? [],
           lastAttemptAt: now.toISOString(),
           lastError: error,
@@ -361,7 +395,10 @@ export class LeaderboardService implements OnModuleInit {
         ...(adminId ? { actorId: adminId } : {}),
         targetType: 'model_settings',
         targetId: null,
-        details: { entries: next?.entries.length ?? 0, error },
+        details: {
+          entries: next?.entries.length ?? (error ? 0 : (old?.entries.length ?? 0)),
+          error,
+        },
       },
       tx,
     );

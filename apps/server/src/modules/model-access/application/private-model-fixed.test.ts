@@ -161,60 +161,41 @@ describe('私密固定：删除保护与初始化', () => {
     });
   });
 
-  it('fixed 字段已存在（含 fixed:null 主动清空）时初始化不复活', async () => {
+  function initialization(raw: object) {
+    const tx = {
+      db: { select: () => ({ from: () => ({ where: async () => [{ value: raw }] }) }) },
+    };
+    const writeModelUses = vi.fn().mockResolvedValue({ recommended: {}, internal: {} });
+    const audit = { record: vi.fn().mockResolvedValue('audit-1') };
     const service = Object.create(CatalogService.prototype) as CatalogService;
     Object.assign(service, {
-      database: {
-        db: {
-          select: () => ({
-            from: () => ({ where: async () => [{ value: { fixed: { private: null } } }] }),
-          }),
-        },
-      },
+      withCatalogWrite: (work: (tx: unknown) => Promise<unknown>) => work(tx),
+      writeModelUses,
+      audit,
     });
+    return { service, writeModelUses, audit, tx };
+  }
+  it('fixed 字段已存在（含 fixed:null 主动清空）时初始化不复活', async () => {
+    const { service } = initialization({ fixed: { private: null } });
     await expect(service.initializeFixedPrivateModel('admin')).rejects.toMatchObject({
       code: 'conflict',
       status: 409,
     });
   });
-
   it('从未初始化且推荐私密模型有效时，显式复制一次（fixed.private）', async () => {
-    const setModelUses = vi.fn().mockResolvedValue({ recommended: {}, internal: {} });
-    const audit = { record: vi.fn().mockResolvedValue('audit-1') };
-    const service = Object.create(CatalogService.prototype) as CatalogService;
-    Object.assign(service, {
-      database: {
-        db: {
-          select: () => ({
-            from: () => ({
-              where: async () => [{ value: { recommended: { private: FIXED } } }],
-            }),
-          }),
-        },
-      },
-      modelUses: vi.fn().mockResolvedValue({ recommended: { private: FIXED }, internal: {} }),
-      fact: vi.fn().mockResolvedValue({
-        modelKey: FIXED,
-        entry: {
-          enabled: true,
-          deletedAt: null,
-          scenarios: ['private'],
-          tags: [],
-          capabilities: [],
-        },
-        upstreamStatus: 'active',
-      }),
-      setModelUses,
-      audit,
+    const { service, writeModelUses, audit, tx } = initialization({
+      recommended: { private: FIXED },
+      internal: {},
     });
     await service.initializeFixedPrivateModel('admin');
-    expect(setModelUses).toHaveBeenCalledWith('admin', {
+    expect(writeModelUses).toHaveBeenCalledWith(tx, 'admin', {
       recommended: {},
       internal: {},
       fixed: { private: FIXED },
     });
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'private_model.initialized' }),
+      tx,
     );
   });
 });

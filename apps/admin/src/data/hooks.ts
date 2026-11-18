@@ -14,20 +14,30 @@ export function errorText(value: unknown): string {
   if (value instanceof ApiFailure) return issues?.length ? describeIssues(issues) : value.message;
   return '操作未完成，请检查填写内容';
 }
-export function useRemote<E extends EndpointDef>(endpoint: E, options: RequestOptions<E> = {}) {
+export function useRemote<E extends EndpointDef>(
+  endpoint: E,
+  options: RequestOptions<E> = {},
+  enabled = true,
+) {
   const signature = JSON.stringify(options);
-  const [data, setData] = useState<z.output<E['response']>>();
+  const [loaded, setLoaded] = useState<{ key: string; value: z.output<E['response']> }>();
+  const key = endpoint.path + ' ' + signature;
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [revision, setRevision] = useState(0);
   useEffect(() => {
+    if (!enabled) return;
     let active = true;
+    const controller = new AbortController();
     setLoading(true);
     setError('');
     void api
-      .call(endpoint, JSON.parse(signature) as RequestOptions<E>)
+      .call(endpoint, {
+        ...(JSON.parse(signature) as RequestOptions<E>),
+        signal: controller.signal,
+      })
       .then((result) => {
-        if (active) setData(result);
+        if (active) setLoaded({ key, value: result });
       })
       .catch((e: unknown) => {
         if (active) setError(errorText(e));
@@ -37,7 +47,13 @@ export function useRemote<E extends EndpointDef>(endpoint: E, options: RequestOp
       });
     return () => {
       active = false;
+      controller.abort();
     };
-  }, [endpoint, signature, revision]);
-  return { data, error, loading, refresh: () => setRevision((v) => v + 1) };
+  }, [endpoint, signature, revision, key, enabled]);
+  return {
+    data: enabled && loaded?.key === key ? loaded.value : undefined,
+    error,
+    loading,
+    refresh: () => setRevision((v) => v + 1),
+  };
 }

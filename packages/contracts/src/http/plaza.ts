@@ -607,6 +607,13 @@ export const PlazaAdminEndpoints = {
     summary:
       '更正分类（只能更严，ADM-09 第 6 条）：作品及所有由它复制 / 应用 / 改编出去的角色逐个更正，受影响会话立即退出成人模式并有系统提示；放宽返回 422 plaza_classification_loosened；写审计',
   }),
+  pendingReportCount: defineEndpoint({
+    method: 'GET',
+    path: API_PREFIX + '/admin/plaza/reports/pending-count',
+    auth: 'admin',
+    response: z.object({ total: z.number().int().nonnegative() }),
+    summary: '广场待处理举报角标，只读取数量。',
+  }),
   listReports: defineEndpoint({
     method: 'GET',
     path: `${API_PREFIX}/admin/plaza/reports`,

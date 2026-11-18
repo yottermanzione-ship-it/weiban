@@ -12,6 +12,7 @@
  * 最多 4 位小数，界面按 06-old-ui-spec 第 6.1 节最多显示 2 位）。新增充值档位（第一版不开真实支付）、
  * 管理员按积分加扣、价目表的积分单价。
  */
+import { AdminUserFilter, AdminUserSummary } from './admin-users.js';
 import { z } from 'zod';
 import {
   API_PREFIX,
@@ -511,6 +512,37 @@ export const BillingDebtSummary = z.object({
 export type BillingDebtSummary = z.infer<typeof BillingDebtSummary>;
 
 export const BillingAdminEndpoints = {
+  userPage: defineEndpoint({
+    method: 'GET',
+    path: API_PREFIX + '/admin/billing/users',
+    auth: 'admin',
+    query: AdminUserFilter.extend({
+      page: z.coerce.number().int().min(1).max(1000000).default(1),
+      pageSize: z.coerce.number().int().min(1).max(100).default(20),
+      sort: z
+        .enum(['newest', 'oldest', 'balance_asc', 'balance_desc', 'spent_asc', 'spent_desc'])
+        .default('newest'),
+    }),
+    response: z.object({
+      items: z.array(
+        z.object({ userId: Id, user: AdminUserSummary, account: AdminAccountSummary.optional() }),
+      ),
+      total: z.number().int().nonnegative(),
+    }),
+    summary: '按全局筛选和排序分页读取用户，合并当前页的余额和近 30 天消耗。',
+  }),
+  userDetail: defineEndpoint({
+    method: 'GET',
+    path: API_PREFIX + '/admin/billing/users/:userId',
+    auth: 'admin',
+    params: z.object({ userId: Id }),
+    response: z.object({
+      userId: Id,
+      user: AdminUserSummary,
+      account: AdminAccountSummary.optional(),
+    }),
+    summary: '按用户编号读取账号与钱包详情。',
+  }),
   resolveUnknownCost: defineEndpoint({
     method: 'POST',
     path: `${API_PREFIX}/admin/billing/holds/:holdId/cost-resolution`,

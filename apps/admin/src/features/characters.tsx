@@ -1,8 +1,9 @@
+import { useListSelection } from '../data/list-selection.js';
 /**
  * 角色库：官方角色的列表与人设编辑。上架前需要通过三项检查。
  * 人设内容仍由 WB-Card schema 驱动（components/card-editor），只换了外观。
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, Avatar, Button, Checkbox, DatePicker, Input, Select, Space, Upload } from 'antd';
 import { PlusOutlined, UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -15,6 +16,8 @@ import {
   MediaAdminEndpoints,
   RealPersonKind,
   type AdminCharacter,
+  type AdminCharacterIndexItem,
+  type CharacterPublishStatus,
   type AdminCharacterPurgeImpact,
 } from '@weiban/contracts';
 import { api } from '../data/client.js';
@@ -151,34 +154,61 @@ function draftOf(row: AdminCharacter): AdminCharacterWrite {
 export function CharactersPage() {
   const toast = useToast();
   const confirm = useDangerConfirm();
-  const list = useRemote(CharacterAdminEndpoints.list);
   const [query, setQuery] = useState('');
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState<CharacterPublishStatus | ''>('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const filters = { q: query.trim(), status: status || undefined };
+  const list = useRemote(CharacterAdminEndpoints.directory, {
+    query: { ...filters, page, pageSize },
+  });
+  const rows = list.data?.items ?? [];
+  const selection = useListSelection(JSON.stringify(filters), rows, (r) => r.characterId);
+  const selectedRows = selection.rows;
+  const setSelected = selection.select;
+  const editRequest = useRef(0);
+  useEffect(
+    () => () => {
+      editRequest.current++;
+    },
+    [],
+  );
+  async function editCharacter(row: AdminCharacterIndexItem) {
+    const request = ++editRequest.current;
+    setBusy(row.characterId);
+    try {
+      const result = await api.call(CharacterAdminEndpoints.getCharacter, {
+        params: { characterId: row.characterId },
+      });
+      if (request === editRequest.current) setEditing(result);
+    } catch (e) {
+      if (request === editRequest.current) toast.error(errorText(e));
+    } finally {
+      if (request === editRequest.current) setBusy(null);
+    }
+  }
+  async function selectMatching() {
+    try {
+      await selection.selectAll(
+        async () => (await api.call(CharacterAdminEndpoints.directory, { query: filters })).items,
+      );
+    } catch (e) {
+      toast.error(errorText(e));
+    }
+  }
   const [editing, setEditing] = useState<AdminCharacter | 'new' | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [lookup, setLookup] = useState(false);
-  const [selected, setSelected] = useState<string[]>([]);
   const [failures, setFailures] = useState<BatchFailure[]>([]);
-  const [batch, setBatch] = useState<{ kind: BatchKind; rows: AdminCharacter[] } | null>(null);
+  const [batch, setBatch] = useState<{ kind: BatchKind; rows: AdminCharacterIndexItem[] } | null>(
+    null,
+  );
   const [eligibilityForm, setEligibilityForm] = useState<EligibilityForm>(EMPTY_ELIGIBILITY_FORM);
   const [purgeImpacts, setPurgeImpacts] = useState<Record<string, AdminCharacterPurgeImpact>>({});
   const [purgeImpactErrors, setPurgeImpactErrors] = useState<Record<string, string>>({});
   const [purgeImpactLoading, setPurgeImpactLoading] = useState(false);
   const [purgeAcknowledged, setPurgeAcknowledged] = useState(false);
   const [purgeConfirmText, setPurgeConfirmText] = useState('');
-
-  // 选择只对当前页 / 当前筛选有效：换关键词或状态时清空。
-  useEffect(() => {
-    setSelected([]);
-  }, [query, status]);
-
-  const rows = (list.data?.items ?? []).filter(
-    (row) =>
-      (!status || row.status === status) &&
-      (!query.trim() ||
-        `${row.name} ${row.aliases.join(' ')} ${row.works.join(' ')}`.includes(query.trim())),
-  );
-  const selectedRows = rows.filter((row) => selected.includes(row.characterId));
 
   function openBatch(kind: BatchKind) {
     if (!selectedRows.length) return;
@@ -197,18 +227,22 @@ export function CharactersPage() {
     setPurgeImpactLoading(true);
     setPurgeImpacts({});
     setPurgeImpactErrors({});
-    void Promise.all(
-      batch.rows.map(async (row) => {
-        try {
-          const impact = await api.call(CharacterAdminEndpoints.purgeImpact, {
-            params: { characterId: row.characterId },
-          });
-          return { characterId: row.characterId, impact } as const;
-        } catch (error) {
-          return { characterId: row.characterId, error: errorText(error) } as const;
-        }
-      }),
-    ).then((results) => {
+    const fetchImpact = async (row: AdminCharacterIndexItem) => {
+      try {
+        const impact = await api.call(CharacterAdminEndpoints.purgeImpact, {
+          params: { characterId: row.characterId },
+        });
+        return { characterId: row.characterId, impact } as const;
+      } catch (error) {
+        return { characterId: row.characterId, error: errorText(error) } as const;
+      }
+    };
+    void (async () => {
+      const results = [];
+      for (let i = 0; active && i < batch.rows.length; i += 6)
+        results.push(...(await Promise.all(batch.rows.slice(i, i + 6).map(fetchImpact))));
+      return results;
+    })().then((results) => {
       if (!active) return;
       const impacts: Record<string, AdminCharacterPurgeImpact> = {};
       const errors: Record<string, string> = {};
@@ -232,7 +266,7 @@ export function CharactersPage() {
     eligibilityForm.childAppearance !== '' ||
     eligibilityForm.childFeaturesDetected !== '';
 
-  async function runBatch(row: AdminCharacter): Promise<string> {
+  async function runBatch(row: AdminCharacterIndexItem): Promise<string> {
     if (!batch) return '';
     if (batch.kind === 'purge') {
       const result = await api.call(CharacterAdminEndpoints.purge, {
@@ -260,7 +294,7 @@ export function CharactersPage() {
       await api.call(CharacterAdminEndpoints.unpublish, {
         params: { characterId: row.characterId },
       });
-      return '已下架（软删）';
+      return '已下架';
     }
     const current = await api.call(CharacterAdminEndpoints.getEligibility, {
       params: { characterId: row.characterId },
@@ -319,7 +353,7 @@ export function CharactersPage() {
       purgeConfirmText,
     );
 
-  async function togglePublish(row: AdminCharacter) {
+  async function togglePublish(row: AdminCharacterIndexItem) {
     const publish = row.status !== 'published';
     const run = async () => {
       setBusy(row.characterId);
@@ -347,25 +381,23 @@ export function CharactersPage() {
       });
   }
 
-  const columns: ProColumns<AdminCharacter>[] = [
+  const columns: ProColumns<AdminCharacterIndexItem>[] = [
     {
       title: '角色',
       fixed: 'left',
-      width: 340,
+      width: 260,
       render: (_, row) => (
-        <Space align="start" size={12}>
+        <Space size={10}>
           <Avatar
             shape="square"
-            size={48}
-            src={row.avatar.image ? adminMediaUrl(row.avatar.image.url) : undefined}
-            style={{ flexShrink: 0, borderRadius: 12 }}
+            size={34}
+            src={row.avatarUrl ? adminMediaUrl(row.avatarUrl) : undefined}
           >
             {row.name.slice(0, 1)}
           </Avatar>
-          <div className="cell-main">
-            <span className="cell-title">{row.name}</span>
-            <span className="cell-sub">{row.tagline || '暂无简介'}</span>
-          </div>
+          <button className="record-link" onClick={() => void editCharacter(row)}>
+            {row.name}
+          </button>
         </Space>
       ),
     },
@@ -389,56 +421,11 @@ export function CharactersPage() {
       ),
     },
     {
-      title: '微博资料',
-      width: 160,
-      render: (_, row) =>
-        row.weibo?.enabled ? (
-          <div className="cell-main">
-            <StatusTag tone="success">有微博</StatusTag>
-            <span className="cell-sub">
-              {row.weibo.nickname}
-              {row.weibo.userId ? '' : ' · 账号ID待补'}
-            </span>
-          </div>
-        ) : (
-          <span className="detail-muted">未标记微博</span>
-        ),
+      title: '分类',
+      width: 100,
+      render: (_, row) => BASIS_LABELS[row.classification.basis] ?? row.classification.basis,
     },
-    {
-      title: '人物资料',
-      width: 200,
-      render: (_, row) => {
-        // 概览只说明实际资料，不把兼容格式或未执行的检查包装成运营状态。
-        if (row.format === 'legacy')
-          return (
-            <Space direction="vertical" size={4}>
-              <StatusTag tone={row.intro.trim() ? 'success' : 'warning'}>
-                {row.intro.trim() ? '人设文字已配置' : '人设待补充'}
-              </StatusTag>
-              <span className="detail-muted">
-                资料修订 {row.revision ?? row.personaVersion} · 开场白{' '}
-                {row.fallbackGreetings.length} 条
-              </span>
-            </Space>
-          );
-        const checks = [
-          ['结构', row.publishChecks.requiredFieldsComplete],
-          ['稳定', row.publishChecks.personaStabilityPassed],
-          ['边界', row.publishChecks.hardBoundaryCasesPassed],
-          ['开场白', row.publishChecks.hasFallbackGreeting],
-        ] as const;
-        return (
-          <Space size={4} wrap>
-            {checks.map(([label, pass]) => (
-              <StatusTag key={label} tone={pass ? 'success' : 'default'}>
-                {label}
-                {pass ? ' ✓' : ' ✗'}
-              </StatusTag>
-            ))}
-          </Space>
-        );
-      },
-    },
+    { title: '资料版本', width: 120, render: (_, row) => `第 ${row.revision} 版` },
     {
       title: '最近更新',
       width: 150,
@@ -450,7 +437,7 @@ export function CharactersPage() {
       fixed: 'right',
       render: (_, row) => (
         <Space size={4}>
-          <Button type="link" size="small" onClick={() => setEditing(row)}>
+          <Button type="link" size="small" onClick={() => void editCharacter(row)}>
             编辑
           </Button>
           {row.format === 'legacy' ? (
@@ -484,10 +471,8 @@ export function CharactersPage() {
   return (
     <Page
       title="角色库"
-      desc="统一管理官方角色：点一行编辑人物文本、头像昵称、声音和微博资料；资格标注独立管理，修改记录可查看和恢复。勾选后可执行批量操作。"
       extra={
         <Space>
-          <Button onClick={() => list.refresh()}>刷新</Button>
           <Button onClick={() => setLookup(true)}>按角色 ID 标注资格</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setEditing('new')}>
             新建角色
@@ -498,19 +483,34 @@ export function CharactersPage() {
       {failures.length > 0 && (
         <BatchFailureAlert failures={failures} onDismiss={() => setFailures([])} />
       )}
-      <DataTable<AdminCharacter>
+      <DataTable<AdminCharacterIndexItem>
+        showTools
         rowKey="characterId"
         columns={columns}
         data={rows}
         loading={list.loading}
         error={list.error}
         onRefresh={list.refresh}
-        onRowClick={(row) => setEditing(row)}
-        selectedKeys={selected}
+        onRowClick={(row) => void editCharacter(row)}
+        selectedKeys={selection.keys}
         onSelectionChange={(keys) => setSelected(keys.map(String))}
-        preserveSelection={false}
-        selectionHint="表头勾选只覆盖当前页；换页或改筛选会清空"
-        onPageChange={() => setSelected([])}
+        preserveSelection
+        selectionHint={
+          <Button type="link" size="small" onClick={() => void selectMatching()}>
+            选择全部匹配角色
+          </Button>
+        }
+        pagination={{
+          current: page,
+          pageSize,
+          total: list.data?.total ?? 0,
+          pageSizeOptions: [20, 50, 100],
+          onChange: (p, n) => {
+            selection.changePage();
+            setPage(n === pageSize ? p : 1);
+            setPageSize(n);
+          },
+        }}
         batchActions={() => (
           <BatchBar count={selectedRows.length}>
             <Button
@@ -526,7 +526,7 @@ export function CharactersPage() {
               disabled={!selectedRows.length}
               onClick={() => openBatch('unpublish')}
             >
-              批量下架（软删）
+              批量下架
             </Button>
             <Button
               size="small"
@@ -535,7 +535,7 @@ export function CharactersPage() {
               disabled={!selectedRows.length}
               onClick={() => openBatch('purge')}
             >
-              批量彻底删除（硬删）
+              彻底删除
             </Button>
             <Button
               size="small"
@@ -561,12 +561,18 @@ export function CharactersPage() {
               placeholder="搜索名字、别名、作品"
               style={{ width: 260 }}
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setPage(1);
+                setQuery(e.target.value);
+              }}
             />
             <Select
               style={{ width: 130 }}
               value={status}
-              onChange={setStatus}
+              onChange={(value) => {
+                setPage(1);
+                setStatus(value);
+              }}
               options={[
                 { value: '', label: '全部状态' },
                 ...Object.entries(STATUS_LABELS).map(([value, label]) => ({ value, label })),

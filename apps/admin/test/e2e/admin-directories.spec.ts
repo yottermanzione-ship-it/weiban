@@ -1,0 +1,264 @@
+import { expect, test, type Page } from '@playwright/test';
+
+async function signIn(page: Page) {
+  await page.goto('/');
+  await page.getByLabel('管理员账号').fill('browser_admin');
+  await page.getByLabel('密码', { exact: true }).fill('correct horse battery');
+  await page.getByRole('button', { name: '登录', exact: true }).click();
+  await expect(page.locator('.admin-avatar')).toBeVisible();
+}
+
+function apiRequests(page: Page) {
+  const requests: URL[] = [];
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (url.pathname.startsWith('/api/v1/admin/')) requests.push(url);
+  });
+  return requests;
+}
+
+function observe(page: Page, path: string) {
+  return page.waitForResponse(
+    (response) => new URL(response.url()).pathname === `/api/v1/admin${path}`,
+  );
+}
+
+test('user and character drawers fetch detail on demand and column controls change layout', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signIn(page);
+  const requests = apiRequests(page);
+  const firstUsers = observe(page, '/billing/users');
+  await page.goto('/accounts');
+  const userResponse = await firstUsers;
+  expect(userResponse.ok()).toBe(true);
+  const users = (await userResponse.json()).items as Array<{ userId: string }>;
+  expect(users.length).toBeGreaterThan(0);
+  expect(users.length).toBeLessThanOrEqual(20);
+  expect(new URL(userResponse.url()).searchParams.get('pageSize')).toBe('20');
+  const userRows = page.locator('tbody tr[data-row-key]');
+  await expect(userRows).toHaveCount(users.length);
+  expect(requests.filter((url) => url.pathname === '/api/v1/admin/billing/users')).toHaveLength(1);
+  expect(
+    requests.some((url) =>
+      /\/billing\/users\/|\/users\/lookup-labels|\/billing\/accounts$/.test(url.pathname),
+    ),
+  ).toBe(false);
+  const userDetail = observe(page, `/billing/users/${users[0]!.userId}`);
+  await userRows.first().click();
+  expect((await userDetail).ok()).toBe(true);
+  await expect(page.getByRole('tab', { name: '基本资料' })).toBeVisible();
+
+  const rolePage = observe(page, '/characters/directory');
+  await page.goto('/characters');
+  const roleResponse = await rolePage;
+  expect(roleResponse.ok()).toBe(true);
+  const { items, total } = (await roleResponse.json()) as {
+    total: number;
+    items: Array<{ characterId: string }>;
+  };
+  expect(items).toHaveLength(20);
+  expect(total).toBeGreaterThan(20);
+  expect(items[0]).not.toHaveProperty('card');
+  const roleRows = page.locator('tbody tr[data-row-key]');
+  await expect(roleRows).toHaveCount(20);
+  expect(
+    requests.filter((url) => url.pathname === '/api/v1/admin/characters/directory'),
+  ).toHaveLength(1);
+  expect(requests.some((url) => /\/characters\/.+\/detail$/.test(url.pathname))).toBe(false);
+
+  const name = page.getByRole('columnheader', { name: '角色', exact: true });
+  const classification = page.getByRole('columnheader', { name: '分类', exact: true });
+  const originalWidth = (await name.boundingBox())!.width;
+  const originalClassWidth = (await classification.boundingBox())!.width;
+  const originalHeight = (await roleRows.first().boundingBox())!.height;
+  await page.getByRole('button', { name: '调整列宽和密度' }).click();
+  await page.getByRole('spinbutton', { name: '角色列宽（像素）' }).fill('320');
+  await page.getByRole('spinbutton', { name: '角色列宽（像素）' }).press('Tab');
+  await page.getByRole('spinbutton', { name: '分类列宽（像素）' }).fill('80');
+  await page.getByRole('spinbutton', { name: '分类列宽（像素）' }).press('Tab');
+  await expect.poll(async () => Math.round((await name.boundingBox())!.width)).toBe(320);
+  await expect.poll(async () => Math.round((await classification.boundingBox())!.width)).toBe(80);
+  await page.getByText('紧凑', { exact: true }).click();
+  await expect
+    .poll(async () => (await roleRows.first().boundingBox())!.height)
+    .toBeLessThan(originalHeight);
+  const compactHeight = (await roleRows.first().boundingBox())!.height;
+  await page.getByRole('button', { name: '恢复默认' }).click();
+  await expect.poll(async () => (await name.boundingBox())!.width).toBe(originalWidth);
+  await expect
+    .poll(async () => (await classification.boundingBox())!.width)
+    .toBe(originalClassWidth);
+  await expect
+    .poll(async () => (await roleRows.first().boundingBox())!.height)
+    .toBe(originalHeight);
+  await page.getByRole('button', { name: '调整列宽和密度' }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const scroll = page.locator('.adjustable-table .ant-table-content');
+  const horizontal = await scroll.evaluate((element) => {
+    element.scrollLeft = element.scrollWidth;
+    return {
+      width: element.clientWidth,
+      content: element.scrollWidth,
+      reached: element.scrollLeft,
+    };
+  });
+  expect(horizontal.content).toBeGreaterThan(horizontal.width);
+  expect(horizontal.reached).toBeGreaterThan(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+  await page.getByRole('button', { name: '调整列宽和密度' }).click();
+  await expect(page.getByRole('spinbutton', { name: '角色列宽（像素）' })).toBeInViewport();
+  await page.getByRole('button', { name: '调整列宽和密度' }).click();
+  const roleDetail = observe(page, `/characters/${items[0]!.characterId}/detail`);
+  await roleRows.first().getByRole('button', { name: '编辑', exact: true }).click();
+  expect((await roleDetail).ok()).toBe(true);
+  expect((await (await roleDetail).json()).card).toBeDefined();
+  await test.info().attach('observed-table-dimensions', {
+    contentType: 'application/json',
+    body: JSON.stringify({
+      userRows: users.length,
+      roleRows: items.length,
+      roleTotal: total,
+      name: [originalWidth, 320],
+      classification: [originalClassWidth, 80],
+      rowHeight: [originalHeight, compactHeight],
+      mobile: horizontal,
+    }),
+  });
+});
+
+test('model directory reads one page, sorts globally and fetches exact detail', async ({
+  page,
+}) => {
+  await signIn(page);
+  const authorization = await page.evaluate(
+    async () =>
+      new Promise<string>((resolve) => {
+        const opened = indexedDB.open('weiban-admin', 1);
+        opened.onsuccess = () => {
+          const lookup = opened.result.transaction('records').objectStore('records').get('session');
+          lookup.onsuccess = () => {
+            resolve(`Bearer ${lookup.result.session.token}`);
+            opened.result.close();
+          };
+        };
+      }),
+  );
+  const headers = { authorization };
+  const upstreams = await page.request.get('/api/v1/admin/model/upstreams', { headers });
+  expect(upstreams.ok()).toBe(true);
+  const upstreamId = (await upstreams.json()).items[0].upstreamId as string;
+  const keys = Array.from(
+    { length: 22 },
+    (_, i) => `browser/list-model-${String(i).padStart(2, '0')}`,
+  );
+  const activeKeys = new Set<string>();
+  try {
+    for (const [i, modelKey] of keys.entries()) {
+      const created = await page.request.put(
+        `/api/v1/admin/model/catalog/${encodeURIComponent(modelKey)}`,
+        {
+          headers,
+          data: {
+            modelKey,
+            displayName: `List fixture ${String(21 - i).padStart(2, '0')}`,
+            vendorName: 'Browser',
+            upstreamId,
+            upstreamModelId: 'browser-test',
+            enabled: false,
+            capabilities: [],
+            tags: [],
+            leaderboardRank: null,
+            defaultFor: [],
+            sortOrder: 10 + i,
+          },
+        },
+      );
+      expect(created.ok(), await created.text()).toBe(true);
+      activeKeys.add(modelKey);
+    }
+    const archived = keys[0]!;
+    const deleted = await page.request.post('/api/v1/admin/model/models/delete', {
+      headers,
+      data: { modelKeys: [archived] },
+    });
+    expect(deleted.ok(), await deleted.text()).toBe(true);
+    activeKeys.delete(archived);
+    const requests = apiRequests(page);
+    const firstModel = observe(page, '/model/models/page');
+    await page.goto('/model');
+    const response = await firstModel;
+    expect(response.ok()).toBe(true);
+    const result = await response.json();
+    expect(result.items.length).toBeGreaterThan(0);
+    expect(result.items).toHaveLength(20);
+    expect(result.items[0]).not.toHaveProperty('costRates');
+    expect(result.items[0]).not.toHaveProperty('billingBounds');
+    expect(result.total).toBeGreaterThan(20);
+    expect(result.items.every((item: { deletedAt?: string }) => !item.deletedAt)).toBe(true);
+    const rows = page.locator('tbody tr[data-row-key]');
+    await expect(rows).toHaveCount(result.items.length);
+    expect(
+      requests.map((u) => u.pathname).filter((p) => p.startsWith('/api/v1/admin/model/models')),
+    ).toEqual(['/api/v1/admin/model/models/page']);
+    const sorted = observe(page, '/model/models/page');
+    await page.getByRole('columnheader', { name: '模型', exact: true }).click();
+    const sortedResponse = await sorted;
+    expect(new URL(sortedResponse.url()).searchParams.get('sort')).toBe('name_asc');
+    const ordered = await sortedResponse.json();
+    expect(ordered.items.map((item: { modelKey: string }) => item.modelKey)).not.toContain(
+      archived,
+    );
+    expect(
+      ordered.items.find((item: { modelKey: string }) =>
+        item.modelKey.startsWith('browser/list-model'),
+      )?.modelKey,
+    ).toBe(keys.at(-1));
+    const item = ordered.items[0];
+    const detail = observe(page, `/model/models/${encodeURIComponent(item.modelKey)}`);
+    await page
+      .locator(`tr[data-row-key="${item.modelKey}"]`)
+      .getByRole('button', { name: '编辑', exact: true })
+      .click();
+    const detailResponse = await detail;
+    expect(detailResponse.ok()).toBe(true);
+    expect(await detailResponse.json()).toHaveProperty('costRates');
+    await expect(page.getByRole('button', { name: '保存', exact: true })).toBeVisible();
+    expect(requests.some((url) => url.pathname.endsWith('/models/selection'))).toBe(false);
+    requests.length = 0;
+    const accounts = observe(page, '/model/upstreams');
+    await page.goto('/model?tab=upstreams');
+    expect((await accounts).ok()).toBe(true);
+    const account = page.locator(`tr[data-row-key="${item.upstreamId}"]`);
+    await expect(account).toBeVisible();
+    expect(
+      requests.some((url) => /\/model\/(models|upstreams\/model-references)/.test(url.pathname)),
+    ).toBe(false);
+    const references = observe(page, '/model/upstreams/model-references');
+    await account.click();
+    const referenceResponse = await references;
+    expect(referenceResponse.ok()).toBe(true);
+    expect(new URL(referenceResponse.url()).searchParams.get('ids')).toBe(item.upstreamId);
+    const referencesBody = await referenceResponse.json();
+    expect(referencesBody.items).toContainEqual(
+      expect.objectContaining({ modelKey: item.modelKey }),
+    );
+    expect(
+      referencesBody.items.some((row: { modelKey: string }) => row.modelKey === archived),
+    ).toBe(false);
+    expect(referencesBody.items[0]).not.toHaveProperty('rates');
+    await test.info().attach('observed-model-page', {
+      contentType: 'application/json',
+      body: JSON.stringify({ rows: result.items.length, total: result.total }),
+    });
+  } finally {
+    if (activeKeys.size) {
+      const removed = await page.request.post('/api/v1/admin/model/models/delete', {
+        headers,
+        data: { modelKeys: [...activeKeys] },
+      });
+      expect(removed.ok(), await removed.text()).toBe(true);
+    }
+  }
+});

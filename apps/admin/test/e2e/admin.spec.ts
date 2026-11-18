@@ -14,7 +14,19 @@ test('昵称选择保留同名用户编号，完整编号和多用户查询仍�
   expect(targets).toHaveLength(2);
   const [first, second] = targets.map((u) => u.userId) as [string, string];
   // Two synthetic accounts share a nickname; the selected UUID must never be inferred from the name.
-  await page.route('**/api/v1/admin/users', async (route) => {
+  await page.route('**/api/v1/admin/users/lookup-labels?*', async (route) => {
+    if (new URL(route.request().url()).searchParams.get('q') === '同名核对用户') {
+      await route.fulfill({
+        json: {
+          items: targets.map((user, i) => ({
+            userId: user.userId,
+            username: `synthetic_${i}`,
+            nickname: '同名核对用户',
+          })),
+        },
+      });
+      return;
+    }
     const original = await route.fetch();
     const body = await original.json();
     await route.fulfill({
@@ -463,12 +475,13 @@ test('价目草稿精确微元、模型启用与缺价发布确认', async ({ pa
 test('真实提醒红点、分页、丢失处理响应后幂等重试；管理内容不落本机缓存', async ({ page }) => {
   await login(page);
   await page.goto('/admin/alerts');
-  await expect(page.getByText('待处理（53）', { exact: true })).toBeVisible();
+  await expect(page.getByText('53 条待处理', { exact: true })).toBeVisible();
   const buttons = page.getByRole('button', { name: '标记已处理', exact: true });
-  await expect(buttons).toHaveCount(20);
-  await expect(page.getByText('共 50 条', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '加载更多', exact: true }).click();
-  await expect(page.getByText('共 53 条', { exact: true })).toBeVisible();
+  await expect(buttons).toHaveCount(50);
+  await page.getByRole('button', { name: '下一页', exact: true }).click();
+  await expect(buttons).toHaveCount(3);
+  await page.getByRole('button', { name: '上一页', exact: true }).click();
+  await expect(buttons).toHaveCount(50);
   let first = true;
   const ids: string[] = [];
   await page.route('**/admin/alerts/*/acknowledge', async (route) => {
@@ -489,14 +502,54 @@ test('真实提醒红点、分页、丢失处理响应后幂等重试；管理�
   });
   expect(repeated.ok()).toBe(true);
   await page.reload();
-  await expect(page.getByText('待处理（52）', { exact: true })).toBeVisible();
-  await page.locator('.page-head-extra .ant-select').click();
+  await expect(page.getByText('52 条待处理', { exact: true })).toBeVisible();
+  await page.getByRole('combobox', { name: '提醒处理状态' }).press('ArrowDown');
   await page
     .locator('.ant-select-dropdown:visible')
-    .getByText('全部（90 天）', { exact: true })
+    .getByText('近 90 天全部', { exact: true })
     .click();
   await expect(page.getByText('已处理', { exact: true })).toHaveCount(1);
   await page.reload();
-  await expect(page.getByText('待处理（52）', { exact: true })).toBeVisible();
+  await expect(page.getByText('52 条待处理', { exact: true })).toBeVisible();
+  await page.getByText('信息提示', { exact: true }).click();
+  await expect(page.getByText('1 条未读', { exact: true })).toBeVisible();
+  await expect(page.getByText('浏览器示例供应商缺少用量回执', { exact: true })).toBeVisible();
+  await expect(buttons).toHaveCount(0);
   expect(await records(page)).toEqual(['session']);
+});
+
+test('账号改名后旧名称搜索、模型线路和已有提醒使用正确账号', async ({ page }) => {
+  await login(page);
+  const headers = { Authorization: await authorization(page) };
+  const url = '/api/v1/admin/model/upstreams';
+  const original = '浏览器受控聊天上游';
+  const current = '改名后合成线路';
+  const items = (await (await page.request.get(url, { headers })).json()).items as Array<{
+    name: string;
+    upstreamId: string;
+  }>;
+  const account = items.find((row) => row.name === original)!;
+  const rename = (name: string) =>
+    page.request.patch(`${url}/${account.upstreamId}`, { headers, data: { name } });
+  try {
+    expect((await rename(current)).ok()).toBe(true);
+    await page.goto('/model?tab=upstreams');
+    const search = page.getByPlaceholder('搜索名称');
+    await search.fill(original);
+    await expect(page.getByText('没有符合筛选的上游账号', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: '添加第一条' })).toHaveCount(0);
+    await search.fill(current);
+    await expect(page.getByText(current, { exact: true })).toBeVisible();
+    await page.goto('/model?tab=models');
+    const chatRow = page.getByRole('row').filter({ hasText: 'browser/chat-fixture' });
+    await expect(chatRow.getByText(`优先级 1 · ${current}`, { exact: true })).toBeVisible();
+    await page.goto('/admin/alerts?view=info');
+    await expect(page.getByText(`上游账号 · ${current}`)).toBeVisible();
+    await expect(page.getByRole('link', { name: '查看明细' })).toHaveAttribute(
+      'href',
+      new RegExp(account.upstreamId),
+    );
+  } finally {
+    expect((await rename(original)).ok()).toBe(true);
+  }
 });

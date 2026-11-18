@@ -416,8 +416,35 @@ export class ModelAdminController {
 
   @Get('models')
   @RequireAuth(A.listModels.auth)
-  async listAdminModels() {
-    return { items: await this.models.list() };
+  async listAdminModels(
+    @Query(new ContractPipe(schema(A.listModels.query))) query: Out<typeof A.listModels.query>,
+  ) {
+    return { items: await this.models.list(query.view === 'active') };
+  }
+
+  @Get('models/page')
+  @RequireAuth(A.modelPage.auth)
+  modelPage(
+    @Query(new ContractPipe(schema(A.modelPage.query))) query: Out<typeof A.modelPage.query>,
+  ) {
+    return this.models.page(query);
+  }
+
+  @Get('models/selection')
+  @RequireAuth(A.modelSelection.auth)
+  async modelSelection(
+    @Query(new ContractPipe(schema(A.modelSelection.query)))
+    query: Out<typeof A.modelSelection.query>,
+  ) {
+    return { items: await this.catalog.adminSelection(query) };
+  }
+
+  @Get('models/:modelKey')
+  @RequireAuth(A.modelDetail.auth)
+  modelDetail(
+    @Param(new ContractPipe(schema(A.modelDetail.params))) params: Out<typeof A.modelDetail.params>,
+  ) {
+    return this.models.detail(params.modelKey);
   }
 
   // 3.23：删除模型（软删，可批量）。放在 models/:modelKey 之前，免得被当成模型键。
@@ -438,7 +465,7 @@ export class ModelAdminController {
     @CurrentPrincipal() me: AuthPrincipal,
     @Body(new ContractPipe(schema(A.deleteModels.body))) body: Out<typeof A.deleteModels.body>,
   ) {
-    return this.deletion.delete(me.userId, body.modelKeys);
+    return this.deletion.delete(me.userId, body.modelKeys, body);
   }
 
   @Put('models/:modelKey')
@@ -468,6 +495,15 @@ export class ModelAdminController {
   }
 
   // ---------- 上游 ----------
+
+  @Get('upstreams/model-references')
+  @RequireAuth(A.upstreamModelReferences.auth)
+  async upstreamModelReferences(
+    @Query(new ContractPipe(schema(A.upstreamModelReferences.query)))
+    query: Out<typeof A.upstreamModelReferences.query>,
+  ) {
+    return { items: await this.catalog.upstreamModelReferences(query.ids.split(',')) };
+  }
 
   @Get('upstreams')
   @RequireAuth(A.listUpstreams.auth)
@@ -520,8 +556,16 @@ export class ModelAdminController {
 
   @Get('catalog')
   @RequireAuth(A.listCatalog.auth)
-  async listCatalog() {
-    return { items: await this.catalog.adminList() };
+  async listCatalog(
+    @Query(new ContractPipe(schema(A.listCatalog.query))) query: Out<typeof A.listCatalog.query>,
+  ) {
+    return { items: await this.catalog.adminList(query.view === 'active') };
+  }
+
+  @Get('model-labels')
+  @RequireAuth(A.modelLabels.auth)
+  async modelLabels() {
+    return { items: await this.catalog.adminLabels() };
   }
 
   @Put('catalog/:modelKey')

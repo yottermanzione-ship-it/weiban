@@ -946,7 +946,7 @@ function AdjustPointsDrawer({
 
 function UsagePanel({ row }: { row: UserRow }) {
   const { user, account } = row;
-  const models = useRemote(ModelAccessAdminEndpoints.listModels);
+  const models = useRemote(ModelAccessAdminEndpoints.modelLabels);
   const usage = useAsync(`usage:${user.userId}`, () => {
     const to = new Date();
     const from = new Date(to.getTime() - 30 * DAY_MS);

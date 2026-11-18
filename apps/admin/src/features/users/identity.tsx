@@ -5,10 +5,12 @@
  * 复制完整用户 ID 的能力保留：主行的 title 是完整 UUID；抽屉里另有可复制的完整 ID。
  * 排序 / 筛选 / 分页 / 导出仍然按 userId，本组件只改「显示成什么」。
  */
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { Select, Typography } from 'antd';
 import { AdminUsersEndpoints, Id, type AdminUserLabel } from '@weiban/contracts';
 import { useRemote } from '../../data/hooks.js';
+import { useAsync } from '../../data/use-async.js';
+import { api } from '../../data/client.js';
 
 /** 短码：UUID 前 8 位 + 省略号（完整值放 title）。 */
 export function shortUserId(userId: string): string {
@@ -70,7 +72,6 @@ export function UserIdentity({
 }
 
 type UserPickerProps = {
-  directory: ReturnType<typeof useUserDirectory>;
   placeholder?: string;
   id?: string;
   style?: CSSProperties;
@@ -83,7 +84,15 @@ type UserPickerProps = {
 export function UserPicker(props: UserPickerProps) {
   const [search, setSearch] = useState('');
   const selected = props.multiple ? (props.value ?? []) : props.value ? [props.value] : [];
-  const labels = new Map(props.directory.byId);
+  const [open, setOpen] = useState(false);
+  const results = useRemote(
+    AdminUsersEndpoints.lookupLabels,
+    { query: { q: search.trim().slice(0, 200) } },
+    open,
+  );
+  const saved = useUserDirectory(selected);
+  const labels = new Map(saved.byId);
+  for (const row of results.data?.items ?? []) labels.set(row.userId, row);
   for (const id of [...selected, search.trim()]) {
     if (Id.safeParse(id).success && !labels.has(id))
       labels.set(id, { nickname: null, username: null });
@@ -92,7 +101,6 @@ export function UserPicker(props: UserPickerProps) {
     value: id,
     label: `${userDisplayName(id, label)}${label.nickname || label.username ? ` · ${shortUserId(id)}` : ''}`,
     title: id,
-    searchText: [id, label.nickname, label.username].join(' ').toLocaleLowerCase(),
   }));
   return (
     <Select<string | string[]>
@@ -103,7 +111,8 @@ export function UserPicker(props: UserPickerProps) {
       showSearch
       allowClear
       mode={props.multiple ? 'multiple' : undefined}
-      loading={props.directory.loading}
+      onOpenChange={setOpen}
+      loading={open && results.loading}
       value={props.multiple ? (props.value ?? []) : props.value || undefined}
       searchValue={search}
       onSearch={(input) => {
@@ -122,33 +131,31 @@ export function UserPicker(props: UserPickerProps) {
         setSearch('');
       }}
       options={options}
-      filterOption={(input, option) =>
-        option?.searchText.includes(input.trim().toLocaleLowerCase()) ?? false
-      }
+      filterOption={false}
       notFoundContent={
-        props.directory.error
-          ? '账号目录加载失败，可粘贴完整用户编号'
-          : '没有匹配用户，可粘贴完整用户编号'
+        results.error ? '账号搜索失败，可粘贴完整用户编号' : '没有匹配用户，可粘贴完整用户编号'
       }
     />
   );
 }
 
-/**
- * 后台「用户 ID → 昵称 / 登录名」目录：一次拉取全部账号（后台规模小，接口上限 5000），
- * 供只返回 userId 的接口页面使用（例：行为规划、角色生态）。查不到（已注销）时返回 undefined。
- */
-export function useUserDirectory() {
-  const users = useRemote(AdminUsersEndpoints.listUsers);
-  const byId = useMemo(
-    () =>
-      new Map<string, AdminUserLabel>(
-        (users.data?.items ?? []).map((u) => [
-          u.userId,
-          { nickname: u.nickname, username: u.username },
-        ]),
+/** 只补齐当前记录中的账号编号；空列表无需请求。 */
+export function useUserDirectory(input: readonly (string | null | undefined)[]) {
+  const ids = [...new Set(input.filter((id): id is string => !!id))].sort();
+  const users = useAsync(ids.join(','), async () => {
+    const batches = [];
+    for (let offset = 0; offset < ids.length; offset += 150) {
+      batches.push(
+        api.call(AdminUsersEndpoints.lookupLabels, {
+          query: { ids: ids.slice(offset, offset + 150).join(',') },
+        }),
+      );
+    }
+    return new Map<string, AdminUserLabel>(
+      (await Promise.all(batches)).flatMap((result) =>
+        result.items.map((user) => [user.userId, user] as const),
       ),
-    [users.data],
-  );
-  return { byId, loading: users.loading, error: users.error, refresh: users.refresh };
+    );
+  });
+  return { byId: users.data ?? new Map<string, AdminUserLabel>(), refresh: users.refresh };
 }

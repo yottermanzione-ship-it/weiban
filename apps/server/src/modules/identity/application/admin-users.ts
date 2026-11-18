@@ -3,7 +3,12 @@
  * 余额与流水在 billing（后台按 userId 合并）；管理员替用户注销见 AccountService.adminRequestDeletion。
  */
 import { Inject, Injectable } from '@nestjs/common';
-import type { AdminUserOverview, AdminUserSummary } from '@weiban/contracts';
+import type {
+  AdminUserFilter,
+  AdminUserOverview,
+  AdminUserSummary,
+  IdentityAdminDirectoryPort,
+} from '@weiban/contracts';
 import { and, eq } from 'drizzle-orm';
 import {
   AppError,
@@ -47,7 +52,7 @@ const SELECT = `SELECT u.id, u.username, u.current_alias, p.nickname, u.role, u.
   LEFT JOIN identity.memberships m ON m.user_id = u.id`;
 
 @Injectable()
-export class AdminUsersService {
+export class AdminUsersService implements IdentityAdminDirectoryPort {
   constructor(
     @Inject(DATABASE) private readonly database: Database,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -93,24 +98,116 @@ export class AdminUsersService {
     if (!rows[0]) throw new AppError('not_found', '账号不存在');
     return this.toSummary(rows[0], this.clock.nowMs());
   }
+  async labels() {
+    const { rows } = await this.database.query<{
+      userId: string;
+      username: string;
+      nickname: string | null;
+    }>(
+      `SELECT u.id AS "userId", coalesce(u.current_alias,u.username) AS username,p.nickname
+       FROM identity.users u LEFT JOIN identity.profiles p ON p.user_id=u.id ORDER BY u.created_at DESC,u.id`,
+    );
+    return { items: rows };
+  }
+  async lookupLabels({ q, ids }: { q?: string; ids?: string }) {
+    const { where, values } = this.filtered({ q });
+    const { rows } = await this.database.query<{
+      userId: string;
+      username: string;
+      nickname: string | null;
+    }>(
+      `SELECT u.id AS "userId", coalesce(u.current_alias,u.username) AS username,p.nickname
+       FROM identity.users u LEFT JOIN identity.profiles p ON p.user_id=u.id
+       WHERE ${ids ? 'u.id = ANY($1::uuid[])' : where}
+       ORDER BY u.created_at DESC,u.id ${ids ? '' : 'LIMIT 20'}`,
+      ids ? [ids.split(',')] : values,
+    );
+    return { items: rows };
+  }
 
-  async overview(): Promise<AdminUserOverview> {
+  private filtered(filter: AdminUserFilter) {
+    const values: unknown[] = [];
+    const clauses = ['true'];
+    if (filter.q) {
+      values.push(filter.q.toLowerCase());
+      clauses.push(
+        `(strpos(lower(coalesce(u.current_alias,u.username)),$1)>0 OR strpos(lower(p.nickname),$1)>0 OR strpos(u.id::text,$1)>0)`,
+      );
+    }
+    if (filter.group === 'banned') clauses.push('u.banned_at IS NOT NULL');
+    if (filter.group === 'pro' || filter.group === 'expiring') {
+      values.push(this.clock.now());
+      clauses.push(`m.pro_plus_until > $${values.length}`);
+      if (filter.group === 'expiring')
+        clauses.push(`m.pro_plus_until <= $${values.length}::timestamptz + interval '7 days'`);
+    }
+    return { where: clauses.join(' AND '), values };
+  }
+  async selectable(filter: AdminUserFilter) {
+    const { where, values } = this.filtered(filter);
+    const { rows } = await this.database.query<Row>(
+      `${SELECT} WHERE u.role='user' AND u.status='active' AND ${where} ORDER BY u.id`,
+      values,
+    );
+    const now = this.clock.nowMs();
+    return { items: rows.map((row) => this.toSummary(row, now)) };
+  }
+  async matchingIds(
+    filter: AdminUserFilter,
+    window?: { page: number; pageSize: number; oldest: boolean },
+  ) {
+    const { where, values } = this.filtered(filter);
+    const from = `FROM identity.users u LEFT JOIN identity.profiles p ON p.user_id=u.id
+      LEFT JOIN identity.memberships m ON m.user_id=u.id WHERE ${where}`;
+    if (!window) {
+      const { rows } = await this.database.query<{ id: string }>(`SELECT u.id ${from}`, values);
+      return { ids: rows.map((r) => r.id), total: rows.length };
+    }
+    const [page, count] = await Promise.all([
+      this.database.query<{ id: string }>(
+        `SELECT u.id ${from} ORDER BY u.created_at ${window.oldest ? 'ASC' : 'DESC'},u.id
+          LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+        [...values, window.pageSize, (window.page - 1) * window.pageSize],
+      ),
+      this.database.query<{ n: number }>(`SELECT count(*)::int n ${from}`, values),
+    ]);
+    return { ids: page.rows.map((r) => r.id), total: count.rows[0]?.n ?? 0 };
+  }
+  async summariesFor(ids: string[]) {
+    if (!ids.length) return [];
+    const { rows } = await this.database.query<Row>(`${SELECT} WHERE u.id=ANY($1::uuid[])`, [ids]);
+    const now = this.clock.nowMs();
+    return rows.map((r) => this.toSummary(r, now));
+  }
+
+  async overview(countsOnly = false): Promise<AdminUserOverview> {
     const now = this.clock.now();
     const soon = new Date(now.getTime() + 7 * DAY_MS);
-    const { rows: counts } = await this.database.query<{ total: string; pro: string }>(
-      `SELECT (SELECT count(*) FROM identity.users WHERE status = 'active') AS total,
-              (SELECT count(*) FROM identity.memberships m JOIN identity.users u ON u.id = m.user_id
-                WHERE u.status = 'active' AND m.pro_plus_until > $1) AS pro`,
-      [now],
-    );
-    const { rows } = await this.database.query<Row>(
-      `${SELECT} WHERE u.status = 'active' AND m.pro_plus_until > $1 AND m.pro_plus_until <= $2
-        ORDER BY m.pro_plus_until, u.id LIMIT 500`,
+    const { rows: counts } = await this.database.query<{
+      total: number;
+      pro: number;
+      expiring: number;
+    }>(
+      `SELECT count(*)::int AS total,
+              count(*) FILTER (WHERE m.pro_plus_until > $1)::int AS pro,
+              count(*) FILTER (WHERE m.pro_plus_until > $1 AND m.pro_plus_until <= $2)::int AS expiring
+       FROM identity.users u LEFT JOIN identity.memberships m ON m.user_id = u.id
+       WHERE u.status = 'active'`,
       [now, soon],
     );
+    const rows = countsOnly
+      ? []
+      : (
+          await this.database.query<Row>(
+            `${SELECT} WHERE u.status = 'active' AND m.pro_plus_until > $1 AND m.pro_plus_until <= $2
+           ORDER BY m.pro_plus_until, u.id LIMIT 500`,
+            [now, soon],
+          )
+        ).rows;
     return {
       totalUsers: Number(counts[0]?.total ?? 0),
       proPlusUsers: Number(counts[0]?.pro ?? 0),
+      expiringSoonCount: counts[0]?.expiring ?? 0,
       expiringSoon: rows.map((r) => ({
         userId: r.id,
         username: r.current_alias ?? r.username,
