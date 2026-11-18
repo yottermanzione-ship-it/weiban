@@ -1,4 +1,13 @@
 import type { Tx } from './common.js';
+import type { AdminUserFilter, AdminUserSummary } from '../http/admin-users.js';
+
+export interface IdentityAdminDirectoryPort {
+  matchingIds(
+    filter: AdminUserFilter,
+    window?: { page: number; pageSize: number; oldest: boolean },
+  ): Promise<{ ids: string[]; total: number }>;
+  summariesFor(ids: string[]): Promise<AdminUserSummary[]>;
+}
 import type { NotificationSettings, Profile } from '../http/identity.js';
 import type { UserStatus } from '../http/status.js';
 

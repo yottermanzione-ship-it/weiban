@@ -1,6 +1,7 @@
 import { Alert, Button, Card, Space } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { ProTable, type ProColumns } from '@ant-design/pro-components';
+import type { TablePaginationConfig } from 'antd';
 import type { Key, ReactNode } from 'react';
 import { EmptyHint } from './page.js';
 
@@ -48,17 +49,19 @@ export interface DataTableProps<T extends Record<string, unknown>> {
   /** 某些行不允许勾选（例如管理员账号、注销中的账号）。 */
   rowSelectable?: (row: T) => boolean;
   /** 勾选提示，传了以后表格上方会显示「已选择 N 项」+ 这句说明。 */
-  selectionHint?: string;
+  selectionHint?: ReactNode;
   /** 翻页 / 改每页条数时回调，用于清空只作用于当前页的选择。 */
   onPageChange?: (page: number, pageSize: number) => void;
   batchActions?: (rows: T[]) => ReactNode;
   emptyTitle?: ReactNode;
   emptyHint?: ReactNode;
   emptyAction?: ReactNode;
-  pagination?: false;
+  pagination?: false | TablePaginationConfig;
+  onSort?: (key: string, direction: 'ascend' | 'descend' | null) => void;
   footer?: ReactNode;
   size?: 'small' | 'middle';
   scrollX?: number | string;
+  showTools?: boolean;
 }
 
 /**
@@ -88,6 +91,8 @@ export function DataTable<T extends Record<string, unknown>>({
   footer,
   size = 'middle',
   scrollX = 'max-content',
+  showTools = false,
+  onSort,
 }: DataTableProps<T>) {
   return (
     <div className="table-card">
@@ -114,20 +119,36 @@ export function DataTable<T extends Record<string, unknown>>({
         cardProps={false}
         size={size}
         scroll={{ x: scrollX }}
-        options={{ reload: false, density: true, setting: true, fullScreen: false }}
+        options={
+          showTools ? { reload: false, density: true, setting: true, fullScreen: false } : false
+        }
         pagination={
           pagination === false
             ? false
             : {
                 defaultPageSize: 20,
                 showSizeChanger: true,
+                hideOnSinglePage: true,
+                locale: {
+                  items_per_page: '条/页',
+                  prev_page: '上一页',
+                  next_page: '下一页',
+                  page: '页',
+                },
                 pageSizeOptions: [10, 20, 50, 100],
                 showTotal: (total) => `共 ${total} 条`,
                 size: 'default',
                 onChange: onPageChange,
+                ...pagination,
               }
         }
+        onChange={(_page, _filters, sort, extra) => {
+          if (onSort && extra.action === 'sort' && !Array.isArray(sort))
+            onSort(String(sort.columnKey ?? ''), sort.order ?? null);
+        }}
         locale={{
+          selectAll: '选择本页',
+          selectNone: '清空选择',
           emptyText: <EmptyHint title={emptyTitle} hint={emptyHint} action={emptyAction} />,
         }}
         rowSelection={
@@ -140,7 +161,7 @@ export function DataTable<T extends Record<string, unknown>>({
                   ? (record) => ({ disabled: !rowSelectable(record) })
                   : undefined,
               }
-            : { preserveSelectedRowKeys: false }
+            : undefined
         }
         tableAlertRender={
           onSelectionChange && selectionHint

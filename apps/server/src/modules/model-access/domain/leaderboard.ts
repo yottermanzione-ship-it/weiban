@@ -346,3 +346,12 @@ export function relativeRanks(
     .sort((a, b) => a.rank - b.rank || a.index - b.index);
   return new Map(ranked.map((item, i) => [item.key, i + 1]));
 }
+
+/** Arena Text 只适用于实际上架给文本聊天场景的模型，厂商和型号名不参与判断。 */
+export function participatesInTextArena(entry: {
+  enabled: boolean;
+  deletedAt?: string | Date | null;
+  scenarios?: readonly string[];
+}) {
+  return entry.enabled && !entry.deletedAt && entry.scenarios?.includes('chat') === true;
+}

@@ -6,6 +6,11 @@ export interface MediaReadPort {
   getMedia(userId: string, mediaId: string): Promise<MediaObject>;
 }
 
+/** 角色目录批量签发当前页头像，保留既有接收者和用途校验。 */
+export interface MediaAvatarReadPort extends MediaReadPort {
+  characterAvatarUrls(userId: string, ids: readonly string[]): Promise<Record<string, string>>;
+}
+
 /**
  * 3.0：系统读写媒体（L5，D-L5-01）。提供方 media；调用方 model-access（取图给识图、存生成结果）、ai-runtime、
  * chat（校验用户发送的 mediaId 归属与用途）、moments、growth、library、importer、plaza。

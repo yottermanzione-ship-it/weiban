@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 7.11. Regenerate: pnpm android:generate
+// Contract 7.14. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "7.11"
+const val CONTRACT_VERSION: String = "7.14"
 
 @Serializable
 data class AccountAlias(
@@ -212,6 +212,8 @@ data class AdminCatalogEntry(
     @SerialName("billingBounds") val `billingBounds`: RouteBillingBounds? = null,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
     @SerialName("deletedAt") val `deletedAt`: Timestamp? = null,
+    @SerialName("archiveId") val `archiveId`: String? = null,
+    @SerialName("catalogRevision") val `catalogRevision`: String? = null,
 )
 
 @Serializable
@@ -286,6 +288,18 @@ data class AdminCharacterEligibility(
     @SerialName("override") val `override`: CharacterEligibilityFacts?,
     @SerialName("effective") val `effective`: CharacterClassification,
     @SerialName("history") val `history`: List<CharacterEligibilityChange>,
+)
+
+@Serializable
+data class AdminCharacterIndexItem(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("status") val `status`: CharacterPublishStatus,
+    @SerialName("name") val `name`: String,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+    @SerialName("format") val `format`: CharacterCardFormat,
+    @SerialName("classification") val `classification`: AdminCharacterIndexItemClassification,
+    @SerialName("avatarUrl") val `avatarUrl`: String? = null,
+    @SerialName("revision") val `revision`: Long,
 )
 
 @Serializable
@@ -577,6 +591,8 @@ data class AdminModel(
     @SerialName("billingBounds") val `billingBounds`: RouteBillingBounds? = null,
     @SerialName("updatedAt") val `updatedAt`: Timestamp,
     @SerialName("deletedAt") val `deletedAt`: Timestamp? = null,
+    @SerialName("archiveId") val `archiveId`: String? = null,
+    @SerialName("catalogRevision") val `catalogRevision`: String? = null,
     @SerialName("serviceRates") val `serviceRates`: List<ModelServiceRate>? = null,
     @SerialName("rates") val `rates`: ModelRates?,
     @SerialName("costRates") val `costRates`: ModelRates?,
@@ -634,6 +650,7 @@ data class AdminModelWrite(
     @SerialName("scenarios") val `scenarios`: List<ModelScenario>? = null,
     @SerialName("systemMessageMode") val `systemMessageMode`: SystemMessageMode? = null,
     @SerialName("billingBounds") val `billingBounds`: RouteBillingBounds? = null,
+    @SerialName("expectedRevision") val `expectedRevision`: String? = null,
     @SerialName("serviceRates") val `serviceRates`: List<ModelServiceRateWrite>? = null,
     @SerialName("rates") val `rates`: ModelRates?,
     @SerialName("costRates") val `costRates`: ModelRates? = null,
@@ -659,6 +676,7 @@ data class AdminModelWriteInput(
     @SerialName("scenarios") val `scenarios`: List<ModelScenario>? = null,
     @SerialName("systemMessageMode") val `systemMessageMode`: SystemMessageMode? = null,
     @SerialName("billingBounds") val `billingBounds`: RouteBillingBoundsInput? = null,
+    @SerialName("expectedRevision") val `expectedRevision`: String? = null,
     @SerialName("serviceRates") val `serviceRates`: List<ModelServiceRateWrite>? = null,
     @SerialName("rates") val `rates`: ModelRatesInput?,
     @SerialName("costRates") val `costRates`: ModelRatesInput? = null,
@@ -1090,6 +1108,8 @@ data class AdminUsageFilter(
     @SerialName("billingOwner") val `billingOwner`: BillingOwner? = null,
     @SerialName("status") val `status`: AdminUsageCallStatus? = null,
     @SerialName("upstreamIds") val `upstreamIds`: List<Id>? = null,
+    @SerialName("estimated") val `estimated`: Boolean? = null,
+    @SerialName("costKnown") val `costKnown`: Boolean? = null,
 )
 
 @Serializable
@@ -1103,6 +1123,8 @@ data class AdminUsageFilterInput(
     @SerialName("billingOwner") val `billingOwner`: BillingOwner? = null,
     @SerialName("status") val `status`: AdminUsageCallStatus? = null,
     @SerialName("upstreamIds") val `upstreamIds`: List<Id>? = null,
+    @SerialName("estimated") val `estimated`: Boolean? = null,
+    @SerialName("costKnown") val `costKnown`: Boolean? = null,
 )
 
 @Serializable
@@ -1115,6 +1137,9 @@ data class AdminUsageOverview(
 
 @Serializable
 data class AdminUsageRecord(
+    @SerialName("ttsChars") val `ttsChars`: Long? = null,
+    @SerialName("asrSeconds") val `asrSeconds`: Double? = null,
+    @SerialName("reasoningTokens") val `reasoningTokens`: Long? = null,
     @SerialName("audioInputTokens") val `audioInputTokens`: Long? = null,
     @SerialName("audioOutputTokens") val `audioOutputTokens`: Long? = null,
     @SerialName("costKnown") val `costKnown`: Boolean? = null,
@@ -1187,6 +1212,7 @@ data class AdminUsageSummaryRow(
     @SerialName("cacheWriteTokens") val `cacheWriteTokens`: Long? = null,
     @SerialName("totalTokens") val `totalTokens`: Long,
     @SerialName("estimatedTokens") val `estimatedTokens`: Long,
+    @SerialName("estimatedCalls") val `estimatedCalls`: Long? = null,
     @SerialName("chargedMicros") val `chargedMicros`: Long,
     @SerialName("costMicros") val `costMicros`: Long,
     @SerialName("absorbedCostMicros") val `absorbedCostMicros`: Long,
@@ -1210,6 +1236,7 @@ data class AdminUsageTotals(
     @SerialName("cacheWriteTokens") val `cacheWriteTokens`: Long? = null,
     @SerialName("totalTokens") val `totalTokens`: Long,
     @SerialName("estimatedTokens") val `estimatedTokens`: Long,
+    @SerialName("estimatedCalls") val `estimatedCalls`: Long? = null,
     @SerialName("chargedMicros") val `chargedMicros`: Long,
     @SerialName("costMicros") val `costMicros`: Long,
     @SerialName("absorbedCostMicros") val `absorbedCostMicros`: Long,
@@ -1225,6 +1252,18 @@ data class AdminUserBan(
     @SerialName("bannedAt") val `bannedAt`: Timestamp,
     @SerialName("reason") val `reason`: String,
     @SerialName("operatorUserId") val `operatorUserId`: Id?,
+)
+
+@Serializable
+data class AdminUserFilter(
+    @SerialName("q") val `q`: String? = null,
+    @SerialName("group") val `group`: String? = null,
+)
+
+@Serializable
+data class AdminUserFilterInput(
+    @SerialName("q") val `q`: String? = null,
+    @SerialName("group") val `group`: String? = null,
 )
 
 @Serializable
@@ -1270,6 +1309,11 @@ data class AdminUsersEndpointsDeleteUserResponse(
 )
 
 @Serializable
+data class AdminUsersEndpointsLabelsResponse(
+    @SerialName("items") val `items`: List<AdminUsersEndpointsLabelsResponseItemsItem>,
+)
+
+@Serializable
 data class AdminUsersEndpointsListUsersResponse(
     @SerialName("items") val `items`: List<AdminUserSummary>,
 )
@@ -1282,6 +1326,11 @@ data class AdminUsersEndpointsResetPasswordParams(
 @Serializable
 data class AdminUsersEndpointsResetPasswordResponse(
     @SerialName("revokedSessions") val `revokedSessions`: Long,
+)
+
+@Serializable
+data class AdminUsersEndpointsSelectableUsersResponse(
+    @SerialName("items") val `items`: List<AdminUserSummary>,
 )
 
 @Serializable
@@ -1620,6 +1669,21 @@ data class BillingAdminEndpointsUpdatePriceDraftBody(
 @Serializable
 data class BillingAdminEndpointsUpdatePriceDraftParams(
     @SerialName("priceVersionId") val `priceVersionId`: Id,
+)
+
+@Serializable
+data class BillingAdminEndpointsUserPageQuery(
+    @SerialName("q") val `q`: String? = null,
+    @SerialName("group") val `group`: String? = null,
+    @SerialName("page") val `page`: Long? = null,
+    @SerialName("pageSize") val `pageSize`: Long? = null,
+    @SerialName("sort") val `sort`: String? = null,
+)
+
+@Serializable
+data class BillingAdminEndpointsUserPageResponse(
+    @SerialName("items") val `items`: List<BillingAdminEndpointsUserPageResponseItemsItem>,
+    @SerialName("total") val `total`: Long,
 )
 
 @Serializable
@@ -2163,6 +2227,25 @@ data class ChannelState(
     @SerialName("lastEventAt") val `lastEventAt`: Timestamp?,
     @SerialName("lastError") val `lastError`: String?,
     @SerialName("pendingExpiresAt") val `pendingExpiresAt`: Timestamp?,
+)
+
+@Serializable
+data class CharacterAdminEndpointsDirectoryQuery(
+    @SerialName("status") val `status`: CharacterPublishStatus? = null,
+    @SerialName("q") val `q`: String? = null,
+    @SerialName("page") val `page`: Long? = null,
+    @SerialName("pageSize") val `pageSize`: Long? = null,
+)
+
+@Serializable
+data class CharacterAdminEndpointsDirectoryResponse(
+    @SerialName("items") val `items`: List<AdminCharacterIndexItem>,
+    @SerialName("total") val `total`: Long,
+)
+
+@Serializable
+data class CharacterAdminEndpointsGetCharacterParams(
+    @SerialName("characterId") val `characterId`: Id,
 )
 
 @Serializable
@@ -6592,6 +6675,7 @@ data class Invite(
 
 @Serializable
 data class LeaderboardSnapshotStatus(
+    @SerialName("eligibleCount") val `eligibleCount`: Long? = null,
     @SerialName("source") val `source`: ModelLeaderboardSource?,
     @SerialName("snapshot") val `snapshot`: LeaderboardSnapshotStatusSnapshot?,
     @SerialName("lastAttemptAt") val `lastAttemptAt`: Timestamp?,
@@ -7411,6 +7495,12 @@ data class ModelAccessAdminEndpointsBatchUpstreamsResponse(
 )
 
 @Serializable
+data class ModelAccessAdminEndpointsDeleteModelsBody(
+    @SerialName("modelKeys") val `modelKeys`: List<ModelKey>,
+    @SerialName("expectedRevision") val `expectedRevision`: String? = null,
+)
+
+@Serializable
 data class ModelAccessAdminEndpointsDeleteUpstreamParams(
     @SerialName("upstreamId") val `upstreamId`: Id,
 )
@@ -7564,6 +7654,9 @@ typealias ModelCapability = String
 
 @Serializable
 data class ModelDeletionImpact(
+    @SerialName("ecologyDecision") val `ecologyDecision`: Boolean? = null,
+    @SerialName("revision") val `revision`: String? = null,
+    @SerialName("upstreamAccounts") val `upstreamAccounts`: List<ModelDeletionImpactUpstreamAccountsItem>? = null,
     @SerialName("models") val `models`: List<ModelDeletionImpactModelsItem>,
     @SerialName("users") val `users`: Long,
     @SerialName("scenarioSelections") val `scenarioSelections`: Long,
@@ -9209,6 +9302,7 @@ data class PushAdminEndpointsAcknowledgeAdminAlertParams(
 @Serializable
 data class PushAdminEndpointsListAdminAlertsQuery(
     @SerialName("status") val `status`: String? = null,
+    @SerialName("view") val `view`: String? = null,
     @SerialName("cursor") val `cursor`: String? = null,
     @SerialName("limit") val `limit`: Long? = null,
 )
@@ -13020,6 +13114,11 @@ data class AdminCharacterPublishChecks(
 )
 
 @Serializable
+data class AdminCharacterIndexItemClassification(
+    @SerialName("basis") val `basis`: CharacterBasis,
+)
+
+@Serializable
 data class AdminLegacyCharacterPatchFields(
     @SerialName("displayName") val `displayName`: String? = null,
     @SerialName("nickname") val `nickname`: String? = null,
@@ -13187,6 +13286,13 @@ data class AdminUserSummaryMembership(
 )
 
 @Serializable
+data class AdminUsersEndpointsLabelsResponseItemsItem(
+    @SerialName("nickname") val `nickname`: String?,
+    @SerialName("username") val `username`: String?,
+    @SerialName("userId") val `userId`: Id,
+)
+
+@Serializable
 data class ApiErrorError(
     @SerialName("code") val `code`: ReceivedErrorCode,
     @SerialName("message") val `message`: String,
@@ -13198,6 +13304,13 @@ data class ApiErrorError(
 data class BillingAdminEndpointsGetPlatformSummaryResponseLast30DaysCostByUpstreamItem(
     @SerialName("upstreamId") val `upstreamId`: Id,
     @SerialName("costMicros") val `costMicros`: Long,
+)
+
+@Serializable
+data class BillingAdminEndpointsUserPageResponseItemsItem(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("user") val `user`: AdminUserSummary,
+    @SerialName("account") val `account`: AdminAccountSummary? = null,
 )
 
 @Serializable
@@ -14730,6 +14843,13 @@ data class MessagePageCoverageExcludedRangesItem(
     @SerialName("fromSeq") val `fromSeq`: Seq,
     @SerialName("throughSeq") val `throughSeq`: Seq,
     @SerialName("reason") val `reason`: String,
+)
+
+@Serializable
+data class ModelDeletionImpactUpstreamAccountsItem(
+    @SerialName("upstreamId") val `upstreamId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("shared") val `shared`: Boolean,
 )
 
 @Serializable

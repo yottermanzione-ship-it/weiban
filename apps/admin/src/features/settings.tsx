@@ -31,7 +31,7 @@ export function SettingsPage() {
         <ul className="link-list">
           <li>公告与版本策略：内容运营 › 公告 / 系统 › 版本策略</li>
           <li>
-            用户模型榜单来源：<Link to="/model">模型与计费 › 模型管理</Link>
+            用户模型榜单来源：<Link to="/model?tab=settings">模型管理 › 场景与榜单</Link>
             （页面顶部）；各模型名次在模型编辑里填
           </li>
           <li>自动搜索公开动态：角色 › 公开动态（页面底部开关）</li>

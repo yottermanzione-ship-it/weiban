@@ -40,7 +40,7 @@ const CLOSENESS_LABELS: Record<RelationCloseness, string> = {
 export function RelationsPage() {
   const toast = useToast();
   const confirm = useDangerConfirm();
-  const characters = useRemote(CharacterAdminEndpoints.list);
+  const characters = useRemote(CharacterAdminEndpoints.directory);
   const [characterId, setCharacterId] = useState('');
   const [typeFilter, setTypeFilter] = useState<RelationType | ''>('');
   const list = useRemote(RelationAdminEndpoints.listRelations, {

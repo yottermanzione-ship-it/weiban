@@ -1,11 +1,10 @@
 /**
  * 用户板块（10-20 批 E2）公共部分：账号 + 钱包合并、档位名、价格格式、订阅记录合并。
  */
-import { useMemo } from 'react';
 import type { z } from 'zod';
 import {
   AdminAccountSummary,
-  AdminUsersEndpoints,
+  type AdminUserLabel,
   BillingAdminEndpoints,
   type AdminUserSummary,
   type MembershipChange,
@@ -39,37 +38,24 @@ export function daysLeft(expiresAt: string | null | undefined): number | null {
 }
 
 /** 列表里显示的名字：昵称（登录名）。 */
-export function displayName(
-  user: Pick<AdminUserSummary, 'username' | 'nickname'> | undefined,
-): string {
+export function displayName(user: AdminUserLabel | undefined): string {
   if (!user) return '已注销账号';
   if (user.nickname && user.nickname !== user.username)
     return `${user.nickname}（${user.username}）`;
   return user.username || '已注销账号';
 }
 
-/** 账号列表 + 钱包列表，按 userId 合并（钱包在 billing，资料 / 会员 / 封禁在 identity）。 */
-export function useUserRows() {
-  const users = useRemote(AdminUsersEndpoints.listUsers);
-  const accounts = useRemote(BillingAdminEndpoints.listAccounts);
-  const rows = useMemo<UserRow[]>(() => {
-    const wallets = new Map((accounts.data?.items ?? []).map((a) => [a.userId, a]));
-    return (users.data?.items ?? []).map((user) => ({
-      userId: user.userId,
-      user,
-      account: wallets.get(user.userId),
-    }));
-  }, [users.data, accounts.data]);
-  const byId = useMemo(() => new Map(rows.map((r) => [r.userId, r])), [rows]);
+/** 在运营记录里点开单人后才读取其钱包和账号详情。 */
+export function useSelectedUser(id: string | null) {
+  const page = useRemote(
+    BillingAdminEndpoints.userPage,
+    { query: { q: id ?? '', page: 1, pageSize: 1, sort: 'newest' } },
+    !!id,
+  );
   return {
-    rows,
-    byId,
-    loading: users.loading || accounts.loading,
-    error: users.error || accounts.error,
-    refresh: () => {
-      users.refresh();
-      accounts.refresh();
-    },
+    row: page.data?.items.find((r) => r.userId === id),
+    refresh: page.refresh,
+    error: page.error,
   };
 }
 

@@ -1,5 +1,5 @@
 /** 3.21（10-20 批 E2）：契约 AdminUsersEndpoints（后台用户列表、概况、封禁、替用户注销）。 */
-import { Body, Controller, Get, HttpCode, Inject, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, Param, Post, Query } from '@nestjs/common';
 import { AdminUsersEndpoints as A } from '@weiban/contracts';
 import type { z } from 'zod';
 import {
@@ -28,6 +28,20 @@ export class AdminUsersController {
   @RequireAuth(A.overview.auth)
   overview() {
     return this.service.overview();
+  }
+  @Get('labels')
+  @RequireAuth(A.labels.auth)
+  labels() {
+    return this.service.labels();
+  }
+
+  @Get('selection')
+  @RequireAuth(A.selectableUsers.auth)
+  selection(
+    @Query(new ContractPipe(A.selectableUsers.query!))
+    query: z.output<NonNullable<typeof A.selectableUsers.query>>,
+  ) {
+    return this.service.selectable(query);
   }
 
   @Post(':userId/ban')

@@ -1,7 +1,7 @@
 /** 官方 Arena 数据集六小时同步；完整分页校验后原子替换，失败保留有效快照。 */
 import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import type { LeaderboardSnapshotStatus } from '@weiban/contracts';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
   AUDIT_LOG,
   AppError,
@@ -17,6 +17,7 @@ import {
 } from '../../../platform/index.js';
 import {
   bestArenaRanks,
+  participatesInTextArena,
   normalizeArenaName,
   parseLeaderboard,
   relativeRanks,
@@ -72,10 +73,14 @@ export class LeaderboardService implements OnModuleInit {
           upstreamModelId: modelCatalog.upstreamModelId,
           arenaModelName: modelCatalog.arenaModelName,
           sortOrder: modelCatalog.sortOrder,
+          enabled: modelCatalog.enabled,
+          scenarios: modelCatalog.scenarios,
         })
         .from(modelCatalog)
         .where(and(eq(modelCatalog.enabled, true), isNull(modelCatalog.deletedAt)))
-    ).sort((a, b) => a.sortOrder - b.sortOrder || a.modelKey.localeCompare(b.modelKey));
+    )
+      .filter(participatesInTextArena)
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.modelKey.localeCompare(b.modelKey));
     const matchedRank = (name: string | null) =>
       name ? (byName.get(normalizeArenaName(name)) ?? null) : null;
     // 手动指定优先；没填就用模型显示名 / 上游模型名，管理员不需要逐条维护。
@@ -90,7 +95,7 @@ export class LeaderboardService implements OnModuleInit {
     const relative = relativeRanks(rows.map((r) => ({ key: r.modelKey, rank: rankOfRow(r) })));
     const matched: LeaderboardSnapshotStatus['matched'] = [];
     const unmatched: LeaderboardSnapshotStatus['unmatched'] = [];
-    for (const r of rows) {
+    for (const r of snapshot?.entries.length ? rows : []) {
       const rank = rankOfRow(r);
       if (rank !== null)
         matched.push({
@@ -115,6 +120,7 @@ export class LeaderboardService implements OnModuleInit {
     matched.sort((a, b) => a.relativeRank - b.relativeRank);
     return {
       source,
+      eligibleCount: rows.length,
       snapshot:
         snapshot?.fetchedAt && snapshot.method
           ? {
@@ -142,16 +148,20 @@ export class LeaderboardService implements OnModuleInit {
     modelKey: string,
     arenaModelName: string | null,
   ): Promise<LeaderboardSnapshotStatus> {
-    const [row] = await this.database.db
-      .select({ modelKey: modelCatalog.modelKey })
-      .from(modelCatalog)
-      .where(and(eq(modelCatalog.modelKey, modelKey), isNull(modelCatalog.deletedAt)));
-    if (!row) throw new AppError('not_found', '模型不存在或已删除', { status: 404 });
     await this.database.transaction(async (tx) => {
-      await tx.db
+      const [saved] = await tx.db
         .update(modelCatalog)
         .set({ arenaModelName, updatedAt: this.clock.now() })
-        .where(eq(modelCatalog.modelKey, modelKey));
+        .where(
+          and(
+            eq(modelCatalog.modelKey, modelKey),
+            eq(modelCatalog.enabled, true),
+            isNull(modelCatalog.deletedAt),
+            sql`'chat' = ANY(${modelCatalog.scenarios})`,
+          ),
+        )
+        .returning({ key: modelCatalog.modelKey });
+      if (!saved) throw new AppError('conflict', '该模型当前未参加文本聊天榜单', { status: 409 });
       await this.audit.record(
         {
           module: 'model_access',

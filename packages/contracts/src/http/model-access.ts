@@ -810,6 +810,8 @@ export const AdminCatalogEntry = z.object({
    * 后台的模型表格与各处模型选择应隐藏它。删除后可以用同一个键重新添加（与已删除的记录互不影响）。
    */
   deletedAt: Timestamp.nullable().optional(),
+  archiveId: z.string().optional(),
+  catalogRevision: z.string().optional(),
 });
 export type AdminCatalogEntry = z.infer<typeof AdminCatalogEntry>;
 
@@ -821,6 +823,8 @@ export type AdminCatalogEntry = z.infer<typeof AdminCatalogEntry>;
 export const AdminCatalogEntryWrite = AdminCatalogEntry.omit({
   updatedAt: true,
   deletedAt: true,
+  archiveId: true,
+  catalogRevision: true,
 }).extend({
   modelKey: CanonicalModelKey,
   // 7.3：模型/厂商显示名采用英文；读取仍兼容历史记录，生产名称独立核对后更名。
@@ -991,6 +995,8 @@ export type AdminModelTestResult = z.infer<typeof AdminModelTestResult>;
 export const USAGE_MISSING_ALERT_STREAK = 5;
 
 export const AdminModelWrite = AdminCatalogEntryWrite.extend({
+  /** null 表示新建，修订值用于拒绝过期编辑。 */
+  expectedRevision: z.string().min(1).max(32).nullable().optional(),
   /** 3.36：省略不改；只替换传入单位（含分时价）为全天价，其他单位完整保留。 */
   serviceRates: ServiceRatesWrite.optional(),
   /**
@@ -1067,6 +1073,11 @@ export type DeleteModelsRequest = z.infer<typeof DeleteModelsRequest>;
  * 用户的场景配置 / 角色设置被清掉后回到「未配置」/「跟随」，由首次引导重新选。
  */
 export const ModelDeletionImpact = z.object({
+  ecologyDecision: z.boolean().optional(),
+  revision: z.string().optional(),
+  upstreamAccounts: z
+    .array(z.object({ upstreamId: Id, name: z.string(), shared: z.boolean() }))
+    .optional(),
   models: z.array(z.object({ modelKey: ModelKey, displayName: z.string(), enabled: z.boolean() })),
   /** 场景配置里用到这些模型的用户数（去重）与配置条数。 */
   users: z.number().int().nonnegative(),
@@ -1097,6 +1108,7 @@ export type DisplayMultiplierSettings = z.infer<typeof DisplayMultiplierSettings
  * 网站开启人机验证等原因抓不到时保留上次结果、写明原因，可改用「粘贴榜单文本 / CSV」导入。
  */
 export const LeaderboardSnapshotStatus = z.object({
+  eligibleCount: z.number().int().nonnegative().optional(),
   source: ModelLeaderboardSource.nullable(),
   /** 当前生效的榜单快照（没有为 null）。 */
   snapshot: z
@@ -1511,7 +1523,12 @@ export const ModelAccessAdminEndpoints = {
     method: 'POST',
     path: `${API_PREFIX}/admin/model/models/delete`,
     auth: 'admin',
-    body: DeleteModelsRequest,
+    body: DeleteModelsRequest.extend({
+      expectedRevision: z
+        .string()
+        .regex(/^[a-f0-9]{64}$/)
+        .optional(),
+    }),
     response: ModelDeletionImpact,
     summary:
       '3.23：删除模型（软删，可批量）：删线路，清用户场景配置 / 角色设置 / 场景推荐 / 平台内部模型 / 展示倍率基准 / 折扣，发布不含它们的新价目表（历史版本保留）；历史调用记录仍显示模型名；同键可重新添加。写审计',
@@ -1550,6 +1567,9 @@ export const AdminUsageFilter = z.object({
   billingOwner: BillingOwner.optional(),
   status: AdminUsageCallStatus.optional(),
   upstreamIds: z.array(Id).min(1).max(50).optional(),
+  /** 是否有本地计量或估算的用量。与成本是否待核独立。 */
+  estimated: z.boolean().optional(),
+  costKnown: z.boolean().optional(),
 });
 export type AdminUsageFilter = z.infer<typeof AdminUsageFilter>;
 
@@ -1567,6 +1587,8 @@ export const AdminUsageTotals = z.object({
   totalTokens: z.number().int().nonnegative(),
   /** 其中按估算得出的 token 数（上游没返回用量时），界面据此显示估算占比。 */
   estimatedTokens: z.number().int().nonnegative(),
+  /** 含本地计量的多媒体调用。与 token 估算量分开汇总。 */
+  estimatedCalls: z.number().int().nonnegative().optional(),
   chargedMicros: z.number().int().nonnegative(),
   costMicros: z.number().int().nonnegative(),
   absorbedCostMicros: z.number().int().nonnegative(),
@@ -1621,6 +1643,10 @@ export type AdminUsageSummary = z.infer<typeof AdminUsageSummary>;
 
 /** 一次调用的明细（ADM-08 第 5 条）。没有任何内容字段。 */
 export const AdminUsageRecord = z.object({
+  ttsChars: z.number().int().nonnegative().optional(),
+  asrSeconds: z.number().nonnegative().optional(),
+  /** 已计入输出 token，其中的思考用量。 */
+  reasoningTokens: z.number().int().nonnegative().optional(),
   /** 7.3：实时通话供应商分模态用量；历史未报告时缺省，不伪造为零。 */
   audioInputTokens: z.number().int().nonnegative().optional(),
   audioOutputTokens: z.number().int().nonnegative().optional(),

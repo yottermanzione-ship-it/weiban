@@ -255,11 +255,13 @@ export const PushAdminEndpoints = {
     query: z.object({
       /** open = 只看未处理；all = 全部（保留 90 天）。 */
       status: z.enum(['open', 'all']).default('open'),
+      /** 警告/严重与信息提示可独立分页。省略时返回所有级别。 */
+      view: z.enum(['actionable', 'info']).optional(),
       cursor: z.string().optional(),
       limit: z.coerce.number().int().min(1).max(200).default(50),
     }),
     response: cursorPage(AdminAlert).extend({
-      /** 未处理提醒总数（管理后台红点）。 */
+      /** 当前级别筛选下的未处理提醒数。 */
       openCount: z.number().int().nonnegative(),
     }),
     summary: 'v1.3：管理员提醒列表（按最后发生时间从新到旧）与未处理数',

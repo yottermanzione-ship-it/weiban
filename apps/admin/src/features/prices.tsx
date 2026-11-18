@@ -353,7 +353,12 @@ export function PricesPage() {
                   {
                     title: '成本',
                     width: 110,
-                    render: (_, item) => formatYuan(item.costMicros, 4),
+                    render: (_, item) =>
+                      item.costMicros === 0 ? (
+                        <StatusTag tone="success">¥0 · 零成本</StatusTag>
+                      ) : (
+                        formatYuan(item.costMicros, 4)
+                      ),
                   },
                   {
                     title: '分时价',

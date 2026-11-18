@@ -1,6 +1,7 @@
 import { MembershipService } from './application/membership.js';
 import { MembershipController } from './http/membership.controller.js';
 import { AdminUsersService } from './application/admin-users.js';
+import { IDENTITY_ADMIN_DIRECTORY_PORT } from './tokens.js';
 import { AdminUsersController } from './http/admin-users.controller.js';
 import {
   IDENTITY_MEMBERSHIP_READ_PORT,
@@ -68,6 +69,7 @@ import { UserStatusController } from './http/user-status.controller.js';
     SettingsService,
     AccountService,
     AdminUsersService,
+    { provide: IDENTITY_ADMIN_DIRECTORY_PORT, useExisting: AdminUsersService },
     InviteService,
     DeletionService,
     PurgeVerifier,
@@ -90,6 +92,7 @@ import { UserStatusController } from './http/user-status.controller.js';
     { provide: IDENTITY_USER_STATUS_PORT, useExisting: UserStatusService },
   ],
   exports: [
+    IDENTITY_ADMIN_DIRECTORY_PORT,
     SESSION_VERIFIER,
     IDENTITY_READ_PORT,
     IDENTITY_SESSION_READ_PORT,

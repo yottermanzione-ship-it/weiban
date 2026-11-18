@@ -48,7 +48,7 @@ import { formatDateTime } from '../ui/format.js';
 import { useFormFeedback } from '../data/form-feedback.js';
 
 function useCharacters() {
-  const characters = useRemote(CharacterAdminEndpoints.list);
+  const characters = useRemote(CharacterAdminEndpoints.directory);
   return (characters.data?.items ?? []).map((c) => ({
     value: c.characterId,
     label: `${c.name}${c.status === 'published' ? '' : '（未上架）'}`,
@@ -1045,7 +1045,7 @@ function CardDrawer({
 export function WorkLinksPage() {
   const toast = useToast();
   const confirm = useDangerConfirm();
-  const characters = useRemote(CharacterAdminEndpoints.list);
+  const characters = useRemote(CharacterAdminEndpoints.directory);
   const [characterId, setCharacterId] = useState('');
   const [items, setItems] = useState<WorkLink[]>([]);
   const [loading, setLoading] = useState(false);

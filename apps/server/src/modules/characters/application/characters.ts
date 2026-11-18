@@ -6,6 +6,7 @@ import {
   AdminCharacterWrite,
   Id,
   type AdminCharacter,
+  type AdminCharacterIndexItem,
   type AdminCharacterUpdate,
   type CharacterReadPort,
   type LegacyRuntimeContext,
@@ -14,7 +15,7 @@ import {
   type CharacterClassification,
   type CharacterDisplay,
   type CharacterProfile,
-  type MediaReadPort,
+  type MediaAvatarReadPort,
   type PersonaUpdateSummarizerPort,
   type PersonaVersionSummary,
   type UserDataOwner,
@@ -98,7 +99,7 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
     @Inject(OUTBOX) private readonly outbox: Outbox,
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
     @Inject(USER_DATA_REGISTRY) private readonly registry: UserDataRegistry,
-    @Inject(MEDIA_READ_PORT) private readonly media: MediaReadPort,
+    @Inject(MEDIA_READ_PORT) private readonly media: MediaAvatarReadPort,
     @Optional()
     @Inject(CHARACTER_CONTACT_ACCESS)
     private readonly contacts: CharacterContactAccess | null,
@@ -417,6 +418,7 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
         ownerId: null,
         status: 'draft',
         name: body.name,
+        avatarMediaId: body.avatar.imageMediaId,
         searchText: [
           body.name,
           ...body.aliases,
@@ -484,6 +486,7 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
           categoryId: body.categoryId,
           ...body.classification,
           draftCiphertext: sealed,
+          avatarMediaId: body.avatar.imageMediaId,
           revision,
           checks: requiresCheck ? this.checks(body, revision) : { ...current.checks, revision },
           childFeaturesDetected: requiresCheck ? true : current.childFeaturesDetected,
@@ -739,6 +742,62 @@ export class CharacterService implements OnModuleInit, CharacterReadPort, UserDa
       .orderBy(characters.id)
       .limit(2000);
     return Promise.all(rows.map((r) => this.admin(adminId, r)));
+  }
+  async adminDirectory(
+    adminId: string,
+    query: { status?: string; q?: string; page?: number; pageSize: number },
+  ) {
+    const filters: SQL[] = [eq(characters.kind, 'preset')];
+    if (query.status) filters.push(eq(characters.status, query.status));
+    if (query.q)
+      filters.push(ilike(characters.searchText, `%${query.q.replace(/[\\%_]/g, '\\$&')}%`));
+    const where = and(...filters);
+    const statement = this.database.db
+      .select({
+        characterId: characters.id,
+        name: characters.name,
+        status: characters.status,
+        basis: characters.basis,
+        revision: characters.revision,
+        updatedAt: characters.updatedAt,
+        legacy: sql<boolean>`${characters.legacyCard} is not null`,
+        avatarMediaId: characters.avatarMediaId,
+      })
+      .from(characters)
+      .where(where)
+      .orderBy(desc(characters.updatedAt), characters.id);
+    const [rows, counts] = await Promise.all([
+      query.page
+        ? statement.limit(query.pageSize).offset((query.page - 1) * query.pageSize)
+        : statement,
+      query.page
+        ? this.database.db.select({ n: count() }).from(characters).where(where)
+        : undefined,
+    ]);
+    const avatars = query.page
+      ? await this.media.characterAvatarUrls(
+          adminId,
+          rows.flatMap((r) => (r.avatarMediaId ? [r.avatarMediaId] : [])),
+        )
+      : {};
+    const items = rows.map((r): AdminCharacterIndexItem => {
+      return {
+        characterId: r.characterId,
+        name: r.name,
+        status: r.status as AdminCharacter['status'],
+        classification: { basis: r.basis as CharacterClassification['basis'] },
+        format: r.legacy ? 'legacy' : 'wbcard',
+        revision: r.revision,
+        updatedAt: r.updatedAt.toISOString(),
+        ...(query.page
+          ? { avatarUrl: r.avatarMediaId ? (avatars[r.avatarMediaId] ?? null) : null }
+          : {}),
+      };
+    });
+    return { items, total: counts?.[0]?.n ?? items.length };
+  }
+  async adminDetail(adminId: string, id: string) {
+    return this.admin(adminId, await this.presetRow(id));
   }
   private async admin(userId: string, row: Row): Promise<AdminCharacter> {
     const legacy = this.legacyOf(row);

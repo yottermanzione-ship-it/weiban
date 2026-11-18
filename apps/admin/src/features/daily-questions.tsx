@@ -1,14 +1,15 @@
+import { BulkTable, collectPages } from '../ui/bulk-table.js';
 /**
  * 每日一问题库：每天给角色和用户一个聊天话题。标签决定分给哪些角色。
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Checkbox, Form, Input, Select, Space, Switch } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import type { z } from 'zod';
 import { AdminDailyQuestion, DailyQuestionAdminEndpoints } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { errorText } from '../data/hooks.js';
-import { DataTable, type ProColumns } from '../ui/table.js';
+import { type ProColumns } from '../ui/table.js';
 import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
 import { FieldHelp, FormSection, Page, StatusTag, useToast } from '../ui/page.js';
 import { formatDateTime } from '../ui/format.js';
@@ -38,24 +39,34 @@ export function DailyQuestionsPage() {
   const [error, setError] = useState('');
   const [editing, setEditing] = useState<Question | 'new' | null>(null);
 
+  const latestRequest = useRef(0);
   async function load(after?: string) {
+    const request = ++latestRequest.current;
+    if (!after) {
+      setItems([]);
+      setCursor(null);
+    }
     setLoading(true);
     setError('');
     try {
       const page = await api.call(DailyQuestionAdminEndpoints.list, {
         query: { tag: (tag || undefined) as never, cursor: after },
       });
+      if (request !== latestRequest.current) return;
       setItems((prev) => (after ? [...prev, ...page.items] : page.items));
       setCursor(page.nextCursor);
     } catch (e) {
-      setError(errorText(e));
+      if (request === latestRequest.current) setError(errorText(e));
     } finally {
-      setLoading(false);
+      if (request === latestRequest.current) setLoading(false);
     }
   }
 
   useEffect(() => {
     void load();
+    return () => {
+      latestRequest.current += 1;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tag]);
 
@@ -132,7 +143,35 @@ export function DailyQuestionsPage() {
         </Button>
       }
     >
-      <DataTable<Question>
+      <BulkTable<Question>
+        scope={JSON.stringify([tag, keyword, statusFilter])}
+        nameOf={(q) => q.text}
+        allMatching={async () =>
+          (
+            await collectPages<Question>(
+              (cursor) =>
+                api.call(DailyQuestionAdminEndpoints.list, {
+                  query: { tag: (tag || undefined) as never, cursor },
+                }),
+              (r) => r.questionId,
+            )
+          ).filter(
+            (q) =>
+              (!keyword.trim() || q.text.includes(keyword.trim())) &&
+              (!statusFilter || (statusFilter === 'listed') === q.listed),
+          )
+        }
+        afterBatch={() => void load()}
+        operations={[true, false].map((listed) => ({
+          label: listed ? '批量上架' : '批量下架',
+          danger: !listed,
+          applies: (q) => q.listed !== listed,
+          run: (q) =>
+            api.call(DailyQuestionAdminEndpoints.update, {
+              params: { questionId: q.questionId },
+              body: { listed },
+            }),
+        }))}
         rowKey="questionId"
         columns={columns}
         data={rows}

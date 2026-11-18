@@ -14,7 +14,7 @@ test('昵称选择保留同名用户编号，完整编号和多用户查询仍�
   expect(targets).toHaveLength(2);
   const [first, second] = targets.map((u) => u.userId) as [string, string];
   // Two synthetic accounts share a nickname; the selected UUID must never be inferred from the name.
-  await page.route('**/api/v1/admin/users', async (route) => {
+  await page.route('**/api/v1/admin/users/labels', async (route) => {
     const original = await route.fetch();
     const body = await original.json();
     await route.fulfill({
@@ -463,12 +463,13 @@ test('价目草稿精确微元、模型启用与缺价发布确认', async ({ pa
 test('真实提醒红点、分页、丢失处理响应后幂等重试；管理内容不落本机缓存', async ({ page }) => {
   await login(page);
   await page.goto('/admin/alerts');
-  await expect(page.getByText('待处理（53）', { exact: true })).toBeVisible();
+  await expect(page.getByText('53 条待处理', { exact: true })).toBeVisible();
   const buttons = page.getByRole('button', { name: '标记已处理', exact: true });
-  await expect(buttons).toHaveCount(20);
-  await expect(page.getByText('共 50 条', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '加载更多', exact: true }).click();
-  await expect(page.getByText('共 53 条', { exact: true })).toBeVisible();
+  await expect(buttons).toHaveCount(50);
+  await page.getByRole('button', { name: '下一页', exact: true }).click();
+  await expect(buttons).toHaveCount(3);
+  await page.getByRole('button', { name: '上一页', exact: true }).click();
+  await expect(buttons).toHaveCount(50);
   let first = true;
   const ids: string[] = [];
   await page.route('**/admin/alerts/*/acknowledge', async (route) => {
@@ -489,14 +490,18 @@ test('真实提醒红点、分页、丢失处理响应后幂等重试；管理�
   });
   expect(repeated.ok()).toBe(true);
   await page.reload();
-  await expect(page.getByText('待处理（52）', { exact: true })).toBeVisible();
-  await page.locator('.page-head-extra .ant-select').click();
+  await expect(page.getByText('52 条待处理', { exact: true })).toBeVisible();
+  await page.getByRole('combobox', { name: '提醒处理状态' }).press('ArrowDown');
   await page
     .locator('.ant-select-dropdown:visible')
-    .getByText('全部（90 天）', { exact: true })
+    .getByText('近 90 天全部', { exact: true })
     .click();
   await expect(page.getByText('已处理', { exact: true })).toHaveCount(1);
   await page.reload();
-  await expect(page.getByText('待处理（52）', { exact: true })).toBeVisible();
+  await expect(page.getByText('52 条待处理', { exact: true })).toBeVisible();
+  await page.getByText('信息提示', { exact: true }).click();
+  await expect(page.getByText('1 条未读', { exact: true })).toBeVisible();
+  await expect(page.getByText('浏览器示例供应商缺少用量回执', { exact: true })).toBeVisible();
+  await expect(buttons).toHaveCount(0);
   expect(await records(page)).toEqual(['session']);
 });

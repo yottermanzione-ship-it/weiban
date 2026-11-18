@@ -12,7 +12,8 @@ import { RecordDrawer } from '../../ui/drawer.js';
 import { Page, StatusTag } from '../../ui/page.js';
 import { DataTable, type ProColumns } from '../../ui/table.js';
 import { formatDateTime, formatPoints, formatYuan } from '../../ui/format.js';
-import { displayName, useUserRows } from './shared.js';
+import { displayName, useSelectedUser } from './shared.js';
+import { useUserDirectory } from './identity.js';
 import { UserDetailDrawer } from './detail.js';
 
 type Kind = AdminTopupEntry['kind'];
@@ -34,7 +35,7 @@ function KindTag({ kind }: { kind: Kind }) {
 const PAGE = 100;
 
 export function TopupRecordsPage() {
-  const users = useUserRows();
+  const users = useUserDirectory();
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [kind, setKind] = useState<Kind | 'all'>('all');
   const [query, setQuery] = useState('');
@@ -100,17 +101,17 @@ export function TopupRecordsPage() {
   const nameOf = (id: string | null) => {
     if (!id) return '系统';
     const row = users.byId.get(id);
-    return row ? displayName(row.user) : `${id.slice(0, 8)}…`;
+    return row ? displayName(row) : `${id.slice(0, 8)}…`;
   };
   const userName = (r: AdminTopupEntry) => {
     const row = users.byId.get(r.userId);
-    return row ? displayName(row.user) : r.username || '已注销账号';
+    return row ? displayName(row) : r.username || '已注销账号';
   };
 
   const q = query.trim().toLowerCase();
   const list = items.filter((r) => {
     if (!q) return true;
-    const u = users.byId.get(r.userId)?.user;
+    const u = users.byId.get(r.userId);
     return (
       r.userId.includes(q) ||
       r.username.toLowerCase().includes(q) ||
@@ -154,7 +155,8 @@ export function TopupRecordsPage() {
     { title: '操作人', width: 120, render: (_, r) => nameOf(r.operatorUserId) },
   ];
 
-  const openUser = openUserId ? users.byId.get(openUserId) : undefined;
+  const selectedUser = useSelectedUser(openUserId);
+  const openUser = selectedUser.row;
 
   return (
     <Page
@@ -265,6 +267,7 @@ export function TopupRecordsPage() {
           </div>
         </RecordDrawer>
       )}
+      {openUserId && selectedUser.error && <p role="alert">{selectedUser.error}</p>}
       {openUser && (
         <UserDetailDrawer
           row={openUser}
@@ -273,6 +276,7 @@ export function TopupRecordsPage() {
           onClose={() => setOpenUserId(null)}
           onChanged={() => {
             users.refresh();
+            selectedUser.refresh();
             setRevision((v) => v + 1);
           }}
         />

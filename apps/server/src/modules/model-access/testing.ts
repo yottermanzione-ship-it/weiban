@@ -52,3 +52,5 @@ export {
 export { structureCandidates, candidateIdFor } from './domain/web-candidates.js';
 export { WebCandidateSearch } from './application/web-candidates.js';
 export { applySystemMessageMode } from './domain/system-messages.js';
+
+export { ModelAdminService } from './application/models.js';

@@ -367,6 +367,7 @@ const TOTALS_SQL = sql`
   coalesce(sum(${usageRecords.uncertainCostMicros}), 0)::bigint as uncertain_cost_micros,
   count(*)::bigint as calls,
   count(*) filter (where ${usageRecords.status} = 'failed')::bigint as failed_calls,
+  count(*) filter (where ${usageRecords.estimated})::bigint as estimated_calls,
   coalesce(sum(${usageRecords.inputTokens}), 0)::bigint as input_tokens,
   coalesce(sum(${usageRecords.cachedInputTokens}), 0)::bigint as cached_input_tokens,
   coalesce(sum(${usageRecords.outputTokens}), 0)::bigint as output_tokens,
@@ -388,6 +389,7 @@ type TotalsRow = Record<
   | 'uncertain_cost_micros'
   | 'calls'
   | 'failed_calls'
+  | 'estimated_calls'
   | 'input_tokens'
   | 'cached_input_tokens'
   | 'output_tokens'
@@ -429,6 +431,7 @@ function toTotals(r: TotalsRow | undefined): AdminUsageTotals {
     cacheWriteTokens: n(r?.cache_write_tokens),
     totalTokens: n(r?.total_tokens),
     estimatedTokens: n(r?.estimated_tokens),
+    estimatedCalls: n(r?.estimated_calls),
     chargedMicros: n(r?.charged_micros),
     costMicros: n(r?.cost_micros),
     absorbedCostMicros: n(r?.absorbed_cost_micros),
@@ -440,6 +443,8 @@ export function toAdminRecord(
   labels: Record<string, IdentityUserLabel> = {},
 ): AdminUsageRecord {
   const label = labels[row.userId];
+  const { ttsChars, asrSeconds } = row.mediaUnits ?? {};
+  const reasoning = row.reasoningTokens;
   return {
     costKnown: row.costKnown,
     uncertainCostMicros: row.uncertainCostMicros,
@@ -457,6 +462,12 @@ export function toAdminRecord(
     inputTokens: row.inputTokens,
     cachedInputTokens: row.cachedInputTokens,
     cacheWrite5mTokens: row.cacheWrite5mTokens,
+    ...(typeof ttsChars === 'number' && Number.isSafeInteger(ttsChars) && ttsChars >= 0
+      ? { ttsChars }
+      : {}),
+    ...(typeof asrSeconds === 'number' && Number.isFinite(asrSeconds) && asrSeconds >= 0
+      ? { asrSeconds }
+      : {}),
     ...(row.mediaUnits?.audioInputTokens !== undefined
       ? { audioInputTokens: row.mediaUnits.audioInputTokens }
       : {}),
@@ -465,6 +476,7 @@ export function toAdminRecord(
       : {}),
     cacheWrite1hTokens: row.cacheWrite1hTokens,
     outputTokens: row.outputTokens,
+    ...(reasoning != null && reasoning >= 0 ? { reasoningTokens: reasoning } : {}),
     estimated: row.estimated,
     latencyMs: row.latencyMs,
     ttftMs: row.ttftMs,
@@ -704,6 +716,8 @@ export class AdminUsageService {
     if (f.purposes) conds.push(inArray(usageRecords.purpose, f.purposes));
     if (f.upstreamIds) conds.push(inArray(usageRecords.upstreamId, f.upstreamIds));
     if (f.billingOwner) conds.push(eq(usageRecords.billingOwner, f.billingOwner));
+    if (f.estimated !== undefined) conds.push(eq(usageRecords.estimated, f.estimated));
+    if (f.costKnown !== undefined) conds.push(eq(usageRecords.costKnown, f.costKnown));
     const all = and(...conds);
     if (!all) throw new Error('筛选条件为空');
     return all;

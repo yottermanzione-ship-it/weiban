@@ -438,7 +438,7 @@ export class ModelAdminController {
     @CurrentPrincipal() me: AuthPrincipal,
     @Body(new ContractPipe(schema(A.deleteModels.body))) body: Out<typeof A.deleteModels.body>,
   ) {
-    return this.deletion.delete(me.userId, body.modelKeys);
+    return this.deletion.delete(me.userId, body.modelKeys, body);
   }
 
   @Put('models/:modelKey')

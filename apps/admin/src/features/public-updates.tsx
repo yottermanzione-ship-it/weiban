@@ -80,7 +80,7 @@ export function PublicUpdatesPage() {
   const [status, setStatus] = useState<PublicUpdateStatus | ''>('');
   const [source, setSource] = useState<PublicUpdateSource | ''>('');
   const [characterId, setCharacterId] = useState('');
-  const characters = useRemote(CharacterAdminEndpoints.list);
+  const characters = useRemote(CharacterAdminEndpoints.directory);
   const settings = useRemote(PublicUpdateAdminEndpoints.getSettings);
   const list = useRemote(PublicUpdateAdminEndpoints.list, {
     query:

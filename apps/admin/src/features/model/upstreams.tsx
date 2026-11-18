@@ -448,6 +448,15 @@ export function UpstreamsTab({
         error={error || loadError}
         onRefresh={refresh}
         onRowClick={(u) => setDetail(u)}
+        selectionHint={
+          <Button
+            type="link"
+            size="small"
+            onClick={() => setSelected(list.map((u) => u.upstreamId))}
+          >
+            选择全部匹配账号
+          </Button>
+        }
         selectedKeys={selected}
         onSelectionChange={(keys) => setSelected(keys)}
         batchActions={() => (
@@ -484,12 +493,18 @@ export function UpstreamsTab({
               placeholder="搜索名称"
               style={{ width: 180 }}
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setSelected([]);
+                setQuery(e.target.value);
+              }}
             />
             <Select
               style={{ width: 150 }}
               value={provider}
-              onChange={setProvider}
+              onChange={(v) => {
+                setSelected([]);
+                setProvider(v);
+              }}
               options={[
                 { value: '', label: '全部供应商' },
                 ...PROVIDERS.map((p) => ({ value: p.id, label: p.name })),
@@ -498,7 +513,10 @@ export function UpstreamsTab({
             <Select
               style={{ width: 130 }}
               value={status}
-              onChange={setStatus}
+              onChange={(v) => {
+                setSelected([]);
+                setStatus(v);
+              }}
               options={[
                 { value: 'all', label: '全部状态' },
                 { value: 'normal', label: '正常' },
