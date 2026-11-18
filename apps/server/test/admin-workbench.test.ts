@@ -2,7 +2,11 @@ import 'reflect-metadata';
 import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import type { INestApplication } from '@nestjs/common';
-import { AdminModelLabel, type AdminCatalogEntryWrite, type ModelQuotePort } from '@weiban/contracts';
+import {
+  AdminModelLabel,
+  type AdminCatalogEntryWrite,
+  type ModelQuotePort,
+} from '@weiban/contracts';
 import type { z } from 'zod';
 import { createApp } from '../src/main.js';
 import { Database, DATABASE, TestClock, newId } from '../src/platform/index.js';
@@ -515,16 +519,22 @@ describeDb('后台模型目录、上游账号与文本榜回归', () => {
     await del.delete(admin, [keys[0]!]);
     expect(await usage.byId(record.id)).toEqual(historicalUsage);
     expect(
-      (await modelAdmin.page({ page: 1, pageSize: 20, sort: 'priority' })).items.map(
+      (await modelAdmin.page({ page: 1, pageSize: 20, sort: 'priority', q: 'lab/' })).items.map(
         (m) => m.modelKey,
       ),
     ).toEqual(keys.slice(1));
-    expect((await catalog.adminSelection({})).map((m) => m.modelKey)).toEqual(keys.slice(1));
+    expect((await catalog.adminSelection({ q: 'lab/' })).map((m) => m.modelKey)).toEqual(
+      keys.slice(1),
+    );
     expect(await catalog.upstreamModelReferences([exclusive])).toEqual([]);
     expect(await catalog.upstreamModelReferences([other])).toEqual([
       expect.objectContaining({ upstreamId: other, modelKey: keys[2] }),
     ]);
-    expect((await catalog.adminList(true)).map((m) => m.modelKey)).toEqual(keys.slice(1));
+    expect(
+      (await catalog.adminList(true))
+        .map((m) => m.modelKey)
+        .filter((key) => key.startsWith('lab/')),
+    ).toEqual(keys.slice(1));
     await expect(modelAdmin.detail(keys[0]!)).rejects.toMatchObject({ code: 'not_found' });
     const labels = AdminModelLabel.array().parse(await catalog.adminLabels());
     const archived = labels.filter((item) => item.modelKey === keys[0]);

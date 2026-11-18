@@ -303,6 +303,14 @@ data class AdminCharacterIndexItem(
 )
 
 @Serializable
+data class AdminCharacterLabel(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("name") val `name`: String,
+    @SerialName("status") val `status`: CharacterPublishStatus,
+    @SerialName("classification") val `classification`: AdminCharacterLabelClassification,
+)
+
+@Serializable
 data class AdminCharacterPurgeCounts(
     @SerialName("contacts") val `contacts`: Long,
     @SerialName("conversations") val `conversations`: Long,
@@ -608,7 +616,54 @@ data class AdminModel(
     @SerialName("usageMissing") val `usageMissing`: List<AdminModelUsageMissingItem>? = null,
 )
 
+@Serializable
+data class AdminModelDirectoryFilter(
+    @SerialName("q") val `q`: String? = null,
+    @SerialName("scenario") val `scenario`: ModelScenario? = null,
+    @SerialName("status") val `status`: String? = null,
+)
+
+@Serializable
+data class AdminModelDirectoryFilterInput(
+    @SerialName("q") val `q`: String? = null,
+    @SerialName("scenario") val `scenario`: ModelScenario? = null,
+    @SerialName("status") val `status`: String? = null,
+)
+
 typealias AdminModelKey = JsonElement
+
+@Serializable
+data class AdminModelLabel(
+    @SerialName("modelKey") val `modelKey`: AdminModelKey,
+    @SerialName("displayName") val `displayName`: String,
+    @SerialName("deletedAt") val `deletedAt`: Timestamp? = null,
+    @SerialName("archiveId") val `archiveId`: String? = null,
+)
+
+@Serializable
+data class AdminModelPreview(
+    @SerialName("modelKey") val `modelKey`: AdminModelKey,
+    @SerialName("displayName") val `displayName`: String,
+    @SerialName("vendorName") val `vendorName`: String,
+    @SerialName("upstreamId") val `upstreamId`: Id,
+    @SerialName("upstreamModelId") val `upstreamModelId`: String,
+    @SerialName("enabled") val `enabled`: Boolean,
+    @SerialName("capabilities") val `capabilities`: List<ModelCapability>,
+    @SerialName("scenarios") val `scenarios`: List<ModelScenario>? = null,
+    @SerialName("sortOrder") val `sortOrder`: Long,
+    @SerialName("deletedAt") val `deletedAt`: Timestamp? = null,
+    @SerialName("rates") val `rates`: ModelRates?,
+    @SerialName("hasTimeBands") val `hasTimeBands`: Boolean,
+    @SerialName("pointsPerReply") val `pointsPerReply`: Double?,
+    @SerialName("displayMultiplier") val `displayMultiplier`: Double? = null,
+    @SerialName("displayMultiplierManual") val `displayMultiplierManual`: Double? = null,
+    @SerialName("discount") val `discount`: ModelDiscount? = null,
+    @SerialName("discountActive") val `discountActive`: Boolean? = null,
+    @SerialName("availability") val `availability`: AdminModelPreviewAvailability? = null,
+    @SerialName("usageMissing") val `usageMissing`: List<AdminModelPreviewUsageMissingItem>? = null,
+    @SerialName("routes") val `routes`: List<AdminModelPreviewRoutesItem>? = null,
+    @SerialName("serviceRates") val `serviceRates`: List<AdminModelPreviewServiceRatesItem>? = null,
+)
 
 @Serializable
 data class AdminModelTestResult(
@@ -1274,6 +1329,7 @@ data class AdminUserLabel(
 
 @Serializable
 data class AdminUserOverview(
+    @SerialName("expiringSoonCount") val `expiringSoonCount`: Long? = null,
     @SerialName("totalUsers") val `totalUsers`: Long,
     @SerialName("proPlusUsers") val `proPlusUsers`: Long,
     @SerialName("expiringSoon") val `expiringSoon`: List<AdminUserOverviewExpiringSoonItem>,
@@ -1316,6 +1372,23 @@ data class AdminUsersEndpointsLabelsResponse(
 @Serializable
 data class AdminUsersEndpointsListUsersResponse(
     @SerialName("items") val `items`: List<AdminUserSummary>,
+)
+
+@Serializable
+data class AdminUsersEndpointsLookupLabelsQuery(
+    @SerialName("q") val `q`: String? = null,
+    @SerialName("ids") val `ids`: String? = null,
+)
+
+@Serializable
+data class AdminUsersEndpointsLookupLabelsResponse(
+    @SerialName("items") val `items`: List<AdminUsersEndpointsLookupLabelsResponseItemsItem>,
+)
+
+@Serializable
+data class AdminUsersEndpointsOverviewQuery(
+    @EncodeDefault
+    @SerialName("view") val `view`: String? = "counts",
 )
 
 @Serializable
@@ -1669,6 +1742,18 @@ data class BillingAdminEndpointsUpdatePriceDraftBody(
 @Serializable
 data class BillingAdminEndpointsUpdatePriceDraftParams(
     @SerialName("priceVersionId") val `priceVersionId`: Id,
+)
+
+@Serializable
+data class BillingAdminEndpointsUserDetailParams(
+    @SerialName("userId") val `userId`: Id,
+)
+
+@Serializable
+data class BillingAdminEndpointsUserDetailResponse(
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("user") val `user`: AdminUserSummary,
+    @SerialName("account") val `account`: AdminAccountSummary? = null,
 )
 
 @Serializable
@@ -2283,6 +2368,19 @@ data class CharacterAdminEndpointsListQuery(
 @Serializable
 data class CharacterAdminEndpointsListResponse(
     @SerialName("items") val `items`: List<AdminCharacter>,
+)
+
+@Serializable
+data class CharacterAdminEndpointsLookupQuery(
+    @SerialName("q") val `q`: String? = null,
+    @SerialName("status") val `status`: CharacterPublishStatus? = null,
+    @SerialName("basis") val `basis`: CharacterBasis? = null,
+    @SerialName("ids") val `ids`: String? = null,
+)
+
+@Serializable
+data class CharacterAdminEndpointsLookupResponse(
+    @SerialName("items") val `items`: List<AdminCharacterLabel>,
 )
 
 @Serializable
@@ -6529,6 +6627,11 @@ data class IdentityAdminEndpointsListPendingDeletionsResponse(
 )
 
 @Serializable
+data class IdentityAdminEndpointsPendingDeletionCountResponse(
+    @SerialName("total") val `total`: Long,
+)
+
+@Serializable
 data class IdentityAdminEndpointsRetryDeletionParams(
     @SerialName("userId") val `userId`: Id,
 )
@@ -7508,8 +7611,20 @@ data class ModelAccessAdminEndpointsDeleteUpstreamParams(
 typealias ModelAccessAdminEndpointsGetLeaderboardSourceResponse = ModelLeaderboardSource?
 
 @Serializable
+data class ModelAccessAdminEndpointsListCatalogQuery(
+    @EncodeDefault
+    @SerialName("view") val `view`: String? = "active",
+)
+
+@Serializable
 data class ModelAccessAdminEndpointsListCatalogResponse(
     @SerialName("items") val `items`: List<AdminCatalogEntry>,
+)
+
+@Serializable
+data class ModelAccessAdminEndpointsListModelsQuery(
+    @EncodeDefault
+    @SerialName("view") val `view`: String? = "active",
 )
 
 @Serializable
@@ -7525,6 +7640,37 @@ data class ModelAccessAdminEndpointsListUpstreamModelsParams(
 @Serializable
 data class ModelAccessAdminEndpointsListUpstreamsResponse(
     @SerialName("items") val `items`: List<Upstream>,
+)
+
+@Serializable
+data class ModelAccessAdminEndpointsModelDetailParams(
+    @SerialName("modelKey") val `modelKey`: String,
+)
+
+@Serializable
+data class ModelAccessAdminEndpointsModelLabelsResponse(
+    @SerialName("items") val `items`: List<AdminModelLabel>,
+)
+
+@Serializable
+data class ModelAccessAdminEndpointsModelPageQuery(
+    @SerialName("q") val `q`: String? = null,
+    @SerialName("scenario") val `scenario`: ModelScenario? = null,
+    @SerialName("status") val `status`: String? = null,
+    @SerialName("page") val `page`: Long? = null,
+    @SerialName("pageSize") val `pageSize`: Long? = null,
+    @SerialName("sort") val `sort`: String? = null,
+)
+
+@Serializable
+data class ModelAccessAdminEndpointsModelPageResponse(
+    @SerialName("items") val `items`: List<AdminModelPreview>,
+    @SerialName("total") val `total`: Long,
+)
+
+@Serializable
+data class ModelAccessAdminEndpointsModelSelectionResponse(
+    @SerialName("items") val `items`: List<ModelAccessAdminEndpointsModelSelectionResponseItemsItem>,
 )
 
 @Serializable
@@ -7565,6 +7711,16 @@ data class ModelAccessAdminEndpointsUpsertCatalogEntryParams(
 @Serializable
 data class ModelAccessAdminEndpointsUpsertModelParams(
     @SerialName("modelKey") val `modelKey`: String,
+)
+
+@Serializable
+data class ModelAccessAdminEndpointsUpstreamModelReferencesQuery(
+    @SerialName("ids") val `ids`: String,
+)
+
+@Serializable
+data class ModelAccessAdminEndpointsUpstreamModelReferencesResponse(
+    @SerialName("items") val `items`: List<ModelAccessAdminEndpointsUpstreamModelReferencesResponseItemsItem>,
 )
 
 @Serializable
@@ -8666,6 +8822,11 @@ data class PlazaAdminEndpointsListWorksQuery(
 data class PlazaAdminEndpointsListWorksResponse(
     @SerialName("items") val `items`: List<AdminPlazaWork>,
     @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class PlazaAdminEndpointsPendingReportCountResponse(
+    @SerialName("total") val `total`: Long,
 )
 
 @Serializable
@@ -13119,6 +13280,11 @@ data class AdminCharacterIndexItemClassification(
 )
 
 @Serializable
+data class AdminCharacterLabelClassification(
+    @SerialName("basis") val `basis`: CharacterBasis,
+)
+
+@Serializable
 data class AdminLegacyCharacterPatchFields(
     @SerialName("displayName") val `displayName`: String? = null,
     @SerialName("nickname") val `nickname`: String? = null,
@@ -13192,6 +13358,36 @@ data class AdminModelUsageMissingItem(
     @SerialName("upstreamModelId") val `upstreamModelId`: String,
     @SerialName("streak") val `streak`: Long,
     @SerialName("since") val `since`: Timestamp?,
+)
+
+@Serializable
+data class AdminModelPreviewAvailability(
+    @SerialName("available") val `available`: Boolean,
+    @SerialName("detail") val `detail`: ModelUnavailableDetail?,
+)
+
+@Serializable
+data class AdminModelPreviewUsageMissingItem(
+    @SerialName("upstreamId") val `upstreamId`: Id,
+    @SerialName("upstreamModelId") val `upstreamModelId`: String,
+    @SerialName("streak") val `streak`: Long,
+    @SerialName("since") val `since`: Timestamp?,
+)
+
+@Serializable
+data class AdminModelPreviewRoutesItem(
+    @SerialName("upstreamId") val `upstreamId`: Id,
+    @SerialName("upstreamModelId") val `upstreamModelId`: String,
+    @SerialName("priority") val `priority`: Long,
+    @SerialName("weight") val `weight`: Long,
+    @SerialName("enabled") val `enabled`: Boolean,
+)
+
+@Serializable
+data class AdminModelPreviewServiceRatesItem(
+    @SerialName("unit") val `unit`: String,
+    @SerialName("price") val `price`: Double,
+    @SerialName("hasTimeBands") val `hasTimeBands`: Boolean? = null,
 )
 
 typealias AdminPlazaReportTarget = JsonElement
@@ -13287,6 +13483,13 @@ data class AdminUserSummaryMembership(
 
 @Serializable
 data class AdminUsersEndpointsLabelsResponseItemsItem(
+    @SerialName("nickname") val `nickname`: String?,
+    @SerialName("username") val `username`: String?,
+    @SerialName("userId") val `userId`: Id,
+)
+
+@Serializable
+data class AdminUsersEndpointsLookupLabelsResponseItemsItem(
     @SerialName("nickname") val `nickname`: String?,
     @SerialName("username") val `username`: String?,
     @SerialName("userId") val `userId`: Id,
@@ -14843,6 +15046,20 @@ data class MessagePageCoverageExcludedRangesItem(
     @SerialName("fromSeq") val `fromSeq`: Seq,
     @SerialName("throughSeq") val `throughSeq`: Seq,
     @SerialName("reason") val `reason`: String,
+)
+
+@Serializable
+data class ModelAccessAdminEndpointsModelSelectionResponseItemsItem(
+    @SerialName("modelKey") val `modelKey`: AdminModelKey,
+    @SerialName("displayName") val `displayName`: String,
+)
+
+@Serializable
+data class ModelAccessAdminEndpointsUpstreamModelReferencesResponseItemsItem(
+    @SerialName("upstreamId") val `upstreamId`: Id,
+    @SerialName("modelKey") val `modelKey`: AdminModelKey,
+    @SerialName("displayName") val `displayName`: String,
+    @SerialName("upstreamModelId") val `upstreamModelId`: String,
 )
 
 @Serializable
