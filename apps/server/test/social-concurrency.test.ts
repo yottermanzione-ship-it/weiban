@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { AdminScenarioModeCreate } from '@weiban/contracts';
+import {
+  EcologySettingsService,
+  SocialService,
+  stableRandom,
+} from '../src/modules/ai-runtime/testing.js';
+import { AdminScenarioModeCreate, type CharacterRelation } from '@weiban/contracts';
 import { CharacterService, ScenarioModeService } from '../src/modules/characters/testing.js';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { ContactsCommands } from '../src/modules/contacts/testing.js';
@@ -259,5 +264,88 @@ describeDb('群聊与朋友圈并发回归', () => {
         })
       ).status,
     ).toBe(404);
+  });
+
+  it('联合事件按生态批量筛选双方，保留默认参与及尚未添加的来宾', async () => {
+    const [first, second] = ids as [string, string, ...string[]];
+    const ecology = qa.app.get(EcologySettingsService);
+    const social = qa.app.get(SocialService);
+    const created = await qa.http(owner.token, '/me/character-relations', 'POST', {
+      characterAId: first,
+      characterBId: second,
+      type: 'friend',
+      closeness: 'close',
+    });
+    expect(created.status).toBe(201);
+    const relation = created.data as CharacterRelation;
+    const relations = social['relations'];
+    expect(await relations.listRelationsForCharacters(other.id, [first, second])).toEqual([]);
+    expect(await relations.listRelationsForCharacters(owner.id, [first, second])).toEqual([
+      relation,
+    ]);
+    const list = vi.spyOn(relations, 'listRelationsForCharacters');
+    const role = vi.spyOn(social['characters'], 'getForRuntime').mockResolvedValue(null);
+    const bulk = vi.spyOn(ecology, 'disabledCharacterIds');
+    const originalTime = qa.clock.nowMs();
+    // 选本机测试时钟上的命中日，让原有稳定抽样与概率继续生效。
+    function hitDay(weight: number) {
+      const [a, b] = [relation.characterAId, relation.characterBId];
+      for (let n = 0; n < 365; n++) {
+        const d = new Date(originalTime + n * 86400000).toISOString().slice(0, 10);
+        if (stableRandom(`${owner.id}:${d}:${a}:${b}`) < weight) {
+          qa.clock.set(d + 'T08:00:00Z');
+          return;
+        }
+      }
+      throw new Error('合成关系没有抽中日期');
+    }
+    try {
+      await qa.db.transaction((tx) =>
+        qa.app
+          .get(MembershipService)
+          .extendProPlus({ userId: owner.id, months: 12, operatorUserId: null }, tx),
+      );
+      expect(
+        (
+          await qa.http(owner.token, `/characters/${first}/companion-settings`, 'PATCH', {
+            dailyLife: false,
+          })
+        ).status,
+      ).toBe(200);
+      hitDay(0.35);
+      await ecology.update(owner.id, { enabled: false });
+      await social.coordinateDay(owner.id);
+      expect(list).not.toHaveBeenCalled();
+      await ecology.update(owner.id, { enabled: true });
+      await ecology.pause(owner.id, 'insufficient_balance');
+      await social.coordinateDay(owner.id);
+      expect(list).not.toHaveBeenCalled();
+      await ecology.update(owner.id, { enabled: true });
+      expect(await ecology.characterEnabled(owner.id, first)).toBe(true);
+      await ecology.setCharacter(owner.id, second, false);
+      bulk.mockClear();
+      await social.coordinateDay(owner.id);
+      expect(bulk).toHaveBeenCalledTimes(1);
+      expect(list).toHaveBeenCalledTimes(1);
+      expect(list.mock.calls[0]![1]).toContain(first);
+      expect(list.mock.calls[0]![1]).not.toContain(second);
+      expect(role).not.toHaveBeenCalled();
+
+      await ecology.setCharacter(owner.id, second, true);
+      await social.coordinateDay(owner.id);
+      expect(role).toHaveBeenCalledWith(owner.id, first);
+      expect(role).toHaveBeenCalledWith(owner.id, second);
+
+      role.mockClear();
+      await qa.app.get(ContactsCommands).remove(owner.id, second, 'soft');
+      hitDay(0.175);
+      await social.coordinateDay(owner.id);
+      expect(role).toHaveBeenCalledWith(owner.id, second);
+    } finally {
+      qa.clock.set(originalTime);
+      list.mockRestore();
+      role.mockRestore();
+      bulk.mockRestore();
+    }
   });
 });

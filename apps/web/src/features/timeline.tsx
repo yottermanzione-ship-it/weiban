@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ChatCircle, Megaphone } from './old-icons.js';
 import {
-  CompanionEndpoints,
+  EcologyEndpoints,
+  type EcologySettings,
   DailyEventEndpoints,
   TimelineEndpoints,
   type DailyEvent,
@@ -152,6 +153,33 @@ function TimelineItem({
   );
 }
 
+function TimelineEcologyNotice({
+  settings,
+  characterId,
+  conversationId,
+}: {
+  settings: EcologySettings;
+  characterId: string;
+  conversationId?: string | null;
+}) {
+  const character = settings.characters.find((item) => item.characterId === characterId);
+  let message: string;
+  let to = '/services/ecology';
+  if (!settings.eligible) message = '自动生成日常需要 PRO+ 会员。';
+  else if (!settings.enabled) message = '角色生态尚未开启，TA 的日常暂不会自动生成。';
+  else if (settings.pausedReason === 'insufficient_balance')
+    message = '积分不足，TA 的日常已暂停自动生成。';
+  else if (character?.enabled === false) {
+    message = 'TA 未参与角色生态，日常暂不会自动生成。';
+    if (conversationId) to = `/chat/${conversationId}/settings`;
+  } else return null;
+  return (
+    <p className="inline-tip">
+      {message} <Link to={to}>查看生态设置</Link>
+    </p>
+  );
+}
+
 /** 时间线页「TA 的动态」（while-away-timeline.md 第 3 节、l3-companion.md 第 3 节）。 */
 export function TimelinePage() {
   const { characterId = '' } = useParams();
@@ -165,7 +193,12 @@ export function TimelinePage() {
   const currentOwner = useRef(ownerKey);
   currentOwner.current = ownerKey;
   const contact = state.contacts.find((item) => item.characterId === characterId);
-  const companion = useRemote(CompanionEndpoints.getForCharacter, { params: { characterId } });
+  const ecology = useRemote(
+    EcologyEndpoints.get,
+    { networkOnly: true },
+    true,
+    'weiban:ecology-updated',
+  );
   const [items, setItems] = useState<Item[]>([]);
   const [cursor, setCursor] = useState<string | null | undefined>(undefined);
   const [legacy, setLegacy] = useState(false);
@@ -257,13 +290,12 @@ export function TimelinePage() {
         }
         fallback={`/characters/${characterId}`}
       />
-      {companion.data?.dailyLife === false && (
-        <p className="inline-tip">
-          你关闭了 TA 的动态，不会有新的动态{' '}
-          {contact?.conversationId && (
-            <Link to={`/chat/${contact.conversationId}/settings`}>去开启</Link>
-          )}
-        </p>
+      {ecology.data && !ecology.error && (
+        <TimelineEcologyNotice
+          settings={ecology.data}
+          characterId={characterId}
+          conversationId={contact?.conversationId}
+        />
       )}
       {items.length === 0 && !error && !done && (
         <div className="stack" role="status" aria-label="正在读取">

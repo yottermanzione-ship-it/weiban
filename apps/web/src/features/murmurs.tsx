@@ -144,11 +144,12 @@ export function EcologyCharacterRow({ characterId }: { characterId: string }) {
         value={settings.data.eligible ? '未开启' : 'PRO+ 专属'}
       />
     );
+  if (!row || settings.error) return null;
   return (
     <SwitchRow
       label="TA 参与角色生态"
       subtitle="TA 会自己找你、发朋友圈，按做的事消耗积分"
-      checked={value ?? row?.enabled ?? true}
+      checked={value ?? row.enabled}
       disabled={busy}
       onChange={async (enabled) => {
         setBusy(true);
@@ -158,6 +159,7 @@ export function EcologyCharacterRow({ characterId }: { characterId: string }) {
             params: { characterId },
             body: { enabled },
           });
+          window.dispatchEvent(new Event('weiban:ecology-updated'));
         } catch (e) {
           setValue(null);
           showToast(friendlyError(e), 2500, 'error');

@@ -459,3 +459,117 @@ test('真实HTTP记忆管理：新增、手改、删除确认与人设设置', a
     .click();
   await expect(page.getByRole('button', { name: /浏览器记忆金丝雀/ })).toHaveCount(0);
 });
+test('角色动态跟随生态开关，切换后返回即生效，历史仍可见', async ({ page }) => {
+  let roleOn = false;
+  let legacyDaily = true;
+  let finishSave!: () => void;
+  const saving = new Promise<void>((resolve) => {
+    finishSave = resolve;
+  });
+  let accountOn = true;
+  let paused = false;
+  let eligible = true;
+  let unavailable = false;
+  await page.route('**/companion-settings', async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...(await response.json()), dailyLife: legacyDaily } });
+  });
+  await page.route('**/me/ecology', async (route) => {
+    if (unavailable) return route.fulfill({ status: 503 });
+    const response = await route.fetch();
+    const settings = await response.json();
+    await route.fulfill({
+      response,
+      json: {
+        ...settings,
+        enabled: accountOn,
+        eligible,
+        pausedReason: paused ? 'insufficient_balance' : null,
+        characters: settings.characters.map((c: { characterId: string }) => ({
+          ...c,
+          enabled: roleOn,
+        })),
+      },
+    });
+  });
+  await page.route('**/me/ecology/characters/*', async (route) => {
+    expect(route.request().method()).toBe('PUT');
+    await saving;
+    roleOn = route.request().postDataJSON().enabled;
+    await route.fulfill({
+      json: {
+        characterId: new URL(route.request().url()).pathname.split('/').pop(),
+        enabled: roleOn,
+      },
+    });
+  });
+  await page.route('**/timeline?*', (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          {
+            entryId: '00000000-0000-4000-8000-000000000011',
+            occurredAt: '2026-10-05T08:00:00Z',
+            source: 'daily_event',
+            kind: 'rest',
+            moodAfter: null,
+            summary: '合成历史日常',
+            withCharacterIds: [],
+            ref: null,
+          },
+        ],
+        nextCursor: null,
+      },
+    }),
+  );
+  await openChat(page);
+  await page.getByRole('link', { name: '聊天信息', exact: true }).click();
+  const timeline = page
+    .getByRole('main')
+    .filter({ has: page.getByRole('heading', { name: 'TA 的动态', exact: true }) });
+  const history = timeline.getByRole('listitem').getByText('合成历史日常', { exact: true });
+  const openTimeline = async () => {
+    await page.getByRole('link', { name: /测试陪伴角色/ }).click();
+    const status = page.waitForResponse((r) => r.url().endsWith('/me/ecology'));
+    await page.getByRole('link', { name: /TA 的动态/ }).click();
+    await status;
+    await expect(history).toBeVisible();
+  };
+  await openTimeline();
+  const notice = timeline.locator('.inline-tip');
+  await expect(notice).toContainText('TA 未参与角色生态');
+  await page.getByRole('link', { name: '查看生态设置' }).click();
+  const toggle = page.getByRole('switch', { name: 'TA 参与角色生态' });
+  await expect(toggle).not.toBeChecked();
+  await toggle.click();
+  legacyDaily = false;
+  // 用户在保存回包前就离开设置页。回包后当前动态页应自动更新。
+  await openTimeline();
+  await expect(notice).toContainText('TA 未参与角色生态');
+  finishSave();
+  await expect(notice).toHaveCount(0);
+
+  // 来自账号的限制优先展示具体原因；读取失败时避免继续显示上次的关闭提示。
+  const revisit = async () => {
+    await timeline.getByRole('button', { name: '返回' }).click();
+    const response = page.waitForResponse((r) => r.url().endsWith('/me/ecology'));
+    await page.getByRole('link', { name: /TA 的动态/ }).click();
+    await response;
+    await expect(history).toBeVisible();
+  };
+  roleOn = false;
+  accountOn = false;
+  await revisit();
+  await expect(notice).toContainText('角色生态尚未开启');
+  await expect(notice.getByRole('link')).toHaveAttribute('href', '/services/ecology');
+  accountOn = true;
+  paused = true;
+  await revisit();
+  await expect(notice).toContainText('积分不足');
+  eligible = false;
+  await revisit();
+  await expect(notice).toContainText('PRO+');
+  unavailable = true;
+  await revisit();
+  await expect(notice).toHaveCount(0);
+});

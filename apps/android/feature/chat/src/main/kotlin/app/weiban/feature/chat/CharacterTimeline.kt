@@ -89,6 +89,24 @@ private class TimelinePager(
     }
 }
 
+@Composable internal fun characterEcology(
+    repository: SessionRepository,
+    owner: OwnerRecord,
+    characterId: String,
+): NativeRemote<EcologySettings> =
+    remote("${owner.sessionId}:ecology:$characterId") {
+        repository.call(Endpoints.ecologyEndpointsGet, options = SessionCallOptions(owner = owner, networkOnly = true))
+    }
+
+internal fun EcologySettings.dailyNotice(characterId: String): String? =
+    when {
+        !eligible -> "自动生成日常需要 PRO+ 会员。"
+        !enabled -> "角色生态尚未开启，TA 的日常暂不会自动生成。"
+        pausedReason == "insufficient_balance" -> "积分不足，TA 的日常已暂停自动生成。"
+        characters.find { it.characterId == characterId }?.enabled == false -> "TA 未参与角色生态，日常暂不会自动生成。"
+        else -> null
+    }
+
 @Composable internal fun CharacterTimeline(
     repository: SessionRepository,
     owner: OwnerRecord,
@@ -104,14 +122,7 @@ private class TimelinePager(
     val list = rememberLazyListState()
     val colors = LocalWeibanColors.current
     var removing by remember(owner, characterId) { mutableStateOf<TimelineEntry?>(null) }
-    val companion =
-        remote("${owner.sessionId}:timeline:$characterId") {
-            repository.call(
-                Endpoints.companionEndpointsGetForCharacter,
-                params = mapOf("characterId" to characterId),
-                options = SessionCallOptions(owner = owner),
-            )
-        }
+    val ecology = characterEcology(repository, owner, characterId)
     val profiles = characterProfiles(repository, pager.items.flatMap { it.withCharacterIds })
     val names = profiles.mapValues { it.value.name }
     LaunchedEffect(pager) { pager.next() }
@@ -131,15 +142,14 @@ private class TimelinePager(
             TextButton(onBack) { Text("‹ 返回") }
             Text("TA 的动态", style = MaterialTheme.typography.titleMedium)
         }
-        if (companion.data?.dailyLife == false) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = WbSpace.S5), verticalAlignment = Alignment.CenterVertically) {
+        if (!ecology.loading && ecology.error == null) {
+            ecology.data?.dailyNotice(characterId)?.let { notice ->
                 Text(
-                    "你关闭了 TA 的动态，不会有新的动态",
-                    Modifier.weight(1f),
+                    notice,
+                    Modifier.fillMaxWidth().padding(horizontal = WbSpace.S5),
                     color = colors.textSecondary,
                     style = MaterialTheme.typography.bodySmall,
                 )
-                TextButton(onClick = onBack) { Text("去开启") }
             }
         }
         when {
