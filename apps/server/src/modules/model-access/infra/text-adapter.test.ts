@@ -135,6 +135,7 @@ describe('OpenAI 兼容回执与计量', () => {
   it.each([
     { timeoutMs: 3, deadlineMs: 60, diagnostic: 'timeout_idle' },
     { timeoutMs: 60, deadlineMs: 3, diagnostic: 'timeout_deadline' },
+    { timeoutMs: 5, deadlineMs: 5, diagnostic: 'timeout_deadline' },
   ])('分别记录连接空闲与整次截止时间', async ({ timeoutMs, deadlineMs, diagnostic }) => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(
       (_url, init) =>
@@ -149,6 +150,134 @@ describe('OpenAI 兼容回执与计量', () => {
     await expect(
       new OpenAiTextAdapter().generate({ ...input, timeoutMs, deadlineMs }),
     ).resolves.toMatchObject({ ok: false, category: 'network_error', diagnostic });
+  });
+
+  function controlledStream(options: Partial<Parameters<TextAdapter['generate']>[0]> = {}) {
+    let emit!: (line: string) => void;
+    vi.spyOn(globalThis, 'fetch').mockImplementationOnce(
+      async (_url, init) =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              const encoder = new TextEncoder();
+              emit = (line) => controller.enqueue(encoder.encode(line + '\n\n'));
+              init!.signal!.addEventListener(
+                'abort',
+                () => controller.error(new DOMException('aborted', 'AbortError')),
+                { once: true },
+              );
+            },
+          }),
+          { headers: { 'content-type': 'text/event-stream' } },
+        ),
+    );
+    const reply = new OpenAiTextAdapter().generate({
+      ...input,
+      timeoutMs: 90,
+      deadlineMs: 100,
+      failover: { progressTimeoutMs: 30, backupAvailable: () => true },
+      ...options,
+    });
+    return { emit, reply };
+  }
+
+  it('心跳、空角色和纯空白不能给备用线路的等待窗续期', async () => {
+    vi.useFakeTimers();
+    try {
+      const { emit, reply } = controlledStream();
+      for (const line of [
+        ': ping',
+        'data: {"choices":[{"delta":{"role":"assistant","content":""}}]}',
+        'data: {"choices":[{"delta":{"content":"  ","reasoning_content":" "}}]}',
+      ]) {
+        await vi.advanceTimersByTimeAsync(9);
+        emit(line);
+      }
+      await vi.advanceTimersByTimeAsync(3);
+      await expect(reply).resolves.toMatchObject({ ok: false, diagnostic: 'timeout_progress' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it.each(['reasoning_content', 'content'])('持续有 %s 时保留主线，末尾正常结算', async (field) => {
+    vi.useFakeTimers();
+    try {
+      const { emit, reply } = controlledStream();
+      for (let i = 0; i < 3; i++) {
+        await vi.advanceTimersByTimeAsync(24);
+        emit('data: ' + JSON.stringify({ choices: [{ delta: { [field]: '合成进度' } }] }));
+      }
+      await vi.advanceTimersByTimeAsync(23);
+      emit('data: {"choices":[{"delta":{"content":"完成"},"finish_reason":"stop"}]}');
+      emit('data: [DONE]');
+      await expect(reply).resolves.toMatchObject({
+        ok: true,
+        text: expect.stringContaining('完成'),
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('持续思考也不能延长调用方的总截止', async () => {
+    vi.useFakeTimers();
+    try {
+      const { emit, reply } = controlledStream();
+      for (let i = 0; i < 4; i++) {
+        await vi.advanceTimersByTimeAsync(24);
+        emit('data: {"choices":[{"delta":{"reasoning":"x"}}]}');
+      }
+      await vi.advanceTimersByTimeAsync(4);
+      await expect(reply).resolves.toMatchObject({ ok: false, diagnostic: 'timeout_deadline' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it.each(['no-backup', 'unavailable-at-timeout'])('保留 %s 的原始等待窗口', async (kind) => {
+    vi.useFakeTimers();
+    try {
+      const { emit, reply } = controlledStream({
+        failover:
+          kind === 'no-backup'
+            ? undefined
+            : { progressTimeoutMs: 30, backupAvailable: () => false },
+      });
+      await vi.advanceTimersByTimeAsync(60);
+      emit('data: {"choices":[{"delta":{"content":"原线路成功"}}]}');
+      emit('data: [DONE]');
+      await expect(reply).resolves.toMatchObject({ ok: true, text: '原线路成功' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('明确非流式的官方 JSON 线路可在原时限内完成', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.spyOn(globalThis, 'fetch').mockImplementationOnce(
+        (_url, init) =>
+          new Promise<Response>((resolve, reject) => {
+            init!.signal!.addEventListener(
+              'abort',
+              () => reject(new DOMException('aborted', 'AbortError')),
+              { once: true },
+            );
+            setTimeout(
+              () => resolve(Response.json({ choices: [{ message: { content: '完整 JSON' } }] })),
+              60,
+            );
+          }),
+      );
+      const reply = new OpenAiTextAdapter().generate({
+        ...input,
+        baseUrl: 'https://api.abliteration.ai/v1',
+        timeoutMs: 90,
+        deadlineMs: 100,
+        failover: { progressTimeoutMs: 30, backupAvailable: () => true },
+      });
+      await vi.advanceTimersByTimeAsync(60);
+      await expect(reply).resolves.toMatchObject({ ok: true, text: '完整 JSON' });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('只估算缺失的出站 token，并计入独立返回的思考用量', async () => {

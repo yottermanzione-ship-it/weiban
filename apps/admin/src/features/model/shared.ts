@@ -30,6 +30,7 @@ export const ERROR_LABELS: Record<string, string> = {
   timeout: '超时',
   network_error: '网络错误',
   timeout_idle: '等待上游数据超时',
+  timeout_progress: '等待模型生成进度超时',
   timeout_deadline: '调用总时限已到',
   stream_incomplete: '响应流提前中断',
   response_parse_error: '上游响应格式无效',

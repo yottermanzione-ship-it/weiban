@@ -61,7 +61,7 @@ import { ModelResolver, ModelStatusService, type ResolvedModel } from './resolve
 import { isRealtimeCallEntry } from './realtime-call.js';
 import { FAILOVER_CATEGORIES, UpstreamScheduler } from './scheduler.js';
 import { UpstreamService } from './upstreams.js';
-import { UsageRecorder } from './usage.js';
+import { UsageRecorder, type DispatchTiming } from './usage.js';
 import { CatalogService } from './catalog.js';
 import { PrivateBlockLimiter } from './private-block-limit.js';
 import {
@@ -70,6 +70,9 @@ import {
   reserveErrorToGenerate,
   type VerifiedRoute,
 } from './billing-bounds.js';
+
+const STANDARD_TEXT_IDLE_MS = 20_000;
+const LONG_TEXT_IDLE_MS = 55_000;
 
 type TextCeiling = NonNullable<ReserveInput['ceiling']>;
 /** 未指定输出额度的用户聊天按当前线路真实能力；显式调用方上限与平台任务仍保留。 */
@@ -754,35 +757,76 @@ export class ModelGateway implements ModelGatewayPort {
             upstreamId: route.upstreamId,
             upstreamModelId: route.upstreamModelId,
           }));
+        let dispatchTiming: DispatchTiming | undefined;
         if (sent) {
           await this.recorder.markAttemptSent(attemptId);
           try {
             answer = isFakeModel(route.upstreamModelId, this.config.nodeEnv === 'production')
               ? fakeAnswer(input, wire)
-              : await this.upstreams.withApiKey(route.upstreamId, (apiKey) =>
-                  this.adapter.generate({
-                    protocol: textProtocolOf(route.kind),
+              : await this.upstreams.withApiKey(route.upstreamId, async (apiKey) => {
+                  const deadlineMs = Math.max(
+                    1,
+                    Math.floor(budgetMs - (performance.now() - wallStart)),
+                  );
+                  const timeoutMs = Math.min(
+                    thinkingBudget > 0 || modelOutputLimit
+                      ? LONG_TEXT_IDLE_MS
+                      : STANDARD_TEXT_IDLE_MS,
+                    deadlineMs,
+                  );
+                  const protocol = textProtocolOf(route.kind);
+                  const backups = candidates.slice(index + 1);
+                  const backupAvailable = () =>
+                    backups.some(
+                      (r) =>
+                        !r.probing &&
+                        !this.scheduler.isRouteCooling(model.modelKey, r.upstreamId) &&
+                        this.scheduler.canAcquireAccount(r),
+                    );
+                  // 只为可顺序切换的备用保留一个普通等待窗口；短截止最多分出剩余时间的一半。
+                  const reserveMs = Math.min(STANDARD_TEXT_IDLE_MS, Math.floor(deadlineMs / 2));
+                  const dispatch = {
+                    protocol,
                     baseUrl: route.baseUrl,
                     apiKey,
                     model: route.upstreamModelId,
-                    messages: textProtocolOf(route.kind) === 'anthropic' ? baseWire : wire,
+                    messages: protocol === 'anthropic' ? baseWire : wire,
                     maxOutputTokens: attemptOutputLimit,
                     outputParameter: route.billingBounds.text!.outputParameter,
                     temperature: input.temperature ?? DEFAULT_TEMPERATURE[input.purpose],
                     responseFormat: input.responseFormat,
                     idempotencyKey: key,
                     promptCacheKey,
-                    // 开思考的后台整理单次常超 20 秒（10-27 生产：记忆整理 3 次 20 秒超时把整条上游判为不可用），放宽到 55 秒。
-                    timeoutMs: Math.min(
-                      thinkingBudget > 0 || modelOutputLimit ? 55000 : 20000,
-                      Math.max(1, Math.floor(budgetMs - (performance.now() - wallStart))),
-                    ),
-                    deadlineMs: Math.max(1, Math.floor(budgetMs - (performance.now() - wallStart))),
+                    timeoutMs,
+                    deadlineMs,
+                    ...(protocol === 'openai_compatible' && reserveMs > 0 && backupAvailable()
+                      ? {
+                          failover: {
+                            progressTimeoutMs: Math.min(timeoutMs, deadlineMs - reserveMs),
+                            backupAvailable,
+                          },
+                        }
+                      : {}),
                     ...(thinkingBudget > 0
                       ? { thinking: 'on' as const, thinkingBudget }
                       : { thinking: 'off' as const }),
-                  }),
-                );
+                  } satisfies Parameters<TextAdapter['generate']>[0];
+                  const granted = {
+                    deadlineMs: dispatch.deadlineMs,
+                    timeoutMs: dispatch.timeoutMs,
+                    progressTimeoutMs: dispatch.failover?.progressTimeoutMs ?? null,
+                    routePriority: route.routePriority ?? null,
+                  };
+                  const adapterStart = performance.now();
+                  try {
+                    return await this.adapter.generate(dispatch);
+                  } finally {
+                    dispatchTiming = {
+                      ...granted,
+                      adapterElapsedMs: Math.round(performance.now() - adapterStart),
+                    };
+                  }
+                });
           } catch {
             answer = { ok: false, category: 'network_error', retryable: true };
           }
@@ -813,6 +857,7 @@ export class ModelGateway implements ModelGatewayPort {
           known,
           errorCode,
           known ? 'reported' : answer.usage || failureUsage?.estimated ? 'estimated' : 'unknown',
+          dispatchTiming,
         );
         const latencyMs = Math.round(performance.now() - attemptStart);
         // 批 EJ：调用方要求抢救时，正文 JSON 没写完就交回已写出的部分（照常计费），不加大额度重试；
