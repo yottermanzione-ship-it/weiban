@@ -1,22 +1,32 @@
-import type { ChatTurnMessage } from './prompt-assembly.js';
-
 // Only a complete, short opening clause counts. A shared topic prefix can start unrelated sentences.
 const OPENING = /^([\p{Script=Han}]{2,8})(?:[，,。.!！~～…\s]+|$)/u;
+const RECOVERY_TURNS = 12;
+const STRONG_RECOVERY_TURNS = 2 * RECOVERY_TURNS;
+export const REPLY_OPENING_HISTORY_TURNS = STRONG_RECOVERY_TURNS + RECOVERY_TURNS - 1;
 
-/** Each user turn contributes at most one opening, even when the character sends several bubbles. */
-export function repeatedReplyOpening(history: readonly ChatTurnMessage[]): string | null {
-  const recent: (string | null)[] = [];
-  for (let i = history.length - 1; i > 0 && recent.length < 12; i--) {
-    const turn = history[i]!;
-    if (turn.role === 'assistant' && history[i - 1]!.role === 'user') {
-      recent.push(OPENING.exec(turn.content.trimStart())?.[1] ?? null);
-    }
+/** Oldest first, one actual first bubble per normal reply. Media occupies a turn with no text. */
+export function repeatedReplyOpening(firstBubbles: readonly (string | null)[]): string | null {
+  const recent = firstBubbles
+    .slice(-REPLY_OPENING_HISTORY_TURNS)
+    .reverse()
+    .map((text) => (text ? (OPENING.exec(text.trimStart())?.[1] ?? null) : null));
+  // Give an ordinary loop one window to subside. When the same clause opened at least
+  // two thirds of a full window, allow two windows: the first few improved replies are
+  // weak evidence that a strongly entrenched pattern has actually gone away.
+  for (let age = 0; age < Math.min(recent.length, STRONG_RECOVERY_TURNS); age++) {
+    const opening = recent[age];
+    if (!opening) continue;
+    const preceding = recent.slice(age, age + RECOVERY_TURNS);
+    const matches = (phrase: string | null) => phrase === opening;
+    const occurrences = preceding.filter(matches).length;
+    if (
+      occurrences >= 8 ||
+      (age < RECOVERY_TURNS &&
+        (preceding.slice(0, 5).filter(matches).length >= 3 || occurrences >= 4))
+    )
+      return opening;
   }
-  // A short burst triggers early. A longer-established pattern gets time to subside
-  // without switching the reminder off as soon as two or three replies improve.
-  const common = (window: (string | null)[], minimum: number) =>
-    window.find((phrase) => phrase && window.filter((value) => value === phrase).length >= minimum);
-  return common(recent.slice(0, 5), 3) ?? common(recent, 4) ?? null;
+  return null;
 }
 
 // For other phrases (including meaningful answers such as “不行”), vary the wording in generation
@@ -27,6 +37,14 @@ const CHECKING_PRESENCE =
 const CALLING_OUT =
   /^(?:在|有人|嗨|嘿|你好|您好|哈喽|宝宝|宝贝|亲爱的|哥哥|姐姐|老师|老公|老婆)[~～？！?!。,.，\s]*$/u;
 
+export function userInvitesOpening(opening: string, userText: string): boolean {
+  return (
+    userText.includes(opening) ||
+    (PRESENCE.test(opening) &&
+      (CALLING_OUT.test(userText.trim()) || CHECKING_PRESENCE.test(userText)))
+  );
+}
+
 export function omitRepeatedPresence(
   bubbles: string[],
   opening: string | null,
@@ -36,13 +54,7 @@ export function omitRepeatedPresence(
   if (!first || !opening || !PRESENCE.test(opening)) return bubbles;
   const match = OPENING.exec(first);
   if (match?.[1] !== opening) return bubbles;
-  if (
-    CALLING_OUT.test(userText.trim()) ||
-    userText.includes(opening) ||
-    CHECKING_PRESENCE.test(userText)
-  ) {
-    return bubbles;
-  }
+  if (userInvitesOpening(opening, userText)) return bubbles;
   const remainder = first.slice(match[0].length);
   const result = remainder ? [remainder, ...bubbles.slice(1)] : bubbles.slice(1);
   return result.some((bubble) => /[\p{L}\p{N}]/u.test(bubble)) ? result : bubbles;

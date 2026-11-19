@@ -266,6 +266,74 @@ describeDb('chat 真实事务、HTTP、隔离和历史负记录', () => {
       }),
     ).toMatchObject({ ok: false, error: 'not_found' });
   });
+  it('普通私聊首气泡按触发键识别，交错送达、重试、合并和不可见记录不会多算', async () => {
+    const room = await db.transaction((tx) =>
+      admin.ensureDirectConversation(tx, { userId, characterId: newId(), restoreHistory: true }),
+    );
+    const id = room.conversationId;
+    const role = room.participants.find((p) => p.kind === 'character')!.participantId;
+    const userMessage = async () =>
+      (await users.sendMessage(userId, id, body('合成问题'))).message.messageId;
+    const post = async (key: string) => {
+      const result = await participant.postMessage({
+        conversationId: id,
+        senderParticipantId: role,
+        content: text('合成回复'),
+        idempotencyKey: key,
+      });
+      if (!result.ok) throw Error(result.error);
+      return result.value.messageId;
+    };
+    await userMessage(); // 合并掉的输入没有独立的第 0 泡。
+    const a = await userMessage();
+    const a0 = await post(`reply:${a}:0`);
+    const b = await userMessage();
+    await post(`reply:${a}:1`);
+    const b0 = await post(`reply:${b}:0`);
+    expect(await post(`reply:${b}:0`)).toBe(b0);
+    await post(newId());
+    await post(`proactive:${newId()}`);
+    await post(`reply:${newId()}:0`);
+    const privateTrigger = await userMessage();
+    const privateFirst = await post(`reply:${privateTrigger}:0`);
+    await db.query("UPDATE chat.messages SET scope='adult' WHERE id=ANY($1::uuid[])", [
+      [privateTrigger, privateFirst],
+    ]);
+    const page = (
+      replyStartsForUserId?: string,
+      scopes: ('normal' | 'adult')[] = ['normal'],
+      limit = 50,
+      beforeSeq?: number,
+    ) =>
+      reader.readMessages({ conversationId: id, scopes, limit, beforeSeq, replyStartsForUserId });
+    const first = (items: Awaited<ReturnType<typeof page>>) =>
+      items.filter((m) => m.replyTriggerSeq !== undefined).map((m) => m.messageId);
+    const visible = await page(userId);
+    expect(first(visible)).toEqual([a0, b0]);
+    const bSeq = visible.find((m) => m.messageId === b)!.seq;
+    const end = visible.find((m) => m.messageId === b0)!.seq;
+    expect(await page(userId, ['normal'], 1, end + 1)).toMatchObject([
+      { messageId: b0, replyTriggerSeq: bSeq },
+    ]);
+    expect(first(await page(otherId))).toEqual([]);
+    expect(first(await page())).toEqual([]);
+    expect(first(await page(userId, ['normal', 'adult']))).toEqual([]);
+    const publicPage = await http()
+      .get(`/api/v1/conversations/${id}/messages`)
+      .set('Authorization', auth())
+      .expect(200);
+    expect(JSON.stringify(publicPage.body)).not.toContain('replyTriggerSeq');
+    await http()
+      .post(`/api/v1/conversations/${id}/messages/${b0}/hide`)
+      .set('Authorization', auth())
+      .expect(204);
+    expect(first(await page(userId))).toEqual([a0]);
+    await http()
+      .post(`/api/v1/conversations/${id}/messages/${a}/hide`)
+      .set('Authorization', auth())
+      .expect(204);
+    expect(first(await page(userId))).toEqual([]);
+  });
   it('隐藏/清空给出同快照coverage；引用与旧键不能找回已删除正文', async () => {
     const input = body('private quote');
     const source = await users.sendMessage(userId, cid, input);

@@ -1158,14 +1158,14 @@ RETURNING seq::text AS seq, message_id`;
         text: '先把菜单上的土豆切块。',
       });
       response = '在呢，正在看菜单。';
-      const check = await user('你现在还在吗？');
-      await finish(check.id);
-      expect(
-        (await repliesAfter(check.triggerSeq)).map((m: { content: unknown }) => m.content),
-      ).toContainEqual({
-        type: 'text',
-        text: response,
-      });
+      for (const input of ['你现在还在吗？', '在不在？', 'AI role！', '请原样复述“在呢”。']) {
+        const check = await user(input);
+        await finish(check.id);
+        expect(calls.at(-1)?.messages.at(-1)?.content).not.toContain('最近几轮的第一句话');
+        expect(
+          (await repliesAfter(check.triggerSeq)).map((m: { content: unknown }) => m.content),
+        ).toContainEqual({ type: 'text', text: response });
+      }
       response = '好家伙，这口锅真大。';
       for (let i = 0; i < 3; i++) await finish((await user('请用“好家伙”说说这口锅。')).id);
       response = '这锅可以用来煮面。';
@@ -1182,7 +1182,7 @@ RETURNING seq::text AS seq, message_id`;
       response = previous;
       choice.mockRestore();
     }
-  });
+  }, 60_000); // 多轮真实数据库生成与送达，另含四种明确要求保留原句的输入。
   it('生成中删除好友；旧计划不得在恢复的同一会话发言；物理清除与账号清单', async () => {
     const row = await user('再见');
     clock.advance(3000);

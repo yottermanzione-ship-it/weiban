@@ -15,6 +15,7 @@ import {
   ScenarioMode,
   type CharacterReadPort,
   type ChatReadPort,
+  type ChatHistoryMessage,
   type ChatAdminPort,
   type ContactsReadPort,
   type IdentityReadPort,
@@ -94,7 +95,11 @@ import {
   TEXT_REPLY_TEMPLATE_VERSION,
 } from '../domain/reply-rules.js';
 import { HealthCareService } from './health-care.js';
-import { repeatedReplyOpening } from '../domain/reply-opening.js';
+import {
+  REPLY_OPENING_HISTORY_TURNS,
+  repeatedReplyOpening,
+  userInvitesOpening,
+} from '../domain/reply-opening.js';
 import { SocialService } from './social.js';
 import { MediaAiService, imageBudget, type RenderedMedia } from './media-ai.js';
 import { ImageCaptionStore, NO_CAPTIONS, type CaptionMap } from './image-captions.js';
@@ -393,6 +398,7 @@ export class ReplyContext {
       row.kind === 'message' ? row.triggerSeq + 1 : undefined,
       floor,
       textBudget?.inputTokens,
+      row.kind === 'message' && !privateScope && !voiceCall ? row.userId : undefined,
     );
     const latest = history.filter((m) => m.senderKind !== 'system').at(-1);
     // 旧气泡可以在新用户消息之后送达，不能把‘最后一条是角色’当作新用户已被回复。
@@ -842,24 +848,29 @@ export class ReplyContext {
     const address = userText.trim().replace(/[，,。.!！?？~～]+$/u, '');
     const calledByName =
       !!address && (address === role.profile.name || role.profile.aliases.includes(address));
-    const repeatedOpening =
+    let repeatedOpening: string | null = null;
+    if (
       row.kind === 'message' &&
       !voiceCall &&
       !privateScope &&
       !inCare &&
       risk === 'none' &&
       !calledByName
-        ? repeatedReplyOpening(
-            recent
-              .filter((m) => m.status === 'normal' && !m.labels?.includes('quirk_draft'))
-              .map((m) => ({
-                role: m.senderKind === 'user' ? 'user' : 'assistant',
-                // A sticker or an untranscribed voice message still separates two reply turns.
-                content:
-                  m.senderKind === 'character' && m.content?.type === 'text' ? m.content.text : '',
-              })),
+    ) {
+      const sourceFloor = Math.max(
+        (history[0]?.seq ?? 1) - 1,
+        remembered.rawFromSeqByScope?.normal ?? remembered.rawFromSeq,
+      );
+      const detected = repeatedReplyOpening(
+        recent
+          .filter(
+            (message) =>
+              message.replyTriggerSeq !== undefined && message.replyTriggerSeq > sourceFloor,
           )
-        : null;
+          .map((message) => (message.content?.type === 'text' ? message.content.text : null)),
+      );
+      if (detected && !userInvitesOpening(detected, userText)) repeatedOpening = detected;
+    }
     const tail: PromptSection[] = [
       // 日期逐轮现取并放在历史之后；大块稳定材料保留前置，避免短对话每轮重复支付整块输入。
       ...brainContext,
@@ -1261,8 +1272,10 @@ export class ReplyContext {
     beforeSeq: number | undefined,
     floor: number,
     inputTokens?: number,
-  ): Promise<{ messages: Message[]; unreadThrough: number | null }> {
-    const pages: Message[][] = [];
+    replyStartsForUserId?: string,
+  ): Promise<{ messages: ChatHistoryMessage[]; unreadThrough: number | null }> {
+    const pages: ChatHistoryMessage[][] = [];
+    let foundReplyStarts = 0;
     const blocked = await blockedSeqs(this.store.db, conversationId);
     const legacyLimit = inputTokens === undefined ? stableHistoryReadLimit(beforeSeq) : Infinity;
     let before = beforeSeq;
@@ -1274,11 +1287,20 @@ export class ReplyContext {
       const rows = await this.chat.readMessages({
         conversationId,
         scopes,
+        ...(replyStartsForUserId && foundReplyStarts < REPLY_OPENING_HISTORY_TURNS
+          ? { replyStartsForUserId }
+          : {}),
         ...(before !== undefined ? { beforeSeq: before } : {}),
         limit: take,
       });
       if (!rows.length) break;
       const visible = rows.filter((m) => !blocked.has(m.seq));
+      for (const message of visible) {
+        if (message.replyTriggerSeq === undefined) continue;
+        if (blocked.has(message.replyTriggerSeq) || message.replyTriggerSeq <= floor)
+          delete message.replyTriggerSeq;
+        else foundReplyStarts++;
+      }
       pages.push(visible);
       count += rows.length;
       const oldest = rows[0]!.seq;

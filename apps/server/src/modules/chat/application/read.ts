@@ -4,6 +4,7 @@ import {
   asc,
   desc,
   eq,
+  getTableColumns,
   gt,
   gte,
   inArray,
@@ -22,6 +23,7 @@ import {
   OFFICIAL_IDENTITY_KEY,
   Participant,
   type ChatReadPort,
+  type ChatHistoryMessage,
   type Conversation,
   type Message,
   type ReadMessagesInput,
@@ -225,7 +227,7 @@ export class ChatReadService implements ChatReadPort {
     return input ? read(asDbTx(input)) : this.db.transaction(read);
   }
   /** transaction：调用方拿着事务时必须传，否则另开连接锁会话行。 */
-  async readMessages(input: ReadMessagesInput, transaction?: Tx): Promise<Message[]> {
+  async readMessages(input: ReadMessagesInput, transaction?: Tx): Promise<ChatHistoryMessage[]> {
     const query = parseContract(ListMessagesQuery, input);
     const scopes = parseContract(ContentScope.array(), input.scopes);
     const read = async (tx: DbTx) => {
@@ -235,8 +237,31 @@ export class ChatReadService implements ChatReadPort {
       const excludeLabels = (input.excludeLabels ?? []).filter((l) => typeof l === 'string');
       const excludeIds = (input.excludeMessageIds ?? []).filter((m) => Id.safeParse(m).success);
       const types = input.contentTypes?.filter((t) => typeof t === 'string');
+      const replyStarts =
+        input.replyStartsForUserId === row.ownerUserId &&
+        row.type === 'direct' &&
+        row.characterId &&
+        scopes.length === 1 &&
+        scopes[0] === 'normal';
+      // Qualify outer references: the scalar lookup also reads chat.messages.
+      // Only possible first bubbles need a primary-key lookup for the user trigger.
+      const replyTriggerSeq = replyStarts
+        ? sql<number | null>`CASE WHEN messages.sender_kind='character'
+            AND messages.status='normal' AND messages.client_msg_id LIKE 'reply:%:0'
+            AND NOT ('quirk_draft'=ANY(coalesce(messages.labels,'{}'::text[])))
+          THEN (SELECT source.seq FROM chat.messages source
+              JOIN chat.user_conversation_states s ON s.conversation_id=source.conversation_id
+                AND s.user_id=${row.ownerUserId}
+              WHERE source.id=substring(messages.client_msg_id FROM
+                '^reply:([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}):0$')::uuid
+                AND source.conversation_id=${row.id} AND source.sender_kind='user'
+                AND source.scope='normal' AND source.status='normal' AND source.seq>s.cleared_through_seq
+                AND source.seq<messages.seq AND NOT EXISTS (SELECT 1 FROM chat.hidden_messages h
+                  WHERE h.user_id=s.user_id AND h.message_id IN (source.id,messages.id)))
+          END`.mapWith(Number)
+        : sql<null>`NULL`;
       const rows = await tx.db
-        .select()
+        .select({ ...getTableColumns(messages), replyTriggerSeq })
         .from(messages)
         .where(
           and(
@@ -261,7 +286,7 @@ export class ChatReadService implements ChatReadPort {
         .orderBy(query.afterSeq === undefined ? desc(messages.seq) : asc(messages.seq))
         .limit(query.limit);
       rows.sort((a, b) => a.seq - b.seq);
-      const result: Message[] = [];
+      const result: ChatHistoryMessage[] = [];
       const contents = await this.store.pageContents(tx, row, rows);
       for (const message of rows) {
         const value = await this.store.message(
@@ -278,12 +303,17 @@ export class ChatReadService implements ChatReadPort {
           (!value.content || !types.includes(value.content.type))
         )
           continue;
-        result.push(value);
+        result.push(
+          message.replyTriggerSeq == null
+            ? value
+            : { ...value, replyTriggerSeq: message.replyTriggerSeq },
+        );
       }
       return result;
     };
     return transaction ? read(asDbTx(transaction)) : this.db.transaction(read);
   }
+
   /** 免费档窗口边界：只查日期和序号，不解密正文。 */
   async firstSeqAtOrAfter(
     conversationId: string,
