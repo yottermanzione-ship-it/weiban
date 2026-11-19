@@ -485,21 +485,22 @@ export class OpenAiTextAdapter implements TextAdapter {
       const stream = !officialAbliteration;
       const officialOpenAi = new URL(input.baseUrl).origin === 'https://api.openai.com';
       const controller = new AbortController();
+      const deadlineMs = input.deadlineMs ?? Math.max(input.timeoutMs, 120_000);
+      const deadlineAt = performance.now() + deadlineMs;
       const armIdle = () => {
         if (idleTimer) clearTimeout(idleTimer);
+        // 备用线路可能只剩总预算；两种时限同时到达时由总时限计时器报告。
+        if (performance.now() + input.timeoutMs >= deadlineAt) return;
         idleTimer = setTimeout(() => {
           timeout ??= 'timeout_idle';
           controller.abort();
         }, input.timeoutMs);
       };
+      hardTimer = setTimeout(() => {
+        timeout ??= 'timeout_deadline';
+        controller.abort();
+      }, deadlineMs);
       armIdle();
-      hardTimer = setTimeout(
-        () => {
-          timeout ??= 'timeout_deadline';
-          controller.abort();
-        },
-        input.deadlineMs ?? Math.max(input.timeoutMs, 120_000),
-      );
       const response = await fetch(`${input.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
         method: 'POST',
         redirect: 'manual',

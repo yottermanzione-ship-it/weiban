@@ -135,6 +135,7 @@ describe('OpenAI 兼容回执与计量', () => {
   it.each([
     { timeoutMs: 3, deadlineMs: 60, diagnostic: 'timeout_idle' },
     { timeoutMs: 60, deadlineMs: 3, diagnostic: 'timeout_deadline' },
+    { timeoutMs: 5, deadlineMs: 5, diagnostic: 'timeout_deadline' },
   ])('分别记录连接空闲与整次截止时间', async ({ timeoutMs, deadlineMs, diagnostic }) => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(
       (_url, init) =>
