@@ -54,6 +54,7 @@ import {
   takeAfterFinalMarker,
 } from '../domain/reply-rules.js';
 import { withoutImages } from '../domain/prompt-assembly.js';
+import { omitRepeatedPresence } from '../domain/reply-opening.js';
 import {
   captionPhrase,
   filterPeople,
@@ -283,15 +284,18 @@ export class ReplyEngine {
     let fallbackReason: string | null = null;
     let stickerMood: StickerMood | null = null;
     let photoWanted = false;
+    const replyBubbles = (text: string) =>
+      omitRepeatedPresence(
+        splitReply(stripHabits(text, snapshot.habits ?? []), snapshot.splitBubbles),
+        inCare ? null : snapshot.repeatedOpening,
+        snapshot.userText,
+      );
     if (
       answer.ok &&
       outputAllowed(answer.value.text, snapshot.policy, snapshot.scope === 'adult')
     ) {
       // 2026-10-30 双兜底出站过滤：只清本轮检出的习惯词，删完为空时 stripHabits 原样返回，绝不发空。
-      bubbles = splitReply(
-        stripHabits(answer.value.text, snapshot.habits ?? []),
-        snapshot.splitBubbles,
-      );
+      bubbles = replyBubbles(answer.value.text);
       stickerMood = marks.get(answer.value)?.mood ?? null;
       photoWanted = marks.get(answer.value)?.photo ?? false;
     }
@@ -364,10 +368,7 @@ export class ReplyEngine {
         const again =
           retried.ok &&
           outputAllowed(retried.value.text, snapshot.policy, snapshot.scope === 'adult')
-            ? splitReply(
-                stripHabits(retried.value.text, snapshot.habits ?? []),
-                snapshot.splitBubbles,
-              )
+            ? replyBubbles(retried.value.text)
             : [];
         const accepted =
           again.length > 0 &&

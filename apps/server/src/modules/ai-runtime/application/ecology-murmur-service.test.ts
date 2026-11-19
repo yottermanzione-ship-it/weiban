@@ -118,7 +118,7 @@ describe('碎碎念请求：单独组装素材', () => {
       chargedMicros: 30,
     });
     const request = s.generateText.mock.calls[0]![0] as Request;
-    expect(request.maxOutputTokens).toBe(200);
+    expect(request).not.toHaveProperty('maxOutputTokens');
     const material = request.messages.find((m) => m.role === 'user')!.content;
     for (const banned of ['对方', '用户', '角色', '还没被回', '分钟前', '上次主动', '已经做过'])
       expect(material).not.toContain(banned);

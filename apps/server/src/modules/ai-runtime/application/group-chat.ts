@@ -1104,7 +1104,6 @@ export class GroupChatService {
       ];
       return { messages, stablePrefixChars: stable.reduce((n, m) => n + m.content.length, 0) };
     };
-    const maxOutputTokens = 200 + slots.length * 200;
     let prompt = assemble([]);
     // Use up to seven extra messages from the existing read. Keep the original 30 if
     // capacity is unknown or tight, and don't add large forwarded records as padding.
@@ -1123,7 +1122,6 @@ export class GroupChatService {
           characterId: speaker.characterId,
           modelRole: 'chat',
           purpose: input.purpose,
-          maxOutputTokens,
         })
         .catch(() => null);
       if (
@@ -1142,7 +1140,6 @@ export class GroupChatService {
       modelRole: adult ? 'adult' : 'chat',
       ...(input.purpose === 'proactive' ? { countAsBackground: true, ecologyTask: true } : {}),
       responseFormat: 'text',
-      maxOutputTokens,
       idempotencyKey: `ai:${input.idempotencyKey}`,
       messages: prompt.messages,
       meta: {
@@ -1220,7 +1217,7 @@ export class GroupChatService {
       request = {
         ...request,
         idempotencyKey: `${request.idempotencyKey}:blind`,
-        maxOutputTokens: 200,
+        maxOutputTokens: undefined, // 旧快照可能仍带固定额度，降级文本请求跟随线路。
         messages: request.messages.map(({ images: _images, ...m }) => {
           void _images;
           return {

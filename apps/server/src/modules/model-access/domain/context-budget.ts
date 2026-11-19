@@ -11,27 +11,40 @@ export function contextTokens(
   );
 }
 
+/** 输入、输出合计的可用窗口，统一扣除估算误差余量。 */
+export function usableContextTokens(context: number): number {
+  return context - Math.min(8192, Math.max(512, Math.ceil(context * 0.03)));
+}
+
 export function contextBudget(
   modelKey: string,
   profiles: readonly { contextTokens: number; maxOutputTokens: number }[],
   requestedOutput?: number,
 ): ModelContextBudget | null {
   if (!profiles.length) return null;
-  const context = Math.min(...profiles.map((p) => p.contextTokens));
-  const output = Math.max(
-    ...profiles.map((p) =>
-      Math.min(p.maxOutputTokens, requestedOutput ?? p.maxOutputTokens, 32000),
-    ),
-  );
-  const headroom = Math.min(8192, Math.max(512, Math.ceil(context * 0.03)));
-  const input = context - output - headroom;
-  if (input <= 0) return null;
+  // 每条线路先扣自己的输出上限和余量，再取所有可用线路都能接收的输入量。
+  const routes = profiles.map((profile) => {
+    const context = profile.contextTokens;
+    const output = Math.min(
+      profile.maxOutputTokens,
+      requestedOutput ?? profile.maxOutputTokens,
+      32000,
+    );
+    return {
+      context,
+      output,
+      input: usableContextTokens(context) - output,
+      trigger: Math.floor((context - output) * 0.8),
+    };
+  });
+  const limiting = routes.reduce((a, b) => (a.input <= b.input ? a : b));
+  if (limiting.input <= 0) return null;
   return {
     modelKey,
-    contextTokens: context,
-    reservedOutputTokens: output,
-    inputTokens: input,
-    triggerTokens: Math.min(input, Math.floor((context - output) * 0.8)),
+    contextTokens: limiting.context,
+    reservedOutputTokens: limiting.output,
+    inputTokens: limiting.input,
+    triggerTokens: Math.min(limiting.input, ...routes.map((r) => r.trigger)),
   };
 }
 
@@ -40,7 +53,8 @@ export function compactablePrefix(
   messages: readonly ChatMessageForModel[],
   retainTokens: number,
 ): { start: number; end: number } | null {
-  const start = messages[0]?.role === 'system' ? 1 : 0;
+  const start = messages.findIndex((m) => m.role !== 'system');
+  if (start < 0) return null;
   let stop = messages.findIndex((m, i) => i >= start && m.role === 'system');
   if (stop < 0) stop = messages.length;
   let used = 0;

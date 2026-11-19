@@ -87,11 +87,7 @@ import {
   switchEnabled,
   wakeSlots,
 } from '../domain/ecology.js';
-import {
-  MURMUR_MAX_OUTPUT_TOKENS,
-  buildMurmurMaterial,
-  finalizeMurmur,
-} from '../domain/ecology-murmur.js';
+import { buildMurmurMaterial, finalizeMurmur } from '../domain/ecology-murmur.js';
 import {
   absenceGreetedSince,
   chatActionCountAllowed,
@@ -717,12 +713,14 @@ export class EcologyService {
               conversationId: snapshot.conversationId,
               countAsBackground: true,
               ecologyTask: true,
-              meta: { scenarioMode: 'adult' as const },
             }
           : { modelRole: 'chat' as const }),
         responseFormat: 'text',
-        // 11-02 宁静那条正好 80 token 被截断：给足余量，长了由 finalizeMurmur 在句末截到 60 字以内。
-        maxOutputTokens: MURMUR_MAX_OUTPUT_TOKENS,
+        // 生成额度按线路核准值，finalizeMurmur 单独限制展示长度。
+        meta: {
+          ...(snapshot.privateMode ? { scenarioMode: 'adult' as const } : {}),
+          promptTemplateVersion: 'ecology-murmur-v1',
+        },
         idempotencyKey: `eco:murmur:${run.id}`,
         messages: [
           {
@@ -881,11 +879,13 @@ export class EcologyService {
             conversationId: privateConversationId,
             countAsBackground: true,
             ecologyTask: true,
-            meta: { scenarioMode: 'adult' as const },
           }
         : { modelRole: 'chat' as const }),
       responseFormat: 'text',
-      maxOutputTokens: 60,
+      meta: {
+        ...(privateConversationId ? { scenarioMode: 'adult' as const } : {}),
+        promptTemplateVersion: 'ecology-profile-v1',
+      },
       idempotencyKey: `eco:profile:${userId}:${characterId}:${action}:${this.clock.nowMs()}`,
       messages: [
         {

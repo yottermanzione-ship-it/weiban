@@ -38,11 +38,7 @@ import { IDENTITY_READ_PORT, IDENTITY_USER_STATUS_PORT } from '../../identity/in
 import { userStatusLine } from '../domain/user-status.js';
 import { POLICY_PORT } from '../../policy/index.js';
 import { MemoryService } from './memory.js';
-import {
-  stableHistoryReadLimit,
-  summaryFloorSeq,
-  uncoveredHistoryEnd,
-} from '../domain/memory-window.js';
+import { stableHistoryReadLimit, summaryFloorSeq } from '../domain/memory-window.js';
 import { allowedAutomaticStyle, scenarioText } from '../domain/persona.js';
 import { contextTokens } from '../../model-access/index.js';
 import { PlayContinuityStore } from './play-continuity.js';
@@ -98,6 +94,7 @@ import {
   TEXT_REPLY_TEMPLATE_VERSION,
 } from '../domain/reply-rules.js';
 import { HealthCareService } from './health-care.js';
+import { repeatedReplyOpening } from '../domain/reply-opening.js';
 import { SocialService } from './social.js';
 import { MediaAiService, imageBudget, type RenderedMedia } from './media-ai.js';
 import { ImageCaptionStore, NO_CAPTIONS, type CaptionMap } from './image-captions.js';
@@ -226,6 +223,7 @@ export const ReplySnapshot = z.object({
   trial: z.boolean().default(false),
   /** 2026-10-30 双兜底：本轮动态检出的习惯词（卡里没有、最近 20 条角色回复里出现 11 条以上），出站过滤用；无则空。 */
   habits: z.array(z.string()).default([]),
+  repeatedOpening: z.string().max(16).nullable().default(null),
   /** 0091：请求开头预计可命中前缀缓存的字符数（写入用量记录，docs/refactor/09 第 6 节）。 */
   stablePrefixChars: z.number().int().nonnegative().default(0),
   /** T-20261103g：这轮提示里给模型分享的那张素材照片（模型写「[照片]」才发）；没有为 null。 */
@@ -377,16 +375,24 @@ export class ReplyContext {
     // 私密来源不降为日常；资格收紧后同样不提交成人原文。
     const privateScope = conversation.contentScope === 'adult' && policy.adultModeEligible;
     const personaLevel = privateScope ? 'name' : 'full';
-    // At least the original 600-message tail, plus <=63 messages of additive cache slack.
+    const modelBudget = await this.memory.gateway?.getContextBudget?.({
+      userId: row.userId,
+      characterId: row.characterId,
+      modelRole: privateScope ? 'adult' : 'chat',
+      purpose: 'chat_reply',
+      ...(voiceCall ? { scenario: 'voice_call' as const, maxOutputTokens: 200 } : {}),
+    });
+    const textBudget = !voiceCall ? modelBudget : null;
     const floor = await this.memory
       .windowFloor(row.userId, row.characterId, privateScope ? 'adult' : 'normal')
       .catch(() => 0);
     const historyScopes: ContentScope[] = privateScope ? ['normal', 'adult'] : ['normal'];
-    const history = await this.readHistory(
+    const { messages: history, unreadThrough } = await this.readHistory(
       row.conversationId,
       historyScopes,
       row.kind === 'message' ? row.triggerSeq + 1 : undefined,
       floor,
+      textBudget?.inputTokens,
     );
     const latest = history.filter((m) => m.senderKind !== 'system').at(-1);
     // 旧气泡可以在新用户消息之后送达，不能把‘最后一条是角色’当作新用户已被回复。
@@ -647,11 +653,13 @@ export class ReplyContext {
           )?.text ?? null;
       if (!text) continue;
       const limit =
-        m.content.type === 'call_record'
-          ? 200000
-          : m.content.type === 'forwarded_record'
-            ? 32_000
-            : MAX_MESSAGE_CHARS;
+        textBudget && m.content.type === 'text'
+          ? text.length
+          : m.content.type === 'call_record'
+            ? 200000
+            : m.content.type === 'forwarded_record'
+              ? 32_000
+              : MAX_MESSAGE_CHARS;
       chat.push({
         role: m.senderKind === 'user' ? 'user' : 'assistant',
         content: text.slice(0, limit),
@@ -831,6 +839,27 @@ export class ReplyContext {
             sensitive: inCare || healthHint.healthUsed,
           })
         : '';
+    const address = userText.trim().replace(/[，,。.!！?？~～]+$/u, '');
+    const calledByName =
+      !!address && (address === role.profile.name || role.profile.aliases.includes(address));
+    const repeatedOpening =
+      row.kind === 'message' &&
+      !voiceCall &&
+      !privateScope &&
+      !inCare &&
+      risk === 'none' &&
+      !calledByName
+        ? repeatedReplyOpening(
+            recent
+              .filter((m) => m.status === 'normal' && !m.labels?.includes('quirk_draft'))
+              .map((m) => ({
+                role: m.senderKind === 'user' ? 'user' : 'assistant',
+                // A sticker or an untranscribed voice message still separates two reply turns.
+                content:
+                  m.senderKind === 'character' && m.content?.type === 'text' ? m.content.text : '',
+              })),
+          )
+        : null;
     const tail: PromptSection[] = [
       // 日期逐轮现取并放在历史之后；大块稳定材料保留前置，避免短对话每轮重复支付整块输入。
       ...brainContext,
@@ -928,6 +957,12 @@ export class ReplyContext {
           ? '按本轮情景回应，每轮换着说法。'
           : '按卡里的说话方式回，每轮换着说法。',
       },
+      {
+        title: '',
+        text: repeatedOpening
+          ? `最近几轮的第一句话多次从这个短语开始：${JSON.stringify(repeatedOpening)}。这是旧回复的片段。这轮直接接对方刚说的具体内容。需要确认在场、沿用称呼或按对方指定的说法回应时，可以自然使用。`
+          : '',
+      },
     ];
     // 2026-10-30 双兜底：
     // ① 正向版通用提示词（开头第一段，所有角色共用，不写进单个角色卡，不点名具体词）。
@@ -955,13 +990,6 @@ export class ReplyContext {
       inserts,
       tail,
     });
-    const modelBudget = await this.memory.gateway?.getContextBudget?.({
-      userId: row.userId,
-      characterId: row.characterId,
-      modelRole: privateScope ? 'adult' : 'chat',
-      purpose: 'chat_reply',
-      ...(voiceCall ? { scenario: 'voice_call' as const, maxOutputTokens: 200 } : {}),
-    });
     const promptTokens = (messages: ReplySnapshot['messages']) =>
       voiceCall && !includeLiveHistory
         ? contextTokens([{ content: realtimeCallInstructions(messages) }])
@@ -974,7 +1002,8 @@ export class ReplyContext {
     );
     if (this.memory.chatSummaries) {
       for (let pass = 0; pass < 2; pass++) {
-        const historyGap = uncoveredHistoryEnd(history, remembered.rawFromSeq);
+        const historyGap =
+          unreadThrough !== null && unreadThrough > remembered.rawFromSeq ? unreadThrough : null;
         const chars = assembled.messages.reduce((n, m) => n + m.content.length, 0);
         const withinContext = modelBudget
           ? promptTokens(assembled.messages) < modelBudget.triggerTokens
@@ -990,13 +1019,18 @@ export class ReplyContext {
           users = 0,
           kept = 0,
           cutoff = 0;
-        const retain = Math.min(48000, Math.floor((modelBudget?.inputTokens ?? 60000) * 0.4));
+        const retain = Math.floor((modelBudget?.triggerTokens ?? 60000) * 0.7);
+        const retainMessages = Math.floor(visible.length * 0.7);
+        const retainUsers = Math.min(
+          12,
+          Math.max(1, visible.filter((m) => m.senderKind === 'user').length - 1),
+        );
         for (let i = visible.length - 1; i >= 0; i--) {
           const m = visible[i]!;
           tokens += contextTokens([{ content: readableMessageText(m, captions) }]);
           users += m.senderKind === 'user' ? 1 : 0;
           kept++;
-          if (users >= 12 && (tokens >= retain || kept >= 160)) {
+          if (users >= retainUsers && (tokens >= retain || kept >= retainMessages)) {
             cutoff = m.seq - 1;
             break;
           }
@@ -1035,10 +1069,12 @@ export class ReplyContext {
     }
     // 整理暂时失败时不阻塞聊天；只裁本次发送副本，覆盖游标不动，原文仍可恢复。
     const tooLarge = () =>
-      assembled.messages.length > 700 ||
-      assembled.messages.reduce((n, m) => n + m.content.length, 0) > 200000 ||
-      (!!modelBudget && promptTokens(assembled.messages) > modelBudget.inputTokens);
-    const historyGap = uncoveredHistoryEnd(history, remembered.rawFromSeq);
+      (modelBudget && promptTokens(assembled.messages) > modelBudget.inputTokens) ||
+      (!textBudget &&
+        (assembled.messages.length > 700 ||
+          assembled.messages.reduce((n, m) => n + m.content.length, 0) > 200000));
+    const historyGap =
+      unreadThrough !== null && unreadThrough > remembered.rawFromSeq ? unreadThrough : null;
     if (tooLarge() || historyGap !== null) {
       tail.unshift({
         title: '历史覆盖提示',
@@ -1055,16 +1091,28 @@ export class ReplyContext {
       while (lastUser >= 0 && promptHistory[lastUser]?.role !== 'user') lastUser--;
       while (lastUser > 0 && promptHistory[lastUser - 1]?.role === 'user') lastUser--;
       let removed = 0;
-      while (tooLarge() && removed < lastUser) {
-        removed++;
-        while (removed < lastUser && promptHistory[removed]?.role !== 'user') removed++;
-        assembled = assemblePrompt({
-          macros: { user: userName, char: role.profile.name },
-          head: antiMimicHead,
-          history: promptHistory.slice(removed),
-          inserts,
-          tail,
-        });
+      if (tooLarge() && lastUser > 0) {
+        const starts = promptHistory.flatMap((m, i) =>
+          i > 0 && i <= lastUser && m.role === 'user' ? [i] : [],
+        );
+        const suffix = (start: number) =>
+          assemblePrompt({
+            macros: { user: userName, char: role.profile.name },
+            head: antiMimicHead,
+            history: promptHistory.slice(start),
+            inserts,
+            tail,
+          });
+        let low = 0,
+          high = starts.length - 1;
+        while (low < high) {
+          const middle = Math.floor((low + high) / 2);
+          assembled = suffix(starts[middle]!);
+          if (tooLarge()) low = middle + 1;
+          else high = middle;
+        }
+        removed = starts[low]!;
+        assembled = suffix(removed);
       }
       new Logger(ReplyContext.name).warn({
         code: 'ai_context_uncovered_gap',
@@ -1133,6 +1181,7 @@ export class ReplyContext {
       timeZone: profile.timeZone,
       stablePrefixChars: assembled.stats.stablePrefixChars,
       habits,
+      repeatedOpening,
       photoOffer: photo?.offer ?? null,
       turnUserSeqs: turnUserSeqs(history),
     });
@@ -1203,7 +1252,7 @@ export class ReplyContext {
     return retrieveRelevantHistory(candidates, input.query, { max: input.max });
   }
   /**
-   * 从新到旧分页读历史，直到覆盖原文起点 floor（最多 4 页、600～663 条）。
+   * 从新到旧分页读历史，遇到摘要边界或本次模型对应的读取保护即止。
    * T-20261103j：去掉登记为「不再发给模型」的消息（被上游安全策略拦过的用户消息），其余照常。
    */
   private async readHistory(
@@ -1211,24 +1260,52 @@ export class ReplyContext {
     scopes: ContentScope[],
     beforeSeq: number | undefined,
     floor: number,
-  ): Promise<Message[]> {
-    const out: Message[] = [];
+    inputTokens?: number,
+  ): Promise<{ messages: Message[]; unreadThrough: number | null }> {
+    const pages: Message[][] = [];
+    const blocked = await blockedSeqs(this.store.db, conversationId);
+    const legacyLimit = inputTokens === undefined ? stableHistoryReadLimit(beforeSeq) : Infinity;
     let before = beforeSeq;
-    const limit = stableHistoryReadLimit(beforeSeq);
-    for (let page = 0; page < 4 && out.length < limit; page++) {
-      const take = Math.min(200, limit - out.length);
+    let count = 0,
+      tokens = 0,
+      unreadThrough: number | null = null;
+    while (true) {
+      const take = Math.min(200, legacyLimit - count);
       const rows = await this.chat.readMessages({
         conversationId,
         scopes,
         ...(before !== undefined ? { beforeSeq: before } : {}),
         limit: take,
       });
-      out.unshift(...rows);
-      const oldest = rows[0]?.seq;
-      if (rows.length < take || oldest === undefined || oldest <= floor + 1) break;
+      if (!rows.length) break;
+      const visible = rows.filter((m) => !blocked.has(m.seq));
+      pages.push(visible);
+      count += rows.length;
+      const oldest = rows[0]!.seq;
+      if (rows.length < take || oldest <= floor + 1) break;
+      if (inputTokens !== undefined) {
+        // 普通文字按与最终请求相同的 token 估算。媒体此时尚未渲染，由完整提示在组装后统一检查。
+        for (const m of visible) {
+          if (
+            m.seq <= floor ||
+            m.status !== 'normal' ||
+            m.senderKind === 'system' ||
+            m.labels?.includes('quirk_draft')
+          )
+            continue;
+          const text = readableMessageText(m);
+          if (!text.trim()) continue;
+          const projected = m.content?.type === 'forwarded_record' ? text.slice(0, 32_000) : text;
+          tokens += contextTokens([{ content: projected }]);
+        }
+      }
+      if (count >= legacyLimit || (inputTokens !== undefined && tokens >= inputTokens)) {
+        unreadThrough = oldest - 1;
+        break;
+      }
       before = oldest;
     }
-    return withoutBlocked(this.store.db, conversationId, out);
+    return { messages: pages.reverse().flat(), unreadThrough };
   }
   async currentEpoch(
     row: ReplyPlan,

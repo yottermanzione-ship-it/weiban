@@ -44,9 +44,6 @@ const MIN_OFFLINE_SECONDS = 12 * 3600;
 /** 同一次进入（刷新、重连）的判定窗口。 */
 const SAME_VISIT_MS = 5 * 60_000;
 
-/** 摘要生成最大输出 token（后台任务，回复较短）。 */
-const SUMMARY_MAX_OUTPUT_TOKENS = 256;
-
 @Injectable()
 export class TimelineSummaryService {
   constructor(
@@ -173,7 +170,7 @@ export class TimelineSummaryService {
       billingOwner: 'user',
       modelRole: 'background',
       messages: [{ role: 'user', content: prompt }],
-      maxOutputTokens: SUMMARY_MAX_OUTPUT_TOKENS,
+      meta: { promptTemplateVersion: 'timeline-offline-summary-v1' },
       responseFormat: 'text',
       idempotencyKey,
       countAsBackground: true,
