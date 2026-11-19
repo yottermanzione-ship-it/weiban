@@ -282,10 +282,17 @@ describeDb('AI真实HTTP网关/计费与跨应用持久队列', () => {
     await app.init();
     await app.get<JobQueue>(JOB_QUEUE).start();
     // 导入合成历史而不触发 2,202 个旧回复任务。新消息仍经真实聊天、队列、上下文和假 HTTP 上游。
-    const history = Array.from({ length: 2202 }, (_, index) => ({
-      id: newId(),
-      text: `历史样本${index.toString(36)}`,
-    }));
+    const history = Array.from({ length: 2202 }, (_, index) => {
+      const id = newId();
+      return { id, clientMsgId: id, text: `历史样本${index.toString(36)}` };
+    });
+    // Three identifiable replies span separate 200-message pages. One trigger was on a
+    // previous page; the remaining imported rows have no authoritative delivery keys.
+    for (const index of [history.length - 401, history.length - 201, history.length - 1]) {
+      const trigger = history[index - 203]!;
+      history[index]!.clientMsgId = `reply:${trigger.id}:0`;
+      history[index]!.text = `历史样本，第${index}条合成回复`;
+    }
     const storedConversation = (await app.get<ChatReadPort>(CHAT_READ_PORT).getConversation(cid))!;
     const member = (kind: 'user' | 'character') =>
       storedConversation.participants.find((p) => p.kind === kind)!.participantId;
@@ -308,8 +315,8 @@ describeDb('AI真实HTTP网关/计费与跨应用持久队列', () => {
         `INSERT INTO chat.messages
         (id,conversation_id,seq,sender_participant_id,sender_kind,client_msg_id,content_ciphertext,status,scope,content_type,created_at)
         SELECT id,$1::uuid,$2::bigint+n,CASE WHEN n%2=1 THEN $3::uuid ELSE $4::uuid END,
-          CASE WHEN n%2=1 THEN 'user' ELSE 'character' END,id::text,body,'normal','normal','text',$7
-        FROM unnest($5::uuid[],$6::bytea[]) WITH ORDINALITY AS seeded(id,body,n)`,
+          CASE WHEN n%2=1 THEN 'user' ELSE 'character' END,delivery_key,body,'normal','normal','text',$7
+        FROM unnest($5::uuid[],$6::bytea[],$8::text[]) WITH ORDINALITY AS seeded(id,body,delivery_key,n)`,
         [
           cid,
           end - history.length,
@@ -318,6 +325,7 @@ describeDb('AI真实HTTP网关/计费与跨应用持久队列', () => {
           history.map((m) => m.id),
           encrypted,
           clock.now(),
+          history.map((m) => m.clientMsgId),
         ],
       );
       return end;
@@ -348,6 +356,22 @@ describeDb('AI真实HTTP网关/计费与跨应用持久队列', () => {
     );
     expect(clock.nowMs() - deliveredAt).toBeLessThan(60000);
     expect(bodies).toHaveLength(2);
+    const lastWindow = await resumed.readMessages({
+      conversationId: cid,
+      scopes: ['normal'],
+      replyStartsForUserId: userId,
+      limit: 50,
+    });
+    const delivered = lastWindow.filter(
+      (m) => m.senderKind === 'character' && m.seq > seededLastSeq,
+    );
+    expect(
+      delivered.filter((m) => m.replyTriggerSeq !== undefined).map((m) => m.messageId),
+    ).toEqual([delivered[0]!.messageId]);
+    const keyFromOlderPage = lastWindow.find((m) => m.messageId === history.at(-1)!.id);
+    expect(keyFromOlderPage?.replyTriggerSeq).toBeLessThan(lastWindow[0]!.seq);
+    const request = bodies[1]!.messages as Array<{ role: string; content: string }>;
+    expect(request.at(-1)?.content).toContain(JSON.stringify('历史样本'));
     const sent = (bodies[1]!.messages as Array<{ role: string; content: string }>).filter((m) =>
       m.content.startsWith('历史样本'),
     );
