@@ -546,7 +546,13 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
       expect(second!.deadlineMs).toBeLessThan(first!.deadlineMs!);
       expect(second!.failover).toBeUndefined();
       expect(requests.map((r) => r.model)).toEqual(['fake', 'standby-wire']);
-      const attempts = await db.query(
+      const attempts = await db.query<{
+        error_code: string | null;
+        usage_state: string;
+        charged_micros: string;
+        bound_snapshot: { dispatchTiming: { adapterElapsedMs: number } };
+        latency_ms: number;
+      }>(
         `SELECT a.error_code,a.usage_state,r.charged_micros,a.bound_snapshot,r.latency_ms FROM model_access.generation_attempts a JOIN model_access.usage_records r ON r.id=a.usage_record_id
         WHERE a.generation_id=(SELECT generation_id FROM model_access.generation_attempts WHERE usage_record_id=$1) ORDER BY a.ordinal`,
         [result.value.usageRecordId],
