@@ -93,6 +93,7 @@ export type TextResult =
       retryable: boolean;
       diagnostic?:
         | 'timeout_idle'
+        | 'timeout_progress'
         | 'timeout_deadline'
         | 'stream_incomplete'
         | 'response_parse_error'
@@ -152,6 +153,8 @@ export interface TextAdapter {
     timeoutMs: number;
     /** 流式读取的总时限；timeoutMs 仍用于检测无数据的间隔。 */
     deadlineMs?: number;
+    /** 有可用备用线路时，限制流式请求连续没有正文或思考进度的时间。 */
+    failover?: { progressTimeoutMs: number; backupAvailable: () => boolean };
     /**
      * 思考开关：off = 按厂商发关闭思考的字段（默认）；default = 不发，用模型默认；
      * on = 批 EJ 后台任务保留思考，并按 thinkingBudget 单独给思考预算（maxOutputTokens 已是正文 + 思考的总额）。
@@ -373,14 +376,15 @@ interface OpenAiStream {
   usage?: unknown;
 }
 
-function readOpenAiFrames(lines: string[], stream: OpenAiStream): void {
+function readOpenAiFrames(lines: string[], stream: OpenAiStream): boolean {
+  let progress = false;
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed.startsWith('data:')) continue;
     const data = trimmed.slice(5).trim();
     if (data === '[DONE]') {
       stream.done = true;
-      return;
+      break;
     }
     if (!data) continue;
     let event: Record<string, unknown>;
@@ -400,13 +404,20 @@ function readOpenAiFrames(lines: string[], stream: OpenAiStream): void {
     if (!Array.isArray(event.choices)) continue;
     const choice = event.choices[0] as Record<string, unknown> | undefined;
     const delta = (choice?.delta ?? choice?.message) as Record<string, unknown> | undefined;
-    if (typeof delta?.content === 'string') stream.content += delta.content;
+    if (typeof delta?.content === 'string') {
+      stream.content += delta.content;
+      if (/\S/u.test(delta.content)) progress = true;
+    }
     if (delta?.content != null && typeof delta.content !== 'string') stream.malformed = true;
     const think = delta?.reasoning_content ?? delta?.reasoning;
-    if (typeof think === 'string') stream.reasoning += think;
+    if (typeof think === 'string') {
+      stream.reasoning += think;
+      if (/\S/u.test(think)) progress = true;
+    }
     if (delta?.refusal) stream.refusal = true;
     if (typeof choice?.finish_reason === 'string') stream.finishReason = choice.finish_reason;
   }
+  return progress;
 }
 
 function usageOf(
@@ -476,7 +487,8 @@ export class OpenAiTextAdapter implements TextAdapter {
     input: Parameters<TextAdapter['generate']>[0],
     extra: Record<string, unknown>,
   ): Promise<TextResult> {
-    let timeout: 'timeout_idle' | 'timeout_deadline' | undefined;
+    let timeout: 'timeout_idle' | 'timeout_deadline' | 'timeout_progress' | undefined;
+    let progressTimer: NodeJS.Timeout | undefined;
     let idleTimer: NodeJS.Timeout | undefined;
     let hardTimer: NodeJS.Timeout | undefined;
     try {
@@ -496,11 +508,24 @@ export class OpenAiTextAdapter implements TextAdapter {
           controller.abort();
         }, input.timeoutMs);
       };
+      // 已知非流式的直连有单独的协议/回执行为；只对请求流式响应的线路启用。
+      const failover = stream ? input.failover : undefined;
+      const armProgress = () => {
+        if (!failover) return;
+        clearTimeout(progressTimer);
+        if (performance.now() + failover.progressTimeoutMs >= deadlineAt) return;
+        progressTimer = setTimeout(() => {
+          if (!failover.backupAvailable()) return;
+          timeout ??= 'timeout_progress';
+          controller.abort();
+        }, failover.progressTimeoutMs);
+      };
       hardTimer = setTimeout(() => {
         timeout ??= 'timeout_deadline';
         controller.abort();
       }, deadlineMs);
       armIdle();
+      armProgress();
       const response = await fetch(`${input.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
         method: 'POST',
         redirect: 'manual',
@@ -527,6 +552,7 @@ export class OpenAiTextAdapter implements TextAdapter {
       });
       // 限制响应大小，避免异常供应商占满服务器内存；只提取结构化字段，不向外传播正文。
       if (!response.body) return { ok: false, category: 'provider_error', retryable: true };
+      if (!response.ok) clearTimeout(progressTimer);
       let eventStream = /text\/event-stream/i.test(response.headers.get('content-type') ?? '');
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -554,7 +580,15 @@ export class OpenAiTextAdapter implements TextAdapter {
           if (eventStream) {
             const lines = rawBody.split('\n');
             rawBody = lines.pop()!;
-            readOpenAiFrames(lines, streamed);
+            const progress = readOpenAiFrames(lines, streamed);
+            if (streamed.done || streamed.finishReason || streamed.refusal || streamed.error) {
+              // 已收到终止状态：照原流程读取末帧用量，不能因等回执再次发送。
+              clearTimeout(progressTimer);
+            } else if (response.ok && progress) armProgress();
+          } else if (progressTimer && rawBody.trimStart().startsWith('{')) {
+            // 部分兼容服务虽然请求了流式，实际返回单个 JSON 文档。正文传输沿用原空闲策略。
+            clearTimeout(progressTimer);
+            progressTimer = undefined;
           }
           // SSE 的事件信封可能远大于实质文本。逐帧丢弃信封，对实质文本、未完成单帧及传输总量分别设保护。
           if (
@@ -759,6 +793,7 @@ export class OpenAiTextAdapter implements TextAdapter {
     } finally {
       if (idleTimer) clearTimeout(idleTimer);
       if (hardTimer) clearTimeout(hardTimer);
+      clearTimeout(progressTimer);
     }
   }
 }

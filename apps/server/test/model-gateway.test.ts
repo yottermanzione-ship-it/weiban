@@ -23,6 +23,8 @@ import {
   CatalogService,
   ScenarioService,
   GATEWAY_RETRY_WAIT,
+  TEXT_ADAPTER,
+  type TextAdapter,
   GenerationCache,
   GatewayMaintenance,
   AdminUsageService,
@@ -77,6 +79,7 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
   let gateway: ModelGatewayPort;
   let calls = 0;
   let mode = 'ok';
+  let primaryStreaming = false;
   let requests: Record<string, unknown>[] = [];
   const key = 'sk-gateway-CANARY-DO-NOT-LOG-8934701';
   const output = '模型私密回答 CANARY-OUTPUT-8934701';
@@ -97,6 +100,25 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
       for await (const part of req) body += part.toString();
       requests.push(JSON.parse(body));
       expect(req.headers.authorization).toBe(`Bearer ${key}`);
+      if (mode === 'no-model-progress') {
+        if (requests.at(-1)?.model === 'fake') {
+          primaryStreaming = true;
+          res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+          res.write('data: {"choices":[{"delta":{"role":"assistant"}}]}\n\n');
+          const heartbeats = setInterval(() => res.write(': ping\n\n'), 40);
+          res.on('close', () => {
+            clearInterval(heartbeats);
+            primaryStreaming = false;
+          });
+          return;
+        }
+        // 第二个请求应当发生在第一条流已被取消后。保留非零的生成时间以验证备用窗口。
+        if (primaryStreaming) {
+          res.writeHead(503).end();
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 400));
+      }
       if (mode === 'one-model-down' && requests.at(-1)?.model !== 'cheap-working') {
         res.writeHead(503).end('{"error":{"code":"model_unavailable"}}');
         return;
@@ -484,6 +506,78 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
       ).rows[0]!.n,
     ).toBe(before);
   });
+  it('主线路只有心跳时顺序切到备用，备用已达 RPM 时保留原线路截止', async () => {
+    const catalog = app.get(CatalogService);
+    const up = app.get(UpstreamService);
+    const prior = (await catalog.routes([modelKey])).get(modelKey)!;
+    const spare = await up.create(admin, {
+      name: '本机备用线路',
+      kind: 'openai_compatible',
+      baseUrl: `http://127.0.0.1:${(fake.address() as AddressInfo).port}/v1`,
+      apiKey: key,
+    });
+    await up.update(admin, spare.upstreamId, { rpmLimit: 1 });
+    const adapter = vi.spyOn(app.get<TextAdapter>(TEXT_ADAPTER), 'generate');
+    try {
+      await catalog.replaceRoutes(admin, modelKey, [
+        { ...prior[0]!, priority: 1 },
+        {
+          ...prior[0]!,
+          upstreamId: spare.upstreamId,
+          upstreamModelId: 'standby-wire',
+          priority: 2,
+        },
+      ]);
+      mode = 'no-model-progress';
+      const request = input({ deadlineAt: new Date(clock.nowMs() + 2400).toISOString() });
+      const result = await gateway.generateText(request);
+      expect(result).toMatchObject({ ok: true, value: { text: output, chargedMicros: 330 } });
+      if (!result.ok) throw Error('备用线路未完成');
+      const [first, second] = adapter.mock.calls.map(([attempt]) => attempt);
+      expect(first!.failover!.progressTimeoutMs).toBe(Math.ceil(first!.deadlineMs! / 2));
+      console.info('synthetic failover timing (ms)', {
+        primaryBudget: first!.deadlineMs,
+        primaryProgressWindow: first!.failover!.progressTimeoutMs,
+        backupBudget: second!.deadlineMs,
+      });
+      expect(second!.deadlineMs).toBeGreaterThan(600);
+      expect(second!.deadlineMs).toBeLessThan(first!.deadlineMs!);
+      expect(second!.failover).toBeUndefined();
+      expect(requests.map((r) => r.model)).toEqual(['fake', 'standby-wire']);
+      const attempts = await db.query(
+        `SELECT a.error_code,a.usage_state,r.charged_micros FROM model_access.generation_attempts a JOIN model_access.usage_records r ON r.id=a.usage_record_id
+        WHERE a.generation_id=(SELECT generation_id FROM model_access.generation_attempts WHERE usage_record_id=$1) ORDER BY a.ordinal`,
+        [result.value.usageRecordId],
+      );
+      expect(attempts.rows).toEqual([
+        { error_code: 'timeout_progress', usage_state: 'estimated', charged_micros: '0' },
+        { error_code: null, usage_state: 'reported', charged_micros: '330' },
+      ]);
+      expect(await gateway.generateText(request)).toEqual(result);
+      expect(adapter).toHaveBeenCalledTimes(2);
+      const charges = await db.query(
+        `SELECT l.upstream_id, l.amount_micros FROM billing.ledger_entries l JOIN model_access.generation_attempts a ON a.usage_record_id=l.usage_record_id
+          WHERE l.type='charge' AND NOT l.absorbed AND a.generation_id=(SELECT generation_id FROM model_access.generation_attempts WHERE usage_record_id=$1)`,
+        [result.value.usageRecordId],
+      );
+      expect(charges.rows).toEqual([{ upstream_id: spare.upstreamId, amount_micros: '-330' }]);
+      adapter.mockClear();
+      // 唯一备用的限额已用完，不应再以它为由截短主线路。
+      expect(
+        (
+          await gateway.generateText(
+            input({ deadlineAt: new Date(clock.nowMs() + 320).toISOString() }),
+          )
+        ).ok,
+      ).toBe(false);
+      expect(adapter.mock.calls.map(([attempt]) => [attempt.model, attempt.failover])).toEqual([
+        ['fake', undefined],
+      ]);
+    } finally {
+      adapter.mockRestore();
+      await catalog.replaceRoutes(admin, modelKey, prior);
+    }
+  }, 10000);
   // ADR-0032（上游账号池）：限流 / 故障改为「当场换下一个账号」，不再在同一账号上等待重试。
   // 测试只有一个账号，所以 429 一次就失败；失败不向用户扣款、不留冻结。
   it('429 当场换账号，不在同一账号上等待重试；只有一个账号时失败且不扣款', async () => {

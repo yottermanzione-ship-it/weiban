@@ -173,10 +173,19 @@ export class UpstreamScheduler {
 
   /** 占用账号槽位；超出账号并发或每分钟上限时返回 false。 */
   acquireAccount(c: RouteCandidate): boolean {
+    return this.accountSlot(c, true);
+  }
+
+  /** 只检查此刻的并发/RPM余量，不占用备用账号，也不消耗请求次数。 */
+  canAcquireAccount(c: RouteCandidate): boolean {
+    return this.accountSlot(c, false);
+  }
+
+  private accountSlot(c: RouteCandidate, take: boolean): boolean {
     const inFlight = this.accountInFlight.get(c.upstreamId) ?? 0;
     if (c.maxConcurrency !== null && inFlight >= c.maxConcurrency) return false;
-    if (!this.hit(this.accountHits, c.upstreamId, c.rpmLimit)) return false;
-    this.accountInFlight.set(c.upstreamId, inFlight + 1);
+    if (!this.hit(this.accountHits, c.upstreamId, c.rpmLimit, take)) return false;
+    if (take) this.accountInFlight.set(c.upstreamId, inFlight + 1);
     return true;
   }
 
@@ -253,7 +262,7 @@ export class UpstreamScheduler {
   }
 
   /** 滑动 1 分钟窗口计数；limit 为 null 不限。返回 false 表示已满（不记这次）。 */
-  private hit(map: Map<string, number[]>, key: string, limit: number | null): boolean {
+  private hit(map: Map<string, number[]>, key: string, limit: number | null, take = true): boolean {
     if (limit === null) return true;
     const now = this.clock.nowMs();
     const list = (map.get(key) ?? []).filter((t) => now - t < WINDOW_MS);
@@ -261,7 +270,7 @@ export class UpstreamScheduler {
       map.set(key, list);
       return false;
     }
-    list.push(now);
+    if (take) list.push(now);
     map.set(key, list);
     return true;
   }
