@@ -76,7 +76,6 @@ import { CompanionSettingsService } from './settings.js';
 import { SimulationService } from './simulation.js';
 import { CharacterImageService } from './character-image.js';
 import { PlannerService } from './planner.js';
-import { EcologySettingsService } from './ecology-settings.js';
 import { ImageCaptionStore, NO_CAPTIONS } from './image-captions.js';
 import { ImagePublicSearch } from './image-public-search.js';
 import { MomentSceneryService } from './moment-scenery.js';
@@ -171,7 +170,6 @@ export class MomentsAiService {
     @Inject(SocialService) private readonly social: SocialService,
     @Inject(CharacterImageService) private readonly images: CharacterImageService,
     @Inject(PlannerService) private readonly planner: PlannerService,
-    @Inject(EcologySettingsService) private readonly ecology: EcologySettingsService,
     @Optional()
     @Inject(MODEL_PLATFORM_GATEWAY_PORT)
     private readonly platform?: ModelGatewayPlatformPort,
@@ -217,8 +215,7 @@ export class MomentsAiService {
    */
   async runForUser(userId: string): Promise<void> {
     if ((await this.accounts.getAccountStatus(userId)) !== 'active') return;
-    if (await this.ecology.isActive(userId))
-      await this.social.coordinateDay(userId).catch(() => undefined);
+    await this.social.coordinateDay(userId).catch(() => undefined);
     const contacts = await this.contacts.listActiveContacts(userId).catch(() => []);
     for (const c of contacts) await this.postPublic(userId, c.characterId).catch(() => undefined);
   }

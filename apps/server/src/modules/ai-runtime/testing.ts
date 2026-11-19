@@ -28,6 +28,7 @@ export { SimulationService } from './application/simulation.js';
 export { CharacterImageService, type ImageUse } from './application/character-image.js';
 export { MediaAiService } from './application/media-ai.js';
 export { ProactiveSchedulerService } from './application/proactive-scheduler.js';
+export { SocialService, stableRandom } from './application/social.js';
 export { EcologySettingsService } from './application/ecology-settings.js';
 export { brainPrefix, brainPromptParts, type BrainInput } from './domain/brain.js';
 export {

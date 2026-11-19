@@ -77,6 +77,7 @@ export function EcologyPage() {
     setBusy(true);
     try {
       setLocal(await api.call(EcologyEndpoints.update, { body }));
+      window.dispatchEvent(new Event('weiban:ecology-updated'));
     } catch (e) {
       showToast(friendlyError(e), 2500, 'error');
     } finally {
@@ -94,7 +95,8 @@ export function EcologyPage() {
     });
     try {
       await api.call(EcologyEndpoints.setCharacter, { params: { characterId }, body: { enabled } });
-      setLocal(await api.call(EcologyEndpoints.get, {}));
+      window.dispatchEvent(new Event('weiban:ecology-updated'));
+      setLocal(await api.call(EcologyEndpoints.get, { networkOnly: true }));
     } catch (e) {
       showToast(friendlyError(e), 2500, 'error');
       setLocal(null);

@@ -83,6 +83,8 @@ export interface CharacterRelationReadPort {
   ): Promise<CharacterRelation | null>;
   /** 某角色的全部关系（预设之间 + 该用户设定的自定义之间）。 */
   listRelations(userId: string, characterId: string): Promise<CharacterRelation[]>;
+  /** 多个角色涉及的可见关系，每条双向关系只返回一次。 */
+  listRelationsForCharacters(userId: string, characterIds: string[]): Promise<CharacterRelation[]>;
 }
 
 /** 作品链接库读取（MED-05）。只返回 enabled 且最近一次检查通过的链接。 */

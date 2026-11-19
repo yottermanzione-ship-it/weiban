@@ -27,7 +27,14 @@ export interface ReadMessagesInput {
   excludeMessageIds?: string[];
   /** 3.0：只取这些内容类型，例 ['text', 'voice']；不传为全部。 */
   contentTypes?: string[];
+  /** 普通私聊内部读取：为此会话所有者额外标记可见的回复首泡。默认不读取归属。 */
+  replyStartsForUserId?: string;
 }
+
+export type ChatHistoryMessage = Message & {
+  /** 持久回复幂等键的第 0 泡对应的普通用户消息序号。仅内部端口返回。 */
+  replyTriggerSeq?: number;
+};
 
 /**
  * 每个方法的可选 tx（5.7 起全部方法都有）：
@@ -63,7 +70,7 @@ export interface ChatReadPort {
    */
   findOfficialConversation(userId: string, tx?: Tx): Promise<Conversation | null>;
   /** 结果按 seq 升序；不含正文被撤回的内容。5.7：可传 tx（锁会话行）。 */
-  readMessages(input: ReadMessagesInput, tx?: Tx): Promise<Message[]>;
+  readMessages(input: ReadMessagesInput, tx?: Tx): Promise<ChatHistoryMessage[]>;
   /** 第一条 createdAt >= at 的消息 seq；只读日期和序号，不解密正文、不锁会话行。 */
   firstSeqAtOrAfter(
     conversationId: string,

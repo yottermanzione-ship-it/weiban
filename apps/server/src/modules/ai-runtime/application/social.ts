@@ -55,7 +55,7 @@ import { outputAllowed } from '../domain/reply-rules.js';
 import { cardReferrals, jointEvents, memorySharingSettings } from '../infra/db/schema.js';
 import { MemoryService } from './memory.js';
 import { localParts } from './proactive-scheduler.js';
-import { CompanionSettingsService } from './settings.js';
+import { EcologySettingsService } from './ecology-settings.js';
 import { SimulationService, EventKind } from './simulation.js';
 import { characterView, rolePersonaSpeechText } from './character-view.js';
 
@@ -167,7 +167,7 @@ export class SocialService implements OnModuleInit {
     @Inject(BILLING_READ_PORT) private readonly billing: BillingReadPort,
     @Inject(MemoryService) private readonly memory: MemoryService,
     @Inject(SimulationService) private readonly simulation: SimulationService,
-    @Inject(CompanionSettingsService) private readonly settings: CompanionSettingsService,
+    @Inject(EcologySettingsService) private readonly ecology: EcologySettingsService,
     @Optional()
     @Inject(PUBLIC_UPDATE_READ_PORT)
     private readonly publicUpdates?: PublicUpdateReadPort,
@@ -279,28 +279,20 @@ export class SocialService implements OnModuleInit {
   // =========================================================================
   /** 每天一次：在已添加角色与其关系网之间安排 0–2 件共同事件。由朋友圈 tick 每小时调用，幂等。 */
   async coordinateDay(userId: string): Promise<void> {
+    if (!(await this.ecology.isActive(userId))) return;
     const profile = await this.identity.getProfile(userId);
     const local = localParts(this.clock.now(), profile?.timeZone ?? 'Asia/Shanghai');
-    if (local.hour < 8) return; // 推演通常在凌晨跑完，白天再安排共同事件
+    if (local.hour < 8) return;
     const contacts = await this.contacts.listActiveContacts(userId).catch(() => []);
     const added = new Set(contacts.map((c) => c.characterId));
-    const pairs = new Map<string, { a: string; b: string; relation: CharacterRelation }>();
-    for (const c of contacts) {
-      const dailyLife = await this.settings
-        .get(userId, c.characterId)
-        .then((s) => s.dailyLife)
-        .catch(() => true);
-      if (!dailyLife) continue;
-      for (const relation of await this.relations
-        .listRelations(userId, c.characterId)
-        .catch(() => [])) {
-        const other = otherOf(relation, c.characterId);
-        const [a, b] = c.characterId < other ? [c.characterId, other] : [other, c.characterId];
-        pairs.set(`${a}:${b}`, { a, b, relation });
-      }
-    }
-    const chosen = [...pairs.values()]
-      .map((p) => {
+    const disabled = await this.ecology.disabledCharacterIds(userId, [...added]);
+    const participating = [...added].filter((id) => !disabled.has(id));
+    const relations = await this.relations.listRelationsForCharacters(userId, participating);
+    // 两位都已添加时要尊重双方设置；尚未添加的关系角色仍可作为来宾。
+    const chosen = relations
+      .filter((r) => !disabled.has(r.characterAId) && !disabled.has(r.characterBId))
+      .map((relation) => {
+        const p = { a: relation.characterAId, b: relation.characterBId, relation };
         const both = added.has(p.a) && added.has(p.b);
         const weight =
           ({ close: 0.35, familiar: 0.2, acquaintance: 0.05 }[p.relation.closeness] ?? 0.05) *

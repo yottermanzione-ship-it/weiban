@@ -380,7 +380,7 @@ internal data class InformationNavigation(
 
 private val proactiveFrequencies = listOf("low" to "少", "medium" to "适中", "high" to "多")
 
-/** 主动消息（SIM-10、CHAT-13 第 2 条）：开关 + 三档频率，乐观更新，失败退回；另含「TA 的日常」（SIM-13）。 */
+/** 主动消息（SIM-10、CHAT-13 第 2 条）：开关 + 三档频率，乐观更新，失败退回；另含角色生态参与开关。 */
 @Composable private fun InformationProactive(
     actions: InformationActions,
     companion: NativeRemote<CompanionEndpointsGetForCharacterResponse>,
@@ -397,7 +397,6 @@ private val proactiveFrequencies = listOf("low" to "少", "medium" to "适中", 
     val globalOff = global.data?.proactiveMessagesEnabled == false
     var enabled by remember(settings.proactiveMessages) { mutableStateOf(settings.proactiveMessages ?: true) }
     var frequency by remember(settings.proactiveFrequency) { mutableStateOf(settings.proactiveFrequency ?: "medium") }
-    var daily by remember(settings.dailyLife) { mutableStateOf(settings.dailyLife ?: true) }
     InformationToggle("TA 主动找我", enabled && !globalOff, !actions.pending && !globalOff) { value ->
         val before = enabled
         enabled = value
@@ -436,11 +435,18 @@ private val proactiveFrequencies = listOf("low" to "少", "medium" to "适中", 
         }
     }
     InformationCalls(actions, companion, characterId, settings, global.data?.proactiveCallsEnabled == false)
-    InformationToggle("TA 的日常", daily, !actions.pending) { value ->
-        val before = daily
-        daily = value
-        actions.change(after = companion::refresh, failed = { daily = before }) {
-            actions.call(Endpoints.companionEndpointsUpdateForCharacter, characterId, buildJsonObject { put("dailyLife", value) })
+    val ecology = characterEcology(actions.repository, actions.owner, characterId)
+    val current = ecology.data
+    if (current != null && ecology.error == null) {
+        val character = current.characters.find { it.characterId == characterId }
+        if (current.eligible && current.enabled && character != null) {
+            InformationToggle("TA 参与角色生态", character.enabled, !actions.pending && !ecology.loading) { value ->
+                actions.change(after = ecology::refresh) {
+                    actions.call(Endpoints.ecologyEndpointsSetCharacter, characterId, buildJsonObject { put("enabled", value) })
+                }
+            }
+        } else {
+            current.dailyNotice(characterId)?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         }
     }
 }

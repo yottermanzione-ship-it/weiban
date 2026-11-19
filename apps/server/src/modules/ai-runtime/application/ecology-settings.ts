@@ -286,17 +286,24 @@ export class EcologySettingsService {
     return row ?? null;
   }
 
-  async characterEnabled(userId: string, characterId: string): Promise<boolean> {
-    const [row] = await this.db.db
-      .select({ enabled: ecologyCharacterSettings.enabled })
+  /** 没有单独设置的好友默认参与。一次取出本次好友集合中明确关闭的角色。 */
+  async disabledCharacterIds(userId: string, characterIds: string[]): Promise<Set<string>> {
+    if (!characterIds.length) return new Set();
+    const rows = await this.db.db
+      .select({ characterId: ecologyCharacterSettings.characterId })
       .from(ecologyCharacterSettings)
       .where(
         and(
           eq(ecologyCharacterSettings.userId, userId),
-          eq(ecologyCharacterSettings.characterId, characterId),
+          inArray(ecologyCharacterSettings.characterId, characterIds),
+          eq(ecologyCharacterSettings.enabled, false),
         ),
       );
-    return row?.enabled ?? true;
+    return new Set(rows.map((row) => row.characterId));
+  }
+
+  async characterEnabled(userId: string, characterId: string): Promise<boolean> {
+    return !(await this.disabledCharacterIds(userId, [characterId])).has(characterId);
   }
 
   /**
@@ -381,20 +388,10 @@ export class EcologySettingsService {
     ]);
     const contacts = await this.contacts.listActiveContacts(userId).catch(() => []);
     const ids = contacts.map((c) => c.characterId);
-    const switches = ids.length
-      ? await this.db.db
-          .select()
-          .from(ecologyCharacterSettings)
-          .where(
-            and(
-              eq(ecologyCharacterSettings.userId, userId),
-              inArray(ecologyCharacterSettings.characterId, ids),
-            ),
-          )
-      : [];
+    const disabledCharacters = await this.disabledCharacterIds(userId, ids);
     const characters = ids.map((characterId) => ({
       characterId,
-      enabled: switches.find((s) => s.characterId === characterId)?.enabled ?? true,
+      enabled: !disabledCharacters.has(characterId),
     }));
     // 对照表 v3：只返回 6 个开关（基础层不展示；care_absence / care_follow_up 归主动消息）。
     const disabled = row?.disabledActions ?? [];

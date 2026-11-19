@@ -6,7 +6,7 @@
  * - 删除后两人不再互动（ai-runtime 订阅 characters.relation_changed），历史聊天不动。
  */
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, isNull, or, type SQL } from 'drizzle-orm';
+import { inArray, and, eq, isNull, or, type SQL } from 'drizzle-orm';
 import {
   AdminRelationWrite,
   CharacterRelation,
@@ -87,15 +87,26 @@ export class CharacterRelationService implements CharacterRelationReadPort {
       );
     return row ? dto(row) : null;
   }
-  async listRelations(userId: string, characterId: string): Promise<CharacterRelation[]> {
+  listRelations(userId: string, characterId: string): Promise<CharacterRelation[]> {
+    return this.listRelationsForCharacters(userId, [characterId]);
+  }
+
+  async listRelationsForCharacters(
+    userId: string,
+    characterIds: string[],
+  ): Promise<CharacterRelation[]> {
     parseContract(Id, userId);
-    parseContract(Id, characterId);
+    if (!characterIds.length) return [];
+    for (const id of characterIds) parseContract(Id, id);
     const rows = await this.database.db
       .select()
       .from(relations)
       .where(
         and(
-          or(eq(relations.characterAId, characterId), eq(relations.characterBId, characterId)),
+          or(
+            inArray(relations.characterAId, characterIds),
+            inArray(relations.characterBId, characterIds),
+          ),
           this.visibleTo(userId),
         ),
       )

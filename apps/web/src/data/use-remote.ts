@@ -22,6 +22,7 @@ export function useRemote<E extends EndpointDef>(
   endpoint: E,
   options: RequestOptions<E> = {},
   enabled = true,
+  refreshEvent?: string,
 ) {
   const key = JSON.stringify(options);
   const [state, setState] = useState<Result<z.output<E['response']>>>(() => seed());
@@ -34,8 +35,12 @@ export function useRemote<E extends EndpointDef>(
   useEffect(() => {
     const refresh = () => setRevision((value) => value + 1);
     window.addEventListener('weiban:settings-updated', refresh);
-    return () => window.removeEventListener('weiban:settings-updated', refresh);
-  }, []);
+    if (refreshEvent) window.addEventListener(refreshEvent, refresh);
+    return () => {
+      window.removeEventListener('weiban:settings-updated', refresh);
+      if (refreshEvent) window.removeEventListener(refreshEvent, refresh);
+    };
+  }, [refreshEvent]);
   useEffect(() => {
     if (!enabled) return;
     let active = true;
@@ -43,6 +48,9 @@ export function useRemote<E extends EndpointDef>(
     const owner = api.ownerKey();
     const live = () => active && api.ownerKey() === owner;
     const request = JSON.parse(key) as RequestOptions<E>;
+    // 设置写入后重新读取时，不能复用写入前仍在途的 GET。
+    const controller = refreshEvent ? new AbortController() : undefined;
+    if (controller) request.signal = controller.signal;
     const hit = api.peek(endpoint, request, STALE_OK);
     setState((previous) => {
       const data = hit?.value ?? (previous.key === key ? previous.data : undefined);
@@ -72,8 +80,9 @@ export function useRemote<E extends EndpointDef>(
     })();
     return () => {
       active = false;
+      controller?.abort();
     };
-  }, [endpoint, key, revision, enabled]);
+  }, [endpoint, key, revision, enabled, refreshEvent]);
   const current = state.key === key ? state : seed();
   return {
     data: current.data,
