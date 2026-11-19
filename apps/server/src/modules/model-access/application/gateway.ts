@@ -61,7 +61,7 @@ import { ModelResolver, ModelStatusService, type ResolvedModel } from './resolve
 import { isRealtimeCallEntry } from './realtime-call.js';
 import { FAILOVER_CATEGORIES, UpstreamScheduler } from './scheduler.js';
 import { UpstreamService } from './upstreams.js';
-import { UsageRecorder } from './usage.js';
+import { UsageRecorder, type DispatchTiming } from './usage.js';
 import { CatalogService } from './catalog.js';
 import { PrivateBlockLimiter } from './private-block-limit.js';
 import {
@@ -757,12 +757,13 @@ export class ModelGateway implements ModelGatewayPort {
             upstreamId: route.upstreamId,
             upstreamModelId: route.upstreamModelId,
           }));
+        let dispatchTiming: DispatchTiming | undefined;
         if (sent) {
           await this.recorder.markAttemptSent(attemptId);
           try {
             answer = isFakeModel(route.upstreamModelId, this.config.nodeEnv === 'production')
               ? fakeAnswer(input, wire)
-              : await this.upstreams.withApiKey(route.upstreamId, (apiKey) => {
+              : await this.upstreams.withApiKey(route.upstreamId, async (apiKey) => {
                   const deadlineMs = Math.max(
                     1,
                     Math.floor(budgetMs - (performance.now() - wallStart)),
@@ -784,7 +785,7 @@ export class ModelGateway implements ModelGatewayPort {
                     );
                   // 只为可顺序切换的备用保留一个普通等待窗口；短截止最多分出剩余时间的一半。
                   const reserveMs = Math.min(STANDARD_TEXT_IDLE_MS, Math.floor(deadlineMs / 2));
-                  return this.adapter.generate({
+                  const dispatch = {
                     protocol,
                     baseUrl: route.baseUrl,
                     apiKey,
@@ -809,7 +810,22 @@ export class ModelGateway implements ModelGatewayPort {
                     ...(thinkingBudget > 0
                       ? { thinking: 'on' as const, thinkingBudget }
                       : { thinking: 'off' as const }),
-                  });
+                  } satisfies Parameters<TextAdapter['generate']>[0];
+                  const granted = {
+                    deadlineMs: dispatch.deadlineMs,
+                    timeoutMs: dispatch.timeoutMs,
+                    progressTimeoutMs: dispatch.failover?.progressTimeoutMs ?? null,
+                    routePriority: route.routePriority ?? null,
+                  };
+                  const adapterStart = performance.now();
+                  try {
+                    return await this.adapter.generate(dispatch);
+                  } finally {
+                    dispatchTiming = {
+                      ...granted,
+                      adapterElapsedMs: Math.round(performance.now() - adapterStart),
+                    };
+                  }
                 });
           } catch {
             answer = { ok: false, category: 'network_error', retryable: true };
@@ -841,6 +857,7 @@ export class ModelGateway implements ModelGatewayPort {
           known,
           errorCode,
           known ? 'reported' : answer.usage || failureUsage?.estimated ? 'estimated' : 'unknown',
+          dispatchTiming,
         );
         const latencyMs = Math.round(performance.now() - attemptStart);
         // 批 EJ：调用方要求抢救时，正文 JSON 没写完就交回已写出的部分（照常计费），不加大额度重试；

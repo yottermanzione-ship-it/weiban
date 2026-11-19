@@ -35,6 +35,8 @@ import { UpstreamService } from './upstreams.js';
 export interface RouteCandidate {
   upstreamId: string;
   upstreamModelId: string;
+  /** 目录路由优先级；旧目录的默认主线路没有独立路由行。 */
+  routePriority?: number;
   baseUrl: string;
   /** 3.24：上游协议（契约 UpstreamKind；文本调用按它选 OpenAI 兼容或 Anthropic 原生）。 */
   kind: string;
@@ -129,6 +131,7 @@ export class UpstreamScheduler {
           candidate: {
             upstreamId: upstream.id,
             upstreamModelId: route.upstreamModelId,
+            routePriority: route.priority,
             baseUrl: upstream.baseUrl,
             kind: upstream.kind,
             maxConcurrency: upstream.maxConcurrency,

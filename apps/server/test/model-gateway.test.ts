@@ -26,6 +26,7 @@ import {
   TEXT_ADAPTER,
   type TextAdapter,
   GenerationCache,
+  UsageRecorder,
   GatewayMaintenance,
   AdminUsageService,
   ModelGatewayMedia,
@@ -518,6 +519,7 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
     });
     await up.update(admin, spare.upstreamId, { rpmLimit: 1 });
     const adapter = vi.spyOn(app.get<TextAdapter>(TEXT_ADAPTER), 'generate');
+    const started = vi.spyOn(app.get(UsageRecorder), 'startAttempt');
     try {
       await catalog.replaceRoutes(admin, modelKey, [
         { ...prior[0]!, priority: 1 },
@@ -545,11 +547,37 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
       expect(second!.failover).toBeUndefined();
       expect(requests.map((r) => r.model)).toEqual(['fake', 'standby-wire']);
       const attempts = await db.query(
-        `SELECT a.error_code,a.usage_state,r.charged_micros FROM model_access.generation_attempts a JOIN model_access.usage_records r ON r.id=a.usage_record_id
+        `SELECT a.error_code,a.usage_state,r.charged_micros,a.bound_snapshot,r.latency_ms FROM model_access.generation_attempts a JOIN model_access.usage_records r ON r.id=a.usage_record_id
         WHERE a.generation_id=(SELECT generation_id FROM model_access.generation_attempts WHERE usage_record_id=$1) ORDER BY a.ordinal`,
         [result.value.usageRecordId],
       );
-      expect(attempts.rows).toEqual([
+      const expectedSnapshots = adapter.mock.calls.map(([dispatch], index) => ({
+        ...(started.mock.calls[index]![0].boundSnapshot as Record<string, unknown>),
+        dispatchTiming: {
+          deadlineMs: dispatch.deadlineMs,
+          timeoutMs: dispatch.timeoutMs,
+          progressTimeoutMs: dispatch.failover?.progressTimeoutMs ?? null,
+          routePriority: index + 1,
+          adapterElapsedMs: expect.any(Number),
+        },
+      }));
+      expect(attempts.rows.map((row) => row.bound_snapshot)).toEqual(expectedSnapshots);
+      const elapsed = attempts.rows.map(
+        (row) => row.bound_snapshot.dispatchTiming.adapterElapsedMs,
+      );
+      expect(elapsed[0]).toBeGreaterThanOrEqual(first!.failover!.progressTimeoutMs - 5);
+      expect(elapsed[1]).toBeGreaterThanOrEqual(390); // 备用上游在响应前等待 400ms。
+      for (const row of attempts.rows)
+        expect(row.bound_snapshot.dispatchTiming.adapterElapsedMs).toBeLessThanOrEqual(
+          row.latency_ms + 1,
+        );
+      expect(
+        attempts.rows.map(({ error_code, usage_state, charged_micros }) => ({
+          error_code,
+          usage_state,
+          charged_micros,
+        })),
+      ).toEqual([
         { error_code: 'timeout_progress', usage_state: 'estimated', charged_micros: '0' },
         { error_code: null, usage_state: 'reported', charged_micros: '330' },
       ]);
@@ -575,6 +603,7 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
       ]);
     } finally {
       adapter.mockRestore();
+      started.mockRestore();
       await catalog.replaceRoutes(admin, modelKey, prior);
     }
   }, 10000);

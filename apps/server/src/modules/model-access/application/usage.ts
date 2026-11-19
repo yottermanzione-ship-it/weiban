@@ -45,6 +45,15 @@ const PREFIX_TOKENS_PER_CHAR = 0.75;
 
 // ---------- 网关写入（D-L0-09 使用） ----------
 
+/** 实际传给文字适配器的等待预算，仅用于逐次调用的后台核查。 */
+export interface DispatchTiming {
+  deadlineMs: number;
+  timeoutMs: number;
+  progressTimeoutMs: number | null;
+  routePriority: number | null;
+  adapterElapsedMs: number;
+}
+
 export interface StartUsageInput {
   input: Pick<
     GenerateTextInput,
@@ -122,12 +131,18 @@ export class UsageRecorder {
     known: boolean,
     errorCode: string | null,
     usageState?: 'reported' | 'estimated' | 'unknown',
+    dispatchTiming?: DispatchTiming,
   ) {
     await this.database.db
       .update(generationAttempts)
       .set({
         phase: 'finished',
         reportedUsage: usage,
+        ...(dispatchTiming
+          ? {
+              boundSnapshot: sql`jsonb_set(${generationAttempts.boundSnapshot}, '{dispatchTiming}', ${JSON.stringify(dispatchTiming)}::jsonb)`,
+            }
+          : {}),
         usageState: usageState ?? (known ? 'reported' : 'unknown'),
         errorCode,
         finishedAt: this.clock.now(),
