@@ -120,7 +120,15 @@ const taskCte = `    WITH candidates AS MATERIALIZED (
       UNION SELECT task_key FROM model_access.task_outcomes WHERE created_at >= $1 AND created_at < $2 AND ($9::uuid[] IS NULL OR user_id=ANY($9)) AND $10::uuid IS NULL
     ), scoped AS MATERIALIZED (
       SELECT candidates.task_key,u.id,u.user_id,u.conversation_kind,u.prompt_template_version,u.created_at,u.completed_at,u.hold_id,u.status,u.error_code,u.model_key,u.purpose,u.upstream_id,u.cost_known,u.estimated,u.cost_micros
-      FROM candidates JOIN model_access.usage_records u ON u.task_key=candidates.task_key OR (u.task_key IS NULL AND u.id=candidates.task_key)
+      FROM candidates JOIN model_access.usage_records u ON u.task_key=candidates.task_key
+      UNION ALL
+      SELECT candidates.task_key,u.id,u.user_id,u.conversation_kind,u.prompt_template_version,u.created_at,u.completed_at,u.hold_id,u.status,u.error_code,u.model_key,u.purpose,u.upstream_id,u.cost_known,u.estimated,u.cost_micros
+      FROM candidates JOIN model_access.usage_records u ON u.id=candidates.task_key WHERE u.task_key IS NULL
+    ), rescues AS MATERIALIZED (
+      SELECT DISTINCT won.task_key FROM scoped won
+      JOIN model_access.task_outcomes t ON t.task_key=won.task_key AND t.usage_record_id=won.id AND t.state IN ('delivered','displayed','saved')
+      JOIN scoped lost ON lost.task_key=won.task_key AND (lost.created_at,lost.id)<(won.created_at,won.id)
+      WHERE won.status='succeeded' AND lost.status='failed' AND (lost.upstream_id<>won.upstream_id OR lost.model_key<>won.model_key)
     ), grouped AS (
       SELECT task_key,min(created_at) started,max(coalesce(completed_at,created_at)) updated,
         (array_agg(purpose ORDER BY created_at,id))[1] purpose,
@@ -141,7 +149,7 @@ const taskCte = `    WITH candidates AS MATERIALIZED (
     ), combined AS (
       SELECT c.task_key AS "taskKey",coalesce(t.user_id,g.owner) AS "userId",g.conversation_kind AS "conversationKind",g.template AS "promptTemplateVersion",least(t.created_at,g.started) AS "startedAt",
        greatest(t.updated_at,g.updated) AS "updatedAt",t.retry_at AS "retryAt",coalesce(t.purpose,g.purpose) purpose,
-       CASE WHEN t.state='delivered' THEN CASE WHEN t.purpose='proactive' THEN 'proactive_sent' ELSE 'message_saved' END
+       CASE WHEN t.state='delivered' THEN CASE WHEN t.purpose='proactive' OR t.reason='proactive_sent' THEN 'proactive_sent' ELSE 'message_saved' END
          WHEN t.state='saved' THEN CASE WHEN t.reason IN ('group_memory_saved','memory_facts_saved') OR t.purpose<>'memory' THEN 'result_saved' ELSE 'summary_saved' END WHEN t.state='displayed' THEN 'thought_visible' WHEN t.state='filtered' THEN CASE WHEN t.purpose='behavior_planning' THEN 'thought_filtered' ELSE 'result_filtered' END
          WHEN t.state='cancelled' THEN 'cancelled' WHEN t.state='deferred' THEN 'retry_pending'
          WHEN coalesce(t.state='blocked',false) OR (t.state IS NULL AND g.all_failed AND g.no_holds) THEN CASE coalesce(t.reason,g.last_error)
@@ -150,12 +158,9 @@ const taskCte = `    WITH candidates AS MATERIALIZED (
          WHEN t.state='failed' THEN 'undelivered' WHEN g.pending THEN 'running' WHEN g.cancelled THEN 'cancelled' ELSE 'unverified' END state,
        coalesce(t.reason,g.last_error) reason,coalesce(g.attempts,0) AS "attemptCount",coalesce(g.failed,0) AS "failedAttempts",coalesce(g.models,0) AS "modelCount",
        g.first_model AS "firstModel",g.last_model AS "lastModel",
-       COALESCE(t.state IN ('delivered','displayed','saved') AND EXISTS(
-          SELECT 1 FROM model_access.usage_records won JOIN model_access.usage_records lost ON won.task_key=lost.task_key AND (lost.created_at,lost.id)<(won.created_at,won.id)
-          WHERE won.id=t.usage_record_id AND won.status='succeeded' AND lost.status='failed' AND (won.upstream_id<>lost.upstream_id OR won.model_key<>lost.model_key)
-        ),false) rescued,coalesce(g.reported_cost,0) AS "reportedCostMicros",coalesce(g.estimated_cost,0) AS "estimatedCostMicros",
+       (rescues.task_key IS NOT NULL) rescued,coalesce(g.reported_cost,0) AS "reportedCostMicros",coalesce(g.estimated_cost,0) AS "estimatedCostMicros",
        coalesce(g.pending_costs,0) AS "pendingCosts",coalesce(g.ids,'{}') AS "usageIds"
-      FROM candidates c LEFT JOIN grouped g USING(task_key) LEFT JOIN model_access.task_outcomes t USING(task_key)
+      FROM candidates c LEFT JOIN grouped g USING(task_key) LEFT JOIN model_access.task_outcomes t USING(task_key) LEFT JOIN rescues USING(task_key)
       WHERE g.match OR (g.task_key IS NULL AND $6 IS NULL AND $7 IS NULL AND $8 IS NULL)
     )
 `;
