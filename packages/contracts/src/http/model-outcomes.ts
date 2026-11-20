@@ -60,6 +60,7 @@ export const AdminModelTask = z.object({
   firstModel: z.string().nullable(),
   lastModel: z.string().nullable(),
   rescued: z.boolean(),
+  standbySuccessWithDelivery: z.boolean().optional(),
   chargedMicros: value,
   refundedMicros: value.nullable(),
   reportedCostMicros: value,
@@ -95,6 +96,7 @@ export const VoiceCancellationReason = z.enum([
 export type VoiceCancellationReason = z.infer<typeof VoiceCancellationReason>;
 export const AdminTaskAttempt = z.object({
   usageRecordId: Id,
+  businessEvidence: z.enum(['adopted', 'delivery_link']).nullable().optional(),
   createdAt: Timestamp,
   completedAt: Timestamp.nullable(),
   modelKey: z.string(),

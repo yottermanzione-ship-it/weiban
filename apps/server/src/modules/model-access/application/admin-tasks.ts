@@ -119,16 +119,22 @@ const taskCte = `    WITH candidates AS MATERIALIZED (
       SELECT coalesce(task_key,id) task_key FROM model_access.usage_records WHERE (($10::uuid IS NULL AND created_at >= $1::timestamptz AND created_at < $2::timestamptz) OR id=$10) AND ($9::uuid[] IS NULL OR user_id=ANY($9))
       UNION SELECT task_key FROM model_access.task_outcomes WHERE created_at >= $1 AND created_at < $2 AND ($9::uuid[] IS NULL OR user_id=ANY($9)) AND $10::uuid IS NULL
     ), scoped AS MATERIALIZED (
-      SELECT candidates.task_key,u.id,u.user_id,u.conversation_kind,u.prompt_template_version,u.created_at,u.completed_at,u.hold_id,u.status,u.error_code,u.model_key,u.purpose,u.upstream_id,u.cost_known,u.estimated,u.cost_micros
+      SELECT candidates.task_key,u.id,u.user_id,u.conversation_kind,u.prompt_template_version,u.created_at,u.completed_at,u.hold_id,u.status,u.error_code,u.model_key,u.purpose,u.upstream_id,u.upstream_model_id,u.cost_known,u.estimated,u.cost_micros
       FROM candidates JOIN model_access.usage_records u ON u.task_key=candidates.task_key
       UNION ALL
-      SELECT candidates.task_key,u.id,u.user_id,u.conversation_kind,u.prompt_template_version,u.created_at,u.completed_at,u.hold_id,u.status,u.error_code,u.model_key,u.purpose,u.upstream_id,u.cost_known,u.estimated,u.cost_micros
+      SELECT candidates.task_key,u.id,u.user_id,u.conversation_kind,u.prompt_template_version,u.created_at,u.completed_at,u.hold_id,u.status,u.error_code,u.model_key,u.purpose,u.upstream_id,u.upstream_model_id,u.cost_known,u.estimated,u.cost_micros
       FROM candidates JOIN model_access.usage_records u ON u.id=candidates.task_key WHERE u.task_key IS NULL
     ), rescues AS MATERIALIZED (
-      SELECT DISTINCT won.task_key FROM scoped won
-      JOIN model_access.task_outcomes t ON t.task_key=won.task_key AND t.usage_record_id=won.id AND t.state IN ('delivered','displayed','saved')
+      SELECT DISTINCT won.task_key,(t.usage_record_id IS NOT NULL) adopted FROM scoped won
+      JOIN model_access.task_outcomes t ON t.task_key=won.task_key AND t.user_id=won.user_id AND t.purpose=won.purpose
+        AND t.state IN ('delivered','displayed','saved') AND coalesce(t.usage_record_id,
+          CASE WHEN t.state='delivered' AND t.reason='legacy_delivery_without_adoption' THEN t.associated_usage_record_id END)=won.id
       JOIN scoped lost ON lost.task_key=won.task_key AND (lost.created_at,lost.id)<(won.created_at,won.id)
-      WHERE won.status='succeeded' AND lost.status='failed' AND (lost.upstream_id<>won.upstream_id OR lost.model_key<>won.model_key)
+      WHERE won.status='succeeded' AND lost.status='failed' AND (lost.upstream_id<>won.upstream_id OR lost.upstream_model_id<>won.upstream_model_id)
+        AND EXISTS (SELECT 1 FROM model_access.generation_attempts a WHERE a.usage_record_id=lost.id AND a.user_id=won.user_id
+          AND (a.bound_snapshot ? 'dispatchTiming' OR (a.phase='finished' AND a.error_code IN
+            ('timeout_idle','timeout_deadline','timeout_progress','provider_error','empty_output','rate_limited','content_rejected',
+             'truncated','truncated_reasoning','truncated_repeat','truncated_whitespace','stream_incomplete','response_parse_error','response_too_large'))))
     ), grouped AS (
       SELECT task_key,min(created_at) started,max(coalesce(completed_at,created_at)) updated,
         (array_agg(purpose ORDER BY created_at,id))[1] purpose,
@@ -163,7 +169,7 @@ const taskCte = `    WITH candidates AS MATERIALIZED (
          WHEN t.state='failed' THEN 'undelivered' WHEN g.pending THEN 'running' WHEN g.cancelled THEN 'cancelled' ELSE 'unverified' END state,
        coalesce(t.reason,g.last_error) reason,coalesce(g.attempts,0) AS "attemptCount",coalesce(g.failed,0) AS "failedAttempts",coalesce(g.models,0) AS "modelCount",
        g.first_model AS "firstModel",g.last_model AS "lastModel",
-       (rescues.task_key IS NOT NULL) rescued,coalesce(g.reported_cost,0) AS "reportedCostMicros",coalesce(g.estimated_cost,0) AS "estimatedCostMicros",
+       (rescues.adopted IS TRUE) rescued,(rescues.adopted IS FALSE) AS "standbySuccessWithDelivery",coalesce(g.reported_cost,0) AS "reportedCostMicros",coalesce(g.estimated_cost,0) AS "estimatedCostMicros",
        coalesce(g.pending_costs,0) AS "pendingCosts",coalesce(g.ids,'{}') AS "usageIds"
       FROM candidates c LEFT JOIN grouped g USING(task_key) LEFT JOIN model_access.task_outcomes t USING(task_key) LEFT JOIN rescues USING(task_key)
       WHERE g.match OR (g.task_key IS NULL AND $6 IS NULL AND $7 IS NULL AND $8 IS NULL)
@@ -282,10 +288,13 @@ ${taskCte}
        u.upstream_id AS "upstreamId",account.name AS "upstreamName",u.upstream_model_id AS "upstreamModelId",
        u.input_tokens AS "inputTokens",u.cached_input_tokens AS "cachedInputTokens",u.output_tokens AS "outputTokens",u.cache_write_5m_tokens AS "cacheWrite5mTokens",u.cache_write_1h_tokens AS "cacheWrite1hTokens",u.reasoning_tokens AS "reasoningTokens",u.price_version_id AS "priceVersionId",
        u.request_price_limit AS "requestPriceLimit", u.cancellation_reason AS "cancellationReason",
+       CASE WHEN t.usage_record_id=u.id AND t.state IN ('delivered','displayed','saved') THEN 'adopted'
+         WHEN t.associated_usage_record_id=u.id THEN 'delivery_link' END AS "businessEvidence",
        a.ordinal,u.status,u.error_code AS "errorCode",u.cost_micros::float8 AS "costMicros",u.absorbed_cost_micros::float8 AS "absorbedCostMicros",
        u.cost_known AS "costKnown",u.estimated,u.latency_ms AS "latencyMs",u.hold_id AS "holdId",a.phase,
        a.bound_snapshot->'dispatchTiming' AS timing,a.bound_snapshot->'providerDiagnostic' AS "providerDiagnostic"
      FROM model_access.usage_records u ${attemptJoin} LEFT JOIN model_access.upstreams account ON account.id=u.upstream_id
+     LEFT JOIN model_access.task_outcomes t ON t.task_key=u.task_key AND t.user_id=u.user_id AND t.purpose=u.purpose
      WHERE (u.task_key=$1::uuid OR (u.task_key IS NULL AND u.id=$1)) AND ($2::timestamptz IS NULL OR (u.created_at,u.id)>($2,$3::uuid))
      ORDER BY u.created_at,u.id LIMIT $4`,
       [args.taskKey, c?.createdAt ?? null, c?.id ?? null, args.limit + 1],

@@ -21,6 +21,10 @@ export const STATE_LABELS: Record<AdminTaskState, string> = {
   unverified: '历史证据不足',
 };
 export const ERROR_HELP: Record<string, [string, string]> = {
+  insufficient_fallback_time: [
+    '派发前剩余时间不足，已释放冻结的积分。',
+    '核对任务截止时间和后续尝试。',
+  ],
   insufficient_balance: ['用户可用积分不足，付费请求在发送前被拦截。', '核对余额与充值流水。'],
   timeout_progress: [
     '有备用线路时，当前线路长时间没有返回有效正文或思考进度。',
@@ -112,6 +116,11 @@ export const RECEIPT_REASONS: Record<string, string> = {
   manual_retry_queued: '已在原消息上请求补发角色回复',
   manual_retry: '用户在原消息上请求了重试',
   source_unavailable: '原消息已隐藏、撤回或不可访问',
+  legacy_delivery_without_adoption: '角色消息已入库，旧记录未记下最终采用的正文来源。',
+  local_reply_fallback: '角色消息已入库，发送的是系统生成的本地兜底回复。',
+  group_memory_source_changed: '群消息或参与成员已变更',
+  group_memory_fields: '群记忆结果结构或引用不合规',
+  memory_no_new_facts: '没有可保存的新记忆',
   delivery_unavailable: '角色消息未能写入会话',
   wait_expired: '超过本次回复的自动等待时限',
   output_guard: '生成内容未通过发送检查',
@@ -123,7 +132,7 @@ export const RECEIPT_REASONS: Record<string, string> = {
   no_route: '没有已启用的线路',
   route_unavailable_or_busy: '候选线路均不可用或暂无名额',
   no_matching_route_bounds: '没有线路的计费上限符合本次请求',
-  insufficient_fallback_time: '剩余时限不足以完成备用调用',
+  insufficient_fallback_time: '派发前剩余时间不足以完成本次调用',
   summary_saved: '新的摘要版本已保存',
   group_memory_saved: '群聊记忆已保存',
   memory_facts_saved: '记忆条目已保存',

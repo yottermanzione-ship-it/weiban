@@ -499,4 +499,131 @@ describeDb('管理任务结果：业务证据、账本与原始线路', () => {
       ).toEqual([{ n: 2 }]);
     });
   });
+  it('旧消息保留计费用量，只有采用证据及不同实际线路才能计入备用救回', async () => {
+    const owner = newId(),
+      role = newId(),
+      conversation = newId();
+    const usage = app.get(UsageRecorder);
+    await db.query(
+      `INSERT INTO chat.conversations(id,owner_user_id,type,character_id,system_participant_id,created_at,updated_at)
+      VALUES ($1,$2,'direct',$3,gen_random_uuid(),$4,$4)`,
+      [conversation, owner, role, clock.now()],
+    );
+    const cases = [];
+    for (const [n, mode] of [
+      'legacy',
+      'same_wire',
+      'preflight',
+      'proactive',
+      'unlinked_plan',
+    ].entries()) {
+      const gid = newId(),
+        priorRoute = newId(),
+        firstMessage = newId(),
+        plan = newId();
+      const purpose = mode === 'proactive' || mode === 'unlinked_plan' ? 'proactive' : 'chat_reply';
+      let winner = '';
+      for (const ordinal of [0, 1]) {
+        clock.advance(5);
+        const upstreamId = !ordinal || mode === 'same_wire' ? priorRoute : newId();
+        const modelKey = ordinal ? 'fixture/other' : 'fixture/head';
+        const { record } = await usage.start({
+          input: {
+            userId: owner,
+            characterId: role,
+            conversationId: conversation,
+            purpose,
+            billingOwner: 'user',
+            modelRole: 'chat',
+            idempotencyKey: `gateway:${gid}:attempt:${ordinal}`,
+          },
+          modelKey,
+          upstreamId,
+          upstreamModelId: 'wire',
+          countsAsBackground: false,
+        });
+        const errorCode = ordinal
+          ? null
+          : mode === 'preflight'
+            ? 'insufficient_balance'
+            : 'timeout_progress';
+        if (mode !== 'preflight' || ordinal) {
+          const id = await usage.startAttempt({
+            generationId: gid,
+            userId: owner,
+            ordinal,
+            modelKey,
+            upstreamId,
+            upstreamModelId: 'wire',
+            usageRecordId: record.id,
+            holdId: newId(),
+            boundSnapshot: { dispatchTiming: { deadlineMs: 1000 } },
+          });
+          await usage.finishAttempt(id, null, false, errorCode);
+        }
+        await usage.finish(record.id, {
+          status: ordinal ? 'succeeded' : 'failed',
+          errorCode,
+          inputTokens: 0,
+          outputTokens: ordinal,
+          cachedInputTokens: 0,
+          estimated: false,
+          latencyMs: 1,
+          retryCount: 0,
+        });
+        if (ordinal) winner = record.id;
+      }
+      const clientKey =
+        purpose === 'proactive' ? 'proactive:' + plan + ':0' : 'reply:' + newId() + ':0';
+      await db.query(
+        `INSERT INTO chat.messages(id,conversation_id,seq,sender_participant_id,sender_kind,client_msg_id,scope,created_at,usage_record_id)
+        VALUES ($1,$2,$3,$4,'character',$5,'normal',$6,$7)`,
+        [firstMessage, conversation, n + 1, role, clientKey, clock.now(), winner],
+      );
+      if (mode === 'proactive')
+        await db.query(
+          `INSERT INTO ai_runtime.proactive_plans(id,user_id,character_id,reason,source_ref,topic_key,brief,local_date,status,due_at,message_id,created_at,updated_at)
+          VALUES($1::uuid,$2,$3,'daily_event',($1::uuid)::text,'fixture','','2026-11-20','sent',$4,$5,$4,$4)`,
+          [plan, owner, role, clock.now(), firstMessage],
+        );
+      cases.push({ mode, winner });
+    }
+    await db.transaction(async (tx) => {
+      for (const suffix of ['.down', ''])
+        await tx.query(
+          readFileSync(
+            new URL(`../drizzle/0168_model_task_outcomes${suffix}.sql`, import.meta.url),
+            'utf8',
+          ),
+        );
+    });
+    for (const { mode, winner } of cases) {
+      const task = (await svc.list({ filter: { ...filter, usageRecordId: winner }, limit: 1 }))
+        .items[0]!;
+      const adopted = mode === 'proactive';
+      expect(task).toMatchObject({
+        state: mode === 'unlinked_plan' || adopted ? 'proactive_sent' : 'message_saved',
+        rescued: adopted,
+        standbySuccessWithDelivery: mode === 'legacy' || mode === 'unlinked_plan',
+        reason: adopted ? null : 'legacy_delivery_without_adoption',
+      });
+      const row = (
+        await db.query(
+          'SELECT usage_record_id,associated_usage_record_id FROM model_access.task_outcomes WHERE task_key=$1',
+          [task.taskKey],
+        )
+      ).rows[0];
+      expect(row).toEqual({
+        usage_record_id: adopted ? winner : null,
+        associated_usage_record_id: adopted ? null : winner,
+      });
+      expect((await svc.attempts({ taskKey: task.taskKey, limit: 3 })).items.at(-1)).toMatchObject({
+        usageRecordId: winner,
+        businessEvidence: adopted ? 'adopted' : 'delivery_link',
+      });
+      expect((await svc.overview({ ...filter, usageRecordId: winner })).rescued).toBe(
+        adopted ? 1 : 0,
+      );
+    }
+  });
 });
