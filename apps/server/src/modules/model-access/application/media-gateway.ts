@@ -1534,13 +1534,10 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       const actual = outcome.zeroCost
         ? Object.fromEntries(Object.keys(estimate).map((unit) => [unit, 0]))
         : (outcome.reportedUsage ?? outcome.actual);
-      await this.fail(
-        charge.value,
-        outcome.category,
-        actual,
-        !outcome.localRateLimit,
-        outcome.cause,
-      );
+      const reportUpstream = !outcome.localRateLimit;
+      if (outcome.cause)
+        await this.fail(charge.value, outcome.category, actual, reportUpstream, outcome.cause);
+      else await this.fail(charge.value, outcome.category, actual, reportUpstream);
       return {
         ok: false,
         error: outcome.cause ? 'provider_unavailable' : this.mapError(outcome.category),

@@ -221,7 +221,7 @@ describe('V3 实时通话复刻费（契约 4.6）', () => {
   it('冻结后线路计费上限变了（beginCall 失败）：取消冻结、不复刻', async () => {
     const t = setup({ begin: false, defaultVoice: null });
     expect(await t.check()).toEqual({ ok: false, reason: 'insufficient_balance' });
-    expect(t.cancelCharge).toHaveBeenCalledWith(t.charge);
+    expect(t.cancelCharge).toHaveBeenCalledWith(t.charge, 'authorization_denied');
     expect(t.cloneRealtimeVoice).not.toHaveBeenCalled();
   });
 
