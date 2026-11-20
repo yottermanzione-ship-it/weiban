@@ -322,6 +322,7 @@ export class AnthropicTextAdapter implements TextAdapter {
         };
       obs.diagnostic.stage = 'complete';
       const rawText = parsed.text;
+      if (!read.stream && (rawText.trim() || parsed.reasoning)) obs.progress();
       const usage = anthropicUsage(parsed.usage, inputEstimate, rawText);
       if (parsed.stopReason === 'refusal')
         return { ok: false, category: 'content_rejected', retryable: false, usage };
@@ -339,7 +340,13 @@ export class AnthropicTextAdapter implements TextAdapter {
         return { ok: false, category: 'empty_output', retryable: true, usage };
       }
       if (parsed.stopReason === 'max_tokens' && input.responseFormat !== 'json')
-        return { ok: false, category: 'truncated', retryable: true, usage, partialText: text };
+        return {
+          ok: false,
+          category: 'truncated',
+          retryable: true,
+          usage,
+          partialText: rawText.trim() === text ? rawText : text,
+        };
       if (parsed.stopReason === 'max_tokens' && input.responseFormat === 'json') {
         // 批 EJ：完整 JSON 之后只剩空白时按成功返回（同 OpenAI 兼容适配器）。
         const complete = completeJsonPrefix(stripJsonFence(text));
@@ -354,7 +361,12 @@ export class AnthropicTextAdapter implements TextAdapter {
       }
       return {
         ok: true,
-        text: input.responseFormat === 'json' ? stripJsonFence(text) : text,
+        text:
+          input.responseFormat === 'json'
+            ? stripJsonFence(text)
+            : input.continuingText && rawText.trim() === text
+              ? rawText
+              : text,
         usage,
         ...(obs.diagnostic.firstProgressMs !== undefined
           ? { ttftMs: obs.diagnostic.firstProgressMs }

@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { SystemClock } from '../../../platform/index.js';
+const httpClock = new SystemClock();
 
 export interface ProviderDiagnostic {
   stage: 'connect' | 'headers' | 'read' | 'decode' | 'complete';
@@ -8,6 +10,7 @@ export interface ProviderDiagnostic {
   requestField?: string;
   requestId?: string;
   retryAfterMs?: number;
+  rateLimitScope?: 'account' | 'model';
   lastDataMs?: number;
   firstProgressMs?: number;
   lastProgressMs?: number;
@@ -76,10 +79,12 @@ export function providerDomain(url: string): string {
     return 'unknown';
   }
 }
-export function retryAfterMs(value: string | null, now = Date.now()): number | undefined {
+export function retryAfterMs(value: string | null, now = httpClock.nowMs()): number | undefined {
   if (!value) return undefined;
   const ms = /^\d+$/.test(value) ? Number(value) * 1000 : Date.parse(value) - now;
-  return Number.isFinite(ms) && ms >= 0 ? Math.min(86_400_000, Math.ceil(ms)) : undefined;
+  return Number.isSafeInteger(ms) && ms >= 0 && ms <= Number.MAX_SAFE_INTEGER - now
+    ? ms
+    : undefined;
 }
 export type ProviderTimeout = 'timeout_idle' | 'timeout_deadline' | 'timeout_progress';
 interface ObserveInput {
@@ -161,6 +166,9 @@ export class ProviderObservation {
       this.diagnostic.requestId = id;
     if (r.status === 429 || r.status === 503)
       this.diagnostic.retryAfterMs = retryAfterMs(r.headers.get('retry-after'));
+    const scope = r.headers.get('x-ratelimit-scope');
+    if (r.status === 429 && ['global', 'account', 'model'].includes(scope ?? ''))
+      this.diagnostic.rateLimitScope = scope === 'model' ? 'model' : 'account';
     if (!r.ok) this.endProgress('terminal_frame');
   }
   error(value: unknown) {

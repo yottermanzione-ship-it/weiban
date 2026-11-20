@@ -67,7 +67,7 @@ import {
 } from './generation-cache.js';
 import { ModelResolver, ModelStatusService, type ResolvedModel } from './resolver.js';
 import { isRealtimeCallEntry } from './realtime-call.js';
-import { FAILOVER_CATEGORIES, UpstreamScheduler } from './scheduler.js';
+import { FAILOVER_CATEGORIES, UpstreamScheduler, reserveAlternateTimeMs } from './scheduler.js';
 import { UpstreamService } from './upstreams.js';
 import { UsageRecorder, type DispatchTiming } from './usage.js';
 import { CatalogService } from './catalog.js';
@@ -97,10 +97,10 @@ function usesModelOutputLimit(input: GenerateTextInput): boolean {
   );
 }
 
-type Alternate = { key: string; routes: VerifiedRoute[] };
+type Alternate = { key: string; routes: VerifiedRoute[]; requiresCompaction: boolean };
 type TextRouting = {
-  expires: number;
   primary?: string;
+  expires: number;
   remaining?: Alternate[];
   failedDomains: Set<string>;
 };
@@ -267,7 +267,13 @@ export class ModelGateway implements ModelGatewayPort {
     const first = await this.generateOnce(input, { ...internal, routing });
     if (
       first.ok ||
-      ['concurrency_limited', 'non_retryable_response'].includes(first.message ?? '') ||
+      [
+        'concurrency_limited',
+        'non_retryable_response',
+        'auth_check_unavailable',
+        'permission_unconfirmed',
+        'response_too_large',
+      ].includes(first.message ?? '') ||
       !['provider_unavailable', 'model_unavailable'].includes(first.error)
     )
       return first;
@@ -285,27 +291,28 @@ export class ModelGateway implements ModelGatewayPort {
       await this.cache.save(claim.row, result, 'complete');
       return result;
     };
-    const primary = await this.resolver
-      .pick(input.userId, input.modelRole, input.characterId ?? null, {
-        purpose: input.purpose,
-        scenario: input.scenario,
-      })
-      .catch(() => null);
-    const primaryKey = primary?.facts?.modelKey;
-    if (!primaryKey || primary?.facts?.entry?.capabilities.includes('adult_content'))
-      return complete(first);
-    routing.remaining ??= await this.fallbackOptions(input, primaryKey);
-    while (routing.remaining.length) {
+    if (!routing.remaining) {
+      const primary = await this.resolver
+        .pick(input.userId, input.modelRole, input.characterId ?? null, {
+          purpose: input.purpose,
+          scenario: input.scenario,
+        })
+        .catch(() => null);
+      if (!primary?.facts.modelKey || primary.facts.entry?.capabilities.includes('adult_content'))
+        return complete(first);
+      routing.primary = primary.facts.modelKey;
+      routing.remaining = await this.fallbackOptions(input, primary.facts.modelKey);
+    }
+    while (routing.remaining.length && this.clock.nowMs() < Date.parse(deadlineAt)) {
       const available = this.readyAlternates(routing, input.purpose);
-      if (!available.length) break;
+      if (!available.length) {
+        if (this.readyAlternates(routing, input.purpose, false).length)
+          return complete({ ...first, message: 'insufficient_fallback_time' });
+        break;
+      }
       const preferred =
         available.find((a) =>
-          a.routes.some(
-            (r) =>
-              !routing.failedDomains.has(providerDomain(r.baseUrl)) &&
-              this.scheduler.canAcquireAccount(r) &&
-              !this.scheduler.isRouteCooling(a.key, r.upstreamId),
-          ),
+          a.routes.some((r) => !routing.failedDomains.has(providerDomain(r.baseUrl))),
         ) ?? available[0]!;
       const candidate = preferred.key;
       routing.remaining = routing.remaining.filter((a) => a.key !== candidate);
@@ -326,11 +333,17 @@ export class ModelGateway implements ModelGatewayPort {
         },
       );
       if (result.ok) {
-        this.logger.log(`model fallback (${input.purpose}): ${primaryKey} -> ${candidate}`);
+        this.logger.log(`model fallback (${input.purpose}): ${routing.primary} -> ${candidate}`);
         return complete(result);
       }
       if (
-        ['concurrency_limited', 'non_retryable_response'].includes(result.message ?? '') ||
+        [
+          'concurrency_limited',
+          'non_retryable_response',
+          'auth_check_unavailable',
+          'permission_unconfirmed',
+          'response_too_large',
+        ].includes(result.message ?? '') ||
         !['provider_unavailable', 'model_unavailable'].includes(result.error)
       )
         return complete(result);
@@ -348,7 +361,8 @@ export class ModelGateway implements ModelGatewayPort {
     let keys = await this.catalog.cheaperTextFallbacks(primaryKey).catch(() => []);
     if (!keys.length) keys = await this.catalog.alternateTextFallbacks(primaryKey).catch(() => []);
     const images = input.messages.reduce((n, m) => n + (m.images?.length ?? 0), 0);
-    const options = await Promise.all(
+    const inputTokens = contextTokens(input.messages);
+    const options = await Promise.allSettled(
       keys
         .filter((k) => k !== primaryKey)
         .map(async (key) => {
@@ -370,26 +384,46 @@ export class ModelGateway implements ModelGatewayPort {
             thinkingBudgetForModel(input.purpose, requested, key),
           );
           if (!proof?.routes.length) return null;
-          return { key, routes: proof.routes };
+          const output = usesModelOutputLimit(input)
+            ? undefined
+            : requested + thinkingBudgetForModel(input.purpose, requested, key);
+          const budget = contextBudget(
+            key,
+            proof.routes.map((r) => r.billingBounds.text!),
+            output,
+          );
+          if (!budget) return null;
+          const requiresCompaction = inputTokens > budget.inputTokens;
+          if (
+            requiresCompaction &&
+            (input.purpose !== 'chat_reply' ||
+              !compactablePrefix(input.messages, Math.floor(budget.inputTokens * 0.4)))
+          )
+            return null;
+          return { key, routes: proof.routes, requiresCompaction };
         }),
     );
-    return options.filter((opt): opt is Alternate => opt !== null);
+    return options.flatMap((result) =>
+      result.status === 'fulfilled' && result.value ? [result.value] : [],
+    );
   }
 
   private readyAlternates(
     routing: TextRouting,
     purpose: GenerateTextInput['purpose'],
+    checkTime = true,
   ): Alternate[] {
-    const remaining = routing.expires - performance.now();
-    return (routing.remaining ?? []).filter(({ key, routes }) =>
-      routes.some(
+    const ms = routing.expires - performance.now();
+    return (routing.remaining ?? []).flatMap(({ key, routes, requiresCompaction }) => {
+      const ready = routes.filter(
         (r) =>
           !r.probing &&
           !this.scheduler.isRouteCooling(key, r.upstreamId) &&
           this.scheduler.canAcquireAccount(r) &&
-          remaining >= this.scheduler.usefulWindowMs(key, r.upstreamId, purpose),
-      ),
-    );
+          (!checkTime || ms >= this.scheduler.usefulWindowMs(key, r.upstreamId, purpose)),
+      );
+      return ready.length ? [{ key, routes: ready, requiresCompaction }] : [];
+    });
   }
 
   private async availableRoutes(
@@ -524,6 +558,8 @@ export class ModelGateway implements ModelGatewayPort {
         countAsBackground: true,
         maxOutputTokens: 2000,
         idempotencyKey: `context-fit:${digest}`,
+        taskKey: modelTaskKey(input.userId, `context-fit:${digest}`),
+        ...(input.deadlineAt ? { deadlineAt: input.deadlineAt } : {}),
         meta: {
           scenarioMode: input.modelRole === 'adult' ? 'adult' : 'normal',
           promptTemplateVersion: 'context-fit-v2',
@@ -581,6 +617,8 @@ export class ModelGateway implements ModelGatewayPort {
     input: GenerateTextInput,
     internal?: GatewayInternal,
   ): Promise<CachedResult> {
+    const invalidOption = invalidTextOption(input);
+    if (invalidOption) return { ok: false, error: 'bad_request', message: invalidOption };
     if (
       !this.valid(input, internal?.trustedPlatform === true) ||
       (await this.accounts.getAccountStatus(input.userId)) !== 'active'
@@ -739,7 +777,9 @@ export class ModelGateway implements ModelGatewayPort {
     const routing = internal?.routing;
     if (routing && !routing.remaining) {
       routing.primary = model.modelKey;
-      routing.remaining = await this.fallbackOptions(input, model.modelKey).catch(() => []);
+      routing.remaining = model.capabilities.includes('adult_content')
+        ? []
+        : await this.fallbackOptions(input, model.modelKey).catch(() => []);
     }
     if (routing?.failedDomains.size)
       candidates = [...candidates].sort(
@@ -788,23 +828,25 @@ export class ModelGateway implements ModelGatewayPort {
       const remaining = Math.floor(budgetMs - (performance.now() - wallStart));
       if (remaining <= 0) break;
       let candidate = candidates[index];
-      while (
-        candidate &&
-        (this.scheduler.isRouteCooling(model.modelKey, candidate.upstreamId) ||
-          (routing &&
-            (internal?.fallbackModelKey || internal?.chatFallbackModelKey) &&
-            Math.min(remaining, routing.expires - performance.now()) <
-              this.scheduler.usefulWindowMs(model.modelKey, candidate.upstreamId, input.purpose)) ||
-          !this.scheduler.acquireAccount(candidate))
-      )
+      while (candidate) {
+        if (this.scheduler.isRouteCooling(model.modelKey, candidate.upstreamId))
+          unavailableReason = 'upstream_cooldown';
+        else if (
+          routing &&
+          (internal?.fallbackModelKey || internal?.chatFallbackModelKey) &&
+          Math.min(remaining, routing.expires - performance.now()) <
+            this.scheduler.usefulWindowMs(model.modelKey, candidate.upstreamId, input.purpose)
+        )
+          unavailableReason = 'insufficient_fallback_time';
+        else if (this.scheduler.acquireAccount(candidate)) {
+          unavailableReason = undefined;
+          break;
+        } else
+          unavailableReason =
+            this.scheduler.accountUnavailableReason(candidate) ?? 'route_unavailable_or_busy';
         candidate = candidates[++index];
-      if (!candidate) {
-        unavailableReason =
-          remaining <= 0 || (routing && routing.expires - performance.now() < 8000)
-            ? 'insufficient_fallback_time'
-            : 'route_unavailable_or_busy';
-        break;
       }
+      if (!candidate) break;
       const route = candidate;
       if (continuation?.routeId !== route.upstreamId) continuation = undefined;
       const currentWire = continuation ? [...baseWire, ...continuation.extra] : baseWire;
@@ -924,34 +966,27 @@ export class ModelGateway implements ModelGatewayPort {
                   const totalRemaining = routing
                     ? Math.max(0, routing.expires - performance.now())
                     : modelRemaining;
-                  const alternatives = routing ? this.readyAlternates(routing, input.purpose) : [];
+                  const alternatives = routing
+                    ? this.readyAlternates(routing, input.purpose).filter(
+                        (a) => !a.requiresCompaction,
+                      )
+                    : [];
                   // Keep the existing per-model maximum. Reserve a useful share of the overall
                   // deadline only if a verified, affordable, currently available alternate can use it.
                   const usefulReserve = alternatives.length
                     ? Math.min(
                         ...alternatives.flatMap((a) =>
-                          a.routes
-                            .filter(
-                              (r) =>
-                                !r.probing &&
-                                !this.scheduler.isRouteCooling(a.key, r.upstreamId) &&
-                                this.scheduler.canAcquireAccount(r),
-                            )
-                            .map((r) =>
-                              this.scheduler.usefulWindowMs(a.key, r.upstreamId, input.purpose),
-                            ),
+                          a.routes.map((r) =>
+                            this.scheduler.usefulWindowMs(a.key, r.upstreamId, input.purpose),
+                          ),
                         ),
                       )
                     : 0;
-                  const reserve =
-                    Number.isFinite(usefulReserve) &&
-                    usefulReserve > 0 &&
-                    totalRemaining >= 2 * (usefulReserve + 500)
-                      ? Math.max(
-                          usefulReserve + 500,
-                          Math.min(Math.floor(totalRemaining / 3), STANDARD_TEXT_IDLE_MS),
-                        )
-                      : 0;
+                  const reserve = reserveAlternateTimeMs(
+                    totalRemaining,
+                    this.scheduler.usefulWindowMs(model.modelKey, route.upstreamId, input.purpose),
+                    usefulReserve,
+                  );
                   const deadlineMs = Math.max(
                     1,
                     Math.floor(Math.min(modelRemaining, totalRemaining - reserve)),
@@ -984,6 +1019,7 @@ export class ModelGateway implements ModelGatewayPort {
                   const reserveMs = Math.min(STANDARD_TEXT_IDLE_MS, Math.floor(deadlineMs / 2));
                   const dispatch = {
                     protocol,
+                    ...(continuation ? { continuingText: true } : {}),
                     onDiagnostic: (d) => {
                       providerDiagnostic = d;
                     },
@@ -1036,27 +1072,38 @@ export class ModelGateway implements ModelGatewayPort {
           // 结果按上游缓存 60 秒）。自检通过 = 密钥没坏，这次只算内容被拒：下面不换账号、不记失败、不标上游、
           // 用量记录记 content_rejected，调用方拿到 content_rejected（回推托语、登记被拦消息），不会进等待被巡检反复重试。
           // T-20261104f：confirmAuthRejection 同时计数，同一上游短时间内太多次时给管理员发 upstream_auth_rejected 提醒。
-          if (
-            !answer.ok &&
-            answer.category === 'invalid_key' &&
-            (await this.upstreams.confirmAuthRejection(route.upstreamId))
-          )
-            answer =
-              providerDiagnostic?.providerCode &&
-              [
-                'permission_error',
-                'permission_denied',
-                'insufficient_permissions',
-                'model_access_denied',
-                'model_not_allowed',
-              ].includes(providerDiagnostic.providerCode)
+          if (!answer.ok && answer.category === 'invalid_key') {
+            const credential = await this.upstreams.credentialCheck(route.upstreamId);
+            if (credential === 'ok') {
+              await this.upstreams.confirmAuthRejection(route.upstreamId);
+              const permission =
+                providerDiagnostic?.providerCode &&
+                ['model_access_denied', 'model_not_allowed', 'insufficient_permissions'].includes(
+                  providerDiagnostic.providerCode,
+                );
+              answer = permission
                 ? {
                     ...answer,
                     category: 'provider_error',
                     diagnostic: 'permission_denied',
                     retryable: true,
                   }
-                : { ...answer, category: 'content_rejected', retryable: false };
+                : {
+                    ...answer,
+                    category: 'provider_error',
+                    diagnostic: 'permission_unconfirmed',
+                    retryable: false,
+                  };
+            } else if (credential === 'insufficient_balance')
+              answer = { ...answer, category: 'quota_exhausted', retryable: false };
+            else if (credential !== 'invalid_key')
+              answer = {
+                ...answer,
+                category: 'provider_error',
+                diagnostic: 'auth_check_unavailable',
+                retryable: false,
+              };
+          }
         } else answer = { ok: false, category: 'provider_error', retryable: false };
         // 3.26（G3-2）：上游没报用量时不再算「成本未知、暂停线路」，改按本地分词估算计费并标记「估算」。
         // 失败且连估算都没有（HTTP 报错、网络中断）时：上游明确拒绝的错误按 0 计；其余按估算的输入 token 由平台吸收。
@@ -1135,7 +1182,7 @@ export class ModelGateway implements ModelGatewayPort {
             retryCount: ordinal,
           });
           await this.scheduler
-            .recordSuccess(route.upstreamId, model.modelKey)
+            .recordSuccess(route.upstreamId, model.modelKey, true)
             .catch(() => undefined);
           return await this.finalize((await this.cache.get(row.id))!, result);
         }
@@ -1180,7 +1227,10 @@ export class ModelGateway implements ModelGatewayPort {
             answer.category === 'bad_request' ? providerDiagnostic?.requestField : undefined,
           );
         if (answer.category === 'provider_error' && !answer.retryable)
-          return completeFailure('provider_unavailable', 'non_retryable_response');
+          return completeFailure(
+            'provider_unavailable',
+            answer.diagnostic ?? 'non_retryable_response',
+          );
         const empty = answer.category === 'empty_output' || answer.category === 'truncated';
         // 3.26：缺用量不再等于「线路暂停、必须换线路」；只按错误类别决定是否切换线路。
         if (FAILOVER_CATEGORIES.includes(answer.category)) {
@@ -1190,6 +1240,7 @@ export class ModelGateway implements ModelGatewayPort {
               answer.diagnostic === 'permission_denied' ? 'permission_denied' : answer.category,
               model.modelKey,
               providerDiagnostic?.retryAfterMs,
+              providerDiagnostic?.rateLimitScope,
             )
             .catch(() => undefined);
           if (['network_error', 'provider_error', 'rate_limited'].includes(answer.category)) {
@@ -1423,14 +1474,6 @@ export class ModelGateway implements ModelGatewayPort {
               m.images.every((img) => Id.safeParse(img?.mediaId).success))),
       ) &&
       (budgetedText || i.messages.reduce((n, m) => n + m.content.length, 0) <= 200000) &&
-      (i.deadlineAt === undefined || Timestamp.safeParse(i.deadlineAt).success) &&
-      (i.maxOutputTokens === undefined ||
-        (Number.isInteger(i.maxOutputTokens) &&
-          i.maxOutputTokens > 0 &&
-          i.maxOutputTokens <= 32000)) &&
-      (i.temperature === undefined ||
-        (Number.isFinite(i.temperature) && i.temperature >= 0 && i.temperature <= 2)) &&
-      (i.responseFormat === undefined || ['text', 'json'].includes(i.responseFormat)) &&
       (!i.safetyPriority ||
         (i.billingOwner === 'user' && SAFETY_OVERDRAFT_PURPOSES.includes(i.purpose))) &&
       (i.billingOwner !== 'platform' ||
@@ -1443,6 +1486,23 @@ export class ModelGateway implements ModelGatewayPort {
         trustedPlatform)
     );
   }
+}
+
+function invalidTextOption(i: GenerateTextInput): string | undefined {
+  if (i.deadlineAt !== undefined && !Timestamp.safeParse(i.deadlineAt).success) return 'deadlineAt';
+  if (
+    i.maxOutputTokens !== undefined &&
+    (!Number.isInteger(i.maxOutputTokens) || i.maxOutputTokens <= 0 || i.maxOutputTokens > 32000)
+  )
+    return 'maxOutputTokens';
+  if (
+    i.temperature !== undefined &&
+    (!Number.isFinite(i.temperature) || i.temperature < 0 || i.temperature > 2)
+  )
+    return 'temperature';
+  if (i.responseFormat !== undefined && !['text', 'json'].includes(i.responseFormat))
+    return 'responseFormat';
+  return undefined;
 }
 
 /** 同一私密会话的多轮请求使用同一个不透明标识，内容和单次请求编号不参与。 */

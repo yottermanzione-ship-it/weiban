@@ -58,6 +58,19 @@ export const FAILOVER_CATEGORIES: readonly string[] = [
 
 const WINDOW_MS = 60_000;
 
+/** A cross-model reserve must be useful to the alternate without starving an otherwise viable primary. */
+export function reserveAlternateTimeMs(
+  total: number,
+  primaryTypical: number,
+  backupTypical: number,
+): number {
+  if (!Number.isFinite(backupTypical) || backupTypical <= 0) return 0;
+  const minBackup = backupTypical + 500;
+  const available = Math.floor(total - primaryTypical - 500);
+  if (available < minBackup) return 0;
+  return Math.min(available, Math.max(minBackup, Math.min(Math.floor(total / 3), 20000)));
+}
+
 /** 0～1 之间的确定性数（散列）。 */
 function unit(key: string): number {
   const h = createHash('sha256').update(key).digest();
@@ -67,6 +80,7 @@ function unit(key: string): number {
 @Injectable()
 export class UpstreamScheduler {
   private readonly accountInFlight = new Map<string, number>();
+  private readonly accountRateLimits = new Map<string, number>();
   private readonly userInFlight = new Map<string, number>();
   private readonly accountHits = new Map<string, number[]>();
   private readonly durations = new Map<string, number[]>();
@@ -235,20 +249,33 @@ export class UpstreamScheduler {
 
   /** 占用账号槽位；超出账号并发或每分钟上限时返回 false。 */
   acquireAccount(c: RouteCandidate): boolean {
-    return this.accountSlot(c, true);
+    return this.accountSlot(c, true) === null;
   }
 
   /** 只检查此刻的并发/RPM余量，不占用备用账号，也不消耗请求次数。 */
   canAcquireAccount(c: RouteCandidate): boolean {
+    return this.accountSlot(c, false) === null;
+  }
+
+  accountUnavailableReason(c: RouteCandidate) {
     return this.accountSlot(c, false);
   }
 
-  private accountSlot(c: RouteCandidate, take: boolean): boolean {
+  private accountSlot(
+    c: RouteCandidate,
+    take: boolean,
+  ): 'account_rate_limited' | 'account_concurrency_limited' | null {
+    const rateUntil = this.accountRateLimits.get(c.upstreamId);
+    if (rateUntil !== undefined) {
+      if (rateUntil > this.clock.nowMs()) return 'account_rate_limited';
+      this.accountRateLimits.delete(c.upstreamId);
+    }
     const inFlight = this.accountInFlight.get(c.upstreamId) ?? 0;
-    if (c.maxConcurrency !== null && inFlight >= c.maxConcurrency) return false;
-    if (!this.hit(this.accountHits, c.upstreamId, c.rpmLimit, take)) return false;
+    if (c.maxConcurrency !== null && inFlight >= c.maxConcurrency)
+      return 'account_concurrency_limited';
+    if (!this.hit(this.accountHits, c.upstreamId, c.rpmLimit, take)) return 'account_rate_limited';
     if (take) this.accountInFlight.set(c.upstreamId, inFlight + 1);
-    return true;
+    return null;
   }
 
   releaseAccount(upstreamId: string): void {
@@ -263,8 +290,12 @@ export class UpstreamScheduler {
 
   // ---------- 健康 ----------
 
-  async recordSuccess(upstreamId: string, modelKey?: string): Promise<void> {
-    if (modelKey && !this.isRouteCooling(modelKey, upstreamId))
+  async recordSuccess(
+    upstreamId: string,
+    modelKey?: string,
+    fromDispatchedRequest = false,
+  ): Promise<void> {
+    if (modelKey && (!fromDispatchedRequest || !this.isRouteCooling(modelKey, upstreamId)))
       this.routeFailures.delete(this.routeKey(modelKey, upstreamId));
     const now = this.clock.now();
     const [row] = await this.database.db
@@ -284,13 +315,14 @@ export class UpstreamScheduler {
    * 内容被拒、请求错误、空输出等不算账号故障，调用方不要传进来。
    * 未传模型时退回旧法（按账号记），调用方应一律传模型。
    * T-20261104a：密钥失效先确认（UpstreamService.keyStillWorks，同一把密钥的连通测试，结果缓存 60 秒）；
-   * 测试通过说明密钥没坏，不累计失败、不暂停、不标状态。网关一般已先问过并把这次改按内容被拒处理，这里是兜底。
+   * 账号自检成功不标密钥失效。文字路径在调用方区分权限、内容及不确定错误。
    */
   async recordFailure(
     upstreamId: string,
     category: string,
     modelKey?: string,
     retryAfterMs?: number,
+    limitScope?: 'account' | 'model',
   ): Promise<void> {
     if (category === 'invalid_key' && (await this.upstreams.keyStillWorks(upstreamId))) return;
     const limits = await this.limits.get();
@@ -305,6 +337,11 @@ export class UpstreamScheduler {
         const delay =
           retryAfterMs ?? Math.min(60_000, 2000 * 2 ** Math.min(entry.rateFailures - 1, 5));
         entry.cooldownUntil = Math.max(entry.cooldownUntil, now + Math.max(1000, delay));
+        if (limitScope === 'account')
+          this.accountRateLimits.set(
+            upstreamId,
+            Math.max(this.accountRateLimits.get(upstreamId) ?? 0, entry.cooldownUntil),
+          );
       } else if (category === 'permission_denied' || entry.count >= limits.failureThreshold)
         entry.cooldownUntil = Math.max(entry.cooldownUntil, until.getTime());
       this.routeFailures.set(key, entry);

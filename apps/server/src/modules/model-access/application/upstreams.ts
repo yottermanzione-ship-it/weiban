@@ -119,7 +119,10 @@ export interface UpstreamPoolFields {
 export class UpstreamService {
   private readonly log: Logger;
   /** T-20261104a：密钥自检结果（按上游；存进行中的 Promise，同一时间的请求共用一次测试）。 */
-  private readonly keyChecks = new Map<string, { at: number; ok: Promise<boolean> }>();
+  private readonly keyChecks = new Map<
+    string,
+    { at: number; ok: Promise<UpstreamTestFailure | 'no_key' | 'ok'> }
+  >();
   /** T-20261104f：每个上游最近的「401 / 403 但自检通过」时刻（毫秒，进程内滑动窗口）。 */
   private readonly authRejections = new Map<string, number[]>();
   /** T-20261104f：提醒冷却到期时刻（进程内快路径；权威记录在 model_access.settings）。 */
@@ -562,7 +565,11 @@ export class UpstreamService {
     source: 'gateway' | 'probe',
     failure: string | null = null,
   ): Promise<boolean> {
-    if (status === 'invalid' && source === 'gateway' && (await this.keyStillWorks(upstreamId)))
+    if (
+      status === 'invalid' &&
+      source === 'gateway' &&
+      (await this.credentialCheck(upstreamId)) !== 'invalid_key'
+    )
       return false;
     return this.database.transaction(async (tx) => {
       const [row] = await tx.db
@@ -579,12 +586,14 @@ export class UpstreamService {
    * T-20261104a（总经理 11-04：用户再触发服务商拦截，绝不能影响后台的上游账号判断）。
    * 真实调用回 invalid_key（401 / 403，正文又不是已知的安全策略格式）时，先用同一把密钥立刻做一次连通测试，
    * 与后台「测试」同一个探测（UPSTREAM_PROBE：OpenAI 兼容 `GET /models`，Anthropic `GET /v1/models`）。
-   * - 返回 true：测试通过，密钥没坏。这次调用只按内容被拒（content_rejected）处理，不改上游状态、不暂停、不累计失败；
-   * - 返回 false：测试也失败（或读不到密钥），按原逻辑标 invalid。
+   * 布尔结果只表示这次连通检查是否通过；credentialCheck 保留失败原因，显式凭证错误才标失效。
    * 同一上游的结论在进程内保留 KEY_SELF_CHECK_TTL_MS；同一时间的多个请求共用同一次测试。
    * 额度类（quota_exhausted / 402）不走这里。日志只有上游 ID 和结果类别，不含密钥和上游原文。
    */
-  keyStillWorks(upstreamId: string): Promise<boolean> {
+  async keyStillWorks(upstreamId: string): Promise<boolean> {
+    return (await this.credentialCheck(upstreamId)) === 'ok';
+  }
+  credentialCheck(upstreamId: string): Promise<UpstreamTestFailure | 'no_key' | 'ok'> {
     const now = this.clock.nowMs();
     const cached = this.keyChecks.get(upstreamId);
     if (cached && now - cached.at < KEY_SELF_CHECK_TTL_MS) return cached.ok;
@@ -614,7 +623,7 @@ export class UpstreamService {
     this.keyChecks.delete(upstreamId);
   }
 
-  private async selfCheck(upstreamId: string): Promise<boolean> {
+  private async selfCheck(upstreamId: string): Promise<UpstreamTestFailure | 'no_key' | 'ok'> {
     let result: UpstreamTestFailure | 'no_key' | 'ok';
     try {
       const row = await this.get(upstreamId);
@@ -627,11 +636,9 @@ export class UpstreamService {
     }
     this.log.warn(
       { code: 'upstream_key_self_check', upstreamId, result },
-      result === 'ok'
-        ? '上游回了 401/403，但密钥自检通过：这次按内容被拒处理，不改上游状态'
-        : '上游回了 401/403，密钥自检也失败：按密钥失效处理',
+      result === 'ok' ? '上游返回 401/403，账号自检通过' : '上游返回 401/403，已记录账号自检结果',
     );
-    return result === 'ok';
+    return result;
   }
 
   /**
@@ -877,7 +884,7 @@ export function upstreamAlert(
  * 只有上游展示名（管理员自己起的平台数据）、次数和时间窗，不含用户内容和密钥。
  */
 export function upstreamAuthRejectedSummary(name: string, count: number, minutes: number): string {
-  return `上游「${name.slice(0, 40)}」${minutes} 分钟内有 ${count} 次请求被拒（401/403），但密钥连通测试正常：多半是密钥没有所用模型的权限，或账号被服务商限制。这些请求已按内容被拒处理（用户收到推托语），请到供应商控制台检查。`.slice(
+  return `上游「${name.slice(0, 40)}」${minutes} 分钟内有 ${count} 次请求被拒（401/403），但密钥连通测试正常：多半是密钥没有所用模型的权限，或账号被服务商限制。请到供应商控制台核对该账号可用模型和权限。`.slice(
     0,
     200,
   );

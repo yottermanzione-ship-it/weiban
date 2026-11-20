@@ -192,6 +192,21 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
         );
         return;
       }
+      if (mode === 'text-tail') {
+        const first = calls === 1;
+        res.writeHead(200, { 'content-type': 'application/json' }).end(
+          JSON.stringify({
+            choices: [
+              {
+                finish_reason: first ? 'length' : 'stop',
+                message: { content: first ? '这是一句尚未写完的' : '尚未写完的回复。' },
+              },
+            ],
+            usage,
+          }),
+        );
+        return;
+      }
       if (mode === 'truncated') {
         // 批 EJ：正文 JSON 写到一半额度用完（含思考 token 报告）。
         res.writeHead(200, { 'Content-Type': 'application/json' }).end(
@@ -567,7 +582,7 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
           adapterElapsedMs: expect.any(Number),
         },
       }));
-      expect(attempts.rows.map((row) => row.bound_snapshot)).toEqual(expectedSnapshots);
+      expect(attempts.rows.map((row) => row.bound_snapshot)).toMatchObject(expectedSnapshots);
       const elapsed = attempts.rows.map(
         (row) => row.bound_snapshot.dispatchTiming.adapterElapsedMs,
       );
@@ -885,6 +900,26 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
     expect(summary.totals.chargedMicros).toBe(Number(rows[0]?.total ?? 0));
   });
 
+  it('一条普通私聊截断后只补尾段，最终回复和扣费都可重放', async () => {
+    mode = 'text-tail';
+    const req = input({ responseFormat: 'text' });
+    const begin = await db.query<{ n: number }>(
+      "SELECT count(*)::int n FROM billing.ledger_entries WHERE type='charge' AND NOT absorbed",
+    );
+    const result = await gateway.generateText(req);
+    expect(result).toMatchObject({ ok: true, value: { text: '这是一句尚未写完的回复。' } });
+    expect((requests[1]?.messages as { role: string; content: string }[]).at(-2)).toEqual({
+      role: 'assistant',
+      content: '这是一句尚未写完的',
+    });
+    expect(await gateway.generateText(req)).toEqual(result);
+    expect(calls).toBe(2);
+    const end = await db.query<{ n: number }>(
+      "SELECT count(*)::int n FROM billing.ledger_entries WHERE type='charge' AND NOT absorbed",
+    );
+    expect(end.rows[0]!.n - begin.rows[0]!.n).toBe(1);
+  });
+
   it('同一中转的记忆模型失败后选择更便宜模型，真实结算和重试不重复扣款', async () => {
     const catalog = app.get(CatalogService);
     const original = (await catalog.adminList()).find((entry) => entry.modelKey === modelKey)!;
@@ -917,7 +952,21 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
       });
     expect(await catalog.cheaperTextFallbacks(modelKey)).toEqual([cheap]);
     mode = 'one-model-down';
-    const request = input({ purpose: 'memory', modelRole: 'background', responseFormat: 'json' });
+    const shortBefore = calls;
+    expect(
+      await gateway.generateText(
+        input({ deadlineAt: new Date(clock.nowMs() + 4000).toISOString() }),
+      ),
+    ).toMatchObject({ ok: false, error: 'provider_unavailable' });
+    expect(calls - shortBefore).toBe(1);
+    calls = 0;
+    requests = [];
+    const request = input({
+      purpose: 'memory',
+      modelRole: 'background',
+      responseFormat: 'json',
+      deadlineAt: new Date(clock.nowMs() + 48_000).toISOString(),
+    });
     const chargesBefore = await db.query<{ n: number }>(
       "SELECT count(*)::int AS n FROM billing.ledger_entries WHERE type='charge'",
     );
@@ -927,6 +976,20 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
     ]);
     expect(first).toMatchObject({ ok: true, value: { modelKey: cheap, chargedMicros: 165 } });
     expect(concurrent).toEqual(first);
+    if (!first.ok) throw Error('expected successful fallback');
+    const chain = await db.query<{
+      model_key: string;
+      task_key: string;
+      timing: { crossModelReserveMs: number; deadlineMs: number };
+    }>(
+      "SELECT u.model_key,u.task_key,a.bound_snapshot->'dispatchTiming' timing FROM model_access.usage_records u JOIN model_access.generation_attempts a ON a.usage_record_id=u.id WHERE u.task_key=(SELECT task_key FROM model_access.usage_records WHERE id=$1) ORDER BY u.created_at",
+      [first.value.usageRecordId],
+    );
+    expect(chain.rows.map((r) => r.model_key)).toEqual([modelKey, cheap]);
+    expect(new Set(chain.rows.map((r) => r.task_key)).size).toBe(1);
+    expect(chain.rows[0]!.timing.crossModelReserveMs).toBeGreaterThanOrEqual(8000);
+    expect(chain.rows[0]!.timing.deadlineMs).toBeLessThan(40_000);
+    expect(chain.rows[1]!.timing.deadlineMs).toBeGreaterThan(8000);
     expect(requests.at(-1)).toMatchObject({
       model: 'cheap-working',
       response_format: { type: 'json_object' },

@@ -99,7 +99,9 @@ export type TextResult =
         | 'stream_incomplete'
         | 'response_parse_error'
         | 'response_too_large'
-        | 'permission_denied';
+        | 'permission_denied'
+        | 'auth_check_unavailable'
+        | 'permission_unconfirmed';
       usage?: TextUsage;
       finishReason?: string;
       /**
@@ -140,6 +142,7 @@ export interface TextAdapter {
   generate(input: {
     /** 3.24：上游协议；不传 = OpenAI 兼容。 */
     protocol?: TextProtocol;
+    continuingText?: boolean;
     onDiagnostic?: (value: ProviderDiagnostic) => void;
     baseUrl: string;
     apiKey: string;
@@ -647,9 +650,38 @@ export class OpenAiTextAdapter implements TextAdapter {
           retryable: false,
           ...(payload.usage ? { usage: usageOf(payload.usage, input.messages, '') } : {}),
         };
-      if (response.status === 401 || response.status === 403)
+      const safeCode = obs.diagnostic.providerCode ?? '';
+      if (
+        response.status === 401 ||
+        response.status === 403 ||
+        [
+          'authentication_error',
+          'invalid_api_key',
+          'permission_error',
+          'model_access_denied',
+          'permission_denied',
+        ].includes(safeCode)
+      )
         return { ok: false, category: 'invalid_key', retryable: false };
-      if (response.status === 429) return { ok: false, category: 'rate_limited', retryable: true };
+      if (
+        response.status === 429 ||
+        ['rate_limit_error', 'rate_limit_exceeded', 'too_many_requests', 'rate_limited'].includes(
+          safeCode,
+        )
+      )
+        return { ok: false, category: 'rate_limited', retryable: true };
+      if (
+        error &&
+        [
+          'invalid_parameter',
+          'unsupported_parameter',
+          'unsupported_value',
+          'invalid_request_error',
+          'invalid_model',
+          'model_not_found',
+        ].includes(safeCode)
+      )
+        return { ok: false, category: 'bad_request', retryable: false };
       if (response.status >= 500) return { ok: false, category: 'provider_error', retryable: true };
       if (!response.ok) return { ok: false, category: 'bad_request', retryable: false };
       if (error)
@@ -658,6 +690,13 @@ export class OpenAiTextAdapter implements TextAdapter {
           category: 'provider_error',
           retryable: true,
           ...(payload.usage ? { usage: usageOf(payload.usage, input.messages, '') } : {}),
+        };
+      if (!payload || typeof payload !== 'object')
+        return {
+          ok: false,
+          category: 'provider_error',
+          diagnostic: 'response_parse_error',
+          retryable: true,
         };
       const choice = (
         payload.choices as
@@ -701,6 +740,7 @@ export class OpenAiTextAdapter implements TextAdapter {
         reasoningText ? text : rawText,
         reasoningText,
       );
+      if (!eventStream && (text || reasoningText)) obs.progress();
       if (!text) obs.empty(rawText, !!reasoningText || Boolean(rawText.trim() && !text));
       obs.diagnostic.stage = 'complete';
       if (!text)
@@ -739,7 +779,7 @@ export class OpenAiTextAdapter implements TextAdapter {
           category: 'truncated',
           retryable: true,
           usage,
-          partialText: text,
+          partialText: rawText.trim() === text ? rawText : text,
           ...finish,
         };
       if (input.responseFormat === 'json') {
@@ -757,7 +797,12 @@ export class OpenAiTextAdapter implements TextAdapter {
             partialText: text,
           };
       }
-      return { ok: true, text, usage, ...finish };
+      return {
+        ok: true,
+        text: input.continuingText && rawText.trim() === text ? rawText : text,
+        usage,
+        ...finish,
+      };
     } catch (error) {
       NETWORK_LOG.warn({
         code: 'text_network_error',
