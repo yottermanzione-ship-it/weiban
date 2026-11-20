@@ -230,7 +230,7 @@ export class SharedEpisodesService implements OnModuleInit {
             [userId, characterId, current?.version ?? null],
           );
         await tx.query(
-          'UPDATE ai_runtime.group_memory_states SET cursor_seq=last_user_seq,pending_count=0,lease_id=NULL,lease_until=NULL,prepared_ciphertext=NULL,result_ciphertext=NULL,generation=generation+1 WHERE user_id=$1',
+          'UPDATE ai_runtime.group_memory_states SET cursor_seq=last_user_seq,pending_count=0,wait_reason=NULL,retry_after=NULL,lease_id=NULL,lease_until=NULL,prepared_ciphertext=NULL,result_ciphertext=NULL,generation=generation+1 WHERE user_id=$1',
           [userId],
         );
       },
@@ -571,7 +571,7 @@ export class SharedEpisodesService implements OnModuleInit {
       [row.user_id, row.character_id],
     );
     await tx.query(
-      'UPDATE ai_runtime.group_memory_states SET cursor_seq=last_user_seq,pending_count=0,lease_id=NULL,lease_until=NULL,prepared_ciphertext=NULL,result_ciphertext=NULL,generation=generation+1 WHERE user_id=$1',
+      'UPDATE ai_runtime.group_memory_states SET cursor_seq=last_user_seq,pending_count=0,wait_reason=NULL,retry_after=NULL,lease_id=NULL,lease_until=NULL,prepared_ciphertext=NULL,result_ciphertext=NULL,generation=generation+1 WHERE user_id=$1',
       [row.user_id],
     );
     // Pending group inputs must also be regenerated after forgetting.

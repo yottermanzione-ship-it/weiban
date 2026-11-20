@@ -1,3 +1,4 @@
+import { fixtureMemoryUsage } from './support/memory-usage.js';
 import 'reflect-metadata';
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -114,7 +115,7 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
               usage: { inputTokens: 10, cachedInputTokens: 0, outputTokens: 10, estimated: false },
               chargedMicros: 1,
               latencyMs: 1,
-              usageRecordId: newId(),
+              usageRecordId: await fixtureMemoryUsage(db, clock, input),
             },
           };
     },
@@ -961,7 +962,7 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
       expect(
         calls
           .slice(summaryBefore)
-          .filter((c) => c.meta?.promptTemplateVersion === 'chat-summary-v2'),
+          .filter((c) => c.meta?.promptTemplateVersion === 'chat-summary-v3'),
       ).toHaveLength(1);
       expect(calls.at(-1)).toMatchObject({
         modelRole: 'adult',
@@ -1317,7 +1318,7 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
       );
       const summaryCalls = calls
         .slice(before)
-        .filter((call) => call.meta?.promptTemplateVersion === 'chat-summary-v2');
+        .filter((call) => call.meta?.promptTemplateVersion === 'chat-summary-v3');
       expect(summaryCalls.length).toBeGreaterThan(0);
       const payload = summaryCalls.map((call) => call.messages.map((m) => m.content).join('\n'));
       expect(payload.join('\n')).toContain('WINDOW_RECENT_CANARY');

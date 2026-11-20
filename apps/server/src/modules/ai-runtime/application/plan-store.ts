@@ -68,6 +68,7 @@ export interface EnqueueReply {
 }
 /** T-066 迁移 0038 的表（都按 user_id 归属）。 */
 const T066_TABLES = [
+  'summary_refund_jobs',
   'memory_sharing_settings',
   'chat_visits',
   'joint_events',
