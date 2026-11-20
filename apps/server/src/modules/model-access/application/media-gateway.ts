@@ -1317,7 +1317,8 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       await this.recorder.finish(usage.record.id, {
         status: 'failed',
         errorCode: reserve.error,
-        requestPriceLimit: reserve.error === 'request_too_large' ? reserve.requestPriceLimit : undefined,
+        requestPriceLimit:
+          reserve.error === 'request_too_large' ? reserve.requestPriceLimit : undefined,
         inputTokens: 0,
         cachedInputTokens: 0,
         outputTokens: 0,
@@ -1666,10 +1667,8 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     try {
       result = await fn();
     } catch {
-      // 若结果已落盘，保留result阶段供恢复，不用失败覆盖已成功的供应商结果。
-      const stored = await this.cache.get(claim.row.id);
-      if (stored?.phase === 'result') return { ok: false, error: 'provider_unavailable' };
-      result = { ok: false, error: 'provider_unavailable' };
+      // 服务器异常无法证明供应商没有收到请求。保留结果/冻结供恢复器核验，不记录成可再派发的普通线路故障。
+      return { ok: false, error: 'provider_unavailable', message: 'interrupted' };
     } finally {
       this.activeGenerations.delete(input);
     }

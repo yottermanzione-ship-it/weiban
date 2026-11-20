@@ -49,7 +49,6 @@ export const accounts = billingSchema.table(
     timeZone: text('time_zone').notNull(),
     /** 最近一次因余额不足拒绝冻结的时间；发出 balance_restored 后清空（billing.md 6.3 第 3 条）。 */
     insufficientSince: tz('insufficient_since'),
-    foregroundWaitUntil: tz('foreground_wait_until'),
     ecologyInsufficientSince: tz('ecology_insufficient_since'),
     ecologyNoticePending: boolean('ecology_notice_pending').notNull().default(false),
     /** 最近一次发出 balance_low 的当地日期（同一天最多一次）。 */
@@ -70,6 +69,21 @@ export const accounts = billingSchema.table(
       sql`(${t.kind} = 'user' and ${t.userId} is not null) or (${t.kind} = 'platform' and ${t.userId} is null)`,
     ),
     check('accounts_held_nonnegative', sql`${t.heldMicros} >= 0`),
+  ],
+);
+
+export const foregroundWaiters = billingSchema.table(
+  'foreground_waiters',
+  {
+    id: uuid('id').primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    expiresAt: tz('expires_at').notNull(),
+  },
+  (t) => [
+    index('foreground_waiters_account_idx').on(t.accountId, t.expiresAt),
+    index('foreground_waiters_expiry_idx').on(t.expiresAt),
   ],
 );
 

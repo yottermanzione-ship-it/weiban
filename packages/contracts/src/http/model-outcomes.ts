@@ -79,7 +79,16 @@ const diagnostic = z.object({
   failureDomain: z.string().optional(),
   rateLimitScope: z.string().optional(),
 });
-export const VoiceCancellationReason = z.enum(['authorization_denied','realtime_open_failed','unused_asr_segment','unused_realtime_segment','realtime_time_limit','realtime_insufficient_balance','realtime_failed','clone_not_started']);
+export const VoiceCancellationReason = z.enum([
+  'authorization_denied',
+  'realtime_open_failed',
+  'unused_asr_segment',
+  'unused_realtime_segment',
+  'realtime_time_limit',
+  'realtime_insufficient_balance',
+  'realtime_failed',
+  'clone_not_started',
+]);
 export type VoiceCancellationReason = z.infer<typeof VoiceCancellationReason>;
 export const AdminTaskAttempt = z.object({
   usageRecordId: Id,
@@ -90,8 +99,12 @@ export const AdminTaskAttempt = z.object({
   upstreamName: z.string().nullable(),
   upstreamModelId: z.string(),
   ordinal: value.nullable(),
-  requestPriceLimit: z.object({estimatedSellMicros:value,limitMicros:value,priceVersionId:Id}).nullable().optional(),
+  requestPriceLimit: z
+    .object({ estimatedSellMicros: value, limitMicros: value, priceVersionId: Id })
+    .nullable()
+    .optional(),
   cancellationReason: VoiceCancellationReason.nullable().optional(),
+  holdStatus: z.enum(['active', 'settled', 'released', 'expired']).nullable().optional(),
   status: z.enum(['pending', 'succeeded', 'failed']),
   errorCode: z.string().nullable(),
   sent: z.enum(['sent', 'authorized', 'not_sent', 'unknown']),

@@ -2,6 +2,7 @@
  * 文本协议适配器：OpenAI 兼容（本文件）与 Anthropic 原生 Messages（anthropic-adapter.ts，3.24），
  * RoutingTextAdapter 按上游账号的协议选用。不记录响应原文、不跟随重定向、不持有密钥。
  */
+import { ProviderObservation, type ProviderDiagnostic } from './provider-observation.js';
 import { Logger } from '@nestjs/common';
 import type { GenerateTextInput, UsageQuantities } from '@weiban/contracts';
 
@@ -97,7 +98,10 @@ export type TextResult =
         | 'timeout_deadline'
         | 'stream_incomplete'
         | 'response_parse_error'
-        | 'response_too_large';
+        | 'response_too_large'
+        | 'permission_denied'
+        | 'auth_check_unavailable'
+        | 'permission_unconfirmed';
       usage?: TextUsage;
       finishReason?: string;
       /**
@@ -138,6 +142,8 @@ export interface TextAdapter {
   generate(input: {
     /** 3.24：上游协议；不传 = OpenAI 兼容。 */
     protocol?: TextProtocol;
+    continuingText?: boolean;
+    onDiagnostic?: (value: ProviderDiagnostic) => void;
     baseUrl: string;
     apiKey: string;
     model: string;
@@ -171,7 +177,6 @@ export interface TextAdapter {
  */
 export type ThinkingControl = 'deepseek' | 'qwen' | 'openrouter' | 'reasoning_none' | 'none';
 export function thinkingControlFor(baseUrl: string, model: string): ThinkingControl {
-  const url = baseUrl.toLowerCase();
   let host: string;
   try {
     host = new URL(baseUrl).hostname.toLowerCase();
@@ -179,9 +184,10 @@ export function thinkingControlFor(baseUrl: string, model: string): ThinkingCont
     return 'none';
   }
   const id = model.toLowerCase();
-  if (url.includes('openrouter.ai')) return 'openrouter';
-  if (url.includes('deepseek.com')) return 'deepseek';
-  if (url.includes('dashscope') || url.includes('aliyuncs.com')) return 'qwen';
+  if (host === 'openrouter.ai') return 'openrouter';
+  if (host === 'api.deepseek.com') return 'deepseek';
+  if (/^dashscope(?:-intl|-us)?\.aliyuncs\.com$/.test(host) && /^(?:qwen|qwq)/.test(id))
+    return 'qwen';
   // 只对确认支持的官方域名发“关思考”字段；中转站/兼容站不猜，避免不支持却硬发 400。
   if (host === 'api.openai.com' && /^gpt-5\.6(-|$)/.test(id)) return 'reasoning_none';
   if (
@@ -487,49 +493,15 @@ export class OpenAiTextAdapter implements TextAdapter {
     input: Parameters<TextAdapter['generate']>[0],
     extra: Record<string, unknown>,
   ): Promise<TextResult> {
-    let timeout: 'timeout_idle' | 'timeout_deadline' | 'timeout_progress' | undefined;
-    let progressTimer: NodeJS.Timeout | undefined;
-    let idleTimer: NodeJS.Timeout | undefined;
-    let hardTimer: NodeJS.Timeout | undefined;
+    const officialAbliteration = /^https:\/\/api\.abliteration\.ai\/v1\/*$/i.test(input.baseUrl);
+    const stream = !officialAbliteration;
+    const obs = new ProviderObservation(input, stream);
     try {
-      // 直连 Abliteration 的非流式回应有实测用量，流式回应目前没有。每次调用保持单次 HTTP。
-      const officialAbliteration = /^https:\/\/api\.abliteration\.ai\/v1\/*$/i.test(input.baseUrl);
-      const stream = !officialAbliteration;
       const officialOpenAi = new URL(input.baseUrl).origin === 'https://api.openai.com';
-      const controller = new AbortController();
-      const deadlineMs = input.deadlineMs ?? Math.max(input.timeoutMs, 120_000);
-      const deadlineAt = performance.now() + deadlineMs;
-      const armIdle = () => {
-        if (idleTimer) clearTimeout(idleTimer);
-        // 备用线路可能只剩总预算；两种时限同时到达时由总时限计时器报告。
-        if (performance.now() + input.timeoutMs >= deadlineAt) return;
-        idleTimer = setTimeout(() => {
-          timeout ??= 'timeout_idle';
-          controller.abort();
-        }, input.timeoutMs);
-      };
-      // 已知非流式的直连有单独的协议/回执行为；只对请求流式响应的线路启用。
-      const failover = stream ? input.failover : undefined;
-      const armProgress = () => {
-        if (!failover) return;
-        clearTimeout(progressTimer);
-        if (performance.now() + failover.progressTimeoutMs >= deadlineAt) return;
-        progressTimer = setTimeout(() => {
-          if (!failover.backupAvailable()) return;
-          timeout ??= 'timeout_progress';
-          controller.abort();
-        }, failover.progressTimeoutMs);
-      };
-      hardTimer = setTimeout(() => {
-        timeout ??= 'timeout_deadline';
-        controller.abort();
-      }, deadlineMs);
-      armIdle();
-      armProgress();
       const response = await fetch(`${input.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
         method: 'POST',
         redirect: 'manual',
-        signal: controller.signal,
+        signal: obs.controller.signal,
         headers: {
           Authorization: `Bearer ${input.apiKey}`,
           'Content-Type': 'application/json',
@@ -551,8 +523,8 @@ export class OpenAiTextAdapter implements TextAdapter {
         }),
       });
       // 限制响应大小，避免异常供应商占满服务器内存；只提取结构化字段，不向外传播正文。
+      obs.headers(response);
       if (!response.body) return { ok: false, category: 'provider_error', retryable: true };
-      if (!response.ok) clearTimeout(progressTimer);
       let eventStream = /text\/event-stream/i.test(response.headers.get('content-type') ?? '');
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -573,7 +545,7 @@ export class OpenAiTextAdapter implements TextAdapter {
             if (eventStream) readOpenAiFrames(rawBody.split(/\r?\n/), streamed);
             break;
           }
-          armIdle();
+          obs.data();
           bytes += part.value.length;
           rawBody += decoder.decode(part.value, { stream: true });
           if (!eventStream && /^\s*(?:data:|:)/.test(rawBody)) eventStream = true;
@@ -581,14 +553,14 @@ export class OpenAiTextAdapter implements TextAdapter {
             const lines = rawBody.split('\n');
             rawBody = lines.pop()!;
             const progress = readOpenAiFrames(lines, streamed);
+            if (response.ok && progress) obs.progress();
             if (streamed.done || streamed.finishReason || streamed.refusal || streamed.error) {
               // 已收到终止状态：照原流程读取末帧用量，不能因等回执再次发送。
-              clearTimeout(progressTimer);
-            } else if (response.ok && progress) armProgress();
-          } else if (progressTimer && rawBody.trimStart().startsWith('{')) {
+              obs.endProgress('terminal_frame');
+            }
+          } else if (rawBody.trimStart().startsWith('{')) {
             // 部分兼容服务虽然请求了流式，实际返回单个 JSON 文档。正文传输沿用原空闲策略。
-            clearTimeout(progressTimer);
-            progressTimer = undefined;
+            obs.endProgress('non_streaming');
           }
           // SSE 的事件信封可能远大于实质文本。逐帧丢弃信封，对实质文本、未完成单帧及传输总量分别设保护。
           if (
@@ -611,6 +583,7 @@ export class OpenAiTextAdapter implements TextAdapter {
       } finally {
         reader.releaseLock();
       }
+      obs.diagnostic.stage = 'decode';
       let payload: Record<string, unknown> = {};
       if (eventStream) {
         if (response.ok && !streamed.refusal && !streamed.error && streamed.malformed)
@@ -662,6 +635,7 @@ export class OpenAiTextAdapter implements TextAdapter {
         }
       }
       const error = payload?.error as { code?: unknown; type?: unknown } | undefined;
+      obs.error(error);
       const code = typeof error?.code === 'string' ? error.code : '';
       if (
         ['insufficient_quota', 'insufficient_balance', 'quota_exhausted'].includes(code) ||
@@ -676,9 +650,38 @@ export class OpenAiTextAdapter implements TextAdapter {
           retryable: false,
           ...(payload.usage ? { usage: usageOf(payload.usage, input.messages, '') } : {}),
         };
-      if (response.status === 401 || response.status === 403)
+      const safeCode = obs.diagnostic.providerCode ?? '';
+      if (
+        response.status === 401 ||
+        response.status === 403 ||
+        [
+          'authentication_error',
+          'invalid_api_key',
+          'permission_error',
+          'model_access_denied',
+          'permission_denied',
+        ].includes(safeCode)
+      )
         return { ok: false, category: 'invalid_key', retryable: false };
-      if (response.status === 429) return { ok: false, category: 'rate_limited', retryable: true };
+      if (
+        response.status === 429 ||
+        ['rate_limit_error', 'rate_limit_exceeded', 'too_many_requests', 'rate_limited'].includes(
+          safeCode,
+        )
+      )
+        return { ok: false, category: 'rate_limited', retryable: true };
+      if (
+        error &&
+        [
+          'invalid_parameter',
+          'unsupported_parameter',
+          'unsupported_value',
+          'invalid_request_error',
+          'invalid_model',
+          'model_not_found',
+        ].includes(safeCode)
+      )
+        return { ok: false, category: 'bad_request', retryable: false };
       if (response.status >= 500) return { ok: false, category: 'provider_error', retryable: true };
       if (!response.ok) return { ok: false, category: 'bad_request', retryable: false };
       if (error)
@@ -687,6 +690,13 @@ export class OpenAiTextAdapter implements TextAdapter {
           category: 'provider_error',
           retryable: true,
           ...(payload.usage ? { usage: usageOf(payload.usage, input.messages, '') } : {}),
+        };
+      if (!payload || typeof payload !== 'object')
+        return {
+          ok: false,
+          category: 'provider_error',
+          diagnostic: 'response_parse_error',
+          retryable: true,
         };
       const choice = (
         payload.choices as
@@ -730,6 +740,9 @@ export class OpenAiTextAdapter implements TextAdapter {
         reasoningText ? text : rawText,
         reasoningText,
       );
+      if (!eventStream && (text || reasoningText)) obs.progress();
+      if (!text) obs.empty(rawText, !!reasoningText || Boolean(rawText.trim() && !text));
+      obs.diagnostic.stage = 'complete';
       if (!text)
         NETWORK_LOG.warn({
           code: 'text_empty_output',
@@ -760,6 +773,15 @@ export class OpenAiTextAdapter implements TextAdapter {
         };
       // 空正文：按失败处理（网关负责重试与降级），不能当成功静默返回。
       if (!text) return { ok: false, category: 'empty_output', retryable: true, usage, ...finish };
+      if (input.responseFormat !== 'json' && finishReason === 'length')
+        return {
+          ok: false,
+          category: 'truncated',
+          retryable: true,
+          usage,
+          partialText: rawText.trim() === text ? rawText : text,
+          ...finish,
+        };
       if (input.responseFormat === 'json') {
         // 批 EJ：截断只看正文——正文已是完整 JSON（后面只剩空白）就算成功，不看总 token 是否顶格。
         const complete = completeJsonPrefix(text);
@@ -775,25 +797,22 @@ export class OpenAiTextAdapter implements TextAdapter {
             partialText: text,
           };
       }
-      return { ok: true, text, usage, ...finish };
+      return {
+        ok: true,
+        text: input.continuingText && rawText.trim() === text ? rawText : text,
+        usage,
+        ...finish,
+      };
     } catch (error) {
       NETWORK_LOG.warn({
         code: 'text_network_error',
         model: input.model,
-        host: (() => {
-          try {
-            return new URL(input.baseUrl).host;
-          } catch {
-            return 'invalid_base_url';
-          }
-        })(),
-        detail: timeout ?? (error instanceof TypeError ? 'transport_error' : 'request_failed'),
+        stage: obs.diagnostic.stage,
+        detail: obs.timeout ?? (error instanceof TypeError ? 'transport_error' : 'request_failed'),
       });
-      return { ok: false, category: 'network_error', diagnostic: timeout, retryable: true };
+      return { ok: false, category: 'network_error', diagnostic: obs.timeout, retryable: true };
     } finally {
-      if (idleTimer) clearTimeout(idleTimer);
-      if (hardTimer) clearTimeout(hardTimer);
-      clearTimeout(progressTimer);
+      obs.close();
     }
   }
 }

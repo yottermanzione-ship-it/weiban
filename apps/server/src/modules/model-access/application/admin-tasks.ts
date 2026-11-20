@@ -290,11 +290,12 @@ ${taskCte}
       ]) ?? [],
     ]);
     const versionLabels = new Map(versions.map((v) => [v.id, v.label]));
-    const risk = new Map(holds.map((h) => [h.holdId, h.risk]));
+    const byHold = new Map(holds.map((h) => [h.holdId, h]));
     const items: AdminTaskAttempt[] = rows.map(
       ({ holdId, phase, timing, providerDiagnostic, cursorStamp: _stamp, ...r }) => {
         const t = dataObject(timing),
-          sentAt = holdId ? risk.get(holdId)?.sentAt : undefined;
+          hold = holdId ? byHold.get(holdId) : undefined,
+          sentAt = hold?.risk?.sentAt;
         const amt = amounts.get(r.usageRecordId);
         if (!amt) throw new AppError('service_unavailable', '账本返回不完整');
         const sent =
@@ -304,14 +305,15 @@ ${taskCte}
               ? 'authorized'
               : r.errorCode === 'route_risk_blocked' ||
                   (!holdId && preflight[r.errorCode ?? '']) ||
-                  risk.get(holdId ?? '')?.phase === 'reserved' ||
+                  hold?.risk?.phase === 'reserved' ||
                   (r.errorCode === 'cancelled' &&
-                    risk.has(holdId ?? '') &&
-                    risk.get(holdId ?? '')?.phase === 'resolved')
+                    hold?.status === 'released' &&
+                    hold.risk?.phase === 'resolved')
                 ? 'not_sent'
                 : 'unknown';
         return {
           ...r,
+          holdStatus: hold?.status ?? null,
           ...amt,
           priceVersionLabel: r.priceVersionId
             ? (versionLabels.get(r.priceVersionId) ?? null)

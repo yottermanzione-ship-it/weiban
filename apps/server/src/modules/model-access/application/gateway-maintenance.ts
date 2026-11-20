@@ -57,9 +57,12 @@ export class GatewayMaintenance implements OnModuleInit {
         and(
           ne(generationResults.phase, 'complete'),
           or(
-            and(eq(generationResults.phase,'result'), lt(generationResults.createdAt, new Date(this.clock.nowMs()-90000))),
+            and(
+              eq(generationResults.phase, 'result'),
+              lt(generationResults.createdAt, new Date(this.clock.nowMs() - 90000)),
+            ),
             // 完整跨模型请求可占用 120 秒，未关联冻结的链占位也须等到这段时间之后。
-            lt(generationResults.createdAt, new Date(this.clock.nowMs()-150000)),
+            lt(generationResults.createdAt, new Date(this.clock.nowMs() - 150000)),
           ),
         ),
       )
@@ -79,50 +82,82 @@ export class GatewayMaintenance implements OnModuleInit {
         const record = await this.recorder.byId(row.usageRecordId);
         if (record?.status === 'pending') records.push(record);
       }
-      const holdFor = (r: (typeof records)[number]) => r.holdId ?? (row.usageRecordId === r.id ? row.holdId : null);
-      const holdIds = [...new Set([...records.map(holdFor),row.holdId].filter((id): id is string => !!id))];
+      const attempts = await this.recorder.attemptsForRecovery(row.id);
+      const holdFor = (r: (typeof records)[number]) =>
+        r.holdId ??
+        (row.usageRecordId === r.id ? row.holdId : null) ??
+        attempts.find((a) => a.usageRecordId === r.id)?.holdId;
+      const holdIds = [
+        ...new Set(
+          [...records.map(holdFor), ...attempts.map((a) => a.holdId), row.holdId].filter(
+            (id): id is string => !!id,
+          ),
+        ),
+      ];
       if (holdIds.length && !this.charges?.getBillingStatesByHoldIds) continue;
-      const states = new Map((await this.charges?.getBillingStatesByHoldIds?.(holdIds) ?? []).map(s => [s.holdId,s]));
-      if (holdIds.some(id => {
-        const state = states.get(id);
-        return !state || (state.status === 'active' && (!state.expiresAt || Date.parse(state.expiresAt)>this.clock.nowMs()));
-      })) continue;
+      const states = new Map(
+        ((await this.charges?.getBillingStatesByHoldIds?.(holdIds)) ?? []).map((s) => [
+          s.holdId,
+          s,
+        ]),
+      );
+      if (
+        holdIds.some((id) => {
+          const state = states.get(id);
+          return (
+            state?.status === 'active' &&
+            (!state.expiresAt || Date.parse(state.expiresAt) > this.clock.nowMs())
+          );
+        })
+      )
+        continue;
       if ((await this.cache.get(row.id))?.phase !== 'pending') continue;
-      const blockReplay = [...states.values()].some(s => !!s.risk?.sentAt || s.status==='settled' || !s.risk) ||
-        await this.recorder.hasDispatchedAttempt(row.id);
+      const blockReplay =
+        [...states.values()].some((s) => !!s.risk?.sentAt || s.status === 'settled' || !s.risk) ||
+        holdIds.some((id) => !states.has(id)) ||
+        attempts.some(
+          (a) => a.dispatched || a.phase === 'sent' || (!a.holdId && a.phase !== 'reserved'),
+        );
       for (const record of records) {
         const holdId = holdFor(record);
         const state = holdId ? states.get(holdId) : undefined;
         if (state?.usageRecordId && state.usageRecordId !== record.id)
           throw new Error('恢复时冻结与调用不匹配');
+        const reported = record.idempotencyKey.startsWith('gateway:')
+          ? await this.recorder.reportedTextUsage(record.id)
+          : undefined;
         let costKnown = !holdId;
         if (state?.status === 'settled' && state.settlement) {
-          await this.recorder.writeSettleSnapshot(record.id,state.settlement);
+          await this.recorder.writeSettleSnapshot(record.id, state.settlement);
           costKnown = state.settlement.costKnown === true;
-        } else if (holdId) {
-          const release = state?.release ?? await this.billing.release({
-            holdId,
-            reason: 'call_failed',
-            usageRecordId: record.id,
-            upstreamId: record.upstreamId,
-            upstreamUsage: state?.risk?.phase === 'reserved' ? {} : undefined,
-          });
+        } else if (holdId && state && state.status !== 'settled') {
+          const release =
+            state?.release ??
+            (await this.billing.release({
+              holdId,
+              reason: 'call_failed',
+              usageRecordId: record.id,
+              upstreamId: record.upstreamId,
+              upstreamUsage: state?.risk?.phase === 'reserved' ? {} : reported,
+            }));
           await this.recorder.writeReleaseSnapshot(record.id, release);
           costKnown = release.costKnown === true;
         }
-        await this.recorder.recoverAttempts(record.id,costKnown);
+        await this.recorder.recoverAttempts(record.id, costKnown);
         await this.recorder.finish(record.id, {
           status: 'failed',
           errorCode: 'interrupted',
-          inputTokens: 0,
-          cachedInputTokens: 0,
-          outputTokens: 0,
+          inputTokens: reported?.inputTokens ?? record.inputTokens,
+          cachedInputTokens: reported?.cachedInputTokens ?? record.cachedInputTokens,
+          outputTokens: reported?.outputTokens ?? record.outputTokens,
+          cacheWrite5mTokens: reported?.cacheWrite5mTokens ?? record.cacheWrite5mTokens,
+          cacheWrite1hTokens: reported?.cacheWrite1hTokens ?? record.cacheWrite1hTokens,
           estimated: false,
           latencyMs: 0,
           retryCount: record.retryCount,
         });
       }
-      await this.cache.markInterrupted(row,blockReplay);
+      await this.cache.markInterrupted(row, blockReplay);
     }
     // 流式调用没有generation结果缓存；也必须持久恢复中断风险与后台待核状态。
     const media = await this.recorder.interruptedMedia();
@@ -191,7 +226,7 @@ export class GatewayMaintenance implements OnModuleInit {
       .where(
         and(
           eq(generationResults.phase, 'complete'),
-          eq(generationResults.replayBlocked,false),
+          eq(generationResults.replayBlocked, false),
           lt(generationResults.expiresAt, this.clock.now()),
         ),
       );

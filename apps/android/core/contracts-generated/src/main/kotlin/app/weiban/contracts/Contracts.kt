@@ -1160,6 +1160,7 @@ data class AdminTaskAttempt(
     @SerialName("ordinal") val `ordinal`: Long?,
     @SerialName("requestPriceLimit") val `requestPriceLimit`: AdminTaskAttemptRequestPriceLimit? = null,
     @SerialName("cancellationReason") val `cancellationReason`: VoiceCancellationReason? = null,
+    @SerialName("holdStatus") val `holdStatus`: String? = null,
     @SerialName("status") val `status`: String,
     @SerialName("errorCode") val `errorCode`: String?,
     @SerialName("sent") val `sent`: String,
@@ -7787,6 +7788,12 @@ data class ModelAccessAdminEndpointsTestModelParams(
 @Serializable
 data class ModelAccessAdminEndpointsTestUpstreamParams(
     @SerialName("upstreamId") val `upstreamId`: Id,
+)
+
+@Serializable
+data class ModelAccessAdminEndpointsTestUpstreamQuery(
+    @EncodeDefault
+    @SerialName("quotaVerified") val `quotaVerified`: String? = "yes",
 )
 
 @Serializable

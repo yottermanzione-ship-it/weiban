@@ -401,7 +401,7 @@ export const usageRecords = modelAccessSchema.table(
   ],
 );
 
-/** 24h 幂等结果缓存；输出独立用户 DEK 加密，用量记录仍不保存任何正文。 */
+/** 24h 加密结果；已发无结果的中断请求仅保留原键的防重标记，随用户清理。 */
 export const generationResults = modelAccessSchema.table(
   'generation_results',
   {

@@ -98,7 +98,12 @@ export interface RequestPriceLimit {
 }
 export type ReserveResult =
   | PortResult<ReserveOutput, Exclude<ReserveError, 'request_too_large'>>
-  | { ok: false; error: 'request_too_large'; message: string; requestPriceLimit: RequestPriceLimit };
+  | {
+      ok: false;
+      error: 'request_too_large';
+      message: string;
+      requestPriceLimit: RequestPriceLimit;
+    };
 
 export interface SettleInput {
   holdId: string;

@@ -341,16 +341,25 @@ describe('OpenAI 兼容纯文本结束原因', () => {
     expect(result).not.toHaveProperty('partialText');
   });
 
-  it.each([
-    { finishReason: 'stop', reasoningTokens: 3 },
-    { finishReason: 'length', reasoningTokens: 0 },
-  ])('保留原有正常纯文本返回', async ({ finishReason, reasoningTokens }) => {
-    const text = '行，那我先睡了，明天聊。';
-    respond(text, finishReason, reasoningTokens);
-    expect(await new OpenAiTextAdapter().generate(input)).toMatchObject({
-      ok: true,
-      text,
-      finishReason,
+  it.each([{ finishReason: 'stop', reasoningTokens: 3 }])(
+    '保留原有正常纯文本返回',
+    async ({ finishReason, reasoningTokens }) => {
+      const text = '行，那我先睡了，明天聊。';
+      respond(text, finishReason, reasoningTokens);
+      expect(await new OpenAiTextAdapter().generate(input)).toMatchObject({
+        ok: true,
+        text,
+        finishReason,
+      });
+    },
+  );
+
+  it('达到上游输出上限时只有已写部分，不把截断当作正常完整回复', async () => {
+    respond('第一句还没写完', 'length', 0);
+    await expect(new OpenAiTextAdapter().generate(input)).resolves.toMatchObject({
+      ok: false,
+      category: 'truncated',
+      partialText: '第一句还没写完',
     });
   });
 

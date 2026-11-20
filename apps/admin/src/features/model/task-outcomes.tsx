@@ -434,10 +434,26 @@ function Attempt({ item: a }: { item: AdminTaskAttempt }) {
             : (ERROR_LABELS[a.errorCode ?? ''] ?? a.errorCode ?? '调用失败')}
       </p>
       {a.errorCode && <p>{explainError(a.errorCode)}</p>}
-      {a.errorCode === 'request_too_large' && <p>{a.requestPriceLimit ? <>
-        预计售价 {points(a.requestPriceLimit.estimatedSellMicros)} 积分（{money(a.requestPriceLimit.estimatedSellMicros)}） · 单次保护上限 {points(a.requestPriceLimit.limitMicros)} 积分（{money(a.requestPriceLimit.limitMicros)}）
-      </> : '该历史记录未保存拦截时的预计售价和上限。'}</p>}
-      {a.errorCode === 'cancelled' && <p>取消原因 · {a.cancellationReason ? cancellationLabels[a.cancellationReason] : '历史记录未注明原因'}</p>}
+      {a.errorCode === 'request_too_large' && (
+        <p>
+          {a.requestPriceLimit ? (
+            <>
+              预计售价 {points(a.requestPriceLimit.estimatedSellMicros)} 积分（
+              {money(a.requestPriceLimit.estimatedSellMicros)}） · 单次保护上限{' '}
+              {points(a.requestPriceLimit.limitMicros)} 积分（
+              {money(a.requestPriceLimit.limitMicros)}）
+            </>
+          ) : (
+            '该历史记录未保存拦截时的预计售价和上限。'
+          )}
+        </p>
+      )}
+      {a.errorCode === 'cancelled' && (
+        <p>
+          {a.holdStatus === 'released' && '预留额度已释放。'}
+          {a.cancellationReason ? cancellationLabels[a.cancellationReason] : '具体取消原因未记录。'}
+        </p>
+      )}
       <p>
         获配总窗口 {ms(a.deadlineMs)} · 适配器实耗 {ms(a.adapterElapsedMs)} · 空闲等待窗{' '}
         {ms(a.timeoutMs)} · 进度等待窗 {ms(a.progressTimeoutMs)}

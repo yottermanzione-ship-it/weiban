@@ -555,6 +555,49 @@ test('账号改名后旧名称搜索、模型线路和已有提醒使用正确�
   }
 });
 
+test('任务抽屉区分被拦截的报价与已取消的未派发语音段', async ({ page }) => {
+  await page.clock.setSystemTime(new Date('2026-10-05T13:00:00Z'));
+  await login(page);
+  await page.route('**/admin/model/usage/tasks/attempts', async (route) => {
+    const response = await route.fetch(),
+      data = await response.json();
+    data.items = data.items.map((r: Record<string, unknown>, i: number) => ({
+      ...r,
+      sent: 'not_sent',
+      status: 'failed',
+      costKnown: true,
+      chargedMicros: 0,
+      costMicros: 0,
+      ...(i === 0
+        ? {
+            errorCode: 'request_too_large',
+            requestPriceLimit: {
+              estimatedSellMicros: 20000,
+              limitMicros: 10000,
+              priceVersionId: '00000000-0000-4000-8000-000000000001',
+            },
+          }
+        : {
+            errorCode: 'cancelled',
+            holdStatus: 'released',
+            cancellationReason: 'unused_realtime_segment',
+          }),
+    }));
+    await route.fulfill({ response, json: data });
+  });
+  await page.getByRole('link', { name: /备用救回/ }).click();
+  await page
+    .getByRole('row')
+    .filter({ hasText: 'browser/outcome-primary' })
+    .getByRole('button', { name: '详情' })
+    .click();
+  const drawer = page.getByRole('dialog');
+  await expect(drawer).toContainText('预计售价 2.0000 积分');
+  await expect(drawer).toContainText('单次保护上限 1.0000 积分');
+  await expect(drawer).toContainText('预留额度已释放');
+  await expect(drawer).toContainText('释放未使用的下一段回应');
+});
+
 test('运营可从首页进入已救回任务，查看每条线路与用量、导出筛选结果', async ({ page }) => {
   await page.clock.setSystemTime(new Date('2026-10-05T13:00:00Z'));
   await login(page);

@@ -69,13 +69,16 @@ export class BillingUsageError extends Error {
   }
 }
 
-const fail = (error: Exclude<ReserveError, 'request_too_large'>, message: string): ReserveResult => ({
+const fail = (
+  error: Exclude<ReserveError, 'request_too_large'>,
+  message: string,
+): ReserveResult => ({
   ok: false,
   error,
   message,
 });
 
-/** 3.27：并发上限只数最近这么久内开始、仍未结算的付费调用（进程崩溃留下的冻结不会把用户卡 10 分钟）。 */
+/** 尚未发送的预留段只占用此窗口；之后重查名额。已授权的调用计入并发直到冻结关闭或到期。 */
 export const CONCURRENCY_WINDOW_MS = 120_000;
 /** 3.27：前台调用排队时多久重试一次。 */
 const CONCURRENCY_POLL_MS = 300;
@@ -125,12 +128,33 @@ export class ReservationService implements BillingReservationPort {
     const background =
       countsAsBackground(input.purpose, input.countAsBackground) || input.ecologyTask === true;
     const waitUntil = performance.now() + (limits && !background ? limits.concurrencyWaitMs : 0);
-    for (;;) {
-      const result = await this.reserveOnce(input, kind, userId, timeZone, limits, background, waitUntil);
-      if (result !== BUSY) return result;
-      if (performance.now() + CONCURRENCY_POLL_MS > waitUntil)
-        return fail('concurrency_limited', '同时进行的付费调用太多，请稍后再试');
-      await new Promise((resolve) => setTimeout(resolve, CONCURRENCY_POLL_MS));
+    const waiter = !background && limits?.concurrencyWaitMs ? newId() : null;
+    let waited = false;
+    try {
+      for (;;) {
+        const result = await this.reserveOnce(
+          input,
+          kind,
+          userId,
+          timeZone,
+          limits,
+          background,
+          waitUntil,
+          waiter,
+        );
+        if (result !== BUSY) return result;
+        waited = true;
+        if (performance.now() + CONCURRENCY_POLL_MS > waitUntil)
+          return fail('concurrency_limited', '同时进行的付费调用太多，请稍后再试');
+        await new Promise((resolve) => setTimeout(resolve, CONCURRENCY_POLL_MS));
+      }
+    } finally {
+      if (waiter && waited)
+        await this.database
+          .query('DELETE FROM billing.foreground_waiters WHERE id=$1', [waiter])
+          .catch(() =>
+            this.log.warn({ code: 'foreground_waiter_cleanup' }, '等待记录将按期限清理'),
+          );
     }
   }
 
@@ -142,6 +166,7 @@ export class ReservationService implements BillingReservationPort {
     limits: PostpaidLimits | null,
     background: boolean,
     waitUntil: number,
+    waiter: string | null,
   ): Promise<ReserveResult | typeof BUSY> {
     return this.database.transaction(async (tx) => {
       let account = userId
@@ -282,8 +307,14 @@ export class ReservationService implements BillingReservationPort {
             tx,
           );
           return {
-            ok: false, error:'request_too_large', message:'这次请求预估花费异常大，已拦截',
-            requestPriceLimit: { estimatedSellMicros: estimate, limitMicros: limits.largeRequestLimitMicros, priceVersionId: version.id },
+            ok: false,
+            error: 'request_too_large',
+            message: '这次请求预估花费异常大，已拦截',
+            requestPriceLimit: {
+              estimatedSellMicros: estimate,
+              limitMicros: limits.largeRequestLimitMicros,
+              priceVersionId: version.id,
+            },
           };
         }
         // 3.27：同一用户同时进行的付费调用上限（账户行已加锁，并发冻结在这里排队，计数准确）。
@@ -291,16 +322,16 @@ export class ReservationService implements BillingReservationPort {
         if (inFlight >= limits.maxConcurrentPaidCalls) {
           // 行锁下登记前台等待期限，API 与 worker 共享，退出后自动失效。
           const remainingMs = Math.ceil(waitUntil - performance.now());
-          if (!background && remainingMs >= CONCURRENCY_POLL_MS) {
+          if (waiter && remainingMs >= CONCURRENCY_POLL_MS) {
             await tx.query(
-              `UPDATE billing.accounts SET foreground_wait_until=greatest(foreground_wait_until,clock_timestamp()+$2*interval '1 millisecond') WHERE id=$1`,
-              [account.id, remainingMs],
+              `INSERT INTO billing.foreground_waiters(id,account_id,expires_at)
+               VALUES($1,$2,clock_timestamp()+$3*interval '1 millisecond') ON CONFLICT(id) DO NOTHING`,
+              [waiter, account.id, remainingMs],
             );
           }
           return BUSY;
         }
-        if (background && inFlight === limits.maxConcurrentPaidCalls - 1 &&
-            await this.foregroundWaiting(tx, account.id)) return BUSY;
+        if (background && (await this.foregroundWaiting(tx, account.id))) return BUSY;
       }
 
       const counts = kind === 'user' && countsAsBackground(input.purpose, input.countAsBackground);
@@ -361,7 +392,7 @@ export class ReservationService implements BillingReservationPort {
     upstreamModelId: string;
   }): Promise<boolean> {
     const initial = await this.findHold(input.holdId);
-    const lateLimits = initial.postpaid && this.clock.nowMs() - initial.createdAt.getTime() >= CONCURRENCY_WINDOW_MS ? await this.postpaid.limits() : null;
+    const limits = initial.postpaid ? await this.postpaid.limits() : null;
     return this.database.transaction(async (tx) => {
       await this.ledger.lockAccountById(tx, initial.accountId);
       const hold = await this.lockHold(tx, input.holdId);
@@ -371,12 +402,14 @@ export class ReservationService implements BillingReservationPort {
         hold.riskSnapshot?.phase !== 'reserved'
       )
         return false;
-      if (hold.postpaid && this.clock.nowMs() - hold.createdAt.getTime() >= CONCURRENCY_WINDOW_MS) {
+      if (limits && this.clock.nowMs() - hold.createdAt.getTime() >= CONCURRENCY_WINDOW_MS) {
         // 预留的空音频段等可能在计数窗口之后才开始；重新占位时仍须持钱包锁。
-        const limits = lateLimits ?? await this.postpaid.limits();
         const busy = await this.inFlightPaidCalls(tx, hold.accountId);
-        if (busy >= limits.maxConcurrentPaidCalls || (hold.countsAsBackground &&
-            busy === limits.maxConcurrentPaidCalls - 1 && await this.foregroundWaiting(tx,hold.accountId))) return false;
+        if (
+          busy >= limits.maxConcurrentPaidCalls ||
+          (hold.countsAsBackground && (await this.foregroundWaiting(tx, hold.accountId)))
+        )
+          return false;
       }
       // 3.26（G3-2）：同一路由有「成本待核」的旧调用时不再拒绝新调用（总经理确认：缺用量不暂停线路）。
       // 待核风险照常记在平台预算与对账里，由后台核实；这里只保留锁，和写入待核风险串行。
@@ -706,6 +739,9 @@ export class ReservationService implements BillingReservationPort {
 
   /** 把已过期仍为 active 的冻结改为 expired、释放额度、归还平台预算。返回处理条数。 */
   async expireHolds(limit = 500): Promise<number> {
+    await this.database.query(
+      'DELETE FROM billing.foreground_waiters WHERE expires_at <= clock_timestamp()',
+    );
     const now = this.clock.now();
     const due = await this.database.db
       .select({ id: holds.id, accountId: holds.accountId })
@@ -810,10 +846,11 @@ export class ReservationService implements BillingReservationPort {
     );
   }
 
-  /** 调用方持有账户行锁；仅在后台将占用最后一个名额时查询。 */
+  /** 持账户行锁检查，所有后台来源一并给已排队的前台让位。 */
   async foregroundWaiting(tx: DbTx, accountId: string): Promise<boolean> {
-    const {rows} = await tx.query<{waiting:boolean}>(
-      'SELECT foreground_wait_until > clock_timestamp() AS waiting FROM billing.accounts WHERE id=$1', [accountId],
+    const { rows } = await tx.query<{ waiting: boolean }>(
+      'SELECT EXISTS (SELECT 1 FROM billing.foreground_waiters WHERE account_id=$1 AND expires_at>clock_timestamp()) AS waiting',
+      [accountId],
     );
     return rows[0]?.waiting === true;
   }

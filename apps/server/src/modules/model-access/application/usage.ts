@@ -9,6 +9,7 @@
  *   token：inputTokens 是**未命中缓存**的输入，与 billing 计价一致；totalTokens = 未命中 + 命中 + 输出。
  */
 import { Inject, Injectable, Optional } from '@nestjs/common';
+import { z } from 'zod';
 import {
   ADMIN_USAGE_EXPORT_MAX_ROWS,
   microsToPoints,
@@ -44,6 +45,14 @@ import { upstreams, usageRecords, generationAttempts } from '../infra/db/schema.
 type UsageRow = typeof usageRecords.$inferSelect;
 /** v3.6：稳定开头字符数 → 估算 token（中文为主，约 0.7～0.8 token / 字，取 0.75）。 */
 const PREFIX_TOKENS_PER_CHAR = 0.75;
+const tokens = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+const recordedTextUsage = z.object({
+  inputTokens: tokens,
+  cachedInputTokens: tokens,
+  outputTokens: tokens,
+  cacheWrite5mTokens: tokens.optional(),
+  cacheWrite1hTokens: tokens.optional(),
+});
 
 // ---------- 网关写入（D-L0-09 使用） ----------
 
@@ -54,6 +63,8 @@ export interface DispatchTiming {
   progressTimeoutMs: number | null;
   routePriority: number | null;
   adapterElapsedMs: number;
+  crossModelReserveMs?: number;
+  overallRemainingMs?: number;
 }
 
 export interface StartUsageInput {
@@ -137,6 +148,7 @@ export class UsageRecorder {
     errorCode: string | null,
     usageState?: 'reported' | 'estimated' | 'unknown',
     dispatchTiming?: DispatchTiming,
+    providerDiagnostic?: import('../infra/provider-observation.js').ProviderDiagnostic,
   ) {
     await this.database.db
       .update(generationAttempts)
@@ -145,7 +157,7 @@ export class UsageRecorder {
         reportedUsage: usage,
         ...(dispatchTiming
           ? {
-              boundSnapshot: sql`jsonb_set(${generationAttempts.boundSnapshot}, '{dispatchTiming}', ${JSON.stringify(dispatchTiming)}::jsonb)`,
+              boundSnapshot: sql`${generationAttempts.boundSnapshot} || ${JSON.stringify({ dispatchTiming, ...(providerDiagnostic ? { providerDiagnostic } : {}) })}::jsonb`,
             }
           : {}),
         usageState: usageState ?? (known ? 'reported' : 'unknown'),
@@ -154,10 +166,31 @@ export class UsageRecorder {
       })
       .where(eq(generationAttempts.id, id));
   }
-  async hasDispatchedAttempt(generationId: string): Promise<boolean> {
-    const [row] = await this.database.db.select({ id:generationAttempts.id }).from(generationAttempts)
-      .where(and(eq(generationAttempts.generationId,generationId),ne(generationAttempts.phase,'reserved'))).limit(1);
-    return !!row;
+  async reportedTextUsage(usageRecordId: string) {
+    const [attempt] = await this.database.db
+      .select({ usage: generationAttempts.reportedUsage })
+      .from(generationAttempts)
+      .where(
+        and(
+          eq(generationAttempts.usageRecordId, usageRecordId),
+          eq(generationAttempts.usageState, 'reported'),
+          eq(generationAttempts.phase, 'finished'),
+        ),
+      )
+      .limit(1);
+    const parsed = recordedTextUsage.safeParse(attempt?.usage);
+    return parsed.success ? parsed.data : undefined;
+  }
+  async attemptsForRecovery(generationId: string) {
+    return this.database.db
+      .select({
+        usageRecordId: generationAttempts.usageRecordId,
+        holdId: generationAttempts.holdId,
+        phase: generationAttempts.phase,
+        dispatched: sql<boolean>`${generationAttempts.boundSnapshot} ? 'dispatchTiming'`,
+      })
+      .from(generationAttempts)
+      .where(eq(generationAttempts.generationId, generationId));
   }
   async recoverAttempts(usageRecordId: string, known: boolean) {
     await this.database.db

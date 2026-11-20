@@ -267,6 +267,79 @@ describeDb('3.27 先用后扣、可欠一次（真实 PostgreSQL）', () => {
     expect(background.ok ? null : background.error).toBe('concurrency_limited');
   });
 
+  it('前台等待时，后台洪峰让出刚释放的名额；同一后台键只占一个名额', async () => {
+    await settings.update(adminId, {
+      maxConcurrentPaidCalls: 1,
+      concurrencyWaitSeconds: 3,
+      largeRequestLimitPoints: 200,
+    });
+    const id = await user(10_000_000);
+    const background = input(id, { purpose: 'memory' });
+    const duplicates = await Promise.all(Array.from({ length: 8 }, () => reserveOk(background)));
+    expect(new Set(duplicates.map((r) => r.holdId)).size).toBe(1);
+    const foreground = reservations.estimateAndReserve(input(id));
+    await expect
+      .poll(
+        async () =>
+          (
+            await db.query(
+              'SELECT 1 FROM billing.foreground_waiters w JOIN billing.accounts a ON a.id=w.account_id WHERE a.user_id=$1',
+              [id],
+            )
+          ).rowCount,
+        { interval: 10 },
+      )
+      .toBe(1);
+    await settle(duplicates[0]!.holdId);
+    const flood = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        reservations.estimateAndReserve(input(id, { purpose: 'memory' })),
+      ),
+    );
+    expect(flood.every((r) => !r.ok && r.error === 'concurrency_limited')).toBe(true);
+    const front = await foreground;
+    expect(front.ok).toBe(true);
+    if (!front.ok) throw Error('前台应获得名额');
+    expect(
+      (
+        await db.query(
+          "SELECT 1 FROM billing.holds h JOIN billing.accounts a ON a.id=h.account_id WHERE a.user_id=$1 AND h.status='active'",
+          [id],
+        )
+      ).rowCount,
+    ).toBe(1);
+    await settle(front.value.holdId);
+    await reserveOk(input(id, { purpose: 'memory' }));
+  });
+
+  it('慢调用未完成仍计入名额；过了短窗口的预留段需重新竞争后才可发送', async () => {
+    await settings.update(adminId, { maxConcurrentPaidCalls: 1, concurrencyWaitSeconds: 0 });
+    const id = await user(10_000_000),
+      start = clock.nowMs();
+    const dispatch = (holdId: string) => ({
+      holdId,
+      usageRecordId: newId(),
+      upstreamId: newId(),
+      upstreamModelId: 'synthetic',
+    });
+    try {
+      const active = dispatch((await reserveOk(input(id))).holdId);
+      expect(await reservations.beginCall(active)).toBe(true);
+      clock.advance(121000);
+      expect(await reservations.estimateAndReserve(input(id))).toMatchObject({
+        ok: false,
+        error: 'concurrency_limited',
+      });
+      await reservations.release({ ...active, reason: 'call_failed', upstreamUsage: {} });
+      const old = dispatch((await reserveOk(input(id))).holdId);
+      clock.advance(121000);
+      await reserveOk(input(id));
+      expect(await reservations.beginCall(old)).toBe(false);
+    } finally {
+      clock.set(start);
+    }
+  });
+
   it('异常巨额请求按预估拦截；平台账户不受先用后扣规则影响', async () => {
     await settings.update(adminId, {
       maxConcurrentPaidCalls: 10,
@@ -278,7 +351,15 @@ describeDb('3.27 先用后扣、可欠一次（真实 PostgreSQL）', () => {
     const big = await reservations.estimateAndReserve(
       input(id, { estimate: { inputTokens: 2000, outputTokens: 2000 } }),
     );
-    expect(big.ok ? null : big.error).toBe('request_too_large');
+    expect(big).toMatchObject({
+      ok: false,
+      error: 'request_too_large',
+      requestPriceLimit: {
+        estimatedSellMicros: 20000,
+        limitMicros: 10000,
+        priceVersionId: expect.any(String),
+      },
+    });
 
     const platform = await reservations.estimateAndReserve({
       ...input(id),

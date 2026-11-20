@@ -71,7 +71,7 @@ const request = (overrides: Partial<GenerateTextInput> = {}) =>
     billingOwner: 'user',
     modelRole: 'chat',
     purpose: 'chat_reply',
-    messages: [{ role: 'user', text: '普通测试文字' }],
+    messages: [{ role: 'user', content: '普通测试文字' }],
     idempotencyKey: 'trigger:reply',
     ...overrides,
   }) as GenerateTextInput;
@@ -101,7 +101,27 @@ function gateway(firstError = 'provider_unavailable', primary = 'primary/model')
       ]),
     },
     clock: { nowMs: () => Date.now() },
-    resolver: { pick: vi.fn(async () => ({ facts: { modelKey: primary } })) },
+    resolver: {
+      pick: vi.fn(async () => ({ facts: { modelKey: primary } })),
+      resolve: vi.fn(async (r: { fallbackModelKey?: string; chatFallbackModelKey?: string }) => ({
+        ok: true,
+        value: { modelKey: r.fallbackModelKey ?? r.chatFallbackModelKey },
+      })),
+    },
+    scheduler: {
+      plan: async () => [{ baseUrl: 'https://test.invalid', upstreamId: 'route' }],
+      isRouteCooling: () => false,
+      canAcquireAccount: () => true,
+      usefulWindowMs: () => 8000,
+    },
+    bounds: {
+      text: async (_k: string, routes: Record<string, unknown>[]) => ({
+        routes: routes.map((r) => ({
+          ...r,
+          billingBounds: { text: { contextTokens: 128000, maxOutputTokens: 8000 } },
+        })),
+      }),
+    },
     logger: { log: vi.fn() },
   });
   return { service, generateOnce, failure, success, recommendedModel };
@@ -116,6 +136,34 @@ describe('保留线上日常备用链：私密与其他任务不越界', () => {
     });
     expect(t.generateOnce.mock.calls[1]?.[0].idempotencyKey).toMatch(/:reply$/);
     expect(t.generateOnce.mock.calls[1]?.[0].idempotencyKey).not.toBe('trigger:reply');
+  });
+  it('有合格的不同入口时不先重试同一个失败入口；备用拒绝时停止并保留真正结论', async () => {
+    const t = gateway();
+    Object.assign(t.service, {
+      fallbackOptions: async () => [
+        { key: 'shared', routes: [{ baseUrl: 'https://same.invalid/another', upstreamId: 's' }] },
+        {
+          key: 'independent',
+          routes: [{ baseUrl: 'https://independent.invalid', upstreamId: 'i' }],
+        },
+      ],
+    });
+    const { providerDomain } = await import('../infra/provider-observation.js');
+    t.generateOnce
+      .mockReset()
+      .mockImplementationOnce(async (_request, internal) => {
+        internal.routing.failedDomains.add(providerDomain('https://same.invalid/first'));
+        return t.failure;
+      })
+      .mockResolvedValue({ ok: false, error: 'content_rejected' });
+    expect(await t.service.generateText(request())).toMatchObject({
+      ok: false,
+      error: 'content_rejected',
+    });
+    expect(t.generateOnce.mock.calls[1]?.[1]).toMatchObject({
+      chatFallbackModelKey: 'independent',
+    });
+    expect(t.generateOnce).toHaveBeenCalledTimes(2);
   });
   it('当前模型已是DeepSeek时跳过自己，不递归重复调用', async () => {
     const t = gateway('provider_unavailable', 'deepseek/deepseek-v4.1-flash');
