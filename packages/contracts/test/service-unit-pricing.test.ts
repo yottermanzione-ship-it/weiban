@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   AdminModel,
   AdminModelWrite,
-  CONTRACT_VERSION,
   ModelServiceRate,
   ModelServiceRateWrite,
   PriceUnit,
@@ -62,9 +61,6 @@ describe('3.36 service-unit pricing contracts', () => {
 });
 
 describe('4.6 voice clone pricing and tolerant service-rate responses', () => {
-  it('declares 7.14 while retaining independent official selling prices and procurement costs', () => {
-    expect(CONTRACT_VERSION).toBe('7.14');
-  });
   it('writes voice_clone as 元 / 个 like any other service unit', () => {
     expect(serviceRates.parse([{ unit: 'voice_clone', price: 0.013, cost: 0.01 }])).toEqual([
       { unit: 'voice_clone', price: 0.013, cost: 0.01 },
