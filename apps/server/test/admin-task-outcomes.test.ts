@@ -341,6 +341,30 @@ describeDb('管理任务结果：业务证据、账本与原始线路', () => {
     await app.get(ModelAccessLifecycle).purgeUser(userId);
     expect(await app.get(ModelAccessLifecycle).countUserData(userId)).toBe(0);
   });
+  it('分别显示已保存决策、规则兜底、碎碎念过滤和派发待核', async () => {
+    const userId = newId();
+    for (const [state, reason] of [
+      ['saved', 'jev_declined'],
+      ['filtered', 'planning_rules_timeout'],
+      ['filtered', 'display_filter'],
+      ['blocked', 'interrupted'],
+    ] as const) {
+      await receipts.record({
+        taskKey: newId(),
+        userId,
+        purpose: 'behavior_planning',
+        state,
+        reason,
+      });
+    }
+    const result = await svc.list({ filter: { ...filter, userIds: [userId] }, limit: 10 });
+    expect(Object.fromEntries(result.items.map((item) => [item.reason, item.state]))).toEqual({
+      jev_declined: 'planning_saved',
+      planning_rules_timeout: 'rules_used',
+      display_filter: 'thought_filtered',
+      interrupted: 'needs_review',
+    });
+  });
   it('迁移按保留的真实幂等哈希关联跨模型旧尝试，仅采纳有展示证据的碎碎念', async () => {
     const owner = newId(),
       role = newId(),

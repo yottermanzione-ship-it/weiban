@@ -150,7 +150,11 @@ const taskCte = `    WITH candidates AS MATERIALIZED (
       SELECT c.task_key AS "taskKey",coalesce(t.user_id,g.owner) AS "userId",g.conversation_kind AS "conversationKind",g.template AS "promptTemplateVersion",least(t.created_at,g.started) AS "startedAt",
        greatest(t.updated_at,g.updated) AS "updatedAt",t.retry_at AS "retryAt",coalesce(t.purpose,g.purpose) purpose,
        CASE WHEN t.state='delivered' THEN CASE WHEN t.purpose='proactive' OR t.reason='proactive_sent' THEN 'proactive_sent' ELSE 'message_saved' END
-         WHEN t.state='saved' THEN CASE WHEN t.reason IN ('group_memory_saved','memory_facts_saved') OR t.purpose<>'memory' THEN 'result_saved' ELSE 'summary_saved' END WHEN t.state='displayed' THEN 'thought_visible' WHEN t.state='filtered' THEN CASE WHEN t.purpose='behavior_planning' THEN 'thought_filtered' ELSE 'result_filtered' END
+         WHEN t.state='saved' AND t.purpose='behavior_planning' THEN 'planning_saved'
+         WHEN t.state='saved' THEN CASE WHEN t.reason IN ('group_memory_saved','memory_facts_saved') OR t.purpose<>'memory' THEN 'result_saved' ELSE 'summary_saved' END
+         WHEN t.state='displayed' THEN 'thought_visible'
+         WHEN t.state='filtered' THEN CASE WHEN t.reason='jev_rules_fallback' OR starts_with(t.reason,'planning_rules_') THEN 'rules_used'
+             WHEN t.purpose='behavior_planning' AND (t.reason IN ('display_filter','murmur_filtered') OR t.reason IS NULL) THEN 'thought_filtered' ELSE 'result_filtered' END
          WHEN coalesce(t.reason,g.last_error)='interrupted' THEN 'needs_review'
          WHEN t.state='cancelled' THEN 'cancelled' WHEN t.state='deferred' THEN 'retry_pending'
          WHEN coalesce(t.state='blocked',false) OR (t.state IS NULL AND g.all_failed AND g.no_holds) THEN CASE coalesce(t.reason,g.last_error)

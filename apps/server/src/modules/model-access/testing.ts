@@ -19,6 +19,7 @@ export {
   blockLimitApplies,
 } from './application/private-block-limit.js';
 export { ModelResolver, ModelStatusService } from './application/resolver.js';
+export { TaskOutcomeService } from './application/task-outcomes.js';
 export { UsageRecorder, AdminUsageService } from './application/usage.js';
 export { UsageReconciliationService } from './application/reconciliation.js';
 export { ModelAccessLifecycle, RECONCILE_USAGE_JOB } from './application/lifecycle.js';

@@ -50,7 +50,14 @@ import {
   type RouteBillingBounds,
   type BillingModelRatePort,
 } from '@weiban/contracts';
-import { APP_CONFIG, CLOCK, newId, type AppConfig, type Clock } from '../../../platform/index.js';
+import {
+  APP_CONFIG,
+  CLOCK,
+  modelTaskKey,
+  newId,
+  type AppConfig,
+  type Clock,
+} from '../../../platform/index.js';
 import { BILLING_RESERVATION_PORT } from '../../billing/index.js';
 import { IDENTITY_ACCOUNT_STATUS_PORT, IDENTITY_DIRECTORY_PORT } from '../../identity/index.js';
 import { MEDIA_ASSET_READ_PORT, MEDIA_READ_PORT, MEDIA_SYSTEM_PORT } from '../../media/index.js';
@@ -152,6 +159,7 @@ type CallOutcome<T> =
       reportedUsage?: UsageQuantities;
       localRateLimit?: boolean;
       zeroCost?: boolean;
+      cause?: 'insufficient_fallback_time' | 'interrupted';
     };
 
 type PendingMediaResult = {
@@ -500,7 +508,10 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
    * 与其他调用相同的冻结 / 结算 / 用量记录。假上游（fake-）时确定性输出。真实 Jev 接口「待配置后验证」。
    */
   async decide(input: DecideInput): Promise<PortResult<DecideOutput, GenerateError>> {
-    return this.decision(input, false);
+    return this.decision(
+      { ...input, taskKey: input.taskKey ?? modelTaskKey(input.userId, input.idempotencyKey) },
+      false,
+    );
   }
 
   /**
@@ -677,6 +688,8 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
             return {
               ok: false,
               category: 'bad_request',
+              cause: 'insufficient_fallback_time',
+              zeroCost: true,
               actual: { inputTokens: 0, outputTokens: 0 },
             };
           const result = await adapter.decide(target, {
@@ -1285,6 +1298,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
         characterId: base.characterId,
         conversationId: base.conversationId,
         idempotencyKey: key,
+        taskKey: base.taskKey,
         countAsBackground: base.countAsBackground,
       },
       modelKey: model.modelKey,
@@ -1520,7 +1534,11 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
         ? Object.fromEntries(Object.keys(estimate).map((unit) => [unit, 0]))
         : (outcome.reportedUsage ?? outcome.actual);
       await this.fail(charge.value, outcome.category, actual, !outcome.localRateLimit);
-      return { ok: false, error: this.mapError(outcome.category) };
+      return {
+        ok: false,
+        error: outcome.cause ? 'provider_unavailable' : this.mapError(outcome.category),
+        ...(outcome.cause ? { message: outcome.cause } : {}),
+      };
     }
     if (generation) {
       const pending: PendingMediaResult = {

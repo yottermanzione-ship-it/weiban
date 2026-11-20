@@ -48,13 +48,20 @@ function setup(implementation: 'jev' | 'rules' | 'rules_model' = 'jev') {
       table === plannerConfig ? Promise.resolve([config]) : { where: () => Promise.resolve(rows) },
   }));
   const database = {
+    transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
+      return fn(this);
+    },
     db: {
       select,
       insert: () => ({
         values: (row: typeof planningDecisions.$inferSelect) => ({
-          onConflictDoNothing: async () => {
-            if (!rows.some((stored) => stored.decisionKey === row.decisionKey)) rows.push(row);
-          },
+          onConflictDoNothing: () => ({
+            returning: async () => {
+              if (rows.some((stored) => stored.decisionKey === row.decisionKey)) return [];
+              rows.push(row);
+              return [{ id: row.id }];
+            },
+          }),
         }),
       }),
     },

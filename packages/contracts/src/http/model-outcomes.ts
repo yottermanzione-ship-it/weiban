@@ -9,6 +9,8 @@ export const AdminTaskState = z.enum([
   'thought_visible',
   'thought_filtered',
   'result_saved',
+  'planning_saved',
+  'rules_used',
   'result_filtered',
   'summary_saved',
   'retry_pending',

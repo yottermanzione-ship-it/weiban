@@ -65,6 +65,7 @@ function Result({ task: t }: { task: AdminModelTask }) {
     'thought_visible',
     'summary_saved',
     'result_saved',
+    'planning_saved',
   ].includes(t.state);
   return (
     <Space wrap size={4}>
