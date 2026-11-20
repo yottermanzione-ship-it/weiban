@@ -83,6 +83,7 @@ function Result({ task: t }: { task: AdminModelTask }) {
         {STATE_LABELS[t.state]}
       </StatusTag>
       {t.rescued && <StatusTag tone="success">备用救回</StatusTag>}
+      {t.standbySuccessWithDelivery && <StatusTag tone="default">备用成功 · 消息已入库</StatusTag>}
     </Space>
   );
 }
@@ -184,7 +185,7 @@ export function ModelTasksTab({
           '开始时间',
           '用途',
           '业务结果',
-          '备用救回',
+          '备用结果',
           '尝试次数',
           '失败次数',
           '用户扣除积分',
@@ -197,7 +198,11 @@ export function ModelTasksTab({
           formatDateTime(t.startedAt),
           PURPOSE_LABELS[t.purpose] ?? t.purpose,
           STATE_LABELS[t.state],
-          t.rescued ? '是' : '否',
+          t.rescued
+            ? '备用救回'
+            : t.standbySuccessWithDelivery
+              ? '备用成功、消息已入库，正文采用情况未记录'
+              : '',
           t.attemptCount,
           t.failedAttempts,
           points(t.chargedMicros),
@@ -441,6 +446,10 @@ function Attempt({ item: a }: { item: AdminTaskAttempt }) {
             ? '进行中'
             : (ERROR_LABELS[a.errorCode ?? ''] ?? a.errorCode ?? '调用失败')}
       </p>
+      {a.businessEvidence === 'adopted' && <p>业务已采用本次生成的结果。</p>}
+      {a.businessEvidence === 'delivery_link' && (
+        <p>已入库消息关联了这笔用量，旧记录未保存正文采用情况。</p>
+      )}
       {a.errorCode && <p>{explainError(a.errorCode)}</p>}
       {a.errorCode === 'request_too_large' && (
         <p>

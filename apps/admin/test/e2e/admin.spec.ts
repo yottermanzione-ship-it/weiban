@@ -607,10 +607,23 @@ test('运营可从首页进入已救回任务，查看每条线路与用量、�
   await task.getByRole('button', { name: '详情' }).click();
   const drawer = page.getByRole('dialog');
   await expect(drawer).toContainText('browser/outcome-standby');
+  await expect(drawer).toContainText('业务已采用本次生成的结果');
   await expect(drawer).toContainText('213456');
   await expect(drawer).toContainText('超时');
   await page.keyboard.press('Escape');
   const download = page.waitForEvent('download');
   await page.getByRole('button', { name: '导出筛选结果' }).click();
   expect((await download).suggestedFilename()).toContain('模型任务结果');
+});
+
+test('后台分别显示旧消息入库与备用正文采用证据', async ({ page }) => {
+  await page.clock.setSystemTime(new Date('2026-10-05T13:00:00Z'));
+  await login(page);
+  await page.goto('/usage?view=tasks');
+  const row = page.getByRole('row').filter({ hasText: 'browser/legacy-outcome-primary' });
+  await expect(row).toContainText('备用成功 · 消息已入库');
+  await expect(row).not.toContainText('备用救回');
+  await row.getByRole('button', { name: '详情' }).click();
+  await expect(page.getByRole('dialog')).toContainText('旧记录未记下最终采用的正文来源');
+  await expect(page.getByRole('dialog')).toContainText('已入库消息关联了这笔用量');
 });

@@ -499,6 +499,7 @@ export const taskOutcomes = modelAccessSchema.table(
     state: text('state').notNull(),
     reason: text('reason'),
     usageRecordId: uuid('usage_record_id'),
+    associatedUsageRecordId: uuid('associated_usage_record_id'),
     retryAt: tz('retry_at'),
     createdAt: tz('created_at').notNull(),
     updatedAt: tz('updated_at').notNull(),

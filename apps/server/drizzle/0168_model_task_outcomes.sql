@@ -2,7 +2,7 @@ ALTER TABLE model_access.usage_records ADD COLUMN task_key uuid;
 CREATE TABLE model_access.task_outcomes (
   task_key uuid PRIMARY KEY, user_id uuid NOT NULL, purpose text NOT NULL,
   state text NOT NULL CHECK (state IN ('delivered','displayed','saved','filtered','deferred','blocked','cancelled','failed')),
-  reason text CHECK (reason ~ '^[a-z][a-z0-9_]{0,79}$'), usage_record_id uuid, retry_at timestamptz,
+  reason text CHECK (reason ~ '^[a-z][a-z0-9_]{0,79}$'), usage_record_id uuid, associated_usage_record_id uuid, retry_at timestamptz,
   created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL
 );
 -- 每个历史调用只按既有生成外键或完整结构化幂等键归属。
@@ -101,21 +101,28 @@ CREATE UNIQUE INDEX ON task_0168_starts(task_key);
 ANALYZE task_0168_starts;
 
 WITH facts AS (
- SELECT u.task_key,u.user_id,u.purpose,'delivered' state,u.id usage_id,msg.created_at at
+ -- 旧私聊首气泡引用的是计费用量，出站检查可能已将正文换为本地回复。
+ SELECT u.task_key,u.user_id,u.purpose,'delivered' state,
+   CASE WHEN p.id IS NOT NULL THEN u.id END usage_id,
+   CASE WHEN p.id IS NULL THEN u.id END associated_usage_id,msg.created_at at
  FROM chat.messages msg JOIN model_access.usage_records u ON u.id=msg.usage_record_id AND u.conversation_id=msg.conversation_id
  JOIN chat.conversations c ON c.id=msg.conversation_id AND c.owner_user_id=u.user_id
+ LEFT JOIN ai_runtime.proactive_plans p ON u.purpose='proactive' AND p.status='sent' AND p.message_id=msg.id
+   AND p.user_id=u.user_id AND p.character_id=u.character_id AND msg.client_msg_id IN ('proactive:'||p.id||':0','proactive:'||p.id||':voice')
  WHERE msg.usage_record_id IS NOT NULL AND u.purpose IN ('chat_reply','proactive') AND u.status='succeeded' AND msg.sender_kind='character'
  UNION ALL
- SELECT m.task_key,m.user_id,u.purpose,'displayed',u.id,r.finished_at
+ SELECT m.task_key,m.user_id,u.purpose,'displayed',
+   CASE WHEN count(DISTINCT u.id)=1 THEN (array_agg(u.id))[1] END,NULL::uuid,r.finished_at
  FROM task_0168_matches m JOIN model_access.generation_attempts a ON a.generation_id=m.gid
- JOIN model_access.usage_records u ON u.id=a.usage_record_id AND u.status='succeeded'
+ JOIN model_access.usage_records u ON u.id=a.usage_record_id AND u.user_id=m.user_id AND u.task_key=m.task_key AND u.status='succeeded'
  JOIN ai_runtime.ecology_runs r ON r.id=m.source_id AND r.user_id=m.user_id
  WHERE m.kind='murmur' AND r.murmur_ciphertext IS NOT NULL AND r.finished_at IS NOT NULL
+ GROUP BY m.task_key,m.user_id,u.purpose,r.finished_at
 ), latest AS (
- SELECT DISTINCT ON(task_key) * FROM facts WHERE task_key IS NOT NULL ORDER BY task_key,at DESC,usage_id DESC
+ SELECT DISTINCT ON(task_key) * FROM facts WHERE task_key IS NOT NULL ORDER BY task_key,(usage_id IS NOT NULL) DESC,at DESC,usage_id DESC,associated_usage_id DESC
 )
-INSERT INTO model_access.task_outcomes(task_key,user_id,purpose,state,usage_record_id,created_at,updated_at)
- SELECT f.task_key,f.user_id,f.purpose,f.state,f.usage_id,
+INSERT INTO model_access.task_outcomes(task_key,user_id,purpose,state,reason,usage_record_id,associated_usage_record_id,created_at,updated_at)
+ SELECT f.task_key,f.user_id,f.purpose,f.state,CASE WHEN f.associated_usage_id IS NOT NULL THEN 'legacy_delivery_without_adoption' END,f.usage_id,f.associated_usage_id,
     start.started, f.at FROM latest f JOIN task_0168_starts start USING(task_key);
 -- 计划的明确终态、摘要版本和当前重试证据。旧摘要版本未持有采用的 usage ID，不猜哪次成功产生了它。
 WITH history AS (

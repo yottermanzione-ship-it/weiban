@@ -167,41 +167,66 @@ await app.get(CatalogService).upsert(admin, chatModel, {
   enabled: true,
 });
 // 合成任务验证后台按业务采用回执展示成功，同时保留失败线路。
-const taskKey = newId();
 const taskUsage = app.get(UsageRecorder);
-for (const [index, modelKey] of ['browser/outcome-primary', 'browser/outcome-standby'].entries()) {
-  const { record } = await taskUsage.start({
-    input: {
-      userId: admin,
-      purpose: 'chat_reply',
-      billingOwner: 'user',
-      modelRole: 'chat',
-      taskKey,
-      idempotencyKey: newId(),
-    },
-    modelKey,
-    upstreamId: upstream.upstreamId,
-    upstreamModelId: modelKey,
-    countsAsBackground: false,
-  });
-  await taskUsage.finish(record.id, {
-    status: index ? 'succeeded' : 'failed',
-    errorCode: index ? null : 'timeout_progress',
-    inputTokens: 213456,
-    cachedInputTokens: 120,
-    outputTokens: index ? 80 : 0,
-    estimated: !index,
-    latencyMs: 780,
-    retryCount: 0,
-  });
-  if (index)
-    await app.get<ModelTaskOutcomePort>(MODEL_TASK_OUTCOME_PORT).record({
-      taskKey,
-      userId: admin,
-      purpose: 'chat_reply',
-      state: 'delivered',
-      usageRecordId: record.id,
+for (const adopted of [true, false]) {
+  const taskKey = newId();
+  const modelPrefix = adopted ? 'browser/outcome-' : 'browser/legacy-outcome-';
+  for (const [index, modelKey] of [modelPrefix + 'primary', modelPrefix + 'standby'].entries()) {
+    clock.advance(1);
+    const { record } = await taskUsage.start({
+      input: {
+        userId: admin,
+        purpose: 'chat_reply',
+        billingOwner: 'user',
+        modelRole: 'chat',
+        taskKey,
+        idempotencyKey: newId(),
+      },
+      modelKey,
+      upstreamId: upstream.upstreamId,
+      upstreamModelId: modelKey,
+      countsAsBackground: false,
     });
+    if (!index) {
+      const id = await taskUsage.startAttempt({
+        generationId: newId(),
+        userId: admin,
+        ordinal: 0,
+        modelKey,
+        upstreamId: upstream.upstreamId,
+        upstreamModelId: modelKey,
+        usageRecordId: record.id,
+        holdId: newId(),
+        boundSnapshot: { dispatchTiming: { deadlineMs: 1500 } },
+      });
+      await taskUsage.finishAttempt(id, null, false, 'timeout_progress');
+    }
+    await taskUsage.finish(record.id, {
+      status: index ? 'succeeded' : 'failed',
+      errorCode: index ? null : 'timeout_progress',
+      inputTokens: 213456,
+      cachedInputTokens: 120,
+      outputTokens: index ? 80 : 0,
+      estimated: !index,
+      latencyMs: 780,
+      retryCount: 0,
+    });
+    if (!index) continue;
+    if (adopted)
+      await app.get<ModelTaskOutcomePort>(MODEL_TASK_OUTCOME_PORT).record({
+        taskKey,
+        userId: admin,
+        purpose: 'chat_reply',
+        state: 'delivered',
+        usageRecordId: record.id,
+      });
+    else
+      await app.get<Database>(DATABASE).query(
+        `INSERT INTO model_access.task_outcomes(task_key,user_id,purpose,state,reason,associated_usage_record_id,created_at,updated_at)
+       VALUES($1,$2,'chat_reply','delivered','legacy_delivery_without_adoption',$3,$4,$4)`,
+        [taskKey, admin, record.id, clock.now()],
+      );
+  }
 }
 // Real playable WAV through encrypted media storage; a tone tests playback, not voice quality.
 const sampleRate = 8000;
