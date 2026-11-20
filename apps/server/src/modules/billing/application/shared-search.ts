@@ -102,12 +102,10 @@ export class SharedSearchBilling implements SharedSearchBillingPort {
         if ((await this.identities.getAccountStatus(id, tx)) === 'active') active.push(id);
       for (const id of active) {
         const account = await this.ledger.lockUserAccount(tx, id);
-        if (
-          available(account) <= 0 ||
-          (await this.reservations.inFlightPaidCalls(tx, account.id)) >=
-            limits.maxConcurrentPaidCalls
-        )
-          continue;
+        if (available(account) <= 0) continue;
+        const inFlight = await this.reservations.inFlightPaidCalls(tx, account.id);
+        if (inFlight >= limits.maxConcurrentPaidCalls ||
+            (inFlight === limits.maxConcurrentPaidCalls - 1 && await this.reservations.foregroundWaiting(tx, account.id))) continue;
         members.push(account);
       }
       // Recompute after exclusions; each member is admitted against the worst share plus rounding carry.

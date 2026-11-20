@@ -38,6 +38,7 @@ export {
   AdminTaskFilter,
   AdminModelTask,
   AdminTaskAttempt,
+  VoiceCancellationReason,
 } from './model-outcomes.js';
 
 // ---------- 模型目录 ----------

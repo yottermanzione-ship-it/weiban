@@ -9,6 +9,7 @@
  * 改表结构：改这里 → `pnpm --filter @weiban/server db:generate` 生成迁移 → 手写对应的 .down.sql。
  */
 import { sql } from 'drizzle-orm';
+import type { RequestPriceLimit, VoiceCancellationReason } from '@weiban/contracts';
 import {
   bigint,
   boolean,
@@ -317,6 +318,8 @@ export const usageRecords = modelAccessSchema.table(
   {
     id: uuid('id').primaryKey(),
     taskKey: uuid('task_key'),
+    requestPriceLimit: jsonb('request_price_limit').$type<RequestPriceLimit>(),
+    cancellationReason: text('cancellation_reason').$type<VoiceCancellationReason>(),
     createdAt: tz('created_at').notNull(),
     completedAt: tz('completed_at'),
     /** 发起调用的用户；平台账户调用为发起操作的管理员。 */
@@ -405,6 +408,7 @@ export const generationResults = modelAccessSchema.table(
     id: uuid('id').primaryKey(),
     userId: uuid('user_id').notNull(),
     keyHash: text('key_hash').notNull().unique(),
+    replayBlocked: boolean('replay_blocked').notNull().default(false),
     requestHash: text('request_hash').notNull(),
     phase: text('phase').notNull(),
     ciphertext: bytea('ciphertext'),

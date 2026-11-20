@@ -26,7 +26,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { UpstreamStatus } from '@weiban/contracts';
 import { createHash } from 'node:crypto';
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { CLOCK, DATABASE, type Clock, type Database } from '../../../platform/index.js';
 import { modelRoutes, upstreams } from '../infra/db/schema.js';
 import { GatewayLimitsService } from './limits.js';
@@ -210,7 +210,7 @@ export class UpstreamScheduler {
     const [row] = await this.database.db
       .update(upstreams)
       .set({ consecutiveFailures: 0, cooldownUntil: null, lastUsedAt: now })
-      .where(eq(upstreams.id, upstreamId))
+      .where(and(eq(upstreams.id, upstreamId), inArray(upstreams.status, ['active', 'unavailable'])))
       .returning({ status: upstreams.status });
     if (row && row.status !== 'active')
       await this.upstreams.reportStatus(upstreamId, 'active', 'gateway');

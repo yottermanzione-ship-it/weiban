@@ -786,7 +786,7 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
     await app.get(GatewayMaintenance).probeUpstreams();
     expect((await app.get(UpstreamService).get(upstreamId)).status).toBe('active');
     const row = await app.get(GenerationCache).claim(input());
-    clock.advance(91000);
+    clock.advance(151000);
     await app.get(GatewayMaintenance).recover();
     expect((await app.get(GenerationCache).get(row.row.id))?.phase).toBe('complete');
     clock.advance(86400001);

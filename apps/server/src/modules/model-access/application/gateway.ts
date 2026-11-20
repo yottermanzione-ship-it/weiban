@@ -247,7 +247,7 @@ export class ModelGateway implements ModelGatewayPort {
     if ((!chat && !background) || input.meta?.scenarioMode === 'adult' || internal?.trustedPlatform)
       return first;
     if (internal?.chatFallbackModelKey || internal?.fallbackModelKey) return first;
-    if (!['provider_unavailable', 'model_unavailable'].includes(first.error)) return first;
+    if (first.message === 'interrupted' || !['provider_unavailable', 'model_unavailable'].includes(first.error)) return first;
     // 整条备用链也是同一次逻辑请求。持久占位避免并发重试、时钟前进或价目/可用性
     // 改变后重新选型并收费；进程中断后的在途链也不盲目重发。
     const chainInput = {
@@ -296,6 +296,7 @@ export class ModelGateway implements ModelGatewayPort {
         this.logger.log(`model fallback (${input.purpose}): ${primaryKey} -> ${candidate}`);
         return complete(result);
       }
+      if (result.message === 'interrupted') return complete(result);
       if (!['provider_unavailable', 'model_unavailable'].includes(result.error)) break;
     }
     return complete(first);
@@ -727,6 +728,7 @@ export class ModelGateway implements ModelGatewayPort {
           await this.recorder.finish(usage.record.id, {
             status: 'failed',
             errorCode: reserve.error,
+            requestPriceLimit: reserve.error === 'request_too_large' ? reserve.requestPriceLimit : undefined,
             inputTokens: 0,
             cachedInputTokens: 0,
             outputTokens: 0,
@@ -1081,13 +1083,13 @@ export class ModelGateway implements ModelGatewayPort {
       if (row.phase === 'result') return this.finalize(row, await this.cache.open(row));
       // 不确定的在途调用不重发，避免进程崩溃后重复向供应商付费。
       if (this.clock.nowMs() - row.createdAt.getTime() > 90000)
-        return { ok: false, error: 'provider_unavailable' };
+        return { ok: false, error: 'provider_unavailable', message: 'interrupted' };
       await new Promise<void>((resolve) => setTimeout(resolve, 100));
       const next = await this.cache.get(row.id);
       if (!next) return { ok: false, error: 'bad_request' };
       row = next;
     }
-    return { ok: false, error: 'provider_unavailable' };
+    return { ok: false, error: 'provider_unavailable', message: 'interrupted' };
   }
   /**
    * T-071：把 images 读成 data URL（只在服务器内部，不落日志）。读取失败的图片跳过。

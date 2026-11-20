@@ -1,3 +1,4 @@
+import type { VoiceCancellationReason } from '@weiban/contracts';
 /**
  * 模型网关的多媒体扩展（契约 ModelGatewayMediaPort，T-071；通话用的 openRealtimeAsr / streamSpeech 供 T-072）。
  *
@@ -785,7 +786,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       category: 'network_error',
     }));
     if (!opened.ok) {
-      await this.cancelCharge(first.value);
+      await this.cancelCharge(first.value, 'realtime_open_failed');
       if (opened.category === 'invalid_key' || opened.category === 'quota_exhausted')
         await this.upstreams
           .reportStatus(
@@ -803,7 +804,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
         beginCharge: (charge) => this.beginCharge(charge),
         succeed: (charge, actual, known) => this.succeed(charge, actual, known),
         failUnknown: (charge) => this.fail(charge, 'provider_error', undefined, false),
-        cancelCharge: (charge) => this.cancelCharge(charge),
+        cancelCharge: (charge, reason) => this.cancelCharge(charge, reason),
       },
       { modelKey: model.value.modelKey, bounds },
       opened.value,
@@ -897,7 +898,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       refund: (charge) =>
         charge.sent
           ? this.fail(charge, 'provider_error', { voiceClones: 0 }, false)
-          : this.cancelCharge(charge),
+          : this.cancelCharge(charge, 'clone_not_started'),
       nowMs: () => this.clock.nowMs(),
     });
     return this.voiceCloner.choose(characterId, model, mode, payer);
@@ -922,7 +923,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     const charge = await this.reserve(base, model, { voiceClones: 1 }, 0);
     if (!charge.ok) return { kind: 'unpaid' };
     if (!(await this.beginCharge(charge.value))) {
-      await this.cancelCharge(charge.value);
+      await this.cancelCharge(charge.value, 'authorization_denied');
       return { kind: 'unpaid' };
     }
     return { kind: 'charged', ticket: charge.value };
@@ -1315,7 +1316,8 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       });
       await this.recorder.finish(usage.record.id, {
         status: 'failed',
-        errorCode: error,
+        errorCode: reserve.error,
+        requestPriceLimit: reserve.error === 'request_too_large' ? reserve.requestPriceLimit : undefined,
         inputTokens: 0,
         cachedInputTokens: 0,
         outputTokens: 0,
@@ -1323,7 +1325,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
         latencyMs: 0,
         retryCount: 0,
       });
-      return { ok: false, error };
+      return { ok: false, error, message: reserve.error };
     }
     await this.recorder.attachHold(usage.record.id, reserve.value);
     const attemptId = await this.recorder.startAttempt({
@@ -1583,7 +1585,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     return charge.sent;
   }
 
-  async cancelCharge(charge: Charge): Promise<void> {
+  async cancelCharge(charge: Charge, cancellationReason: VoiceCancellationReason): Promise<void> {
     const release = await this.billing.release({
       holdId: charge.holdId,
       reason: 'cancelled',
@@ -1599,6 +1601,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     await this.recorder.finish(charge.usageRecordId, {
       status: 'failed',
       errorCode: 'cancelled',
+      cancellationReason,
       inputTokens: 0,
       cachedInputTokens: 0,
       outputTokens: 0,
@@ -1656,7 +1659,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
         if (this.clock.nowMs() - row.createdAt.getTime() > 120_000) break;
         await new Promise<void>((r) => setTimeout(r, 100));
       }
-      return { ok: false, error: 'provider_unavailable' };
+      return { ok: false, error: 'provider_unavailable', message: 'interrupted' };
     }
     let result: PortResult<T, GenerateError>;
     this.activeGenerations.set(input, claim.row);
@@ -1798,7 +1801,7 @@ class RealtimeAsr implements RealtimeAsrSession {
     this.charge = null;
     this.lastUsageId = charge.usageRecordId;
     if (!(await this.gateway.beginCharge(charge))) {
-      await this.gateway.cancelCharge(charge);
+      await this.gateway.cancelCharge(charge, 'authorization_denied');
       this.failed = true;
       this.emit(null);
       return;
@@ -1839,7 +1842,7 @@ class RealtimeAsr implements RealtimeAsrSession {
     await this.chain;
     await this.flush();
     if (this.charge) {
-      await this.gateway.cancelCharge(this.charge);
+      await this.gateway.cancelCharge(this.charge, 'unused_asr_segment');
       this.charge = null;
     }
     this.emit(null);

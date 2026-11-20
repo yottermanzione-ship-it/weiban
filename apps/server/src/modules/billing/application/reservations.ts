@@ -17,7 +17,7 @@ import {
   ModelPurpose,
   type BillingReservationPort,
   type IdentityReadPort,
-  type PortResult,
+  type ReserveResult,
   type ReleaseInput,
   type ReleaseOutput,
   type ReserveError,
@@ -69,7 +69,7 @@ export class BillingUsageError extends Error {
   }
 }
 
-const fail = (error: ReserveError, message: string): PortResult<ReserveOutput, ReserveError> => ({
+const fail = (error: Exclude<ReserveError, 'request_too_large'>, message: string): ReserveResult => ({
   ok: false,
   error,
   message,
@@ -106,7 +106,7 @@ export class ReservationService implements BillingReservationPort {
 
   // ---------- 冻结 ----------
 
-  async estimateAndReserve(input: ReserveInput): Promise<PortResult<ReserveOutput, ReserveError>> {
+  async estimateAndReserve(input: ReserveInput): Promise<ReserveResult> {
     if (!ModelPurpose.safeParse(input.purpose).success) {
       throw new BillingUsageError(`未知用途 ${String(input.purpose)}`);
     }
@@ -126,7 +126,7 @@ export class ReservationService implements BillingReservationPort {
       countsAsBackground(input.purpose, input.countAsBackground) || input.ecologyTask === true;
     const waitUntil = performance.now() + (limits && !background ? limits.concurrencyWaitMs : 0);
     for (;;) {
-      const result = await this.reserveOnce(input, kind, userId, timeZone, limits);
+      const result = await this.reserveOnce(input, kind, userId, timeZone, limits, background, waitUntil);
       if (result !== BUSY) return result;
       if (performance.now() + CONCURRENCY_POLL_MS > waitUntil)
         return fail('concurrency_limited', '同时进行的付费调用太多，请稍后再试');
@@ -140,7 +140,9 @@ export class ReservationService implements BillingReservationPort {
     userId: string | null,
     timeZone: string,
     limits: PostpaidLimits | null,
-  ): Promise<PortResult<ReserveOutput, ReserveError> | typeof BUSY> {
+    background: boolean,
+    waitUntil: number,
+  ): Promise<ReserveResult | typeof BUSY> {
     return this.database.transaction(async (tx) => {
       let account = userId
         ? await this.ledger.lockUserAccount(tx, userId, timeZone)
@@ -279,11 +281,26 @@ export class ReservationService implements BillingReservationPort {
             },
             tx,
           );
-          return fail('request_too_large', '这次请求预估花费异常大，已拦截');
+          return {
+            ok: false, error:'request_too_large', message:'这次请求预估花费异常大，已拦截',
+            requestPriceLimit: { estimatedSellMicros: estimate, limitMicros: limits.largeRequestLimitMicros, priceVersionId: version.id },
+          };
         }
         // 3.27：同一用户同时进行的付费调用上限（账户行已加锁，并发冻结在这里排队，计数准确）。
         const inFlight = await this.inFlightPaidCalls(tx, account.id);
-        if (inFlight >= limits.maxConcurrentPaidCalls) return BUSY;
+        if (inFlight >= limits.maxConcurrentPaidCalls) {
+          // 行锁下登记前台等待期限，API 与 worker 共享，退出后自动失效。
+          const remainingMs = Math.ceil(waitUntil - performance.now());
+          if (!background && remainingMs >= CONCURRENCY_POLL_MS) {
+            await tx.query(
+              `UPDATE billing.accounts SET foreground_wait_until=greatest(foreground_wait_until,clock_timestamp()+$2*interval '1 millisecond') WHERE id=$1`,
+              [account.id, remainingMs],
+            );
+          }
+          return BUSY;
+        }
+        if (background && inFlight === limits.maxConcurrentPaidCalls - 1 &&
+            await this.foregroundWaiting(tx, account.id)) return BUSY;
       }
 
       const counts = kind === 'user' && countsAsBackground(input.purpose, input.countAsBackground);
@@ -344,6 +361,7 @@ export class ReservationService implements BillingReservationPort {
     upstreamModelId: string;
   }): Promise<boolean> {
     const initial = await this.findHold(input.holdId);
+    const lateLimits = initial.postpaid && this.clock.nowMs() - initial.createdAt.getTime() >= CONCURRENCY_WINDOW_MS ? await this.postpaid.limits() : null;
     return this.database.transaction(async (tx) => {
       await this.ledger.lockAccountById(tx, initial.accountId);
       const hold = await this.lockHold(tx, input.holdId);
@@ -353,6 +371,13 @@ export class ReservationService implements BillingReservationPort {
         hold.riskSnapshot?.phase !== 'reserved'
       )
         return false;
+      if (hold.postpaid && this.clock.nowMs() - hold.createdAt.getTime() >= CONCURRENCY_WINDOW_MS) {
+        // 预留的空音频段等可能在计数窗口之后才开始；重新占位时仍须持钱包锁。
+        const limits = lateLimits ?? await this.postpaid.limits();
+        const busy = await this.inFlightPaidCalls(tx, hold.accountId);
+        if (busy >= limits.maxConcurrentPaidCalls || (hold.countsAsBackground &&
+            busy === limits.maxConcurrentPaidCalls - 1 && await this.foregroundWaiting(tx,hold.accountId))) return false;
+      }
       // 3.26（G3-2）：同一路由有「成本待核」的旧调用时不再拒绝新调用（总经理确认：缺用量不暂停线路）。
       // 待核风险照常记在平台预算与对账里，由后台核实；这里只保留锁，和写入待核风险串行。
       await this.lockCallRoute(tx, input.upstreamId, input.upstreamModelId);
@@ -785,13 +810,20 @@ export class ReservationService implements BillingReservationPort {
     );
   }
 
-  /** 3.27：这个账户最近 CONCURRENCY_WINDOW_MS 内开始、仍未结算的先用后扣调用数。 */
+  /** 调用方持有账户行锁；仅在后台将占用最后一个名额时查询。 */
+  async foregroundWaiting(tx: DbTx, accountId: string): Promise<boolean> {
+    const {rows} = await tx.query<{waiting:boolean}>(
+      'SELECT foreground_wait_until > clock_timestamp() AS waiting FROM billing.accounts WHERE id=$1', [accountId],
+    );
+    return rows[0]?.waiting === true;
+  }
+
   async inFlightPaidCalls(tx: DbTx, accountId: string): Promise<number> {
     const now = this.clock.nowMs();
     const { rows } = await tx.query<{ n: string }>(
       `SELECT ((SELECT count(*) FROM billing.holds
         WHERE account_id = $1 AND status = 'active' AND postpaid
-          AND expires_at > $2 AND created_at > $3)
+          AND expires_at > $2 AND (created_at > $3 OR risk_snapshot->>'sentAt' IS NOT NULL))
         + (SELECT count(*) FROM billing.shared_search_members m JOIN billing.shared_search_calls c ON c.id=m.call_id
           WHERE m.account_id=$1 AND c.state='pending' AND c.expires_at>$2))::text AS n`,
       [accountId, new Date(now), new Date(now - CONCURRENCY_WINDOW_MS)],

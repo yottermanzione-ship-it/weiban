@@ -571,6 +571,9 @@ export class UpstreamService {
         .where(eq(upstreams.id, upstreamId))
         .for('update');
       if (!row || row.deletedAt) return false;
+      // 在途成功、临时故障或旧探针均不能解除账号级隔离。恢复须经管理员验证。
+      if ((row.status === 'invalid' || row.status === 'quota_exhausted') &&
+          (status === 'active' || status === 'unavailable')) return false;
       return this.applyStatus(tx, row, status, source, failure);
     });
   }

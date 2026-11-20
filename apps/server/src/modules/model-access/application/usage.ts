@@ -19,6 +19,8 @@ import {
   type AdminUsageSummary,
   type AdminUsageTotals,
   type BillingOwner,
+  type RequestPriceLimit,
+  type VoiceCancellationReason,
   type GenerateTextInput,
   type IdentityDirectoryPort,
   type IdentityUserLabel,
@@ -77,6 +79,8 @@ export interface StartUsageInput {
 }
 
 export interface FinishUsageInput {
+  requestPriceLimit?: RequestPriceLimit;
+  cancellationReason?: VoiceCancellationReason;
   status: 'succeeded' | 'failed';
   errorCode?: string | null;
   inputTokens: number;
@@ -149,6 +153,11 @@ export class UsageRecorder {
         finishedAt: this.clock.now(),
       })
       .where(eq(generationAttempts.id, id));
+  }
+  async hasDispatchedAttempt(generationId: string): Promise<boolean> {
+    const [row] = await this.database.db.select({ id:generationAttempts.id }).from(generationAttempts)
+      .where(and(eq(generationAttempts.generationId,generationId),ne(generationAttempts.phase,'reserved'))).limit(1);
+    return !!row;
   }
   async recoverAttempts(usageRecordId: string, known: boolean) {
     await this.database.db
@@ -287,6 +296,9 @@ export class UsageRecorder {
       .set({
         status: f.status,
         errorCode: f.errorCode ?? null,
+        requestPriceLimit: f.requestPriceLimit,
+        priceVersionId: f.requestPriceLimit?.priceVersionId,
+        cancellationReason: f.cancellationReason,
         inputTokens: f.inputTokens,
         cachedInputTokens: f.cachedInputTokens,
         cacheWrite5mTokens: f.cacheWrite5mTokens ?? 0,

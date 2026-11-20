@@ -49,6 +49,7 @@ export const accounts = billingSchema.table(
     timeZone: text('time_zone').notNull(),
     /** 最近一次因余额不足拒绝冻结的时间；发出 balance_restored 后清空（billing.md 6.3 第 3 条）。 */
     insufficientSince: tz('insufficient_since'),
+    foregroundWaitUntil: tz('foreground_wait_until'),
     ecologyInsufficientSince: tz('ecology_insufficient_since'),
     ecologyNoticePending: boolean('ecology_notice_pending').notNull().default(false),
     /** 最近一次发出 balance_low 的当地日期（同一天最多一次）。 */
