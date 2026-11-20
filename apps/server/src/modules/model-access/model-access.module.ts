@@ -50,6 +50,8 @@ import { SelectionService } from './application/selection.js';
 import { ScenarioService } from './application/scenarios.js';
 import { RealtimeVoiceStore } from './application/realtime-voices.js';
 import { UpstreamService } from './application/upstreams.js';
+import { MODEL_TASK_OUTCOME_PORT } from '@weiban/contracts';
+import { TaskOutcomeService } from './application/task-outcomes.js';
 import { AdminUsageService, UsageRecorder } from './application/usage.js';
 import { ModelAdminController, ModelController } from './http/model-access.controller.js';
 import { OpenAiCompatibleProbe } from './infra/upstream-probe.js';
@@ -75,6 +77,7 @@ import {
 @Module({
   imports: [BillingModule, IdentityModule, MediaModule],
   exports: [
+    MODEL_TASK_OUTCOME_PORT,
     CatalogService,
     ModelDeletionService,
     SHARED_WEB_SEARCH_PORT,
@@ -146,6 +149,8 @@ import {
     { provide: MODEL_QUOTE_PORT, useExisting: ModelQuoteService },
     UsageRecorder,
     AdminUsageService,
+    TaskOutcomeService,
+    { provide: MODEL_TASK_OUTCOME_PORT, useExisting: TaskOutcomeService },
     UsageReconciliationService,
     ModelAccessLifecycle,
     { provide: UPSTREAM_PROBE, useFactory: () => new OpenAiCompatibleProbe() },

@@ -21,7 +21,8 @@ import { generationResults } from '../infra/db/schema.js';
 export type GenerationRow = typeof generationResults.$inferSelect;
 export type CachedResult = PortResult<GenerateTextOutput, GenerateError>;
 export function requestHash(input: GenerateTextInput): string {
-  return createHash('sha256').update(JSON.stringify(input)).digest('hex');
+  const { taskKey: _taskKey, ...payload } = input;
+  return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
 }
 @Injectable()
 export class GenerationCache {

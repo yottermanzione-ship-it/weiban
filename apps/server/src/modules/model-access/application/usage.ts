@@ -66,6 +66,7 @@ export interface StartUsageInput {
     | 'characterId'
     | 'conversationId'
     | 'idempotencyKey'
+    | 'taskKey'
     | 'safetyPriority'
     | 'countAsBackground'
     | 'meta'
@@ -191,6 +192,7 @@ export class UsageRecorder {
         upstreamId: s.upstreamId,
         upstreamModelId: s.upstreamModelId,
         idempotencyKey: s.input.idempotencyKey,
+        taskKey: s.input.taskKey ?? null,
         status: 'pending',
         retryCount: 0,
         inputTokens: 0,

@@ -28,7 +28,13 @@ import {
   type UsageQuantities,
   type ModelGatewayPlatformPort,
 } from '@weiban/contracts';
-import { APP_CONFIG, CLOCK, type AppConfig, type Clock } from '../../../platform/index.js';
+import {
+  APP_CONFIG,
+  CLOCK,
+  modelTaskKey,
+  type AppConfig,
+  type Clock,
+} from '../../../platform/index.js';
 import { MEDIA_SYSTEM_PORT } from '../../media/index.js';
 import { isFakeModel } from '../infra/media-adapter.js';
 import { applySystemMessageMode } from '../domain/system-messages.js';
@@ -237,6 +243,10 @@ export class ModelGateway implements ModelGatewayPort {
   }
   /** 日常聊天与普通后台整理失败后，最多尝试三个更便宜的上架模型；安全拒绝、私密与额度限制不切换。 */
   async generateText(input: GenerateTextInput, internal?: GatewayInternal): Promise<CachedResult> {
+    input = {
+      ...input,
+      taskKey: input.taskKey ?? modelTaskKey(input.userId, input.idempotencyKey),
+    };
     // 主模型自身最多60秒；未指定整体时限时再留一分钟给备用，否则超时失败永远走不到备用。
     const deadlineAt = input.deadlineAt ?? new Date(this.clock.nowMs() + 120_000).toISOString();
     const chat = input.purpose === 'chat_reply' && input.modelRole === 'chat';
