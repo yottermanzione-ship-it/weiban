@@ -84,6 +84,8 @@ test('昵称选择保留同名用户编号，完整编号和多用户查询仍�
   });
   await multi.fill(`${second}，${first},${second}`);
   expect((await bulk).postDataJSON().filter.userIds).toEqual([second, first]);
+  // Outstanding label lookups still need their response bodies while their handlers finish.
+  await page.unrouteAll({ behavior: 'wait' });
 });
 
 async function login(page: Page, username = 'browser_admin') {
