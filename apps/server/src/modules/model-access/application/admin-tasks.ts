@@ -309,18 +309,20 @@ ${taskCte}
         const amt = amounts.get(r.usageRecordId);
         if (!amt) throw new AppError('service_unavailable', '账本返回不完整');
         const sent =
-          t.deadlineMs !== undefined
-            ? 'sent'
-            : sentAt || phase === 'sent'
-              ? 'authorized'
-              : r.errorCode === 'route_risk_blocked' ||
-                  (!holdId && preflight[r.errorCode ?? '']) ||
-                  hold?.risk?.phase === 'reserved' ||
-                  (r.errorCode === 'cancelled' &&
-                    hold?.status === 'released' &&
-                    hold.risk?.phase === 'resolved')
-                ? 'not_sent'
-                : 'unknown';
+          r.errorCode === 'insufficient_fallback_time' && t.deadlineMs === undefined
+            ? 'not_sent'
+            : t.deadlineMs !== undefined
+              ? 'sent'
+              : sentAt || phase === 'sent'
+                ? 'authorized'
+                : r.errorCode === 'route_risk_blocked' ||
+                    (!holdId && preflight[r.errorCode ?? '']) ||
+                    hold?.risk?.phase === 'reserved' ||
+                    (r.errorCode === 'cancelled' &&
+                      hold?.status === 'released' &&
+                      hold.risk?.phase === 'resolved')
+                  ? 'not_sent'
+                  : 'unknown';
         return {
           ...r,
           holdStatus: hold?.status ?? null,

@@ -1017,10 +1017,12 @@ export class ReplyEngine {
             tx,
             row,
             'delivered',
-            null,
             result.usageRecordId === undefined
-              ? result.charge?.usageRecordId
-              : result.usageRecordId,
+              ? 'legacy_delivery_without_adoption'
+              : result.usageRecordId === null
+                ? 'local_reply_fallback'
+                : null,
+            result.usageRecordId ?? null,
             undefined,
             purpose,
           );

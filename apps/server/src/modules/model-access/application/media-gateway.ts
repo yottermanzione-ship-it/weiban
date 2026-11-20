@@ -1435,6 +1435,7 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
     category: MediaFailure,
     upstreamUsage?: UsageQuantities,
     reportUpstream = true,
+    cause?: 'insufficient_fallback_time' | 'interrupted',
   ): Promise<void> {
     const release = await this.billing.release({
       holdId: charge.holdId,
@@ -1449,11 +1450,11 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       charge.attemptId,
       upstreamUsage ?? null,
       release.costKnown === true,
-      category,
+      cause === 'insufficient_fallback_time' ? cause : category,
     );
     await this.recorder.finish(charge.usageRecordId, {
       status: 'failed',
-      errorCode: category,
+      errorCode: cause ?? category,
       inputTokens: 0,
       cachedInputTokens: 0,
       outputTokens: 0,
@@ -1533,7 +1534,13 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       const actual = outcome.zeroCost
         ? Object.fromEntries(Object.keys(estimate).map((unit) => [unit, 0]))
         : (outcome.reportedUsage ?? outcome.actual);
-      await this.fail(charge.value, outcome.category, actual, !outcome.localRateLimit);
+      await this.fail(
+        charge.value,
+        outcome.category,
+        actual,
+        !outcome.localRateLimit,
+        outcome.cause,
+      );
       return {
         ok: false,
         error: outcome.cause ? 'provider_unavailable' : this.mapError(outcome.category),

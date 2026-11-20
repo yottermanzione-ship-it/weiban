@@ -22,6 +22,7 @@ import {
   JOB_QUEUE,
   EVENT_DISPATCHER,
   TestClock,
+  modelTaskKey,
   newId,
   type Database,
   type JobQueue,
@@ -1125,6 +1126,46 @@ RETURNING seq::text AS seq, message_id`;
       expect((await store.get(broke.id))?.status).toBe('done');
     } finally {
       failure = null;
+      choice.mockRestore();
+    }
+  });
+  it('升级前已生成的私聊保留原扣费关联，送达回执不会把收费调用当成已采用的正文', async () => {
+    const row = await user('记录一次合成的旧版回复。');
+    const choice = vi
+      .spyOn(engine.quirks, 'choose')
+      .mockResolvedValue({ kind: 'none', respondAt: null, typingCycles: 0 });
+    try {
+      clock.advance(3000);
+      await engine.run(row.id);
+      const pending = (await store.get(row.id))!;
+      expect(pending.status).toBe('sending');
+      const stored = (await store.open(pending, 'result')) as {
+        usageRecordId?: string;
+        modelPurpose?: string;
+        charge: { usageRecordId: string; chargedMicros: number };
+      };
+      delete stored.usageRecordId;
+      delete stored.modelPurpose;
+      await db.transaction(async (tx) => {
+        const resultCiphertext = await store.seal(tx, pending, 'result', stored);
+        await tx.db.update(replyPlans).set({ resultCiphertext }).where(eq(replyPlans.id, row.id));
+      });
+      await finish(row.id);
+      const outcome = await db.query(
+        'SELECT state,reason,usage_record_id FROM model_access.task_outcomes WHERE task_key=$1',
+        [modelTaskKey(userId, 'reply:' + row.id)],
+      );
+      expect(outcome.rows[0]).toEqual({
+        state: 'delivered',
+        reason: 'legacy_delivery_without_adoption',
+        usage_record_id: null,
+      });
+      const sent = await db.query(
+        'SELECT usage_record_id FROM chat.messages WHERE conversation_id=$1 AND client_msg_id=$2',
+        [cid, 'reply:' + row.triggerId + ':0'],
+      );
+      expect(sent.rows[0]?.usage_record_id).toBe(stored.charge.usageRecordId);
+    } finally {
       choice.mockRestore();
     }
   });

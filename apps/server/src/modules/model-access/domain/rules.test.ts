@@ -129,6 +129,8 @@ describe('J verified decision protocol', () => {
   it('does not send a decision after its deadline expires during billing preparation', async () => {
     const clock = new TestClock('2026-10-21T12:00:00Z');
     const decide = vi.fn();
+    const finish = vi.fn();
+    const release = vi.fn(async () => ({ costKnown: true }));
     const media = Object.create(ModelGatewayMedia.prototype) as ModelGatewayMedia;
     Object.assign(media, {
       clock,
@@ -147,15 +149,29 @@ describe('J verified decision protocol', () => {
         }),
       },
       bounds: { get: async () => ({ decision: { maxInputTokens: 4000 } }) },
-      run: async (
-        _input: unknown,
-        _model: unknown,
-        _usage: unknown,
-        call: (t: typeof target, a: { decide: typeof decide }) => Promise<unknown>,
-      ) => {
+      activeGenerations: new WeakMap(),
+      reserve: async (_input: unknown, model: unknown) => ({
+        ok: true,
+        value: {
+          model,
+          holdId: 'hold',
+          usageRecordId: 'usage',
+          attemptId: 'attempt',
+          sent: true,
+          wallStart: performance.now(),
+          startedAt: clock.now(),
+        },
+      }),
+      billing: { release },
+      recorder: { finish, writeReleaseSnapshot: vi.fn(), finishAttempt: vi.fn() },
+      beginCharge: async () => {
         clock.advance(2000);
-        return call(target, { decide });
+        return true;
       },
+      withTarget: async (
+        _model: unknown,
+        call: (t: typeof target, a: { decide: typeof decide }) => Promise<unknown>,
+      ) => call(target, { decide }),
     });
     const result = await media.decide({
       userId: '0192f000-0000-7000-8000-000000000001',
@@ -167,7 +183,18 @@ describe('J verified decision protocol', () => {
       idempotencyKey: 'deadline',
       deadlineAt: '2026-10-21T12:00:01Z',
     });
-    expect(result).toMatchObject({ ok: false, actual: { inputTokens: 0, outputTokens: 0 } });
+    expect(result).toMatchObject({
+      ok: false,
+      error: 'provider_unavailable',
+      message: 'insufficient_fallback_time',
+    });
+    expect(release).toHaveBeenCalledWith(
+      expect.objectContaining({ upstreamUsage: { inputTokens: 0, outputTokens: 0 } }),
+    );
+    expect(finish).toHaveBeenCalledWith(
+      'usage',
+      expect.objectContaining({ errorCode: 'insufficient_fallback_time', status: 'failed' }),
+    );
     expect(decide).not.toHaveBeenCalled();
   });
   it('routes relay and native APIs without duplicated v1; no guessed judge endpoint', () => {
