@@ -1,122 +1,226 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import {
+  Component,
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentType,
+  type ReactNode,
+} from 'react';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { WorkspaceLayout } from './workspace-layout.js';
-import { App as AntApp, Spin } from 'antd';
+import { Alert, App as AntApp, Button, Skeleton, Spin } from 'antd';
 import { IdentityEndpoints, type AuthResponse } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { VersionBanner } from './version-banner.js';
 import { LoginPage } from '../features/login.js';
 
 import { TodoProvider } from './todos.js';
+import { activePage } from './menu.js';
 
-const DashboardPage = lazy(() =>
+function lazyPage<Page extends ComponentType>(load: () => Promise<{ default: Page }>) {
+  let pending: ReturnType<typeof load> | undefined;
+  const start = () =>
+    (pending ??= load().catch((error: unknown) => {
+      pending = undefined;
+      throw error;
+    }));
+  return Object.assign(lazy(start), {
+    preload: () => {
+      void start().catch(() => undefined);
+    },
+  });
+}
+
+const DashboardPage = lazyPage(() =>
   import('../features/dashboard.js').then((m) => ({ default: m.DashboardPage })),
 );
-const UserListPage = lazy(() =>
+const UserListPage = lazyPage(() =>
   import('../features/users/list.js').then((m) => ({ default: m.UserListPage })),
 );
-const MembershipRecordsPage = lazy(() =>
+const MembershipRecordsPage = lazyPage(() =>
   import('../features/users/records.js').then((m) => ({ default: m.MembershipRecordsPage })),
 );
-const TopupRecordsPage = lazy(() =>
+const TopupRecordsPage = lazyPage(() =>
   import('../features/users/topups.js').then((m) => ({ default: m.TopupRecordsPage })),
 );
-const ScanPaymentsPage = lazy(() =>
+const ScanPaymentsPage = lazyPage(() =>
   import('../features/scan-payments.js').then((m) => ({ default: m.ScanPaymentsPage })),
 );
-const PlansPage = lazy(() =>
+const PlansPage = lazyPage(() =>
   import('../features/users/plans.js').then((m) => ({ default: m.PlansPage })),
 );
-const SettingsPage = lazy(() =>
+const SettingsPage = lazyPage(() =>
   import('../features/settings.js').then((m) => ({ default: m.SettingsPage })),
 );
-const ModelManagementPage = lazy(() =>
+const ModelManagementPage = lazyPage(() =>
   import('../features/model-management.js').then((m) => ({ default: m.ModelManagementPage })),
 );
-const PricesPage = lazy(() =>
+const PricesPage = lazyPage(() =>
   import('../features/prices.js').then((m) => ({ default: m.PricesPage })),
 );
-const AlertsPage = lazy(() =>
+const AlertsPage = lazyPage(() =>
   import('../features/alerts.js').then((m) => ({ default: m.AlertsPage })),
 );
-const ClientLogsPage = lazy(() =>
+const ClientLogsPage = lazyPage(() =>
   import('../features/client-logs.js').then((m) => ({ default: m.ClientLogsPage })),
 );
-const CharactersPage = lazy(() =>
+const CharactersPage = lazyPage(() =>
   import('../features/characters.js').then((m) => ({ default: m.CharactersPage })),
 );
-const UsagePage = lazy(() =>
+const UsagePage = lazyPage(() =>
   import('../features/usage.js').then((m) => ({ default: m.UsagePage })),
 );
-const BillingPage = lazy(() =>
+const BillingPage = lazyPage(() =>
   import('../features/billing.js').then((m) => ({ default: m.BillingPage })),
 );
-const ScenarioModesPage = lazy(() =>
+const ScenarioModesPage = lazyPage(() =>
   import('../features/scenario-modes.js').then((m) => ({ default: m.ScenarioModesPage })),
 );
-const PublicUpdatesPage = lazy(() =>
+const PublicUpdatesPage = lazyPage(() =>
   import('../features/public-updates.js').then((m) => ({ default: m.PublicUpdatesPage })),
 );
-const AnnouncementsPage = lazy(() =>
+const AnnouncementsPage = lazyPage(() =>
   import('../features/releases.js').then((m) => ({ default: m.AnnouncementsPage })),
 );
-const ReleaseNotesPage = lazy(() =>
+const ReleaseNotesPage = lazyPage(() =>
   import('../features/releases.js').then((m) => ({ default: m.ReleaseNotesPage })),
 );
-const VersionPoliciesPage = lazy(() =>
+const VersionPoliciesPage = lazyPage(() =>
   import('../features/releases.js').then((m) => ({ default: m.VersionPoliciesPage })),
 );
-const HolidaysPage = lazy(() =>
+const HolidaysPage = lazyPage(() =>
   import('../features/holidays.js').then((m) => ({ default: m.HolidaysPage })),
 );
-const SymptomTagsPage = lazy(() =>
+const SymptomTagsPage = lazyPage(() =>
   import('../features/symptom-tags.js').then((m) => ({ default: m.SymptomTagsPage })),
 );
-const RelationsPage = lazy(() =>
+const RelationsPage = lazyPage(() =>
   import('../features/relations.js').then((m) => ({ default: m.RelationsPage })),
 );
-const CardTemplatesPage = lazy(() =>
+const CardTemplatesPage = lazyPage(() =>
   import('../features/media-library.js').then((m) => ({ default: m.CardTemplatesPage })),
 );
-const StickerLibraryPage = lazy(() =>
+const StickerLibraryPage = lazyPage(() =>
   import('../features/media-library.js').then((m) => ({ default: m.StickerLibraryPage })),
 );
-const VoiceLibraryPage = lazy(() =>
+const VoiceLibraryPage = lazyPage(() =>
   import('../features/media-library.js').then((m) => ({ default: m.VoiceLibraryPage })),
 );
-const WorkLinksPage = lazy(() =>
+const WorkLinksPage = lazyPage(() =>
   import('../features/media-library.js').then((m) => ({ default: m.WorkLinksPage })),
 );
-const PetSpeciesPage = lazy(() =>
+const PetSpeciesPage = lazyPage(() =>
   import('../features/pets-deletions.js').then((m) => ({ default: m.PetSpeciesPage })),
 );
-const AccountDeletionsPage = lazy(() =>
+const AccountDeletionsPage = lazyPage(() =>
   import('../features/account-deletions.js').then((m) => ({ default: m.AccountDeletionsPage })),
 );
-const DailyQuestionsPage = lazy(() =>
+const DailyQuestionsPage = lazyPage(() =>
   import('../features/daily-questions.js').then((m) => ({ default: m.DailyQuestionsPage })),
 );
-const PlazaAdminPage = lazy(() =>
+const PlazaAdminPage = lazyPage(() =>
   import('../features/plaza.js').then((m) => ({ default: m.PlazaAdminPage })),
 );
-const PlannerPage = lazy(() =>
+const PlannerPage = lazyPage(() =>
   import('../features/planner.js').then((m) => ({ default: m.PlannerPage })),
 );
-const EcologyAdminPage = lazy(() =>
+const EcologyAdminPage = lazyPage(() =>
   import('../features/ecology.js').then((m) => ({ default: m.EcologyAdminPage })),
 );
-const MemoryTiersPage = lazy(() =>
+const MemoryTiersPage = lazyPage(() =>
   import('../features/memory-tiers.js').then((m) => ({ default: m.MemoryTiersPage })),
 );
-const RoleRequestsPage = lazy(() =>
+const RoleRequestsPage = lazyPage(() =>
   import('../features/role-requests.js').then((m) => ({ default: m.RoleRequestsPage })),
 );
-const SearchEntitiesPage = lazy(() =>
+const SearchEntitiesPage = lazyPage(() =>
   import('../features/search-entities.js').then((m) => ({ default: m.SearchEntitiesPage })),
 );
-const SupportAdminPage = lazy(() =>
+const SupportAdminPage = lazyPage(() =>
   import('../features/support.js').then((m) => ({ default: m.SupportAdminPage })),
 );
+
+const ADMIN_PAGES = [
+  ['/dashboard', DashboardPage],
+  ['/characters', CharactersPage],
+  ['/prices', PricesPage],
+  ['/accounts', UserListPage],
+  ['/membership-records', MembershipRecordsPage],
+  ['/recharge-records', TopupRecordsPage],
+  ['/plans', PlansPage],
+  ['/scan-payments', ScanPaymentsPage],
+  ['/model', ModelManagementPage],
+  ['/usage', UsagePage],
+  ['/billing', BillingPage],
+  ['/scenario-modes', ScenarioModesPage],
+  ['/public-updates', PublicUpdatesPage],
+  ['/holidays', HolidaysPage],
+  ['/relations', RelationsPage],
+  ['/stickers', StickerLibraryPage],
+  ['/voices', VoiceLibraryPage],
+  ['/card-templates', CardTemplatesPage],
+  ['/work-links', WorkLinksPage],
+  ['/symptom-tags', SymptomTagsPage],
+  ['/pet-species', PetSpeciesPage],
+  ['/account-deletions', AccountDeletionsPage],
+  ['/plaza', PlazaAdminPage],
+  ['/reports', PlazaAdminPage],
+  ['/support', SupportAdminPage],
+  ['/role-requests', RoleRequestsPage],
+  ['/search-entities', SearchEntitiesPage],
+  ['/planner', PlannerPage],
+  ['/ecology', EcologyAdminPage],
+  ['/memory-tiers', MemoryTiersPage],
+  ['/daily-questions', DailyQuestionsPage],
+  ['/announcements', AnnouncementsPage],
+  ['/release-notes', ReleaseNotesPage],
+  ['/version-policies', VersionPoliciesPage],
+  ['/settings', SettingsPage],
+  ['/admin/alerts', AlertsPage],
+  ['/client-logs', ClientLogsPage],
+] as const;
+
+function preloadPage(path: string) {
+  const pathname = path.split('?')[0];
+  ADMIN_PAGES.find(([candidate]) => candidate === pathname)?.[1].preload();
+}
+
+function PendingPage({ title }: { title: string }) {
+  return (
+    <section className="page" aria-busy="true" aria-label={title}>
+      <div className="page-head">
+        <h1>{title}</h1>
+      </div>
+      <div className="weiban-glass-card route-placeholder">
+        <Skeleton active paragraph={{ rows: 3 }} />
+      </div>
+    </section>
+  );
+}
+
+class PageErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  override state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  override render() {
+    if (this.state.failed) {
+      return (
+        <Alert
+          type="error"
+          showIcon
+          message="页面没能打开"
+          action={<Button onClick={() => window.location.reload()}>刷新重试</Button>}
+        />
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export function App() {
   const [auth, setAuth] = useState<AuthResponse | null>(null);
@@ -189,68 +293,35 @@ export function App() {
 
 function AdminShell({ username, onLogout }: { username: string; onLogout: () => void }) {
   const { message } = AntApp.useApp();
+  const location = useLocation();
+  const { link } = activePage(location.pathname, location.search);
   return (
     <WorkspaceLayout
       username={username}
+      preloadPage={preloadPage}
       onLogout={() => {
         message.success('已退出登录');
         onLogout();
       }}
     >
       <VersionBanner />
-      <Suspense
-        fallback={
-          <div className="workspace-loading" role="status">
-            <Spin />
-            正在打开页面…
-          </div>
-        }
-      >
-        <Routes>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/characters" element={<CharactersPage />} />
-          <Route path="/prices" element={<PricesPage />} />
-          <Route path="/accounts" element={<UserListPage />} />
-          <Route path="/membership-records" element={<MembershipRecordsPage />} />
-          <Route path="/recharge-records" element={<TopupRecordsPage />} />
-          <Route path="/plans" element={<PlansPage />} />
-          <Route path="/scan-payments" element={<ScanPaymentsPage />} />
-          {/* 10-20 批 E2：原「会员与订单」混合页删除，旧地址跳到用户列表；原「充值档位」并入套餐与价格。 */}
-          <Route path="/membership" element={<Navigate to="/accounts" replace />} />
-          <Route path="/recharge" element={<Navigate to="/plans" replace />} />
-          <Route path="/model" element={<ModelManagementPage />} />
-          <Route path="/usage" element={<UsagePage />} />
-          <Route path="/billing" element={<BillingPage />} />
-          <Route path="/scenario-modes" element={<ScenarioModesPage />} />
-          <Route path="/public-updates" element={<PublicUpdatesPage />} />
-          <Route path="/holidays" element={<HolidaysPage />} />
-          <Route path="/relations" element={<RelationsPage />} />
-          <Route path="/stickers" element={<StickerLibraryPage />} />
-          <Route path="/voices" element={<VoiceLibraryPage />} />
-          <Route path="/card-templates" element={<CardTemplatesPage />} />
-          <Route path="/work-links" element={<WorkLinksPage />} />
-          <Route path="/symptom-tags" element={<SymptomTagsPage />} />
-          <Route path="/pet-species" element={<PetSpeciesPage />} />
-          <Route path="/account-deletions" element={<AccountDeletionsPage />} />
-          <Route path="/plaza" element={<PlazaAdminPage />} />
-          <Route path="/reports" element={<PlazaAdminPage initialTab="reports" />} />
-          <Route path="/support" element={<SupportAdminPage />} />
-          <Route path="/role-requests" element={<RoleRequestsPage />} />
-          <Route path="/search-entities" element={<SearchEntitiesPage />} />
-          <Route path="/planner" element={<PlannerPage />} />
-          <Route path="/ecology" element={<EcologyAdminPage />} />
-          <Route path="/memory-tiers" element={<MemoryTiersPage />} />
-          <Route path="/daily-questions" element={<DailyQuestionsPage />} />
-          <Route path="/announcements" element={<AnnouncementsPage />} />
-          <Route path="/release-notes" element={<ReleaseNotesPage />} />
-          <Route path="/version-policies" element={<VersionPoliciesPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/admin/alerts" element={<AlertsPage />} />
-          <Route path="/client-logs" element={<ClientLogsPage />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
-      </Suspense>
+      <PageErrorBoundary>
+        <Suspense fallback={<PendingPage title={link.name} />}>
+          <Routes>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/membership" element={<Navigate to="/accounts" replace />} />
+            <Route path="/recharge" element={<Navigate to="/plans" replace />} />
+            {ADMIN_PAGES.map(([path, Page]) => (
+              <Route
+                key={path}
+                path={path}
+                element={path === '/reports' ? <PlazaAdminPage initialTab="reports" /> : <Page />}
+              />
+            ))}
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </Suspense>
+      </PageErrorBoundary>
     </WorkspaceLayout>
   );
 }

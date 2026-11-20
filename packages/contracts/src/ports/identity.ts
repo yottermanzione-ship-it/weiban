@@ -4,7 +4,7 @@ import type { AdminUserFilter, AdminUserSummary } from '../http/admin-users.js';
 export interface IdentityAdminDirectoryPort {
   matchingIds(
     filter: AdminUserFilter,
-    window?: { page: number; pageSize: number; oldest: boolean },
+    window?: { page: number; pageSize: number; oldest: boolean; sortByActivity?: boolean },
   ): Promise<{ ids: string[]; total: number }>;
   summariesFor(ids: string[]): Promise<AdminUserSummary[]>;
 }

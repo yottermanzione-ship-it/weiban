@@ -132,7 +132,8 @@ export class BillingAdminService {
         : {
             page: query.page,
             pageSize: query.pageSize,
-            oldest: query.sort === 'oldest',
+            oldest: query.sort === 'oldest' || query.sort === 'active_asc',
+            sortByActivity: query.sort === 'active_asc' || query.sort === 'active_desc',
           },
     );
     let ids = match.ids;

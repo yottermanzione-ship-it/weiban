@@ -6,6 +6,7 @@ import { useListSelection } from '../../data/list-selection.js';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Alert, Button, Checkbox, Input, Segmented, Space } from 'antd';
+import { ArrowDownIcon, ArrowsDownUpIcon, ArrowUpIcon } from '@phosphor-icons/react';
 import { AdminUsersEndpoints, BillingAdminEndpoints } from '@weiban/contracts';
 import { api } from '../../data/client.js';
 import { useRemote } from '../../data/hooks.js';
@@ -18,7 +19,13 @@ import {
   BatchOperationModal,
   type BatchFailure,
 } from '../../ui/batch-operation.js';
-import { formatDate, formatPoints, formatYuan, relativeTime } from '../../ui/format.js';
+import {
+  formatDate,
+  formatDateTime,
+  formatPoints,
+  formatYuan,
+  relativeTime,
+} from '../../ui/format.js';
 import {
   AccountStateTag,
   MembershipTag,
@@ -30,8 +37,48 @@ import { UserDetailDrawer } from './detail.js';
 import { UserIdentity, shortUserId, userDisplayName } from './identity.js';
 import { FilterChips } from '../../ui/grid-controls.js';
 import { redactContact } from '../../ui/csv.js';
+import './user-list.css';
 
 type Quick = 'all' | 'pro' | 'expiring' | 'banned';
+
+const USER_SORTS = {
+  balance: ['balance_asc', 'balance_desc'],
+  spent: ['spent_asc', 'spent_desc'],
+  registered: ['oldest', 'newest'],
+  active: ['active_asc', 'active_desc'],
+} as const;
+type UserSortField = keyof typeof USER_SORTS;
+type UserSort = (typeof USER_SORTS)[UserSortField][number];
+
+function SortHeader({
+  children,
+  field,
+  sort,
+  onSort,
+}: {
+  children: string;
+  field: UserSortField;
+  sort: UserSort;
+  onSort: (value: UserSort) => void;
+}) {
+  const [asc, desc] = USER_SORTS[field];
+  const first = field === 'registered' || field === 'active' ? desc : asc;
+  const next = sort === asc ? desc : sort === desc ? asc : first;
+  const Icon = sort === asc ? ArrowUpIcon : sort === desc ? ArrowDownIcon : ArrowsDownUpIcon;
+  return (
+    <button
+      type="button"
+      className="user-column-sort"
+      aria-pressed={sort === asc || sort === desc}
+      aria-label={children + (next === asc ? '升序' : '降序')}
+      title={children + (next === asc ? '升序' : '降序')}
+      onClick={() => onSort(next)}
+    >
+      <span>{children}</span>
+      <Icon size={13} aria-hidden />
+    </button>
+  );
+}
 
 export function UserListPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -44,9 +91,11 @@ export function UserListPage() {
   const [openTab, setOpenTab] = useState<'profile' | 'membership' | 'runtime'>('profile');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
-  const [sort, setSort] = useState<
-    'newest' | 'oldest' | 'balance_asc' | 'balance_desc' | 'spent_asc' | 'spent_desc'
-  >('newest');
+  const [sort, setSort] = useState<UserSort>('newest');
+  function changeSort(value: UserSort) {
+    setPage(1);
+    setSort(value);
+  }
   const users = useRemote(BillingAdminEndpoints.userPage, {
     query: { q: query.trim(), group: quick, page, pageSize, sort },
   });
@@ -168,12 +217,11 @@ export function UserListPage() {
     },
     {
       title: '会员',
-      width: 200,
+      width: 134,
+      align: 'center',
       render: (_, { user }) => (
-        <div className="cell-main">
-          <span>
-            <MembershipTag user={user} />
-          </span>
+        <div className="user-centered-value user-membership-value">
+          <MembershipTag user={user} />
           {user.membership.tier === 'pro_plus' && (
             <span className="cell-sub">到期 {formatDate(user.membership.expiresAt)}</span>
           )}
@@ -181,15 +229,17 @@ export function UserListPage() {
       ),
     },
     {
-      title: '余额（积分）',
-      width: 140,
+      title: (
+        <SortHeader field="balance" sort={sort} onSort={changeSort}>
+          余额（积分）
+        </SortHeader>
+      ),
+      width: 126,
       key: 'balance',
-      align: 'right',
-      sortOrder: sort === 'balance_asc' ? 'ascend' : sort === 'balance_desc' ? 'descend' : null,
-      sorter: true,
+      align: 'center',
       render: (_, { account }) =>
         account ? (
-          <div className="cell-main">
+          <div className="user-centered-value user-balance-value">
             <span className="cell-title mono">{formatPoints(account.balanceMicros)}</span>
             <span className="cell-sub mono">
               赠送 {formatPoints(account.bonusBalanceMicros ?? 0)}
@@ -200,12 +250,14 @@ export function UserListPage() {
         ),
     },
     {
-      title: '近 30 天消耗',
-      width: 130,
+      title: (
+        <SortHeader field="spent" sort={sort} onSort={changeSort}>
+          近 30 天消耗
+        </SortHeader>
+      ),
+      width: 137,
       key: 'spent',
       align: 'right',
-      sortOrder: sort === 'spent_asc' ? 'ascend' : sort === 'spent_desc' ? 'descend' : null,
-      sorter: true,
       render: (_, { account }) =>
         account ? (
           <div className="cell-main">
@@ -217,16 +269,35 @@ export function UserListPage() {
         ),
     },
     {
-      title: '注册 / 活跃',
-      width: 150,
+      title: (
+        <div className="user-dates" aria-label="注册时间 / 最近活跃">
+          <SortHeader field="registered" sort={sort} onSort={changeSort}>
+            注册时间
+          </SortHeader>
+          <SortHeader field="active" sort={sort} onSort={changeSort}>
+            最近活跃
+          </SortHeader>
+        </div>
+      ),
+      width: 160,
       key: 'created',
-      sortOrder: sort === 'oldest' ? 'ascend' : sort === 'newest' ? 'descend' : null,
-      sorter: true,
       render: (_, { user }) => (
-        <div className="cell-main">
-          <span className="mono">{formatDate(user.createdAt)}</span>
-          <span className="cell-sub">
-            {user.lastActiveAt ? `${relativeTime(user.lastActiveAt)}活跃` : '没活跃过'}
+        <div className="user-dates">
+          <span>
+            <small>注册</small>{' '}
+            <time className="mono" dateTime={user.createdAt}>
+              {formatDate(user.createdAt)}
+            </time>
+          </span>
+          <span>
+            <small>活跃</small>{' '}
+            {user.lastActiveAt ? (
+              <time dateTime={user.lastActiveAt} title={formatDateTime(user.lastActiveAt)}>
+                {relativeTime(user.lastActiveAt)}
+              </time>
+            ) : (
+              '暂无记录'
+            )}
           </span>
         </div>
       ),
@@ -273,25 +344,6 @@ export function UserListPage() {
             setPage(n === pageSize ? p : 1);
             setPageSize(n);
           },
-        }}
-        onSort={(key, dir) => {
-          setPage(1);
-          const asc = dir === 'ascend';
-          setSort(
-            !dir
-              ? 'newest'
-              : key === 'created'
-                ? asc
-                  ? 'oldest'
-                  : 'newest'
-                : key === 'balance'
-                  ? asc
-                    ? 'balance_asc'
-                    : 'balance_desc'
-                  : asc
-                    ? 'spent_asc'
-                    : 'spent_desc',
-          );
         }}
         rowSelectable={({ user }) => user.role !== 'admin' && user.status === 'active'}
         batchActions={() => (
@@ -346,14 +398,7 @@ export function UserListPage() {
               value={query}
               onChange={(e) => changeQuery(e.target.value.slice(0, 200))}
             />
-            <Button
-              onClick={() => {
-                setPage(1);
-                setSort('balance_asc');
-              }}
-            >
-              余额从低到高
-            </Button>
+            <Button onClick={() => changeSort('balance_asc')}>余额从低到高</Button>
           </Space>
         }
         chips={
@@ -388,6 +433,7 @@ export function UserListPage() {
               value: ({ account }) => (account ? formatPoints(account.balanceMicros) : null),
             },
             { title: '注册时间', value: ({ user }) => formatDate(user.createdAt) },
+            { title: '最近活跃', value: ({ user }) => formatDateTime(user.lastActiveAt) },
             {
               title: '状态',
               value: ({ user }) =>

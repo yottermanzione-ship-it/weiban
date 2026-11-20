@@ -154,7 +154,7 @@ export class AdminUsersService implements IdentityAdminDirectoryPort {
   }
   async matchingIds(
     filter: AdminUserFilter,
-    window?: { page: number; pageSize: number; oldest: boolean },
+    window?: Parameters<IdentityAdminDirectoryPort['matchingIds']>[1],
   ) {
     const { where, values } = this.filtered(filter);
     const from = `FROM identity.users u LEFT JOIN identity.profiles p ON p.user_id=u.id
@@ -163,9 +163,11 @@ export class AdminUsersService implements IdentityAdminDirectoryPort {
       const { rows } = await this.database.query<{ id: string }>(`SELECT u.id ${from}`, values);
       return { ids: rows.map((r) => r.id), total: rows.length };
     }
+    const sortColumn = window.sortByActivity ? 'u.last_active_at' : 'u.created_at';
+    const direction = window.oldest ? 'ASC' : 'DESC';
     const [page, count] = await Promise.all([
       this.database.query<{ id: string }>(
-        `SELECT u.id ${from} ORDER BY u.created_at ${window.oldest ? 'ASC' : 'DESC'},u.id
+        `SELECT u.id ${from} ORDER BY ${sortColumn} ${direction} NULLS LAST, u.id
           LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
         [...values, window.pageSize, (window.page - 1) * window.pageSize],
       ),

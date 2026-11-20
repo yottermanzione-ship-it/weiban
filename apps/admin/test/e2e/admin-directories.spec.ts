@@ -275,6 +275,7 @@ test('Weiban OS persists appearance, opens search results and exports masked use
   await expect(html).toHaveAttribute('data-theme', 'light');
   await page.reload();
   await expect(html).toHaveAttribute('data-theme', 'light');
+  await expect(page.getByRole('button', { name: '全局搜索', exact: true })).toBeVisible();
 
   await page.keyboard.press('Control+k');
   const spotlight = page.getByRole('combobox', { name: '检索页面、用户、角色、模型' });
@@ -295,4 +296,107 @@ test('Weiban OS persists appearance, opens search results and exports masked use
     expect(csv).not.toContain(userId);
     expect(csv).toContain(userId.slice(0, 4) + '…' + userId.slice(-4));
   }
+});
+
+test('user amounts and the two dates toggle server-side sort directions independently', async ({
+  page,
+}) => {
+  await signIn(page);
+  await expect(page.getByRole('link', { name: '扫码收款', exact: true })).toHaveAttribute(
+    'href',
+    '/scan-payments',
+  );
+  await expect(page.getByRole('link', { name: '充值记录', exact: true })).toHaveAttribute(
+    'href',
+    '/recharge-records',
+  );
+  await page.getByRole('link', { name: '用户列表', exact: true }).click();
+  const centered = page.locator('.user-membership-value').first();
+  await expect(centered).toBeVisible();
+  await expect(centered).toHaveCSS('text-align', 'left');
+  await expect(centered.locator('..')).toHaveCSS('text-align', 'center');
+  await expect(page.getByRole('columnheader', { name: '会员', exact: true })).toHaveCSS(
+    'text-align',
+    'center',
+  );
+  const dates = page.locator('tbody tr[data-row-key] .user-dates').first();
+  await expect(dates.locator('small')).toHaveText(['注册', '活跃']);
+
+  for (const [label, sort] of [
+    ['余额（积分）升序', 'balance_asc'],
+    ['余额（积分）降序', 'balance_desc'],
+    ['近 30 天消耗升序', 'spent_asc'],
+    ['近 30 天消耗降序', 'spent_desc'],
+    ['注册时间降序', 'newest'],
+    ['注册时间升序', 'oldest'],
+    ['最近活跃降序', 'active_desc'],
+    ['最近活跃升序', 'active_asc'],
+  ] as const) {
+    const requested = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.pathname === '/api/v1/admin/billing/users' && url.searchParams.get('sort') === sort
+      );
+    });
+    await page.getByRole('button', { name: label, exact: true }).click();
+    const response = await requested;
+    expect(response.ok()).toBe(true);
+    const state = (await response.json()) as {
+      items: {
+        user: { createdAt: string; lastActiveAt: string | null };
+        account?: { balanceMicros: number; spentLast30DaysMicros: number };
+      }[];
+    };
+    expect(state.items.length).toBeGreaterThan(1);
+    if (sort.startsWith('balance_') || sort.startsWith('spent_')) {
+      const amounts = state.items.map(({ account }) =>
+        sort.startsWith('balance_')
+          ? (account?.balanceMicros ?? 0)
+          : (account?.spentLast30DaysMicros ?? 0),
+      );
+      expect(amounts).toEqual(amounts.toSorted((a, b) => (sort.endsWith('_asc') ? a - b : b - a)));
+    }
+    const times = state.items.map(({ user }) =>
+      sort.startsWith('active_') ? user.lastActiveAt : user.createdAt,
+    );
+    if (sort === 'active_asc' || sort === 'active_desc') {
+      const active = times.filter((date): date is string => date !== null);
+      expect(times).toEqual([...active, ...Array(times.length - active.length).fill(null)]);
+      expect(active).toEqual(
+        active.toSorted((a, b) =>
+          sort === 'active_asc' ? a.localeCompare(b) : b.localeCompare(a),
+        ),
+      );
+    }
+  }
+});
+
+test('navigation starts loading a page on hover and shows its title while the code arrives', async ({
+  page,
+}) => {
+  let proceed = () => {};
+  const gate = new Promise<void>((resolve) => {
+    proceed = resolve;
+  });
+  await signIn(page);
+  await page.route('**/assets/settings-*.js', async (route) => {
+    await gate;
+    await route.continue();
+  });
+  try {
+    const settings = page.getByRole('link', { name: '系统设置', exact: true });
+    const started = page.waitForRequest((request) =>
+      /\/assets\/settings-[^/]+\.js$/.test(request.url()),
+    );
+    await settings.hover();
+    await started;
+    await expect(page).not.toHaveURL(/\/settings$/);
+    await settings.click();
+    await expect(
+      page.locator('section[aria-busy="true"]').getByRole('heading', { name: '系统设置' }),
+    ).toBeVisible();
+  } finally {
+    proceed();
+  }
+  await expect(page.getByText('每用户限流与线路健康', { exact: true })).toBeVisible();
 });
