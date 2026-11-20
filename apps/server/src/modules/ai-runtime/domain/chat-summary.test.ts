@@ -4,10 +4,42 @@ import {
   fitSummaryPiece,
   importantMemoryIntent,
   renderChatSummary,
+  parseSummaryJson,
+  summarySubmission,
   validateSummaryAnswer,
 } from './chat-summary.js';
 
 describe('滚动总结的来源与权益', () => {
+  it('只拆完整外层 JSON 围栏，纯叙述和围栏外文字不可成为摘要', () => {
+    const valid = { items: [{ text: '共同约定', sourceIds: ['m1'] }] };
+    expect(parseSummaryJson('```json\n' + JSON.stringify(valid) + '\n```')).toEqual(valid);
+    expect(() => parseSummaryJson('补充说明\n```json\n{}\n```')).toThrow('summary_json');
+    expect(() => validateSummaryAnswer({ text: '没有可验证来源的说明' }, new Map())).toThrow(
+      'summary_fields',
+    );
+    expect(() =>
+      validateSummaryAnswer({ items: [{ text: '约定', sourceIds: [] }] }, new Map()),
+    ).toThrow('summary_reference_fields');
+  });
+  it('短编号只绑定此批，旧裸 ID 仅指向一次完整送入的消息', () => {
+    const input = {
+      previous: [{ id: 'old', at: '2026-01-01', text: '之前的约定' }],
+      messages: [
+        { id: 'whole:0:2', messageId: 'whole', at: '2026-01-02', sender: 'user', text: '全句' },
+        { id: 'tail:3:5', messageId: 'tail', at: '2026-01-03', sender: 'user', text: '结尾' },
+        { id: 'head:0:2', messageId: 'head', at: '2026-01-03', sender: 'user', text: '开头' },
+      ],
+      partialMessageId: 'head',
+    };
+    const old = summarySubmission(input);
+    expect([...old.sources.keys()]).toEqual(['old', 'whole:0:2', 'tail:3:5', 'head:0:2', 'whole']);
+    const compact = summarySubmission({ ...input, shortRefs: true });
+    expect([...compact.sources.keys()]).toEqual(['p1', 'm1', 'm2', 'm3']);
+    expect(JSON.stringify(compact.payload)).not.toContain('messageId');
+    expect(() =>
+      validateSummaryAnswer({ items: [{ text: '来源错', sourceIds: ['m4'] }] }, compact.sources),
+    ).toThrow('summary_unknown_source');
+  });
   it('超长旧消息按实际 JSON 字节连续分片，符号及中文不丢失', () => {
     const text = '汉字"😀\\\n'.repeat(90);
     const source = { messageId: 'source', at: '2026-11-18', sender: 'user' };

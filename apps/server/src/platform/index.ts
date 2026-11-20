@@ -25,7 +25,7 @@ export {
   type Db,
   type DbTx,
 } from './db/database.js';
-export { newId } from './db/ids.js';
+export { newId, modelTaskKey } from './db/ids.js';
 
 export { EVENT_BUS, EventBus, type EventSubscription, type EventOf } from './events/event-bus.js';
 export { OUTBOX, Outbox } from './events/outbox.js';

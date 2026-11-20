@@ -326,7 +326,7 @@ async function inspectSummaries() {
       await client.query<{ id: string | null; user_id: string | null; ciphertext: Buffer | null }>(`
       SELECT g.id,g.user_id,g.ciphertext FROM ai_runtime.chat_summary_states s
       JOIN ai_runtime.memory_states m ON m.id=s.parent_id
-      JOIN LATERAL (SELECT id,status FROM model_access.usage_records u WHERE u.conversation_id=m.conversation_id AND u.prompt_template_version='chat-summary-v2' AND u.scenario_mode='normal' AND u.created_at<=s.updated_at+interval '1 minute' ORDER BY u.created_at DESC LIMIT 1) u ON true
+      JOIN LATERAL (SELECT id,status FROM model_access.usage_records u WHERE u.conversation_id=m.conversation_id AND u.prompt_template_version IN ('chat-summary-v2','chat-summary-v3') AND u.scenario_mode='normal' AND u.created_at<=s.updated_at+interval '1 minute' ORDER BY u.created_at DESC LIMIT 1) u ON true
       LEFT JOIN LATERAL (SELECT id,user_id,ciphertext FROM model_access.generation_results g WHERE g.usage_record_id=u.id AND g.phase='complete' ORDER BY g.created_at DESC LIMIT 1) g ON true
       WHERE s.scope='normal' AND s.target_seq>s.covered_seq AND u.status='succeeded' AND s.updated_at <= '2026-11-10T12:55:35.715Z' ORDER BY s.updated_at DESC LIMIT 7
     `)

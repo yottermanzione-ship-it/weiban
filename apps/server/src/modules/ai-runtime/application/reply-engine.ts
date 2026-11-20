@@ -25,10 +25,12 @@ import {
   type Logger,
 } from '../../../platform/index.js';
 import { CHAT_PARTICIPANT_PORT } from '../../chat/index.js';
+import { nextLocalMidnight, PLATFORM_TIME_ZONE } from '../../../platform/time/local-time.js';
 import { MODEL_GATEWAY_PORT, MODEL_PLATFORM_GATEWAY_PORT } from '../../model-access/index.js';
 import { replyPlans } from '../infra/db/schema.js';
-import { ReplyPlanStore, type ReplyPlan } from './plan-store.js';
+import { ReplyPlanStore, replyModelTaskKey, type ReplyPlan } from './plan-store.js';
 import { ReplyContext, ReplySnapshot } from './reply-context.js';
+import { modelFailureReason } from '../domain/model-failure.js';
 import { recordBlocked, withoutBlocked } from './model-blocked-messages.js';
 import { callModelForCare, careFallback } from './safety-care.js';
 import { HEALTH_LABEL } from './health-care.js';
@@ -42,6 +44,7 @@ import {
   fixedPrefix,
   lateRecoveryHint,
   permanentFailure,
+  retryableWait,
   waitRetryDelayMs,
 } from '../domain/reply-delivery.js';
 import {
@@ -82,6 +85,8 @@ const Result = z.object({
   charge: z
     .object({ usageRecordId: z.string().nullable(), chargedMicros: z.number().nonnegative() })
     .optional(),
+  usageRecordId: z.string().nullable().optional(),
+  modelPurpose: z.enum(['chat_reply', 'safety_followup']).optional(),
 });
 @Injectable()
 export class ReplyEngine {
@@ -125,6 +130,13 @@ export class ReplyEngine {
       await this.emit(row);
       return;
     }
+    if (
+      row.manualRequested &&
+      !(await this.store.db.transaction((tx) => this.store.manualTriggerVisible(row, tx)))
+    ) {
+      await this.store.cancel(id, 'source_unavailable');
+      return;
+    }
     const snapshot = row.inputCiphertext
       ? ReplySnapshot.parse(await this.store.open(row, 'input'))
       : await this.context.build(row);
@@ -138,6 +150,15 @@ export class ReplyEngine {
     }
     const saved = await this.saveInput(row, snapshot);
     if (!saved) return;
+    // Preparing the snapshot can take time; the original trigger may have been
+    // recalled or hidden since the initial ownership check.
+    if (
+      row.manualRequested &&
+      !(await this.store.db.transaction((tx) => this.store.manualTriggerVisible(row, tx)))
+    ) {
+      await this.store.cancel(id, 'source_unavailable');
+      return;
+    }
     await this.writer.markRead({
       conversationId: row.conversationId,
       participantId: snapshot.participantId,
@@ -167,6 +188,7 @@ export class ReplyEngine {
         {
           ...this.input(row, snapshot, 'check'),
           purpose: 'safety_check',
+          taskKey: replyModelTaskKey(row, 'safety_check'),
           messages: [
             {
               role: 'system',
@@ -194,7 +216,13 @@ export class ReplyEngine {
     // 仍用该用户的私密模型（私密内容不出私密范围，契约 3.29 平台端口 modelRole = adult）。
     const privateCare = inCare && snapshot.scope === 'adult';
     const careAware = (input: GenerateTextInput): GenerateTextInput =>
-      privateCare ? { ...input, purpose: 'safety_followup' } : input;
+      privateCare
+        ? {
+            ...input,
+            purpose: 'safety_followup',
+            taskKey: replyModelTaskKey(row, 'safety_followup'),
+          }
+        : input;
     // H3：一步看图——本轮新图附在请求里，回复正文后顺带输出描述尾标；这里剥掉尾标并收集描述。
     const slots = snapshot.imageSlots;
     const seen: (ImageCaption | null)[] = slots.map(() => null);
@@ -281,6 +309,7 @@ export class ReplyEngine {
       answer = await checked(await callModelForCare(gw, guard, facts, this.platform), guard);
     }
     let bubbles: string[] = [];
+    let adoptedUsageId: string | null = null;
     let fallbackReason: string | null = null;
     let stickerMood: StickerMood | null = null;
     let photoWanted = false;
@@ -296,6 +325,7 @@ export class ReplyEngine {
     ) {
       // 2026-10-30 双兜底出站过滤：只清本轮检出的习惯词，删完为空时 stripHabits 原样返回，绝不发空。
       bubbles = replyBubbles(answer.value.text);
+      if (bubbles.length) adoptedUsageId = answer.value.usageRecordId;
       stickerMood = marks.get(answer.value)?.mood ?? null;
       photoWanted = marks.get(answer.value)?.photo ?? false;
     }
@@ -314,7 +344,7 @@ export class ReplyEngine {
       else if ((!answer.ok && answer.error === 'content_rejected') || answer.ok)
         bubbles = splitReply(snapshot.deflect, snapshot.splitBubbles);
       else {
-        await this.wait(row, answer.error);
+        await this.wait(row, modelFailureReason(answer));
         return;
       }
     }
@@ -344,8 +374,10 @@ export class ReplyEngine {
           'ai.generate_reply blocked-message record failed',
         ),
       );
-    if (inCare && !bubbles.every((b) => outputAllowed(b, snapshot.policy, false)))
+    if (inCare && !bubbles.every((b) => outputAllowed(b, snapshot.policy, false))) {
       bubbles = careFallback(undefined, snapshot.careVariant, null);
+      adoptedUsageId = null;
+    }
     // T-071 MED-04 第 2 条：识过图的回合，回复里出现名单外真人姓名 → 重写一次，仍不行用安全说法。
     if (!inCare && snapshot.allowedNames) {
       const bad = await this.mediaAi.offendingNames(
@@ -380,6 +412,7 @@ export class ReplyEngine {
             )
           ).length;
         bubbles = accepted ? again : ['图里的人我不太认得呢，你跟我说说？'];
+        adoptedUsageId = accepted && retried.ok ? retried.value.usageRecordId : null;
         const retriedMarks = accepted && retried.ok ? marks.get(retried.value) : undefined;
         stickerMood = retriedMarks?.mood ?? null;
         photoWanted = retriedMarks?.photo ?? false;
@@ -505,6 +538,8 @@ export class ReplyEngine {
         care: inCare,
         ...(contents ? { contents } : {}),
         ...(charge.chargedMicros > 0 ? { charge } : {}),
+        usageRecordId: adoptedUsageId,
+        modelPurpose: privateCare ? 'safety_followup' : 'chat_reply',
       });
       const elapsed = this.clock.nowMs() - Date.parse(snapshot.triggerAt);
       const base = inCare ? 0 : replyDelay(bubbles.join(''), snapshot.instantReply, elapsed);
@@ -654,6 +689,7 @@ export class ReplyEngine {
       responseFormat: 'text',
       // 聊天由网关按当前模型核准的总输出能力分配，包含思考与图片描述，不再统一截成 600/900。
       idempotencyKey: `ai:${row.id}:${row.retryEpoch}:${suffix}`,
+      taskKey: replyModelTaskKey(row),
       meta: {
         personaVersion: snapshot.personaVersion,
         promptTemplateVersion: snapshot.promptTemplateVersion,
@@ -711,24 +747,48 @@ export class ReplyEngine {
   }
   private async wait(row: ReplyPlan, reason: string): Promise<void> {
     // T-20261103e：due_at 记下次巡检最早什么时候再试（按已恢复次数退避）；只有可重试的失败会被巡检捡起。
-    await this.store.db.db
-      .update(replyPlans)
-      .set({
-        status: 'waiting',
-        failure: reason,
-        resultCiphertext: null,
-        leaseId: null,
-        leaseUntil: null,
-        dueAt: new Date(this.clock.nowMs() + waitRetryDelayMs(row.retryEpoch)),
-      })
-      .where(
-        and(
-          eq(replyPlans.id, row.id),
-          row.status === 'sending'
-            ? and(eq(replyPlans.status, 'sending'), eq(replyPlans.nextBubble, 0))
-            : eq(replyPlans.leaseId, row.leaseId!),
-        ),
-      );
+    await this.store.db.transaction(async (tx) => {
+      const dueAt =
+        reason === 'budget_exceeded'
+          ? nextLocalMidnight(this.clock.now(), PLATFORM_TIME_ZONE)
+          : new Date(this.clock.nowMs() + waitRetryDelayMs(row.retryEpoch));
+      const [updated] = await tx.db
+        .update(replyPlans)
+        .set({
+          status: 'waiting',
+          failure: reason,
+          resultCiphertext: null,
+          leaseId: null,
+          leaseUntil: null,
+          dueAt,
+        })
+        .where(
+          and(
+            eq(replyPlans.id, row.id),
+            row.status === 'sending'
+              ? and(eq(replyPlans.status, 'sending'), eq(replyPlans.nextBubble, 0))
+              : eq(replyPlans.leaseId, row.leaseId!),
+          ),
+        )
+        .returning();
+      if (updated) {
+        const blocked = [
+          'insufficient_balance',
+          'budget_exceeded',
+          'request_too_large',
+          'interrupted',
+        ].includes(reason);
+        const scheduled = retryableWait(reason);
+        await this.store.receipt(
+          tx,
+          updated,
+          blocked ? 'blocked' : scheduled ? 'deferred' : 'failed',
+          reason,
+          null,
+          scheduled || reason === 'budget_exceeded' ? dueAt : undefined,
+        );
+      }
+    });
   }
   private logMetaReasoning(characterId: string): void {
     this.logger?.warn({
@@ -739,6 +799,9 @@ export class ReplyEngine {
   }
   private async emit(row: ReplyPlan): Promise<void> {
     const result = Result.parse(await this.store.open(row, 'result'));
+    const purpose =
+      result.modelPurpose ??
+      (result.care && result.snapshot.scope === 'adult' ? 'safety_followup' : 'chat_reply');
     // T-20261103e：上线前已生成、还没开始发的旧结果也按同一规则封顶（发出第一条时连同结果重新加密保存）。
     if (row.nextBubble === 0 && result.contents) {
       const fitted = fitReplyContents(result.contents, fixedPrefix(result.snapshot.quirk.kind));
@@ -793,7 +856,7 @@ export class ReplyEngine {
           scope: 'normal',
         });
         if (!safe.ok) {
-          await this.store.cancel(row.id);
+          await this.store.cancel(row.id, 'delivery_unavailable', undefined, purpose);
           return;
         }
         conversation.contentScope = 'normal';
@@ -805,6 +868,7 @@ export class ReplyEngine {
           { length: Math.max(2, result.bubbles.length) },
           (_, i) => safe[i === 0 ? 0 : 1]!,
         );
+        result.usageRecordId = null;
       }
       await this.store.db.transaction(async (tx) => {
         if (!(await this.store.lock(tx, row.userId, row.conversationId))) return;
@@ -823,7 +887,7 @@ export class ReplyEngine {
       conversation.contentScope !== result.snapshot.scope ||
       !result.bubbles.every((b) => outputAllowed(b, policy, result.snapshot.scope === 'adult'))
     ) {
-      await this.store.cancel(row.id);
+      await this.store.cancel(row.id, 'delivery_unavailable', undefined, purpose);
       return;
     }
     await this.writer.markRead({
@@ -880,7 +944,7 @@ export class ReplyEngine {
           messageId: result.quirkDraftMessageId,
         });
         if (!recalled.ok && recalled.error === 'not_sender') {
-          await this.store.cancel(row.id);
+          await this.store.cancel(row.id, 'delivery_unavailable', undefined, purpose);
           return;
         }
       }
@@ -904,6 +968,10 @@ export class ReplyEngine {
           )) !== result.snapshot.memoryRevision
         )
           return;
+        if (pending.manualRequested && !(await this.store.manualTriggerVisible(pending, tx))) {
+          await this.store.cancel(pending.id, 'source_unavailable', tx, purpose);
+          return;
+        }
         const posted = await this.writer.postMessage(
           {
             conversationId: row.conversationId,
@@ -933,7 +1001,31 @@ export class ReplyEngine {
             .update(replyPlans)
             .set({ status: 'cancelled', inputCiphertext: null, resultCiphertext: null })
             .where(eq(replyPlans.id, row.id));
+          await this.store.receipt(
+            tx,
+            row,
+            'failed',
+            'delivery_unavailable',
+            null,
+            undefined,
+            purpose,
+          );
           return;
+        }
+        if (row.nextBubble === (result.snapshot.quirk.kind === 'recall' && !result.care ? 1 : 0)) {
+          await this.store.receipt(
+            tx,
+            row,
+            'delivered',
+            result.usageRecordId === undefined
+              ? 'legacy_delivery_without_adoption'
+              : result.usageRecordId === null
+                ? 'local_reply_fallback'
+                : null,
+            result.usageRecordId ?? null,
+            undefined,
+            purpose,
+          );
         }
         if (
           posted.value.content?.type === 'image' &&

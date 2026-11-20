@@ -150,6 +150,7 @@ export const groupMemoryStates = aiRuntimeSchema.table(
     preparedCiphertext: bytes('prepared_ciphertext'),
     resultCiphertext: bytes('result_ciphertext'),
     generation: integer('generation').notNull().default(0),
+    waitReason: text('wait_reason'),
     id: uuid('id').primaryKey(),
     userId: uuid('user_id').notNull(),
     conversationId: uuid('conversation_id').notNull(),
@@ -162,6 +163,9 @@ export const groupMemoryStates = aiRuntimeSchema.table(
     retryAfter: timestamp('retry_after', { withTimezone: true }),
   },
   (t) => [
+    index('group_memory_funding_due_idx')
+      .on(t.retryAfter)
+      .where(sql`${t.waitReason}='insufficient_balance'`),
     unique('group_memory_states_user_id_conversation_id_key').on(t.userId, t.conversationId),
     check(
       'group_memory_states_check',
@@ -302,6 +306,8 @@ export const memoryStates = aiRuntimeSchema.table(
     retryAfter: timestamp('retry_after', { withTimezone: true }),
     factTriggerSeq: bigint('fact_trigger_seq', { mode: 'number' }).notNull().default(0),
     factAttempts: integer('fact_attempts').notNull().default(0),
+    factWaitReason: text('fact_wait_reason'),
+    factGeneration: integer('fact_generation').notNull().default(0),
     barrierSeq: bigint('barrier_seq', { mode: 'number' }).notNull().default(0),
     cursorSeq: bigint('cursor_seq', { mode: 'number' }).notNull().default(0),
     /** 分段摘要（最近批次滚动，normal/adult 分开，保留 4000 字）。 */
@@ -324,6 +330,9 @@ export const memoryStates = aiRuntimeSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
   (t) => [
+    index('memory_funding_due_idx')
+      .on(t.retryAfter)
+      .where(sql`${t.factWaitReason}='insufficient_balance'`),
     unique('memory_state_owner_idx').on(t.userId, t.characterId, t.conversationId),
     check(
       'memory_state_counters',
@@ -348,15 +357,30 @@ export const chatSummaryStates = aiRuntimeSchema.table(
     ciphertext: bytes('ciphertext'),
     preparedCiphertext: bytes('prepared_ciphertext'),
     attempts: integer('attempts').notNull().default(0),
+    attemptGeneration: integer('attempt_generation').notNull().default(0),
+    lastFailure: text('last_failure'),
+    retryCharLimit: integer('retry_char_limit'),
     retryAfter: timestamp('retry_after', { withTimezone: true }),
     leaseId: uuid('lease_id'),
     leaseUntil: timestamp('lease_until', { withTimezone: true }),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
   (t) => [
+    index('chat_summary_funding_due_idx')
+      .on(t.retryAfter)
+      .where(sql`${t.lastFailure}='insufficient_balance'`),
     unique('chat_summary_parent_scope_idx').on(t.parentId, t.scope),
     check('chat_summary_scope_check', sql`${t.scope} IN ('normal','adult')`),
   ],
+);
+export const summaryRefundJobs = aiRuntimeSchema.table(
+  'summary_refund_jobs',
+  {
+    usageRecordId: uuid('usage_record_id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    retryAfter: timestamp('retry_after', { withTimezone: true }).notNull(),
+  },
+  (t) => [index('summary_refunds_due_idx').on(t.retryAfter)],
 );
 export const chatSummaryVersions = aiRuntimeSchema.table(
   'chat_summary_versions',
@@ -366,6 +390,7 @@ export const chatSummaryVersions = aiRuntimeSchema.table(
       .notNull()
       .references(() => chatSummaryStates.id, { onDelete: 'cascade' }),
     version: integer('version').notNull(),
+    adoptedUsageId: uuid('adopted_usage_id'),
     fromSeq: bigint('from_seq', { mode: 'number' }).notNull(),
     toSeq: bigint('to_seq', { mode: 'number' }).notNull(),
     ciphertext: bytes('ciphertext').notNull(),
@@ -481,6 +506,7 @@ export const replyPlans = aiRuntimeSchema.table(
     resultCiphertext: bytes('result_ciphertext'),
     nextBubble: integer('next_bubble').notNull().default(0),
     retryEpoch: integer('retry_epoch').notNull().default(0),
+    manualRequested: boolean('manual_requested').notNull().default(false),
     failure: text('failure'),
     careUntil: timestamp('care_until', { withTimezone: true }),
   },
@@ -549,6 +575,10 @@ export const proactivePlans = aiRuntimeSchema.table(
     priority: integer('priority').notNull().default(0),
     status: text('status').notNull(),
     dueAt: timestamp('due_at', { withTimezone: true }).notNull(),
+    retryCount: integer('retry_count').notNull().default(0),
+    retryReason: text('retry_reason'),
+    retryEpoch: text('retry_epoch'),
+    retryUntil: timestamp('retry_until', { withTimezone: true }),
     /** 第一次因 P-09 延后的时间；超过 60 分钟放弃。 */
     deferredSince: timestamp('deferred_since', { withTimezone: true }),
     outcome: text('outcome'),
@@ -560,6 +590,9 @@ export const proactivePlans = aiRuntimeSchema.table(
     unique('proactive_plan_source_idx').on(t.userId, t.characterId, t.sourceRef),
     check('proactive_plan_status', sql`${t.status} IN ('planned','generating','sent','dropped')`),
     index('proactive_plan_due_idx').on(t.status, t.dueAt),
+    index('proactive_retry_expiry_idx')
+      .on(t.retryUntil)
+      .where(sql`${t.retryReason} IS NOT NULL AND ${t.status}='planned'`),
     index('proactive_plan_topic_idx').on(t.userId, t.characterId, t.topicKey),
   ],
 );

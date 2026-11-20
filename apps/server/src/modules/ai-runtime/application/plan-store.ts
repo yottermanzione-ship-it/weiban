@@ -1,6 +1,15 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { and, count, desc, eq, inArray, lt, lte, ne, or } from 'drizzle-orm';
-import { Id, Timestamp, type IdentityAccountStatusPort, type Tx } from '@weiban/contracts';
+import { and, count, desc, eq, inArray, isNull, lt, lte, ne, or } from 'drizzle-orm';
+import {
+  Id,
+  Timestamp,
+  MODEL_TASK_OUTCOME_PORT,
+  type ModelTaskOutcomePort,
+  type ChatReplyTriggerReadPort,
+  type IdentityAccountStatusPort,
+  type SyncPort,
+  type Tx,
+} from '@weiban/contracts';
 import {
   AppError,
   asDbTx,
@@ -9,6 +18,7 @@ import {
   ENVELOPE_CRYPTO,
   JOB_QUEUE,
   LOGGER,
+  modelTaskKey,
   newId,
   type Clock,
   type Database,
@@ -18,6 +28,8 @@ import {
   type Logger,
 } from '../../../platform/index.js';
 import { IDENTITY_ACCOUNT_STATUS_PORT } from '../../identity/index.js';
+import { CHAT_REPLY_TRIGGER_READ_PORT } from '../../chat/index.js';
+import { SYNC_PORT } from '../../realtime/index.js';
 import {
   companionSettings,
   adultBoundaryStates,
@@ -45,6 +57,15 @@ export const GENERATE_REPLY_JOB = 'ai.generate_reply';
 /** T-20261103e：等待中回复的定时巡检。 */
 export const SWEEP_WAITING_REPLIES_JOB = 'ai.sweep_waiting_replies';
 export type ReplyPlan = typeof replyPlans.$inferSelect;
+export function replyModelTaskKey(
+  row: ReplyPlan,
+  purpose: 'chat_reply' | 'safety_followup' | 'safety_check' = 'chat_reply',
+) {
+  return modelTaskKey(
+    row.userId,
+    (purpose === 'chat_reply' ? '' : purpose + ':') + 'reply:' + row.id,
+  );
+}
 export interface EnqueueReply {
   userId: string;
   characterId: string;
@@ -56,6 +77,7 @@ export interface EnqueueReply {
 }
 /** T-066 迁移 0038 的表（都按 user_id 归属）。 */
 const T066_TABLES = [
+  'summary_refund_jobs',
   'memory_sharing_settings',
   'chat_visits',
   'joint_events',
@@ -99,7 +121,54 @@ export class ReplyPlanStore {
     @Inject(JOB_QUEUE) readonly jobs: JobQueue,
     @Inject(IDENTITY_ACCOUNT_STATUS_PORT) readonly accounts: IdentityAccountStatusPort,
     @Optional() @Inject(LOGGER) readonly logger?: Logger,
+    @Optional() @Inject(MODEL_TASK_OUTCOME_PORT) private readonly outcomes?: ModelTaskOutcomePort,
+    @Optional() @Inject(SYNC_PORT) private readonly sync?: SyncPort,
+    @Optional()
+    @Inject(CHAT_REPLY_TRIGGER_READ_PORT)
+    private readonly triggers?: ChatReplyTriggerReadPort,
   ) {}
+  async receipt(
+    tx: DbTx,
+    row: ReplyPlan,
+    state: Parameters<ModelTaskOutcomePort['record']>[0]['state'],
+    reason: string | null,
+    usageRecordId?: string | null,
+    retryAt?: Date,
+    purpose: 'chat_reply' | 'safety_followup' = 'chat_reply',
+  ) {
+    if (row.kind !== 'message') return;
+    await this.outcomes?.record(
+      {
+        userId: row.userId,
+        taskKey: replyModelTaskKey(row, purpose),
+        purpose,
+        state,
+        reason: reason && /^[a-z][a-z0-9_]{0,79}$/.test(reason) ? reason : null,
+        usageRecordId: Id.safeParse(usageRecordId).success ? usageRecordId : null,
+        retryAt: retryAt?.toISOString(),
+      },
+      tx,
+    );
+    if (state !== 'delivered' || row.failure || row.retryEpoch > 0)
+      await this.notifyDelivery(tx, row);
+  }
+  async manualTriggerVisible(row: ReplyPlan, tx: DbTx): Promise<boolean> {
+    if (!row.manualRequested) return true;
+    const visible = await this.triggers?.visibleReplyTriggers(
+      row.userId,
+      row.conversationId,
+      [row.triggerId],
+      tx,
+    );
+    return visible?.includes(row.triggerId) === true;
+  }
+  async notifyDelivery(tx: DbTx, row: ReplyPlan) {
+    if (row.kind !== 'message') return;
+    await this.sync?.appendUpdate(tx, row.userId, {
+      type: 'data.changed',
+      data: { section: 'reply_delivery', characterId: row.characterId, itemId: row.triggerId },
+    });
+  }
   async lock(tx: DbTx, userId: string, conversationId?: string): Promise<boolean> {
     await tx.query("SELECT pg_advisory_xact_lock(hashtextextended('ai_runtime:user:' || $1,0))", [
       userId,
@@ -185,27 +254,29 @@ export class ReplyPlanStore {
         return null;
       }
       const newest = all
-        .filter((p) => p.status === 'queued')
+        .filter((p) => p.status === 'queued' && !p.manualRequested)
         .sort(
           (a, b) => b.triggerSeq - a.triggerSeq || b.createdAt.getTime() - a.createdAt.getTime(),
         )[0];
-      if (row.status === 'queued' && newest?.id !== id) {
-        await tx.db
-          .update(replyPlans)
-          .set({ status: 'cancelled', inputCiphertext: null, resultCiphertext: null })
-          .where(eq(replyPlans.id, id));
+      if (row.status === 'queued' && !row.manualRequested && newest?.id !== id) {
+        await this.cancel(id, undefined, tx);
         return null;
       }
-      await tx.db
-        .update(replyPlans)
-        .set({ status: 'cancelled', inputCiphertext: null, resultCiphertext: null })
-        .where(
-          and(
-            eq(replyPlans.conversationId, row.conversationId),
-            eq(replyPlans.status, 'queued'),
-            ne(replyPlans.id, id),
-          ),
-        );
+      if (!row.manualRequested) {
+        const superseded = await tx.db
+          .update(replyPlans)
+          .set({ status: 'cancelled', inputCiphertext: null, resultCiphertext: null })
+          .where(
+            and(
+              eq(replyPlans.conversationId, row.conversationId),
+              eq(replyPlans.status, 'queued'),
+              ne(replyPlans.id, id),
+              eq(replyPlans.manualRequested, false),
+            ),
+          )
+          .returning();
+        for (const p of superseded) await this.cancelledReceipt(tx, p);
+      }
       const [claimed] = await tx.db
         .update(replyPlans)
         .set({
@@ -235,38 +306,79 @@ export class ReplyPlanStore {
       plain.fill(0);
     }
   }
-  async cancel(id: string): Promise<void> {
-    await this.db.db
-      .update(replyPlans)
-      .set({
-        status: 'cancelled',
-        inputCiphertext: null,
-        resultCiphertext: null,
-        leaseId: null,
-        leaseUntil: null,
-      })
-      .where(eq(replyPlans.id, id));
+  private async cancelledReceipt(
+    tx: DbTx,
+    row: ReplyPlan,
+    purpose: 'chat_reply' | 'safety_followup' = 'chat_reply',
+  ) {
+    if (row.nextBubble || !row.failure) return;
+    const deliberate = ['source_unavailable', 'manual_retry', 'superseded'].includes(row.failure);
+    await this.receipt(
+      tx,
+      row,
+      deliberate ? 'cancelled' : 'failed',
+      row.failure,
+      null,
+      undefined,
+      purpose,
+    );
+  }
+  async cancel(
+    id: string,
+    reason?: string,
+    transaction?: DbTx,
+    purpose: 'chat_reply' | 'safety_followup' = 'chat_reply',
+  ): Promise<void> {
+    const apply = async (tx: DbTx) => {
+      const [row] = await tx.db
+        .update(replyPlans)
+        .set({
+          status: 'cancelled',
+          inputCiphertext: null,
+          resultCiphertext: null,
+          leaseId: null,
+          leaseUntil: null,
+          ...(reason ? { failure: reason } : {}),
+        })
+        .where(
+          and(
+            eq(replyPlans.id, id),
+            inArray(replyPlans.status, ['queued', 'generating', 'sending', 'waiting']),
+          ),
+        )
+        .returning();
+      if (row) await this.cancelledReceipt(tx, row, purpose);
+    };
+    if (transaction) await apply(transaction);
+    else await this.db.transaction(apply);
   }
   /**
    * T-20261103e：确定性失败直接作废，failure 记原因（如 db_23514）。只动还在进行中的计划；
    * 已发出的气泡不受影响，作废后也不会再发。返回是否真的改了。
    */
   async fail(id: string, reason: string): Promise<boolean> {
-    const rows = await this.db.db
-      .update(replyPlans)
-      .set({
-        status: 'cancelled',
-        failure: reason,
-        inputCiphertext: null,
-        resultCiphertext: null,
-        leaseId: null,
-        leaseUntil: null,
-      })
-      .where(
-        and(eq(replyPlans.id, id), inArray(replyPlans.status, ['queued', 'generating', 'sending'])),
-      )
-      .returning({ id: replyPlans.id });
-    return rows.length > 0;
+    return this.db.transaction(async (tx) => {
+      const rows = await tx.db
+        .update(replyPlans)
+        .set({
+          status: 'cancelled',
+          failure: reason,
+          inputCiphertext: null,
+          resultCiphertext: null,
+          leaseId: null,
+          leaseUntil: null,
+        })
+        .where(
+          and(
+            eq(replyPlans.id, id),
+            inArray(replyPlans.status, ['queued', 'generating', 'sending']),
+          ),
+        )
+        .returning();
+      for (const row of rows)
+        if (row.nextBubble === 0) await this.receipt(tx, row, 'failed', reason);
+      return rows.length > 0;
+    });
   }
   async reconcile(): Promise<void> {
     const rows = await this.db.db
@@ -289,28 +401,52 @@ export class ReplyPlanStore {
         { retryLimit: 10, retryBackoff: true },
       );
   }
-  async recover(userId?: string): Promise<void> {
+  async recover(userId?: string, wake?: 'balance' | 'model'): Promise<void> {
     if (userId && !Id.safeParse(userId).success) throw new AppError('bad_request', '无效恢复任务');
     // 每个会话只恢复最新批次，旧waiting一起取消；超过一页以持久任务继续，不遗漏后面的用户。
-    const rows = await this.db.db
-      .selectDistinctOn([replyPlans.userId, replyPlans.conversationId])
-      .from(replyPlans)
-      .where(
-        and(eq(replyPlans.status, 'waiting'), userId ? eq(replyPlans.userId, userId) : undefined),
-      )
-      .orderBy(
-        replyPlans.userId,
-        replyPlans.conversationId,
-        desc(replyPlans.triggerSeq),
-        desc(replyPlans.createdAt),
-      )
-      .limit(200);
-    for (const row of rows) await this.requeueLatestWaiting(row.userId, row.conversationId);
+    const allowed =
+      wake === 'balance'
+        ? ['insufficient_balance']
+        : wake === 'model'
+          ? [
+              ...RETRYABLE_WAIT_FAILURES,
+              'not_configured',
+              'no_route',
+              'no_matching_route_bounds',
+              'invalid_key',
+              'quota_exhausted',
+              'model_not_allowed',
+              'capability_missing',
+            ]
+          : null;
+    const { rows } = await this.db.query<{ user_id: string; conversation_id: string }>(
+      `
+      SELECT user_id,conversation_id FROM (
+        SELECT DISTINCT ON (user_id,conversation_id) user_id,conversation_id,failure,due_at
+        FROM ai_runtime.reply_plans WHERE status='waiting' AND ($1::uuid IS NULL OR user_id=$1)
+        ORDER BY user_id,conversation_id,trigger_seq DESC,created_at DESC
+      ) latest WHERE failure IS DISTINCT FROM 'interrupted' AND ($2::text[] IS NULL OR failure=ANY($2))
+        AND (failure IS DISTINCT FROM 'budget_exceeded' OR due_at<=$3) LIMIT 200`,
+      [userId ?? null, allowed, this.clock.now()],
+    );
+    for (const row of rows)
+      await this.requeueLatestWaiting(
+        row.user_id,
+        row.conversation_id,
+        (plan) =>
+          plan.failure !== 'interrupted' &&
+          (!allowed || allowed.includes(plan.failure ?? '')) &&
+          (plan.failure !== 'budget_exceeded' || plan.dueAt <= this.clock.now()),
+      );
     if (rows.length === 200)
-      await this.jobs.send('ai.recover_replies', userId ? { userId } : {}, {
-        retryLimit: 10,
-        retryBackoff: true,
-      });
+      await this.jobs.send(
+        'ai.recover_replies',
+        { userId, wake, target: 'direct' },
+        {
+          retryLimit: 10,
+          retryBackoff: true,
+        },
+      );
   }
   /**
    * T-20261103e 定时巡检（每 5 分钟）：模型临时不可用而等待的回复，退避重试，最长等 6 小时。
@@ -322,25 +458,30 @@ export class ReplyPlanStore {
   async sweepWaiting(): Promise<{ expired: number; recovered: number }> {
     const now = this.clock.now();
     const cutoff = new Date(now.getTime() - REPLY_WAIT_MAX_MS);
-    const retryable = [...RETRYABLE_WAIT_FAILURES];
-    const expired = await this.db.db
-      .update(replyPlans)
-      .set({
-        status: 'cancelled',
-        failure: 'wait_expired',
-        inputCiphertext: null,
-        resultCiphertext: null,
-        leaseId: null,
-        leaseUntil: null,
-      })
-      .where(
-        and(
-          eq(replyPlans.status, 'waiting'),
-          inArray(replyPlans.failure, retryable),
-          lt(replyPlans.createdAt, cutoff),
-        ),
-      )
-      .returning({ id: replyPlans.id });
+    const retryable = [...RETRYABLE_WAIT_FAILURES, 'budget_exceeded'];
+    const expired = await this.db.transaction(async (tx) => {
+      const rows = await tx.db
+        .update(replyPlans)
+        .set({
+          status: 'cancelled',
+          failure: 'wait_expired',
+          inputCiphertext: null,
+          resultCiphertext: null,
+          leaseId: null,
+          leaseUntil: null,
+        })
+        .where(
+          and(
+            eq(replyPlans.status, 'waiting'),
+            inArray(replyPlans.failure, retryable),
+            lt(replyPlans.createdAt, cutoff),
+            or(ne(replyPlans.failure, 'budget_exceeded'), lte(replyPlans.dueAt, now)),
+          ),
+        )
+        .returning();
+      for (const row of rows) await this.cancelledReceipt(tx, row);
+      return rows.length;
+    });
     const candidates = await this.db.query<{ user_id: string; conversation_id: string }>(
       `SELECT user_id, conversation_id FROM (
          SELECT DISTINCT ON (user_id, conversation_id) user_id, conversation_id, failure, due_at, created_at
@@ -357,16 +498,19 @@ export class ReplyPlanStore {
         await this.requeueLatestWaiting(
           c.user_id,
           c.conversation_id,
-          (row) => retryableWait(row.failure) && row.dueAt <= now && row.createdAt >= cutoff,
+          (row) =>
+            (retryableWait(row.failure) || row.failure === 'budget_exceeded') &&
+            row.dueAt <= now &&
+            row.createdAt >= cutoff,
         )
       )
         recovered++;
-    if (expired.length || recovered)
+    if (expired || recovered)
       this.logger?.info(
-        { code: 'ai_reply_wait_sweep', expired: expired.length, recovered },
+        { code: 'ai_reply_wait_sweep', expired, recovered },
         'ai.sweep_waiting_replies',
       );
-    return { expired: expired.length, recovered };
+    return { expired, recovered };
   }
   /**
    * 每个会话只恢复最新批次，旧 waiting 一起取消（账号不可用时全部取消、不恢复）。
@@ -394,7 +538,7 @@ export class ReplyPlanStore {
         .limit(1)
         .for('update');
       if (!latest || (accept && !accept(latest))) return false;
-      await tx.db
+      const cancelled = await tx.db
         .update(replyPlans)
         .set({
           status: 'cancelled',
@@ -409,10 +553,16 @@ export class ReplyPlanStore {
             eq(replyPlans.userId, userId),
             eq(replyPlans.status, 'waiting'),
             active
-              ? and(ne(replyPlans.id, latest.id), lte(replyPlans.triggerSeq, latest.triggerSeq))
+              ? and(
+                  ne(replyPlans.id, latest.id),
+                  lte(replyPlans.triggerSeq, latest.triggerSeq),
+                  or(isNull(replyPlans.failure), ne(replyPlans.failure, 'interrupted')),
+                )
               : undefined,
           ),
-        );
+        )
+        .returning();
+      for (const row of cancelled) await this.cancelledReceipt(tx, row);
       if (!active) return false;
       const [updated] = await tx.db
         .update(replyPlans)
@@ -424,7 +574,10 @@ export class ReplyPlanStore {
         })
         .where(and(eq(replyPlans.id, latest.id), eq(replyPlans.status, 'waiting')))
         .returning();
-      if (updated) await this.schedule(tx, latest.id, this.clock.now());
+      if (updated) {
+        await this.schedule(tx, latest.id, this.clock.now());
+        await this.receipt(tx, updated, 'deferred', updated.failure, null, updated.dueAt);
+      }
       return !!updated;
     });
   }

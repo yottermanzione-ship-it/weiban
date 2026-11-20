@@ -72,6 +72,21 @@ export const accounts = billingSchema.table(
   ],
 );
 
+export const foregroundWaiters = billingSchema.table(
+  'foreground_waiters',
+  {
+    id: uuid('id').primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    expiresAt: tz('expires_at').notNull(),
+  },
+  (t) => [
+    index('foreground_waiters_account_idx').on(t.accountId, t.expiresAt),
+    index('foreground_waiters_expiry_idx').on(t.expiresAt),
+  ],
+);
+
 /** 流水（只增不改）。余额 = 本账户流水合计（对账第 ① 层核对）。 */
 export const ledgerEntries = billingSchema.table(
   'ledger_entries',

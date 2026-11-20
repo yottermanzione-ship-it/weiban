@@ -1,5 +1,6 @@
 /** 契约 ChatReadPort（5.7 起每个读方法都有可选 tx，拿着事务时必须传，见 docs/backend/kernel.md「事务与端口」）。 */
 export const CHAT_READ_PORT = Symbol('weiban.chat.read-port');
+export const CHAT_REPLY_TRIGGER_READ_PORT = Symbol('weiban.chat.reply-trigger-read-port');
 export const CHAT_PARTICIPANT_PORT = Symbol('weiban.chat.participant-port');
 export const CHAT_ADMIN_PORT = Symbol('weiban.chat.admin-port');
 export const CHAT_USER_PORT = Symbol('weiban.chat.user-port');

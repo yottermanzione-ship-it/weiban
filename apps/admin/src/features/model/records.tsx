@@ -1,3 +1,5 @@
+import { explainError } from './outcome-labels.js';
+import { Link } from 'react-router-dom';
 import { downloadCsvRows } from '../../ui/csv.js';
 import { useEffect, useMemo, useState } from 'react';
 import { Button, DatePicker, Input, Select, Space, Tag, Typography } from 'antd';
@@ -607,6 +609,8 @@ export function RecordsTab({
               <span className="mono">{detail.usageRecordId}</span>
             </div>
           </div>
+          <Link to={`/usage?view=tasks&range=30d&usage=${detail.usageRecordId}`}>查看关联任务</Link>
+          {detail.errorCode && <p>{explainError(detail.errorCode)}</p>}
           <div className="detail-muted">为保护隐私，这里不显示消息原文。</div>
         </RecordDrawer>
       )}

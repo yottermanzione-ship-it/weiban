@@ -29,6 +29,7 @@ import {
 } from '../infra/db/schema.js';
 import { GENERATE_REPLY_JOB, ReplyPlanStore, SWEEP_WAITING_REPLIES_JOB } from './plan-store.js';
 import { REPLY_WAIT_SWEEP_CRON } from '../domain/reply-delivery.js';
+import { factJobKey } from '../domain/memory-funding.js';
 import { MemoryService, EXTRACT_MEMORY_JOB, type MemoryJob } from './memory.js';
 import { PrivateDigestService, PRIVATE_DIGEST_JOB } from './private-digest.js';
 import { CHAT_SUMMARY_JOB } from './chat-summary.js';
@@ -135,6 +136,8 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       await this.jobs.send('ai.reconcile', {}, { retryLimit: 10, retryBackoff: true });
   }
   async onModuleInit(): Promise<void> {
+    this.proactive.checkEcologyMessage = (userId, characterId, runId) =>
+      this.ecology.canResumeMessage(userId, characterId, runId);
     this.catalogDeletion.bindEcology({
       isReferenced: (keys) => this.ecologySettings.usesDecisionModel(keys),
       clear: (tx, keys, operator) => this.ecologySettings.clearDeletedDecision(tx, keys, operator),
@@ -153,19 +156,29 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       (j) => this.engine.run(j.data.planId),
       { pollingIntervalSeconds: 0.5, localConcurrency: 4 },
     );
-    await this.jobs.work<{ userId?: string }>('ai.recover_replies', async (job) => {
-      await this.store.recover(job.data.userId);
-      await this.groupChat.recover(job.data.userId);
+    await this.jobs.work<{
+      userId?: string;
+      wake?: 'balance' | 'model';
+      target?: 'group' | 'direct';
+    }>('ai.recover_replies', async (job) => {
+      if (job.data.target !== 'group') await this.store.recover(job.data.userId, job.data.wake);
+      if (job.data.target !== 'direct') await this.groupChat.recover(job.data.userId);
     });
-    await this.jobs.work<MemoryJob>(EXTRACT_MEMORY_JOB, (j) => this.memory.extract(j.data), {
-      pollingIntervalSeconds: 0.5,
-      localConcurrency: 2,
-    });
-    await this.jobs.work<{ id: string }>(
+    await this.jobs.workCoalesced<MemoryJob>(
+      EXTRACT_MEMORY_JOB,
+      (j) => this.memory.extract(j.data),
+      (data) => factJobKey(data.userId, data.conversationId, data.epoch),
+      {
+        pollingIntervalSeconds: 0.5,
+        localConcurrency: 2,
+      },
+    );
+    await this.jobs.workCoalesced<{ id: string }>(
       CHAT_SUMMARY_JOB,
       async (j) => {
         await this.memory.chatSummaries?.run(j.data.id);
       },
+      (data) => 'chat-summary:' + data.id,
       { pollingIntervalSeconds: 2, localConcurrency: 1 },
     );
     // 旧私密降为日常任务只作取消兼容，不再生成或降范围。
@@ -894,9 +907,10 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       handle: async (event, tx) => {
         // v5 角色生态：积分恢复后解除「积分不足静默暂停」。
         await this.ecologySettings.resume(event.payload.userId, tx);
+        await this.ecology.balanceRestored(event.payload.userId, tx);
         await this.jobs.send(
           'ai.recover_replies',
-          { userId: event.payload.userId },
+          { userId: event.payload.userId, wake: 'balance' },
           { tx, retryLimit: 10, retryBackoff: true },
         );
         // T-096：补揭晓每日一问、补生成回信与提醒说法。
@@ -914,7 +928,7 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
         if (event.payload.available) {
           await this.jobs.send(
             'ai.recover_replies',
-            {},
+            { wake: 'model' },
             { tx, retryLimit: 10, retryBackoff: true },
           );
           const users = await tx.query<{ user_id: string }>(
@@ -933,7 +947,11 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       consumer: 'ai.on_adult_checker_configured',
       eventType: 'model_access.adult_checker_configured',
       handle: async (_event, tx) => {
-        await this.jobs.send('ai.recover_replies', {}, { tx, retryLimit: 10, retryBackoff: true });
+        await this.jobs.send(
+          'ai.recover_replies',
+          { wake: 'model' },
+          { tx, retryLimit: 10, retryBackoff: true },
+        );
       },
     });
   }

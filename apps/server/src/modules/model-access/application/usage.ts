@@ -9,6 +9,7 @@
  *   token：inputTokens 是**未命中缓存**的输入，与 billing 计价一致；totalTokens = 未命中 + 命中 + 输出。
  */
 import { Inject, Injectable, Optional } from '@nestjs/common';
+import { z } from 'zod';
 import {
   ADMIN_USAGE_EXPORT_MAX_ROWS,
   microsToPoints,
@@ -19,6 +20,8 @@ import {
   type AdminUsageSummary,
   type AdminUsageTotals,
   type BillingOwner,
+  type RequestPriceLimit,
+  type VoiceCancellationReason,
   type GenerateTextInput,
   type IdentityDirectoryPort,
   type IdentityUserLabel,
@@ -42,6 +45,14 @@ import { upstreams, usageRecords, generationAttempts } from '../infra/db/schema.
 type UsageRow = typeof usageRecords.$inferSelect;
 /** v3.6：稳定开头字符数 → 估算 token（中文为主，约 0.7～0.8 token / 字，取 0.75）。 */
 const PREFIX_TOKENS_PER_CHAR = 0.75;
+const tokens = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+const recordedTextUsage = z.object({
+  inputTokens: tokens,
+  cachedInputTokens: tokens,
+  outputTokens: tokens,
+  cacheWrite5mTokens: tokens.optional(),
+  cacheWrite1hTokens: tokens.optional(),
+});
 
 // ---------- 网关写入（D-L0-09 使用） ----------
 
@@ -52,6 +63,8 @@ export interface DispatchTiming {
   progressTimeoutMs: number | null;
   routePriority: number | null;
   adapterElapsedMs: number;
+  crossModelReserveMs?: number;
+  overallRemainingMs?: number;
 }
 
 export interface StartUsageInput {
@@ -64,6 +77,7 @@ export interface StartUsageInput {
     | 'characterId'
     | 'conversationId'
     | 'idempotencyKey'
+    | 'taskKey'
     | 'safetyPriority'
     | 'countAsBackground'
     | 'meta'
@@ -76,6 +90,8 @@ export interface StartUsageInput {
 }
 
 export interface FinishUsageInput {
+  requestPriceLimit?: RequestPriceLimit;
+  cancellationReason?: VoiceCancellationReason;
   status: 'succeeded' | 'failed';
   errorCode?: string | null;
   inputTokens: number;
@@ -132,6 +148,7 @@ export class UsageRecorder {
     errorCode: string | null,
     usageState?: 'reported' | 'estimated' | 'unknown',
     dispatchTiming?: DispatchTiming,
+    providerDiagnostic?: import('../infra/provider-observation.js').ProviderDiagnostic,
   ) {
     await this.database.db
       .update(generationAttempts)
@@ -140,7 +157,7 @@ export class UsageRecorder {
         reportedUsage: usage,
         ...(dispatchTiming
           ? {
-              boundSnapshot: sql`jsonb_set(${generationAttempts.boundSnapshot}, '{dispatchTiming}', ${JSON.stringify(dispatchTiming)}::jsonb)`,
+              boundSnapshot: sql`${generationAttempts.boundSnapshot} || ${JSON.stringify({ dispatchTiming, ...(providerDiagnostic ? { providerDiagnostic } : {}) })}::jsonb`,
             }
           : {}),
         usageState: usageState ?? (known ? 'reported' : 'unknown'),
@@ -148,6 +165,32 @@ export class UsageRecorder {
         finishedAt: this.clock.now(),
       })
       .where(eq(generationAttempts.id, id));
+  }
+  async reportedTextUsage(usageRecordId: string) {
+    const [attempt] = await this.database.db
+      .select({ usage: generationAttempts.reportedUsage })
+      .from(generationAttempts)
+      .where(
+        and(
+          eq(generationAttempts.usageRecordId, usageRecordId),
+          eq(generationAttempts.usageState, 'reported'),
+          eq(generationAttempts.phase, 'finished'),
+        ),
+      )
+      .limit(1);
+    const parsed = recordedTextUsage.safeParse(attempt?.usage);
+    return parsed.success ? parsed.data : undefined;
+  }
+  async attemptsForRecovery(generationId: string) {
+    return this.database.db
+      .select({
+        usageRecordId: generationAttempts.usageRecordId,
+        holdId: generationAttempts.holdId,
+        phase: generationAttempts.phase,
+        dispatched: sql<boolean>`${generationAttempts.boundSnapshot} ? 'dispatchTiming'`,
+      })
+      .from(generationAttempts)
+      .where(eq(generationAttempts.generationId, generationId));
   }
   async recoverAttempts(usageRecordId: string, known: boolean) {
     await this.database.db
@@ -188,6 +231,7 @@ export class UsageRecorder {
         upstreamId: s.upstreamId,
         upstreamModelId: s.upstreamModelId,
         idempotencyKey: s.input.idempotencyKey,
+        taskKey: s.input.taskKey ?? null,
         status: 'pending',
         retryCount: 0,
         inputTokens: 0,
@@ -285,6 +329,9 @@ export class UsageRecorder {
       .set({
         status: f.status,
         errorCode: f.errorCode ?? null,
+        requestPriceLimit: f.requestPriceLimit,
+        priceVersionId: f.requestPriceLimit?.priceVersionId,
+        cancellationReason: f.cancellationReason,
         inputTokens: f.inputTokens,
         cachedInputTokens: f.cachedInputTokens,
         cacheWrite5mTokens: f.cacheWrite5mTokens ?? 0,
@@ -524,7 +571,7 @@ export class AdminUsageService {
    * 后台展示「这是谁」：一次批量取昵称 + 登录名（端口一次最多 500 个 ID，这里分批）。
    * 取不到（账号已注销）就不出现在结果里，界面自行退回用户 ID 短码；查询失败不影响用量数据。
    */
-  private async labelsOf(userIds: Iterable<string>): Promise<Record<string, IdentityUserLabel>> {
+  async labelsOf(userIds: Iterable<string>): Promise<Record<string, IdentityUserLabel>> {
     const ids = [...new Set(userIds)].filter(Boolean);
     if (!ids.length || !this.directory) return {};
     const out: Record<string, IdentityUserLabel> = {};

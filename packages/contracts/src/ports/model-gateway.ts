@@ -11,7 +11,7 @@
  */
 import { z } from 'zod';
 import type { ModelRole, ModelScenario } from '../http/model-access.js';
-import type { PortResult } from './common.js';
+import type { PortResult, Tx } from './common.js';
 
 /** 调用用途：用于用量页分类和预算判断。新增用途属于次版本变更。 */
 export const ModelPurpose = z.enum([
@@ -37,6 +37,31 @@ export const ModelPurpose = z.enum([
   'search_candidates',
 ]);
 export type ModelPurpose = z.infer<typeof ModelPurpose>;
+
+/** 业务方在确认采用结果或确定未采用时记录回执。 */
+export const MODEL_TASK_OUTCOME_PORT = Symbol('weiban.model-access.task-outcome');
+export interface ModelTaskOutcomePort {
+  record(
+    input: {
+      taskKey: string;
+      userId: string;
+      purpose: ModelPurpose;
+      state:
+        | 'delivered'
+        | 'displayed'
+        | 'saved'
+        | 'filtered'
+        | 'deferred'
+        | 'blocked'
+        | 'cancelled'
+        | 'failed';
+      reason?: string | null;
+      usageRecordId?: string | null;
+      retryAt?: string | null;
+    },
+    tx?: Tx,
+  ): Promise<void>;
+}
 
 /**
  * 属于「后台功能」的用途：受用户后台每日上限约束；聊天回复不受约束。
@@ -85,6 +110,8 @@ export interface ChatMessageForModel {
 }
 
 export interface GenerateTextInput {
+  /** 业务追踪键，仅在服务端使用，不传给供应商。 */
+  taskKey?: string;
   /** 发起调用的真实用户；可信平台用途也按此ID归属、限频和审计。 */
   userId: string;
   purpose: ModelPurpose;
@@ -289,6 +316,8 @@ export interface ModelNotificationReadPort {
 
 /** 公共计费字段。 */
 export interface MediaCallBase {
+  /** Stable business receipt key shared across eligible attempts. */
+  taskKey?: string;
   userId: string;
   purpose: ModelPurpose;
   billingOwner: BillingOwner;

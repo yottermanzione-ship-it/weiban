@@ -61,6 +61,12 @@ export const ecologyRuns = ai.table(
     modelKey: text('model_key'),
     chargedMicros: bigint('charged_micros', { mode: 'number' }).notNull().default(0),
     latencyMs: integer('latency_ms').notNull().default(0),
+    retryCount: integer('retry_count').notNull().default(0),
+    retryReason: text('retry_reason'),
+    retryEpoch: text('retry_epoch'),
+    retryUntil: timestamp('retry_until', { withTimezone: true }),
+    retryKind: text('retry_kind'),
+    retryAt: tz('retry_at'),
     murmurCiphertext: bytea('murmur_ciphertext'),
     scheduledAt: tz('scheduled_at').notNull(),
     startedAt: tz('started_at'),
@@ -70,6 +76,12 @@ export const ecologyRuns = ai.table(
   (t) => [
     unique('ecology_runs_key').on(t.userId, t.characterId, t.runKey),
     index('ecology_runs_pair_idx').on(t.userId, t.characterId, t.createdAt),
+    index('ecology_retry_due_idx')
+      .on(t.userId, t.retryAt)
+      .where(sql`${t.retryKind} IS NOT NULL`),
+    index('ecology_retry_expiry_idx')
+      .on(t.retryUntil)
+      .where(sql`${t.retryKind} IS NOT NULL`),
     index('ecology_runs_created_idx').on(t.createdAt),
   ],
 );

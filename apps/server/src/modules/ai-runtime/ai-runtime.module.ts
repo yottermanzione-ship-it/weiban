@@ -1,4 +1,5 @@
 import { MemoryService } from './application/memory.js';
+import { MemoryFundingRecovery } from './application/memory-funding-recovery.js';
 import { ChatSummaryService } from './application/chat-summary.js';
 import { PrivateDigestService } from './application/private-digest.js';
 import { ImageCaptionStore } from './application/image-captions.js';
@@ -27,6 +28,8 @@ import { ChatModule } from '../chat/index.js';
 import { CharactersModule } from '../characters/index.js';
 import { ModelAccessModule } from '../model-access/index.js';
 import { ReplyPlanStore } from './application/plan-store.js';
+import { ReplyDeliveryStatusService } from './application/reply-delivery-status.js';
+import { ReplyDeliveryController } from './http/reply-delivery.controller.js';
 import { ReplyContext } from './application/reply-context.js';
 import { ReplyEngine } from './application/reply-engine.js';
 import { AdultBoundaryService } from './application/adult-boundary.js';
@@ -150,6 +153,7 @@ import {
     CompanionSettingsService,
     ScenarioCatalog,
     MemoryService,
+    MemoryFundingRecovery,
     ChatSummaryService,
     // H2：切出私密模式时的干净整理。
     PrivateDigestService,
@@ -165,6 +169,7 @@ import {
     ConversationMemoryService,
     MemoryTierService,
     ReplyPlanStore,
+    ReplyDeliveryStatusService,
     ReplyContext,
     ReplyEngine,
     AdultBoundaryService,
@@ -218,6 +223,7 @@ import {
     AI_ACTIVE_HOURS,
   ],
   controllers: [
+    ReplyDeliveryController,
     GroupCompanionController,
     CompanionSettingsController,
     MemoryController,

@@ -32,6 +32,14 @@ import {
 } from '../common.js';
 import { BillingOwner, ModelPurpose } from '../ports/model-gateway.js';
 import { AdminUserLabel } from './admin-users.js';
+import { adminTaskEndpoints } from './model-outcomes.js';
+export {
+  AdminTaskState,
+  AdminTaskFilter,
+  AdminModelTask,
+  AdminTaskAttempt,
+  VoiceCancellationReason,
+} from './model-outcomes.js';
 
 // ---------- 模型目录 ----------
 export const ModelLeaderboardSource = z.object({
@@ -1482,8 +1490,9 @@ export const ModelAccessAdminEndpoints = {
     path: `${API_PREFIX}/admin/model/upstreams/:upstreamId/test`,
     auth: 'admin',
     params: z.object({ upstreamId: Id }),
+    query: z.object({ quotaVerified: z.literal('yes').optional() }),
     response: Upstream,
-    summary: '手动连通测试，刷新状态',
+    summary: '手动连通测试，可附管理员已核实供应商额度的确认',
   }),
   deleteUpstream: defineEndpoint({
     method: 'DELETE',
@@ -1857,6 +1866,7 @@ export type AdminUsageOverview = z.infer<typeof AdminUsageOverview>;
 export const ADMIN_USAGE_EXPORT_MAX_ROWS = 50_000 as const;
 
 export const ModelAccessAdminUsageEndpoints = {
+  ...adminTaskEndpoints,
   usageSummary: defineEndpoint({
     method: 'POST',
     path: `${API_PREFIX}/admin/model/usage/summary`,

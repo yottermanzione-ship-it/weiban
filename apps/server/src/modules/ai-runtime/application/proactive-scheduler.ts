@@ -12,6 +12,13 @@
  * - P-09 用户 5 分钟内在任一会话发过消息则延后；最长延后 60 分钟，超时放弃。
  * - P-33 余额保留线 1 元（cost-estimate.md 6.2）。
  */
+import {
+  backgroundRetry,
+  BACKGROUND_FRESHNESS_MS,
+  retrySuffix,
+} from '../domain/background-retry.js';
+import { nextLocalMidnight } from '../../../platform/index.js';
+import { ecologyRunSummary } from '../domain/ecology.js';
 import { ROMANCE_TITLE_STAGE } from '../domain/relationship-stage.js';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { userNickname, userNamingContext } from '../domain/user-naming.js';
@@ -21,8 +28,9 @@ import { petContextBlock } from '../domain/pets.js';
 import { AI_CHARACTER_READ } from './supplemented-character-read.js';
 import { BrainContextService, brainMessages, brainTail } from './brain.js';
 import { SharedEpisodesService } from './shared-episodes.js';
-import { and, asc, desc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, lt, sql } from 'drizzle-orm';
 import {
+  Id,
   type BillingReadPort,
   type CharacterReadPort,
   type ChatParticipantPort,
@@ -36,6 +44,8 @@ import {
   type IdentityReadPort,
   type MessageContent,
   type ModelGatewayPort,
+  MODEL_TASK_OUTCOME_PORT,
+  type ModelTaskOutcomePort,
   type MediaReadPort,
   type PolicyPort,
   type ProactiveMessagePort,
@@ -100,6 +110,8 @@ import { EcologySettingsService } from './ecology-settings.js';
 import { characterView, roleDefaultVoiceId } from './character-view.js';
 import { withoutBlocked } from './model-blocked-messages.js';
 import { healthPrivate } from '../domain/memory.js';
+import { modelFailureReason } from '../domain/model-failure.js';
+import { modelTaskKey } from '../../../platform/index.js';
 import type { EcologyActionKey } from '@weiban/contracts';
 
 /**
@@ -169,6 +181,8 @@ export interface EcologySendExtras {
   extra: 'voice' | 'link' | null;
   /** 早安 / 晚安：放开「不说早安晚安套话」。 */
   greeting?: boolean;
+  /** Only the ordinary, single-action message may be resumed without replaying its wake. */
+  retryableMessage?: boolean;
 }
 
 /** 已发生实扣后记录失败：仅用于内部把费用带回生态结果，不再次扣款。 */
@@ -380,7 +394,12 @@ export class ProactiveSchedulerService {
     @Optional() @Inject(GROWTH_PET_READ_PORT) private readonly pets?: PetReadPort,
     @Optional() @Inject(GROWTH_PET_ALBUM) private readonly album?: PetAlbum,
     @Optional() @Inject(LOGGER) private readonly logger?: Logger,
+    @Optional()
+    @Inject(MODEL_TASK_OUTCOME_PORT)
+    private readonly taskOutcomes?: ModelTaskOutcomePort,
   ) {}
+
+  checkEcologyMessage?: (userId: string, characterId: string, runId: string) => Promise<boolean>;
 
   private readonly handlers: Array<{ prefix: string; handle: ProactivePlanHandler }> = [];
 
@@ -574,7 +593,18 @@ export class ProactiveSchedulerService {
   async tick(): Promise<void> {
     const rows = await this.db.db
       .selectDistinct({ userId: simulationStates.userId })
-      .from(simulationStates);
+      .from(simulationStates)
+      .union(
+        this.db.db
+          .select({ userId: proactivePlans.userId })
+          .from(proactivePlans)
+          .where(
+            and(
+              eq(proactivePlans.status, 'planned'),
+              sql`${proactivePlans.retryReason} IS NOT NULL AND ${proactivePlans.dueAt} <= ${this.clock.now()}`,
+            ),
+          ),
+      );
     const slot = Math.floor(this.clock.nowMs() / (10 * 60_000));
     for (const { userId } of rows)
       await this.jobs.send(
@@ -586,6 +616,7 @@ export class ProactiveSchedulerService {
 
   async cleanup(): Promise<void> {
     const now = this.clock.nowMs();
+    await this.expireRetries();
     await this.db.db
       .delete(proactivePlans)
       .where(lt(proactivePlans.createdAt, new Date(now - PLAN_RETENTION_DAYS * 86400_000)));
@@ -593,15 +624,13 @@ export class ProactiveSchedulerService {
       .delete(userChatActivity)
       .where(lt(userChatActivity.lastAt, new Date(now - ACTIVITY_RETENTION_DAYS * 86400_000)));
     // 生成中途崩溃遗留的计划：放弃，不补发。
-    await this.db.db
-      .update(proactivePlans)
-      .set({ status: 'dropped', outcome: 'stale_generation', updatedAt: new Date(now) })
-      .where(
-        and(
-          eq(proactivePlans.status, 'generating'),
-          lt(proactivePlans.updatedAt, new Date(now - GENERATING_STALE_MS)),
-        ),
-      );
+    await this.dropWhere(
+      and(
+        eq(proactivePlans.status, 'generating'),
+        lt(proactivePlans.updatedAt, new Date(now - GENERATING_STALE_MS)),
+      ),
+      'stale_generation',
+    );
   }
 
   /** 用户级调度：产生候选、按规则筛选、每次最多发出一条。 */
@@ -621,6 +650,7 @@ export class ProactiveSchedulerService {
       birthday: profile.birthday,
     };
     // 隔天的计划直接放弃，不排到第二天（SIM-05 第 4 条）。
+    await this.expireRetries(userId);
     await this.dropWhere(
       and(
         eq(proactivePlans.userId, userId),
@@ -633,11 +663,15 @@ export class ProactiveSchedulerService {
     // 与免打扰不再适用（17 号 §3）。生态关闭时当天计划全部放弃，平台承担的安全关怀跟进除外。
     void notification;
     if (!(await this.ecology.isActive(userId))) {
+      // A balance pause may lift within the original window. Explicit disable still cancels.
+      const balancePause =
+        (await this.ecology.row(userId))?.pausedReason === 'insufficient_balance';
       await this.dropWhere(
         and(
           eq(proactivePlans.userId, userId),
           eq(proactivePlans.status, 'planned'),
           sql`${proactivePlans.reason} <> 'safety_follow_up'`,
+          balancePause ? sql`${proactivePlans.retryReason} IS NULL` : undefined,
         ),
         'ecology_off',
       );
@@ -1005,6 +1039,32 @@ export class ProactiveSchedulerService {
         await this.drop(plan, 'contact_inactive');
         continue;
       }
+      if (plan.retryReason && plan.reason !== 'safety_follow_up') {
+        if (!(await this.ecology.isActive(ctx.userId, plan.characterId, 'message'))) {
+          // Resume is event-driven when the ecology is paused solely for funds.
+          if ((await this.ecology.row(ctx.userId))?.pausedReason === 'insufficient_balance')
+            continue;
+          await this.drop(plan, 'ecology_off');
+          continue;
+        }
+        if (!spend) continue;
+        if (spend.insufficient && plan.retryEpoch) {
+          if (!(await this.deferPlan(plan, 'insufficient_balance', plan.retryEpoch, ctx.timeZone)))
+            await this.drop(plan, 'model_insufficient_balance');
+          continue;
+        }
+        if (
+          plan.reason === 'ecology' &&
+          !(await this.checkEcologyMessage?.(
+            ctx.userId,
+            plan.characterId,
+            plan.sourceRef.slice('ecology:'.length),
+          ))
+        ) {
+          await this.drop(plan, 'action_no_longer_suitable');
+          continue;
+        }
+      }
       if (!budgetOk && plan.reason !== 'safety_follow_up') {
         await this.drop(plan, 'budget');
         continue;
@@ -1096,14 +1156,24 @@ export class ProactiveSchedulerService {
     eco?: EcologySendExtras,
   ): Promise<SendOutcome> {
     // 认领：planned → generating（并发调度只有一个能拿到）。生态计划插入时已是 generating。
-    if (!eco) {
+    if (plan.status === 'planned') {
       const claimed = await this.db.db
         .update(proactivePlans)
         .set({ status: 'generating', updatedAt: this.clock.now() })
-        .where(and(eq(proactivePlans.id, plan.id), eq(proactivePlans.status, 'planned')))
+        .where(
+          and(
+            eq(proactivePlans.id, plan.id),
+            eq(proactivePlans.status, 'planned'),
+            eq(proactivePlans.retryCount, plan.retryCount),
+            sql`${proactivePlans.dueAt} <= ${this.clock.now()}`,
+          ),
+        )
         .returning();
       if (!claimed.length) return { ok: false, reason: 'not_claimed' };
+      plan = claimed[0]!;
     }
+    if (plan.reason === 'ecology' && plan.retryCount > 0)
+      eco = { extra: null, retryableMessage: true };
     // T-090：登记方自己发送的计划（如经期关怀，内容现取）。
     const handler = this.handlers.find((h) => plan.sourceRef.startsWith(h.prefix));
     if (handler) {
@@ -1142,6 +1212,8 @@ export class ProactiveSchedulerService {
       (p) => p.kind === 'character' && p.refId === plan.characterId,
     );
     const settings = await this.settings.get(ctx.userId, plan.characterId).catch(() => null);
+    if (plan.retryEpoch && epoch?.version !== plan.retryEpoch)
+      return this.fail(plan, 'relationship_changed');
     if (!epoch || !role || !policy || !conversation || !participant || !settings) {
       return this.fail(plan, 'context_unavailable');
     }
@@ -1271,7 +1343,8 @@ export class ProactiveSchedulerService {
       countAsBackground: !care,
       ecologyTask: !care,
       responseFormat: 'text',
-      idempotencyKey: `proactive:${plan.id}${care && adult && !privateModel ? ':care-normal' : ''}`,
+      idempotencyKey: `proactive:${plan.id}${retrySuffix(plan.retryCount)}${care && adult && !privateModel ? ':care-normal' : ''}`,
+      taskKey: modelTaskKey(plan.userId, 'proactive:' + plan.id),
       messages: [
         ...brainMessages(
           (privateModel ? privateBrain : normalBrain)!,
@@ -1311,13 +1384,26 @@ ${careNote}`
     let request = requestFor(adult, recent);
     let result = await this.adultBoundary.generate(request, adult);
     let adultUsed = adult;
-    if (!result.ok && care && adult) {
+    if (
+      !result.ok &&
+      care &&
+      adult &&
+      ['not_configured', 'model_unavailable', 'provider_unavailable'].includes(result.error) &&
+      result.message !== 'interrupted'
+    ) {
       adultUsed = false;
       request = requestFor(false, recentNormalOnly);
       result = await this.adultBoundary.generate(request, adultUsed);
     }
     if (!result.ok) {
-      return this.fail(plan, `model_${result.error}`);
+      const reason = modelFailureReason(result);
+      if (
+        (!eco || eco.retryableMessage) &&
+        !care &&
+        (await this.deferPlan(plan, reason, epoch.version, ctx.timeZone))
+      )
+        return { ok: false, reason: 'deferred_' + reason, chargedMicros: 0 };
+      return this.fail(plan, 'model_' + reason);
     }
     // 先剥掉形式标记再检查完整正文，不能让思考文本进入拆条或语音合成。
     const prepare = (text: string) => {
@@ -1333,7 +1419,7 @@ ${careNote}`
         characterId: plan.characterId,
       });
       result = await this.adultBoundary.generate(metaReasoningRetryInput(request), adultUsed);
-      if (!result.ok) return this.fail(plan, `model_${result.error}`, textCharged);
+      if (!result.ok) return this.fail(plan, `model_${modelFailureReason(result)}`, textCharged);
       textCharged += result.value.chargedMicros;
       marked = prepare(result.value.text);
       if (looksLikeMetaReasoning(marked.text)) return this.fail(plan, 'output_guard', textCharged);
@@ -1606,6 +1692,28 @@ ${careNote}`
           .update(proactivePlans)
           .set({ status: 'sent', outcome: 'sent', messageId: firstId, updatedAt: this.clock.now() })
           .where(eq(proactivePlans.id, plan.id));
+        if (eco?.retryableMessage && plan.retryCount && plan.sourceRef.startsWith('ecology:'))
+          await tx.query(
+            "UPDATE ai_runtime.ecology_runs SET status='done',outcome='sent_after_deferral',action_summary=$4,charged_micros=charged_micros+$5 WHERE id=$1 AND user_id=$2 AND character_id=$3 AND action_key='message' AND status='failed'",
+            [
+              plan.sourceRef.slice(8),
+              plan.userId,
+              plan.characterId,
+              ecologyRunSummary('message'),
+              charged,
+            ],
+          );
+        await this.taskOutcomes?.record(
+          {
+            taskKey: modelTaskKey(plan.userId, 'proactive:' + plan.id),
+            userId: plan.userId,
+            purpose: care ? 'safety_followup' : 'proactive',
+            reason: 'proactive_sent',
+            state: 'delivered',
+            usageRecordId: Id.safeParse(charge.usageRecordId).success ? charge.usageRecordId : null,
+          },
+          tx,
+        );
         await this.audit.record(
           {
             module: 'ai_runtime',
@@ -1677,22 +1785,133 @@ ${careNote}`
   }
 
   private async drop(plan: Plan, outcome: string): Promise<void> {
-    await this.db.db
-      .update(proactivePlans)
-      .set({ status: 'dropped', outcome, updatedAt: this.clock.now() })
-      .where(
-        and(
-          eq(proactivePlans.id, plan.id),
-          inArray(proactivePlans.status, ['planned', 'generating']),
+    await this.db.transaction(async (tx) => {
+      const changed = await tx.db
+        .update(proactivePlans)
+        .set({ status: 'dropped', outcome, updatedAt: this.clock.now() })
+        .where(
+          and(
+            eq(proactivePlans.id, plan.id),
+            eq(proactivePlans.status, plan.status),
+            eq(proactivePlans.retryCount, plan.retryCount),
+          ),
+        )
+        .returning({ id: proactivePlans.id });
+      if (
+        changed.length &&
+        (outcome.startsWith('model_') ||
+          outcome === 'output_guard' ||
+          outcome === 'relationship_changed' ||
+          !!plan.retryReason)
+      ) {
+        const code = outcome.replace(/^model_/, '');
+        const blocked = [
+          'budget_exceeded',
+          'insufficient_balance',
+          'request_too_large',
+          'content_rejected',
+          'policy_denied',
+          'model_not_allowed',
+          'not_configured',
+        ].includes(code);
+        await this.taskOutcomes?.record(
+          {
+            taskKey: modelTaskKey(plan.userId, 'proactive:' + plan.id),
+            userId: plan.userId,
+            purpose: plan.reason === 'safety_follow_up' ? 'safety_followup' : 'proactive',
+            state:
+              plan.retryReason && !outcome.startsWith('model_') && outcome !== 'output_guard'
+                ? 'cancelled'
+                : blocked
+                  ? 'blocked'
+                  : outcome === 'output_guard'
+                    ? 'filtered'
+                    : outcome === 'relationship_changed'
+                      ? 'cancelled'
+                      : 'failed',
+            reason: /^[a-z][a-z0-9_]{0,79}$/.test(code) ? code : 'provider_unavailable',
+          },
+          tx,
+        );
+      }
+    });
+  }
+
+  private async deferPlan(plan: Plan, reason: string, epoch: string, timeZone: string) {
+    const now = this.clock.now();
+    const until =
+      plan.retryUntil ??
+      new Date(
+        Math.min(
+          nextLocalMidnight(now, timeZone).getTime(),
+          now.getTime() + BACKGROUND_FRESHNESS_MS,
         ),
       );
+    const count = plan.status === 'generating' ? plan.retryCount : Math.max(0, plan.retryCount - 1);
+    const retry = backgroundRetry(reason, count, now, until);
+    if (!retry) return false;
+    return this.db.transaction(async (tx) => {
+      const changed = await tx.db
+        .update(proactivePlans)
+        .set({
+          status: 'planned',
+          outcome: 'model_' + reason,
+          retryCount: count + 1,
+          retryReason: reason,
+          retryUntil: until,
+          retryEpoch: epoch,
+          dueAt: retry.retryAt ?? until,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(proactivePlans.id, plan.id),
+            eq(proactivePlans.status, plan.status),
+            eq(proactivePlans.retryCount, plan.retryCount),
+          ),
+        )
+        .returning({ id: proactivePlans.id });
+      if (!changed.length) return false;
+      await this.taskOutcomes?.record(
+        {
+          taskKey: modelTaskKey(plan.userId, 'proactive:' + plan.id),
+          userId: plan.userId,
+          purpose: 'proactive',
+          state: 'deferred',
+          reason,
+          retryAt: retry.retryAt?.toISOString(),
+        },
+        tx,
+      );
+      return true;
+    });
+  }
+
+  private async expireRetries(userId?: string) {
+    const due = await this.db.db
+      .select()
+      .from(proactivePlans)
+      .where(
+        and(
+          eq(proactivePlans.status, 'planned'),
+          sql`${proactivePlans.retryUntil} <= ${this.clock.now()}`,
+          userId ? eq(proactivePlans.userId, userId) : undefined,
+        ),
+      )
+      .limit(200);
+    for (const plan of due) await this.drop(plan, 'expired');
   }
 
   private async dropWhere(where: ReturnType<typeof and>, outcome: string): Promise<void> {
+    const pending = await this.db.db
+      .select()
+      .from(proactivePlans)
+      .where(and(where, sql`${proactivePlans.retryReason} IS NOT NULL`));
+    for (const plan of pending) await this.drop(plan, outcome);
     await this.db.db
       .update(proactivePlans)
       .set({ status: 'dropped', outcome, updatedAt: this.clock.now() })
-      .where(where);
+      .where(and(where, sql`${proactivePlans.retryReason} IS NULL`));
   }
 
   // -------------------------------------------------------------------------

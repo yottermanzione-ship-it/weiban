@@ -11,7 +11,7 @@ function setup(retryAfter: Date | null = null) {
   const tx = { db: { update: () => ({ set }) } } as unknown as DbTx;
   const service = Object.create(MemoryService.prototype) as MemoryService;
   Object.assign(service, {
-    jobs: { send },
+    jobs: { sendCoalesced: send },
     clock: {
       now: () => new Date('2026-10-30T00:00:00Z'),
       nowMs: () => Date.parse('2026-10-30T00:00:00Z'),
@@ -46,7 +46,7 @@ describe('事实整理窄触发', () => {
     expect(t.send).toHaveBeenCalledOnce();
     expect(t.send.mock.calls[0]?.[2]).toMatchObject({
       retryLimit: 0,
-      singletonKey: 'facts:user:conversation',
+      singletonKey: 'facts:user:conversation:epoch',
     });
     expect(t.set.mock.calls[0]?.[0]).toMatchObject({ factTriggerSeq: 1 });
   });

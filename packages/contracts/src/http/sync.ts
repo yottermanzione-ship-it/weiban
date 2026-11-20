@@ -165,6 +165,7 @@ export const DataSection = z.enum([
   'plaza_badge',
   'imports',
   'quiet_state',
+  'reply_delivery',
   'stickers',
   /** 3.0.1：「新的朋友」列表（名片推荐、好友申请记录）变化，重新拉 GET /contacts/new-friends。 */
   'new_friends',

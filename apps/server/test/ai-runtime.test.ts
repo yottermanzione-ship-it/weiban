@@ -22,6 +22,7 @@ import {
   JOB_QUEUE,
   EVENT_DISPATCHER,
   TestClock,
+  modelTaskKey,
   newId,
   type Database,
   type JobQueue,
@@ -209,12 +210,20 @@ describeDb('ai-runtime 真实PG：设置/加密计划/合并/幂等/关怀/删�
     }
     throw Error('reply did not finish');
   }
-  async function user(text: string) {
-    await app
+  async function user(text: string, sender = userId, conversationId = cid) {
+    const { message } = await app
       .get<ChatUserPort>(CHAT_USER_PORT)
-      .sendMessage(userId, cid, { clientMsgId: newId(), content: { type: 'text', text } });
+      .sendMessage(sender, conversationId, {
+        clientMsgId: newId(),
+        content: { type: 'text', text },
+      });
     await dispatch();
-    return (await plans()).at(-1)!;
+    const [plan] = await db.db
+      .select()
+      .from(replyPlans)
+      .where(eq(replyPlans.triggerId, message.messageId));
+    if (!plan) throw new Error('该测试消息没有对应的回复计划');
+    return plan;
   }
   it('用户侧通话记录保留在聊天中，但结束、取消和未接通均不排普通回复', async () => {
     await dispatch();
@@ -1117,12 +1126,281 @@ RETURNING seq::text AS seq, message_id`;
         status: 'waiting',
         failure: 'insufficient_balance',
       });
-      await store.recover(userId);
+      await store.recover(undefined, 'model');
+      expect(await store.get(broke.id)).toMatchObject({ status: 'waiting', retryEpoch: 0 });
+      await store.recover(userId, 'balance');
       expect((await store.get(broke.id))?.status).toBe('queued');
       await finish(broke.id);
       expect((await store.get(broke.id))?.status).toBe('done');
     } finally {
       failure = null;
+      choice.mockRestore();
+    }
+  });
+  it('升级前已生成的私聊保留原扣费关联，送达回执不会把收费调用当成已采用的正文', async () => {
+    const row = await user('记录一次合成的旧版回复。');
+    const choice = vi
+      .spyOn(engine.quirks, 'choose')
+      .mockResolvedValue({ kind: 'none', respondAt: null, typingCycles: 0 });
+    try {
+      clock.advance(3000);
+      await engine.run(row.id);
+      const pending = (await store.get(row.id))!;
+      expect(pending.status).toBe('sending');
+      const stored = (await store.open(pending, 'result')) as {
+        usageRecordId?: string;
+        modelPurpose?: string;
+        charge: { usageRecordId: string; chargedMicros: number };
+      };
+      delete stored.usageRecordId;
+      delete stored.modelPurpose;
+      await db.transaction(async (tx) => {
+        const resultCiphertext = await store.seal(tx, pending, 'result', stored);
+        await tx.db.update(replyPlans).set({ resultCiphertext }).where(eq(replyPlans.id, row.id));
+      });
+      await finish(row.id);
+      const outcome = await db.query(
+        'SELECT state,reason,usage_record_id FROM model_access.task_outcomes WHERE task_key=$1',
+        [modelTaskKey(userId, 'reply:' + row.id)],
+      );
+      expect(outcome.rows[0]).toEqual({
+        state: 'delivered',
+        reason: 'legacy_delivery_without_adoption',
+        usage_record_id: null,
+      });
+      const sent = await db.query(
+        'SELECT usage_record_id FROM chat.messages WHERE conversation_id=$1 AND client_msg_id=$2',
+        [cid, 'reply:' + row.triggerId + ':0'],
+      );
+      expect(sent.rows[0]?.usage_record_id).toBe(stored.charge.usageRecordId);
+    } finally {
+      choice.mockRestore();
+    }
+  });
+  it('原消息上的未送达状态、隔离与并发重试，后续交谈不会冒充这条回复', async () => {
+    const originalResponse = response;
+    const choice = vi
+      .spyOn(engine.quirks, 'choose')
+      .mockResolvedValue({ kind: 'none', respondAt: null, typingCycles: 0 });
+    const statuses = (messageId: string) =>
+      http()
+        .post(`/api/v1/conversations/${cid}/reply-statuses`)
+        .set('Authorization', auth())
+        .send({ messageIds: [messageId] });
+    const retry = (messageId: string, epoch: number) =>
+      http()
+        .post(`/api/v1/conversations/${cid}/messages/${messageId}/retry-reply`)
+        .set('Authorization', auth())
+        .send({ epoch });
+    try {
+      failure = 'provider_unavailable';
+      const missed = await user('测试原消息，约在图书馆门口。');
+      await finish(missed.id);
+      expect((await statuses(missed.triggerId)).body.items).toEqual([
+        expect.objectContaining({ messageId: missed.triggerId, state: 'waiting', canRetry: true }),
+      ]);
+      failure = null;
+      response = '下一条独立消息收到了。';
+      await finish((await user('这是一条后发的独立消息。')).id);
+      await store.recover(userId);
+      await finish(missed.id);
+      const old = (await store.get(missed.id))!;
+      expect(old.status).toBe('cancelled');
+      expect((await statuses(missed.triggerId)).body.items[0]).toMatchObject({
+        state: 'failed',
+        epoch: old.retryEpoch,
+      });
+      expect(
+        (
+          await http()
+            .post(`/api/v1/conversations/${newId()}/messages/${missed.triggerId}/retry-reply`)
+            .set('Authorization', auth())
+            .send({ epoch: old.retryEpoch })
+        ).status,
+      ).toBe(404);
+      const both = await Promise.all([
+        retry(missed.triggerId, old.retryEpoch),
+        retry(missed.triggerId, old.retryEpoch),
+      ]);
+      expect(both.map((r) => r.status)).toEqual([200, 200]);
+      expect((await store.get(missed.id))?.retryEpoch).toBe(old.retryEpoch + 1);
+      response = '就约在图书馆门口。';
+      const before = calls.filter((c) => c.purpose === 'chat_reply').length;
+      await finish(missed.id);
+      expect((await store.get(missed.id))?.status).toBe('done');
+      expect(calls.filter((c) => c.purpose === 'chat_reply').length - before).toBe(1);
+      expect((await statuses(missed.triggerId)).body.items).toEqual([]);
+      expect((await retry(missed.triggerId, old.retryEpoch)).body.issue).toBeNull();
+      const sent = await db.query<{ n: number }>(
+        'SELECT count(*)::int n FROM chat.messages WHERE conversation_id=$1 AND client_msg_id=$2',
+        [cid, 'reply:' + missed.triggerId + ':0'],
+      );
+      expect(sent.rows[0]!.n).toBe(1);
+      failure = 'provider_unavailable';
+      const hidden = await user('一条待隐藏的合成消息。');
+      await finish(hidden.id);
+      expect((await retry(hidden.triggerId, 0)).body.issue?.state).toBe('retrying');
+      await http()
+        .post(`/api/v1/conversations/${cid}/messages/${hidden.triggerId}/hide`)
+        .set('Authorization', auth())
+        .send({});
+      expect((await statuses(hidden.triggerId)).body.items).toEqual([]);
+      expect((await retry(hidden.triggerId, 0)).status).toBe(404);
+      const callsBeforeHide = calls.length;
+      await finish(hidden.id);
+      expect((await store.get(hidden.id))?.failure).toBe('source_unavailable');
+      expect(calls.length).toBe(callsBeforeHide);
+      const retryThenWait = await user('合成的待重试话题。');
+      await finish(retryThenWait.id);
+      expect((await retry(retryThenWait.triggerId, 0)).body.issue.state).toBe('retrying');
+      await finish(retryThenWait.id);
+      expect(await store.get(retryThenWait.id)).toMatchObject({
+        status: 'waiting',
+        manualRequested: true,
+      });
+      await http()
+        .post(`/api/v1/conversations/${cid}/messages/${retryThenWait.triggerId}/hide`)
+        .set('Authorization', auth())
+        .send({});
+      failure = null;
+      await store.recover(userId, 'model');
+      const absentCalls = calls.length;
+      await finish(retryThenWait.id);
+      expect(await store.get(retryThenWait.id)).toMatchObject({
+        status: 'cancelled',
+        failure: 'source_unavailable',
+      });
+      expect(calls.length).toBe(absentCalls);
+      failure = 'provider_unavailable';
+      const withdrew = await user('生成后撤回的合成消息。');
+      await finish(withdrew.id);
+      expect((await retry(withdrew.triggerId, 0)).body.issue.state).toBe('retrying');
+      failure = null;
+      await engine.run(withdrew.id);
+      expect((await store.get(withdrew.id))?.status).toBe('sending');
+      await http()
+        .post(`/api/v1/conversations/${cid}/messages/${withdrew.triggerId}/recall`)
+        .set('Authorization', auth())
+        .send({})
+        .expect(200);
+      const countBeforeRecall = calls.length;
+      await finish(withdrew.id);
+      expect((await store.get(withdrew.id))?.failure).toBe('source_unavailable');
+      expect(calls.length).toBe(countBeforeRecall);
+      expect(
+        (
+          await db.query(
+            'SELECT 1 FROM chat.messages WHERE conversation_id=$1 AND client_msg_id=$2',
+            [cid, 'reply:' + withdrew.triggerId + ':0'],
+          )
+        ).rowCount,
+      ).toBe(0);
+      const ambiguous = vi.spyOn(engine.gateway, 'generateText').mockResolvedValue({
+        ok: false,
+        error: 'provider_unavailable',
+        message: 'interrupted',
+      });
+      try {
+        const uncertain = await user('这条合成消息要核对发送结果。');
+        await finish(uncertain.id);
+        expect((await statuses(uncertain.triggerId)).body.items[0]).toMatchObject({
+          reason: 'interrupted',
+          state: 'blocked',
+          canRetry: false,
+        });
+        await store.recover(userId, 'balance');
+        await store.recover(userId, 'model');
+        await store.sweepWaiting();
+        expect((await retry(uncertain.triggerId, 0)).body.issue.canRetry).toBe(false);
+        await finish(uncertain.id);
+        expect(ambiguous).toHaveBeenCalledTimes(1);
+      } finally {
+        ambiguous.mockRestore();
+      }
+    } finally {
+      failure = null;
+      response = originalResponse;
+      choice.mockRestore();
+    }
+  });
+  it('私密安全跟进使用平台端口，气泡未送达时失败仍归同一安全任务', async () => {
+    // A high-risk turn keeps this conversation in care even if delivery fails.
+    const identity = app.get(IdentityCommands);
+    const careUserId = await identity.createAdmin('ai_care_fixture', 'correct horse battery');
+    await identity.setRole('ai_care_fixture', 'user');
+    const contacts = app.get(ContactsCommands);
+    await contacts.add(careUserId, { characterId });
+    const contact = (await new ContactsTestQueries(db).row(careUserId, characterId))!;
+    clock.advance(Math.max(0, contact.accept_after.getTime() - clock.nowMs()));
+    await contacts.accept({ userId: careUserId, characterId, requestId: contact.request_id });
+    const careConversation = (await app
+      .get<ChatReadPort>(CHAT_READ_PORT)
+      .findDirectConversation(careUserId, characterId))!.conversationId;
+    const original = engine.context.build.bind(engine.context);
+    const build = vi.spyOn(engine.context, 'build').mockImplementation(async (...args) => {
+      const snapshot = await original(...args);
+      return (
+        snapshot && {
+          ...snapshot,
+          scope: 'adult',
+          forceCareFallback: false,
+          highRisk: true,
+          suspected: false,
+        }
+      );
+    });
+    const platform = vi.spyOn(engine.platform!, 'generatePlatformText').mockResolvedValue({
+      ok: true,
+      value: {
+        text: '我听到了，先找一个安全的地方。',
+        modelKey: 'fixture/care',
+        usageRecordId: newId(),
+        chargedMicros: 0,
+        latencyMs: 1,
+        usage: { inputTokens: 8, cachedInputTokens: 0, outputTokens: 8, estimated: false },
+      },
+    });
+    const choice = vi
+      .spyOn(engine.quirks, 'choose')
+      .mockResolvedValue({ kind: 'none', respondAt: null, typingCycles: 0 });
+    try {
+      const row = await user('合成环境中的关怀投递检查。', careUserId, careConversation);
+      const before = calls.length;
+      clock.advance(3000);
+      await engine.run(row.id);
+      expect((await store.get(row.id))?.status).toBe('sending');
+      expect(platform).toHaveBeenCalledOnce();
+      expect(platform.mock.calls[0]![0]).toMatchObject({
+        purpose: 'safety_followup',
+        modelRole: 'adult',
+      });
+      expect(calls.length).toBe(before);
+      const reject = vi
+        .spyOn(engine.writer, 'postMessage')
+        .mockResolvedValueOnce({ ok: false, error: 'not_conversation_member' });
+      try {
+        await finish(row.id);
+      } finally {
+        reject.mockRestore();
+      }
+      const receipt = await db.query<{ purpose: string; state: string; reason: string }>(
+        'SELECT purpose,state,reason FROM model_access.task_outcomes WHERE task_key=$1',
+        [platform.mock.calls[0]![0].taskKey],
+      );
+      expect(receipt.rows).toEqual([
+        { purpose: 'safety_followup', state: 'failed', reason: 'delivery_unavailable' },
+      ]);
+      expect(
+        (
+          await db.query(
+            'SELECT 1 FROM chat.messages WHERE conversation_id=$1 AND client_msg_id=$2',
+            [careConversation, 'reply:' + row.triggerId + ':0'],
+          )
+        ).rowCount,
+      ).toBe(0);
+    } finally {
+      build.mockRestore();
+      platform.mockRestore();
       choice.mockRestore();
     }
   });

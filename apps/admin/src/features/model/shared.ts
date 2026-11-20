@@ -23,6 +23,16 @@ export const PURPOSE_LABELS: Record<string, string> = {
 };
 
 export const ERROR_LABELS: Record<string, string> = {
+  concurrency_limited: '付费并发已满',
+  request_too_large: '单次费用保护',
+  route_risk_blocked: '发前授权复核未通过',
+  budget_exceeded: '预算拦截',
+  cancelled: '已取消',
+  truncated_partial: '已接收部分结果',
+  price_missing: '缺少可用价格或计费上限',
+  permission_denied: '模型访问权限不足',
+  permission_unconfirmed: '账号权限待核',
+  auth_check_unavailable: '账号自检暂不可用',
   invalid_key: '密钥失效',
   quota_exhausted: '余额不足',
   insufficient_balance: '积分不足',
@@ -32,6 +42,7 @@ export const ERROR_LABELS: Record<string, string> = {
   timeout_idle: '等待上游数据超时',
   timeout_progress: '等待模型生成进度超时',
   timeout_deadline: '调用总时限已到',
+  insufficient_fallback_time: '派发前剩余时间不足',
   stream_incomplete: '响应流提前中断',
   response_parse_error: '上游响应格式无效',
   response_too_large: '响应超过传输保护限制',

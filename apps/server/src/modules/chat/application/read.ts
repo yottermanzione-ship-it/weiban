@@ -23,6 +23,7 @@ import {
   OFFICIAL_IDENTITY_KEY,
   Participant,
   type ChatReadPort,
+  type ChatReplyTriggerReadPort,
   type ChatHistoryMessage,
   type Conversation,
   type Message,
@@ -56,11 +57,34 @@ import {
  * 不传就另开连接锁会话行，调用方事务若已改过这行即应用层死锁（T-20261104c）。
  */
 @Injectable()
-export class ChatReadService implements ChatReadPort {
+export class ChatReadService implements ChatReadPort, ChatReplyTriggerReadPort {
   constructor(
     @Inject(DATABASE) private readonly db: Database,
     @Inject(ChatStore) private readonly store: ChatStore,
   ) {}
+  async visibleReplyTriggers(
+    userId: string,
+    conversationId: string,
+    messageIds: readonly string[],
+    transaction: Tx,
+  ): Promise<string[]> {
+    if (!messageIds.length) return [];
+    const tx = asDbTx(transaction);
+    const { rows } = await tx.query<{ id: string }>(
+      `SELECT m.id FROM chat.conversations c
+       JOIN chat.user_conversation_states s ON s.conversation_id=c.id AND s.user_id=c.owner_user_id
+       JOIN chat.messages m ON m.conversation_id=c.id
+       JOIN chat.participants p ON p.id=m.sender_participant_id AND p.conversation_id=c.id
+       WHERE c.owner_user_id=$1 AND c.id=$2 AND c.type='direct' AND c.character_id IS NOT NULL
+         AND c.content_scope='normal' AND c.archived_at IS NULL AND c.trial_expires_at IS NULL
+         AND NOT s.hidden AND m.id=ANY($3::uuid[]) AND m.seq>s.cleared_through_seq
+         AND m.scope='normal' AND m.status='normal' AND m.sender_kind='user'
+         AND p.kind='user' AND p.ref_id=$1 AND NOT EXISTS (
+           SELECT 1 FROM chat.hidden_messages h WHERE h.user_id=$1 AND h.message_id=m.id)`,
+      [userId, conversationId, messageIds],
+    );
+    return rows.map((r) => r.id);
+  }
   async getNotificationContext(userId: string, messageId: string, input?: Tx) {
     parseContract(Id, userId);
     parseContract(Id, messageId);

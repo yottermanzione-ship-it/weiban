@@ -186,11 +186,17 @@ test('model directory reads one page, sorts globally and fetches exact detail', 
     });
     expect(deleted.ok(), await deleted.text()).toBe(true);
     activeKeys.delete(archived);
+    // The dashboard also requests this endpoint with pageSize=1. Start measuring after leaving it.
+    await page.goto('about:blank');
     const requests = apiRequests(page);
     const firstModel = observe(page, '/model/models/page');
     await page.goto('/model');
     const response = await firstModel;
     expect(response.ok()).toBe(true);
+    const requestedPage = new URL(response.url()).searchParams;
+    expect(requestedPage.get('page')).toBe('1');
+    expect(requestedPage.get('pageSize')).toBe('20');
+    expect(requestedPage.get('sort')).toBe('priority');
     const result = await response.json();
     expect(result.items.length).toBeGreaterThan(0);
     expect(result.items).toHaveLength(20);

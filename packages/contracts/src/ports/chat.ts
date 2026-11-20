@@ -36,6 +36,16 @@ export type ChatHistoryMessage = Message & {
   replyTriggerSeq?: number;
 };
 
+/** 只返回本人当前仍能看到的普通私聊原消息 ID，不解密正文。 */
+export interface ChatReplyTriggerReadPort {
+  visibleReplyTriggers(
+    userId: string,
+    conversationId: string,
+    messageIds: readonly string[],
+    tx: Tx,
+  ): Promise<string[]>;
+}
+
 /**
  * 每个方法的可选 tx（5.7 起全部方法都有）：
  * - **调用方拿着事务时必须传**（docs/backend/kernel.md「事务与端口」）。不传时 chat 另开一条连接、自己开事务读，

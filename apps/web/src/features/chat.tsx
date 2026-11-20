@@ -41,6 +41,7 @@ import { runtimeLogs } from '../data/runtime-logs.js';
 import { useRemote, friendlyError } from '../data/use-remote.js';
 import { useCharacterProfile } from '../data/character-profile.js';
 import { useUpdates } from '../data/updates.js';
+import { useReplyDelivery, ReplyDeliveryNotice } from './reply-delivery.js';
 import { useCharacterNames } from '../data/character-names.js';
 import { VirtualList } from './virtual-list.js';
 import { HistoryLoadRow, useHistoryPager } from './chat-history.js';
@@ -680,6 +681,22 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     .map((item) => overrides[item.messageId] ?? item)
     .sort((a, b) => a.seq - b.seq);
   const pending = chat.state.outbox.filter((item) => item.conversationId === id);
+  const [visibleReplyKeys, setVisibleReplyKeys] = useState<string[]>([]);
+  const visibleSet = new Set(visibleReplyKeys);
+  const delivery = useReplyDelivery(
+    id,
+    conversation.type === 'direct' && conversation.contentScope === 'normal' && !privateMode
+      ? messages
+          .filter(
+            (m) =>
+              visibleSet.has(m.messageId) &&
+              m.senderKind === 'user' &&
+              m.scope === 'normal' &&
+              m.status === 'normal',
+          )
+          .map((m) => m.messageId)
+      : [],
+  );
   const images = messages.filter((m) => m.status === 'normal' && m.content?.type === 'image');
   const next = (messageId: string) => {
     const index = messages.findIndex((m) => m.messageId === messageId);
@@ -1446,6 +1463,14 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
     const sender = senderOf(message);
     const senderId = sender?.refId ?? role?.refId ?? '';
     const isSelected = selected.has(message.messageId);
+    const issue =
+      !selecting &&
+      mine &&
+      !privateMode &&
+      message.scope === 'normal' &&
+      message.status === 'normal'
+        ? delivery.items?.get(message.messageId)
+        : undefined;
     return (
       <>
         {divider}
@@ -1527,6 +1552,13 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
                   ? '已读'
                   : '已送达'}
               </small>
+            )}
+            {issue && (
+              <ReplyDeliveryNotice
+                issue={issue}
+                busy={delivery.busy === message.messageId}
+                onRetry={() => void delivery.retry(issue, setError)}
+              />
             )}
           </div>
         </div>
@@ -1712,6 +1744,9 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
           items={rows}
           itemKey={(row) => row.key}
           label="聊天消息"
+          onVisibleKeys={
+            conversation.type === 'direct' && !privateMode ? setVisibleReplyKeys : undefined
+          }
           estimate={64}
           bottom
           onBottom={setAtBottom}

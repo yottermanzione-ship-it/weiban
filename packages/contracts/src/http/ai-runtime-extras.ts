@@ -14,6 +14,45 @@ import {
   ScenarioPresetOption,
 } from './companion.js';
 
+export const ReplyDeliveryIssue = z.object({
+  messageId: Id,
+  state: z.enum(['waiting', 'blocked', 'failed', 'retrying']),
+  reason: z.enum([
+    'provider_unavailable',
+    'model_unavailable',
+    'insufficient_balance',
+    'budget_exceeded',
+    'concurrency_limited',
+    'request_too_large',
+    'interrupted',
+    'unavailable',
+  ]),
+  epoch: z.number().int().nonnegative(),
+  canRetry: z.boolean(),
+});
+export type ReplyDeliveryIssue = z.infer<typeof ReplyDeliveryIssue>;
+
+export const ReplyDeliveryEndpoints = {
+  statuses: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/conversations/:conversationId/reply-statuses`,
+    auth: 'user',
+    params: z.object({ conversationId: Id }),
+    body: z.object({ messageIds: z.array(Id).min(1).max(80) }).strict(),
+    response: z.object({ items: z.array(ReplyDeliveryIssue) }),
+    summary: '按当前可见的普通私聊消息批量读取尚未交付的角色回复状态',
+  }),
+  retry: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/conversations/:conversationId/messages/:messageId/retry-reply`,
+    auth: 'user',
+    params: z.object({ conversationId: Id, messageId: Id }),
+    body: z.object({ epoch: z.number().int().nonnegative() }).strict(),
+    response: z.object({ issue: ReplyDeliveryIssue.nullable() }),
+    summary: '在原消息上重试缺失的角色回复；相同轮次的重复操作只入队一次',
+  }),
+} as const;
+
 // ---------- 跨角色共享（MEM-07） ----------
 
 /** off = 关闭；basic = 仅基础资料；friends = 朋友之间共享（默认）。 */

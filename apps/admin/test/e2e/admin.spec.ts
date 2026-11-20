@@ -84,6 +84,8 @@ test('昵称选择保留同名用户编号，完整编号和多用户查询仍�
   });
   await multi.fill(`${second}，${first},${second}`);
   expect((await bulk).postDataJSON().filter.userIds).toEqual([second, first]);
+  // Outstanding label lookups still need their response bodies while their handlers finish.
+  await page.unrouteAll({ behavior: 'wait' });
 });
 
 async function login(page: Page, username = 'browser_admin') {
@@ -553,4 +555,77 @@ test('账号改名后旧名称搜索、模型线路和已有提醒使用正确�
   } finally {
     expect((await rename(original)).ok()).toBe(true);
   }
+});
+
+test('任务抽屉区分被拦截的报价与已取消的未派发语音段', async ({ page }) => {
+  await page.clock.setSystemTime(new Date('2026-10-05T13:00:00Z'));
+  await login(page);
+  await page.route('**/admin/model/usage/tasks/attempts', async (route) => {
+    const response = await route.fetch(),
+      data = await response.json();
+    data.items = data.items.map((r: Record<string, unknown>, i: number) => ({
+      ...r,
+      sent: 'not_sent',
+      status: 'failed',
+      costKnown: true,
+      chargedMicros: 0,
+      costMicros: 0,
+      ...(i === 0
+        ? {
+            errorCode: 'request_too_large',
+            requestPriceLimit: {
+              estimatedSellMicros: 20000,
+              limitMicros: 10000,
+              priceVersionId: '00000000-0000-4000-8000-000000000001',
+            },
+          }
+        : {
+            errorCode: 'cancelled',
+            holdStatus: 'released',
+            cancellationReason: 'unused_realtime_segment',
+          }),
+    }));
+    await route.fulfill({ response, json: data });
+  });
+  await page.getByRole('link', { name: /备用救回/ }).click();
+  await page
+    .getByRole('row')
+    .filter({ hasText: 'browser/outcome-primary' })
+    .getByRole('button', { name: '详情' })
+    .click();
+  const drawer = page.getByRole('dialog');
+  await expect(drawer).toContainText('预计售价 2.0000 积分');
+  await expect(drawer).toContainText('单次保护上限 1.0000 积分');
+  await expect(drawer).toContainText('预留额度已释放');
+  await expect(drawer).toContainText('释放未使用的下一段回应');
+});
+
+test('运营可从首页进入已救回任务，查看每条线路与用量、导出筛选结果', async ({ page }) => {
+  await page.clock.setSystemTime(new Date('2026-10-05T13:00:00Z'));
+  await login(page);
+  await page.getByRole('link', { name: /备用救回/ }).click();
+  const task = page.getByRole('row').filter({ hasText: 'browser/outcome-primary' });
+  await expect(task).toContainText('角色消息已入库');
+  await task.getByRole('button', { name: '详情' }).click();
+  const drawer = page.getByRole('dialog');
+  await expect(drawer).toContainText('browser/outcome-standby');
+  await expect(drawer).toContainText('业务已采用本次生成的结果');
+  await expect(drawer).toContainText('213456');
+  await expect(drawer).toContainText('超时');
+  await page.keyboard.press('Escape');
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: '导出筛选结果' }).click();
+  expect((await download).suggestedFilename()).toContain('模型任务结果');
+});
+
+test('后台分别显示旧消息入库与备用正文采用证据', async ({ page }) => {
+  await page.clock.setSystemTime(new Date('2026-10-05T13:00:00Z'));
+  await login(page);
+  await page.goto('/usage?view=tasks');
+  const row = page.getByRole('row').filter({ hasText: 'browser/legacy-outcome-primary' });
+  await expect(row).toContainText('备用成功 · 消息已入库');
+  await expect(row).not.toContainText('备用救回');
+  await row.getByRole('button', { name: '详情' }).click();
+  await expect(page.getByRole('dialog')).toContainText('旧记录未记下最终采用的正文来源');
+  await expect(page.getByRole('dialog')).toContainText('已入库消息关联了这笔用量');
 });

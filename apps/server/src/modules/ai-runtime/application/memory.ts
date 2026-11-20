@@ -3,6 +3,15 @@ import { createHash } from 'node:crypto';
 import { SharedEpisodesService } from './shared-episodes.js';
 import { readableMessageText, withVoiceTranscripts } from './content-text.js';
 import { ChatSummaryService } from './chat-summary.js';
+import { MemoryFundingRecovery } from './memory-funding-recovery.js';
+import {
+  isMemoryFundingBlock,
+  memoryOnHold,
+  factJobKey,
+  memoryFailureCode,
+  memoryFundingCheckAt,
+  type MemoryFundingBlock,
+} from '../domain/memory-funding.js';
 import { importantMemoryIntent, type ChatSummaryItem } from '../domain/chat-summary.js';
 import { chatSummaryStates, privateDigests } from '../infra/db/schema.js';
 import {
@@ -12,7 +21,7 @@ import {
   type CaptionMap,
 } from './image-captions.js';
 import { captionForMemory } from '../domain/image-caption.js';
-import { and, asc, count, eq, gt, inArray, isNull, isNotNull, lte, or } from 'drizzle-orm';
+import { and, asc, count, eq, gt, inArray, isNull, isNotNull, lte, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import {
   CreateMemoryRequest,
@@ -29,6 +38,8 @@ import {
   type Message,
   type ContentScope,
   type PolicyPort,
+  type ModelTaskOutcomePort,
+  MODEL_TASK_OUTCOME_PORT,
 } from '@weiban/contracts';
 import {
   AppError,
@@ -37,6 +48,7 @@ import {
   ENVELOPE_CRYPTO,
   JOB_QUEUE,
   newId,
+  modelTaskKey,
   parseContract,
   type Clock,
   type Database,
@@ -167,6 +179,8 @@ export class MemoryService {
     @Optional() @Inject(ImageCaptionStore) readonly captions?: ImageCaptionStore,
     @Optional() @Inject(ChatSummaryService) readonly chatSummaries?: ChatSummaryService,
     @Optional() @Inject(MEDIA_TRANSCRIPT_PORT) readonly transcripts?: MediaTranscriptPort,
+    @Optional() @Inject(MemoryFundingRecovery) readonly fundingRecovery?: MemoryFundingRecovery,
+    @Optional() @Inject(MODEL_TASK_OUTCOME_PORT) readonly outcomes?: ModelTaskOutcomePort,
   ) {}
   /** T-066：记忆页「谁知道」（MEM-07 第 5 条）。由 SocialService 注入，避免循环依赖。 */
   private knownByResolver:
@@ -628,7 +642,7 @@ export class MemoryService {
   private async changed(tx: DbTx, job: MemoryJob, forget: boolean, barrierSeq: number) {
     if (forget) {
       await tx.query(
-        'UPDATE ai_runtime.group_memory_states SET cursor_seq=greatest(cursor_seq,last_user_seq),pending_count=0,lease_id=NULL,lease_until=NULL,prepared_ciphertext=NULL,result_ciphertext=NULL,generation=generation+1 WHERE user_id=$1',
+        'UPDATE ai_runtime.group_memory_states SET cursor_seq=greatest(cursor_seq,last_user_seq),pending_count=0,wait_reason=NULL,retry_after=NULL,lease_id=NULL,lease_until=NULL,prepared_ciphertext=NULL,result_ciphertext=NULL,generation=generation+1 WHERE user_id=$1',
         [job.userId],
       );
       await tx.query(
@@ -654,6 +668,8 @@ export class MemoryService {
               pendingCount: 0,
               factTriggerSeq: 0,
               factAttempts: 0,
+              factWaitReason: null,
+              retryAfter: null,
               summaryCiphertext: null,
               dailySummariesCiphertext: null,
               monthlySummariesCiphertext: null,
@@ -1404,7 +1420,7 @@ export class MemoryService {
           })
           .where(eq(memories.id, id));
       else {
-        await tx.db
+        const inserted = await tx.db
           .insert(memories)
           .values({
             id,
@@ -1419,13 +1435,15 @@ export class MemoryService {
             createdAt: this.clock.now(),
             updatedAt: this.clock.now(),
           })
-          .onConflictDoNothing();
+          .onConflictDoNothing()
+          .returning({ id: memories.id });
+        if (!inserted.length) continue;
         remaining--;
       }
       changed = true;
     }
     if (changed) await this.changed(tx, job, false, 0);
-    return true;
+    return { changed };
   }
   async revision(
     tx: DbTx,
@@ -1465,16 +1483,22 @@ export class MemoryService {
         updatedAt: this.clock.now(),
       })
       .where(eq(memoryStates.id, state.id));
-    if (trigger && !(state.retryAfter && state.retryAfter > this.clock.now()))
+    if (
+      trigger &&
+      !memoryOnHold(state.factWaitReason) &&
+      !(state.retryAfter && state.retryAfter > this.clock.now())
+    )
       await this.enqueue(tx, { ...job, urgent: true }, promise ? 0 : 30000);
   }
   async reconcile(): Promise<void> {
+    await this.fundingRecovery?.sweepDue();
     const rows = await this.db.db
       .select()
       .from(memoryStates)
       .where(
         and(
           gt(memoryStates.factTriggerSeq, memoryStates.cursorSeq),
+          sql`coalesce(${memoryStates.factWaitReason},'') NOT IN ('insufficient_balance','interrupted')`,
           or(isNull(memoryStates.retryAfter), lte(memoryStates.retryAfter, this.clock.now())),
         ),
       )
@@ -1498,14 +1522,21 @@ export class MemoryService {
     await this.chatSummaries?.reconcile();
   }
   async enqueue(tx: DbTx | undefined, job: MemoryJob, delayMs = 30000) {
-    await this.jobs.send(EXTRACT_MEMORY_JOB, job, {
+    await this.jobs.sendCoalesced(EXTRACT_MEMORY_JOB, job, {
       tx,
       startAfter: new Date(this.clock.nowMs() + delayMs),
-      singletonKey: 'facts:' + job.userId + ':' + job.conversationId,
+      singletonKey: factJobKey(job.userId, job.conversationId, job.epoch),
       retryLimit: 0,
     });
   }
-  private async defer(job: MemoryJob, state: State, delayMs: number) {
+  private async defer(
+    job: MemoryJob,
+    state: State,
+    delayMs: number,
+    funding?: MemoryFundingBlock,
+    reason?: string,
+    triggerSeq?: number,
+  ) {
     await this.db.transaction(async (tx) => {
       await this.lock(tx, job);
       const now = await this.state(tx, job);
@@ -1515,12 +1546,42 @@ export class MemoryService {
         delayMs,
         [300000, 1800000, 7200000, 86400000][Math.min(attempts - 1, 3)]!,
       );
-      const retryAfter = new Date(this.clock.nowMs() + delay);
+      const retryAfter =
+        reason === 'interrupted'
+          ? null
+          : funding
+            ? memoryFundingCheckAt(funding, this.clock.now())
+            : new Date(this.clock.nowMs() + delay);
       await tx.db
         .update(memoryStates)
-        .set({ retryAfter, factAttempts: attempts >= 4 ? 0 : attempts })
+        .set({
+          retryAfter,
+          factAttempts: attempts >= 4 ? 0 : attempts,
+          factWaitReason: reason === 'interrupted' ? reason : (funding ?? null),
+          factGeneration: now.factGeneration + (funding ? 1 : 0),
+        })
         .where(eq(memoryStates.id, now.id));
-      await this.enqueue(tx, job, delay);
+      if (triggerSeq && triggerSeq > now.factTriggerSeq)
+        await tx.db
+          .update(memoryStates)
+          .set({ factTriggerSeq: triggerSeq })
+          .where(eq(memoryStates.id, now.id));
+      if (funding || reason)
+        await this.outcomes?.record(
+          {
+            taskKey: modelTaskKey(
+              job.userId,
+              `facts:${state.id}:${state.revision}:${state.cursorSeq}`,
+            ),
+            userId: job.userId,
+            purpose: 'memory',
+            state: reason === 'interrupted' ? 'blocked' : 'deferred',
+            reason: funding ?? reason,
+            retryAt: retryAfter?.toISOString(),
+          },
+          tx,
+        );
+      if (!funding && reason !== 'interrupted') await this.enqueue(tx, job, delay);
     });
   }
   async extract(job: MemoryJob): Promise<void> {
@@ -1541,7 +1602,11 @@ export class MemoryService {
       await this.lock(tx, job);
       return this.state(tx, job);
     });
-    if (state.retryAfter && state.retryAfter > this.clock.now()) return;
+    if (
+      memoryOnHold(state.factWaitReason) ||
+      (state.retryAfter && state.retryAfter > this.clock.now())
+    )
+      return;
     if (!job.force && state.factTriggerSeq <= state.cursorSeq) return;
     const fetchedHistory = await this.chat.readMessages({
       conversationId: job.conversationId,
@@ -1678,11 +1743,10 @@ export class MemoryService {
     // 批 EJ：失败后拆小一半重试一次（新幂等键，很快），已是小批仍失败就延后 1 小时，不无限重试。
     const retrySmaller = async (code: string): Promise<void> => {
       if (shrink < MAX_MEMORY_SHRINK) {
-        await this.defer({ ...job, shrink: shrink + 1 }, state, 300000);
+        await this.defer({ ...job, shrink: shrink + 1 }, state, 300000, undefined, code);
         return;
       }
-      await this.defer(job, state, 1800000);
-      void code;
+      await this.defer(job, state, 1800000, undefined, code);
     };
     const result = sources.length
       ? await this.gateway.generateText({
@@ -1703,7 +1767,11 @@ export class MemoryService {
           // 批 EJ：正文没写完时交回已写部分，下面只收已完整的条目。
           partialJsonOnTruncation: true,
           maxOutputTokens: memoryOutputTokens(sources.length),
-          idempotencyKey: `memory:${state.id}:${state.revision}:${state.cursorSeq}:${lastSeq}:${state.retryAfter?.getTime() ?? 0}:s${shrink}`,
+          taskKey: modelTaskKey(
+            job.userId,
+            `facts:${state.id}:${state.revision}:${state.cursorSeq}`,
+          ),
+          idempotencyKey: `memory:${state.id}:${state.revision}:${state.cursorSeq}:${lastSeq}:${state.retryAfter?.getTime() ?? 0}:s${shrink}${state.factGeneration ? `:f${state.factGeneration}` : ''}`,
           messages: [
             {
               role: 'system',
@@ -1728,11 +1796,13 @@ export class MemoryService {
         })
       : null;
     if (result && !result.ok) {
-      if (result.error === 'budget_exceeded' || result.error === 'insufficient_balance') {
-        await this.defer(job, state, 86400000);
+      const reason = memoryFailureCode(result);
+      if (reason === 'interrupted') return this.defer(job, state, 0, undefined, reason, lastSeq);
+      if (isMemoryFundingBlock(reason)) {
+        await this.defer(job, state, 0, reason, undefined, lastSeq);
         return;
       }
-      return retrySmaller(`memory_generation_${result.error}`);
+      return retrySmaller(`memory_generation_${reason}`);
     }
     // 批 EJ：正文没写完——先救已完整的条目入库；游标只推进到这些条目引用的最后一条消息，
     // 后面的消息留给下一批（不重复整理、也不丢）。一条都救不出就拆小批重试一次，再不行延后。
@@ -1773,7 +1843,7 @@ export class MemoryService {
           : null;
       if (!invalid) continue;
       // A billed but invalid answer is cached by the gateway. Retry in a new round, not every minute.
-      await this.defer(job, state, 3600000);
+      await this.defer(job, state, 3600000, undefined, invalid);
       throw new Error(invalid);
     }
     await this.db.transaction(async (tx) => {
@@ -1804,6 +1874,7 @@ export class MemoryService {
         .from(memories)
         .where(this.where(job.userId, job.characterId, job.conversationId));
       let remaining = MAX_MEMORIES - (total?.n ?? 0);
+      let written = 0;
       for (const operation of extracted.operations) {
         if (operation.action === 'NOOP') continue;
         const from = operation.sourceMessageIds.map((id) => sourceMap.get(id)!);
@@ -1886,12 +1957,14 @@ export class MemoryService {
           });
           remaining--;
         }
+        written++;
       }
       await tx.db
         .update(memoryStates)
         .set({
           retryAfter: null,
           factAttempts: 0,
+          factWaitReason: null,
           windowBlockCiphertext: null,
           cursorSeq: lastSeq,
           pendingCount: Math.max(
@@ -1901,6 +1974,21 @@ export class MemoryService {
           updatedAt: this.clock.now(),
         })
         .where(eq(memoryStates.id, now.id));
+      if (result?.ok)
+        await this.outcomes?.record(
+          {
+            userId: job.userId,
+            taskKey: modelTaskKey(
+              job.userId,
+              `facts:${state.id}:${state.revision}:${state.cursorSeq}`,
+            ),
+            purpose: 'memory',
+            state: written ? 'saved' : 'filtered',
+            reason: written ? 'memory_facts_saved' : 'memory_no_new_facts',
+            usageRecordId: result.value.usageRecordId,
+          },
+          tx,
+        );
       await this.sync.appendUpdate(tx, job.userId, {
         type: 'settings.updated',
         data: { section: 'companion', characterId: job.characterId },

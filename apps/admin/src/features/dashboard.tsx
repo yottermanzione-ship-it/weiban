@@ -331,7 +331,7 @@ function HealthCard({ data }: { data?: DashboardData }) {
         </div>
         <div className="os-health-summary">
           <div>
-            <span>30 日 API 调用成功率</span>
+            <span>30 日模型尝试成功率</span>
             <strong className="mono">{formatPercent(successRate)}</strong>
           </div>
           <div className="os-health-totals mono">
@@ -357,6 +357,20 @@ function HealthCard({ data }: { data?: DashboardData }) {
         </Link>
       </div>
       <div className="os-health-foot">
+        <Link to="/usage?view=tasks&range=today">
+          今日任务结果 <b className="mono">{formatInt(data?.tasks?.total)}</b>
+        </Link>
+        <Link to="/usage?view=tasks&range=today&rescued=1">
+          备用救回 <b className="mono">{formatInt(data?.tasks?.rescued)}</b>
+        </Link>
+        <Link to="/usage?view=tasks&range=today&state=undelivered">
+          未交付{' '}
+          <b className="mono">
+            {data?.tasks
+              ? formatInt(data.tasks.states.find((s) => s.state === 'undelivered')?.count ?? 0)
+              : '—'}
+          </b>
+        </Link>
         <Link to="/model?tab=upstreams">
           上游正常{' '}
           <b className="mono">

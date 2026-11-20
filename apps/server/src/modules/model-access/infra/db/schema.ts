@@ -9,6 +9,7 @@
  * 改表结构：改这里 → `pnpm --filter @weiban/server db:generate` 生成迁移 → 手写对应的 .down.sql。
  */
 import { sql } from 'drizzle-orm';
+import type { RequestPriceLimit, VoiceCancellationReason } from '@weiban/contracts';
 import {
   bigint,
   boolean,
@@ -316,6 +317,9 @@ export const usageRecords = modelAccessSchema.table(
   'usage_records',
   {
     id: uuid('id').primaryKey(),
+    taskKey: uuid('task_key'),
+    requestPriceLimit: jsonb('request_price_limit').$type<RequestPriceLimit>(),
+    cancellationReason: text('cancellation_reason').$type<VoiceCancellationReason>(),
     createdAt: tz('created_at').notNull(),
     completedAt: tz('completed_at'),
     /** 发起调用的用户；平台账户调用为发起操作的管理员。 */
@@ -376,6 +380,7 @@ export const usageRecords = modelAccessSchema.table(
   },
   (t) => [
     uniqueIndex('usage_records_idempotency_key').on(t.idempotencyKey),
+    index('usage_records_task_idx').on(t.taskKey, t.createdAt, t.id),
     index('usage_records_created_idx').on(t.createdAt, t.id),
     index('usage_records_user_created_idx').on(t.userId, t.createdAt),
     index('usage_records_character_created_idx').on(t.characterId, t.createdAt),
@@ -396,13 +401,14 @@ export const usageRecords = modelAccessSchema.table(
   ],
 );
 
-/** 24h 幂等结果缓存；输出独立用户 DEK 加密，用量记录仍不保存任何正文。 */
+/** 24h 加密结果；已发无结果的中断请求仅保留原键的防重标记，随用户清理。 */
 export const generationResults = modelAccessSchema.table(
   'generation_results',
   {
     id: uuid('id').primaryKey(),
     userId: uuid('user_id').notNull(),
     keyHash: text('key_hash').notNull().unique(),
+    replayBlocked: boolean('replay_blocked').notNull().default(false),
     requestHash: text('request_hash').notNull(),
     phase: text('phase').notNull(),
     ciphertext: bytea('ciphertext'),
@@ -482,3 +488,24 @@ export const sharedSearchReceipts = modelAccessSchema.table('shared_search_recei
   items: jsonb('items').notNull().$type<import('@weiban/contracts').WebSearchResultItem[]>(),
   createdAt: tz('created_at').notNull(),
 });
+
+/** 业务确认回执不存模型输出。单任务最终状态与原始调用分开保留。 */
+export const taskOutcomes = modelAccessSchema.table(
+  'task_outcomes',
+  {
+    taskKey: uuid('task_key').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    purpose: text('purpose').notNull(),
+    state: text('state').notNull(),
+    reason: text('reason'),
+    usageRecordId: uuid('usage_record_id'),
+    associatedUsageRecordId: uuid('associated_usage_record_id'),
+    retryAt: tz('retry_at'),
+    createdAt: tz('created_at').notNull(),
+    updatedAt: tz('updated_at').notNull(),
+  },
+  (t) => [
+    index('task_outcomes_created_idx').on(t.createdAt, t.taskKey),
+    index('task_outcomes_user_idx').on(t.userId),
+  ],
+);

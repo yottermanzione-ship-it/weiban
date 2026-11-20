@@ -59,7 +59,7 @@ describeDb('T-20261104a 上游判定自检与用户之间拦截隔离（真实�
   let admin: string;
   let upstreamId: string;
   /** 上游对生成请求的回法：正常 / 401 普通正文 / 403 普通正文 / 403 安全策略正文。 */
-  let mode: 'ok' | 'auth401' | 'auth403' | 'policy403' = 'ok';
+  let mode: 'ok' | 'auth401' | 'auth403' | 'policy403' | 'permission403' = 'ok';
   /** 连通测试（GET /v1/models）的状态码：200 = 密钥没坏，401 = 密钥真的坏了。 */
   let modelsStatus = 200;
   let calls = 0;
@@ -87,6 +87,12 @@ describeDb('T-20261104a 上游判定自检与用户之间拦截隔离（真实�
         res
           .writeHead(mode === 'auth401' ? 401 : 403, { 'Content-Type': 'application/json' })
           .end(JSON.stringify({ error: { message: 'Forbidden' } }));
+        return;
+      }
+      if (mode === 'permission403') {
+        res
+          .writeHead(403, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: { code: 'model_access_denied' } }));
         return;
       }
       if (mode === 'policy403') {
@@ -186,7 +192,7 @@ describeDb('T-20261104a 上游判定自检与用户之间拦截隔离（真实�
       'UPDATE model_access.upstreams SET consecutive_failures = 0, cooldown_until = NULL WHERE id = $1',
       [upstreamId],
     );
-    await app.get(UpstreamService).reportStatus(upstreamId, 'active', 'probe');
+    await app.get(UpstreamService).test(admin, upstreamId);
     await app.get(UpstreamScheduler).recordSuccess(upstreamId, modelKey);
     app.get(UpstreamService).forgetKeyCheck(upstreamId);
     calls = 0;
@@ -261,7 +267,7 @@ describeDb('T-20261104a 上游判定自检与用户之间拦截隔离（真实�
       )
     ).rows[0];
 
-  it('401 / 403 普通正文、密钥自检通过：上游保持正常，调用方拿到 content_rejected；不暂停、不冷却、不记失败、不扣费', async () => {
+  it('401 / 403 普通正文、密钥自检通过：上游保持正常，权限不明时终止且不记作内容违规；不暂停、不冷却、不记失败、不扣费', async () => {
     const user = await newUser('isolation_selfcheck_ok');
     const service = app.get(UpstreamService);
     const scheduler = app.get(UpstreamScheduler);
@@ -271,14 +277,16 @@ describeDb('T-20261104a 上游判定自检与用户之间拦截隔离（真实�
       mode = m;
       expect(await gateway.generateText(privateReply(user))).toEqual({
         ok: false,
-        error: 'content_rejected',
+        error: 'provider_unavailable',
+        message: 'permission_unconfirmed',
       });
     }
     // 日常场景同样适用（任何服务商、任何场景，判定都在网关里）。
     mode = 'auth403';
     expect(await gateway.generateText(dailyReply(user))).toEqual({
       ok: false,
-      error: 'content_rejected',
+      error: 'provider_unavailable',
+      message: 'permission_unconfirmed',
     });
     expect(calls).toBe(3); // 每次只调一次：不重试、不换账号
     expect(probes).toBe(1); // 同一上游 60 秒内只自检一次
@@ -291,9 +299,9 @@ describeDb('T-20261104a 上游判定自检与用户之间拦截隔离（真实�
     expect(await statusHistory()).toBe(history);
     const records = await errorCodes(user);
     expect(records.map((r) => r.error_code)).toEqual([
-      'content_rejected',
-      'content_rejected',
-      'content_rejected',
+      'permission_unconfirmed',
+      'permission_unconfirmed',
+      'permission_unconfirmed',
     ]);
     expect(records.every((r) => Number(r.charged_micros) === 0)).toBe(true);
     expect(await wallet(user)).toEqual(before);
@@ -319,13 +327,41 @@ describeDb('T-20261104a 上游判定自检与用户之间拦截隔离（真实�
     expect((await errorCodes(user)).map((r) => r.error_code)).toEqual(['invalid_key']);
   });
 
+  it('账号正常而模型明确拒绝授权，只隔离故障线路；账号自检网络失败不判凭证失效', async () => {
+    const user = await newUser('isolation_permission');
+    mode = 'permission403';
+    expect(await gateway.generateText(privateReply(user))).toMatchObject({
+      ok: false,
+      error: 'provider_unavailable',
+    });
+    expect((await errorCodes(user)).at(-1)?.error_code).toBe('permission_denied');
+    expect(app.get(UpstreamScheduler).isRouteCooling(modelKey, upstreamId)).toBe(true);
+    expect((await app.get(UpstreamService).get(upstreamId)).status).toBe('active');
+    await app.get(UpstreamScheduler).recordSuccess(upstreamId, modelKey);
+    app.get(UpstreamService).forgetKeyCheck(upstreamId);
+    mode = 'auth403';
+    modelsStatus = 503;
+    expect(await gateway.generateText(privateReply(user))).toMatchObject({
+      ok: false,
+      error: 'provider_unavailable',
+      message: 'auth_check_unavailable',
+    });
+    expect((await errorCodes(user)).at(-1)?.error_code).toBe('auth_check_unavailable');
+    expect((await app.get(UpstreamService).get(upstreamId)).status).toBe('active');
+  });
   it('自检缓存：同时到达的请求共用一次自检；60 秒内不再自检，过期后重新自检', async () => {
     const user = await newUser('isolation_selfcheck_cache');
     mode = 'auth403';
     const results = await Promise.all(
       [1, 2, 3].map(() => gateway.generateText(privateReply(user))),
     );
-    expect(results).toEqual(Array(3).fill({ ok: false, error: 'content_rejected' }));
+    expect(results).toEqual(
+      Array(3).fill({
+        ok: false,
+        error: 'provider_unavailable',
+        message: 'permission_unconfirmed',
+      }),
+    );
     expect(calls).toBe(3);
     expect(probes).toBe(1);
     clock.advance(KEY_SELF_CHECK_TTL_MS - 1);
@@ -334,7 +370,8 @@ describeDb('T-20261104a 上游判定自检与用户之间拦截隔离（真实�
     clock.advance(1);
     expect(await gateway.generateText(privateReply(user))).toEqual({
       ok: false,
-      error: 'content_rejected',
+      error: 'provider_unavailable',
+      message: 'permission_unconfirmed',
     });
     expect(probes).toBe(2);
     expect((await app.get(UpstreamService).get(upstreamId)).status).toBe('active');
@@ -427,7 +464,8 @@ describeDb('T-20261104a 上游判定自检与用户之间拦截隔离（真实�
       for (let i = 0; i < times; i++) {
         expect(await gateway.generateText(dailyReply(user))).toEqual({
           ok: false,
-          error: 'content_rejected',
+          error: 'provider_unavailable',
+          message: 'permission_unconfirmed',
         });
       }
     };

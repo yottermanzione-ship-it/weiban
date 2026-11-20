@@ -548,7 +548,8 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
     });
 
     it('网关报告状态：余额用完 → quota_exhausted 提醒；状态不变不重复发', async () => {
-      const up = await createUpstream('网关报告上游');
+      const key = newKey();
+      const up = await createUpstream('网关报告上游', key);
       expect(await upstreamsSvc.reportStatus(up.upstreamId, 'quota_exhausted', 'gateway')).toBe(
         true,
       );
@@ -560,6 +561,32 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
         .filter((a) => a.dedupeKey === `upstream_quota_exhausted:${up.upstreamId}`);
       expect(quota).toHaveLength(1);
       expect(quota[0]).toMatchObject({ severity: 'critical' });
+      expect(await upstreamsSvc.reportStatus(up.upstreamId, 'unavailable', 'probe')).toBe(false);
+      const testPath = `/api/v1/admin/model/upstreams/${up.upstreamId}/test`;
+      const unconfirmed = await http().post(testPath, adminToken).expect(200);
+      expect(Upstream.parse(unconfirmed.body).status).toBe('quota_exhausted');
+      const accountAlerts = async () =>
+        (await outboxEvents('platform.admin_alert_raised'))
+          .map((event) => event.payload)
+          .filter(
+            (alert) =>
+              typeof alert.dedupeKey === 'string' && alert.dedupeKey.endsWith(`:${up.upstreamId}`),
+          )
+          .map((alert) => alert.kind)
+          .sort();
+      expect(await accountAlerts()).toEqual(['upstream_quota_exhausted']);
+
+      fake.goodKeys.delete(key);
+      const failedProbe = await http()
+        .post(`${testPath}?quotaVerified=yes`, adminToken)
+        .expect(200);
+      expect(Upstream.parse(failedProbe.body).status).toBe('quota_exhausted');
+      expect(await accountAlerts()).toEqual(['upstream_quota_exhausted']);
+
+      fake.goodKeys.add(key);
+      const verified = await http().post(`${testPath}?quotaVerified=yes`, adminToken).expect(200);
+      expect(Upstream.parse(verified.body).status).toBe('active');
+      expect(await accountAlerts()).toEqual(['upstream_quota_exhausted', 'upstream_recovered']);
       expect(await upstreamsSvc.reportStatus(up.upstreamId, 'unavailable', 'probe')).toBe(true);
       const unavailable = (await outboxEvents('platform.admin_alert_raised'))
         .map((e) => e.payload)

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 /**
  * 可视区上下各多挂这么多像素：快速滑动时刚滚过的行不会被立刻销毁，
  * 再滑回来时行还在、头像和图片元素还在，不用重新下载（媒体响应是 no-store，一重下就闪）。
@@ -19,6 +19,7 @@ export function VirtualList<T>({
   anchorItem,
   scrollTo,
   rowClassName,
+  onVisibleKeys,
 }: {
   items: T[];
   itemKey(item: T): string;
@@ -36,6 +37,7 @@ export function VirtualList<T>({
   /** 定位到某一行（距顶部 1/3 处，search.md 第 4 节）；nonce 变化时执行一次。 */
   scrollTo?: { key: string; nonce: number } | null;
   rowClassName?(item: T): string | undefined;
+  onVisibleKeys?(keys: string[]): void;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const heights = useRef(new Map<string, number>());
@@ -244,6 +246,10 @@ export function VirtualList<T>({
     const keep = new Set(visible.map((row) => row.key));
     for (const key of rendered.current.keys()) if (!keep.has(key)) rendered.current.delete(key);
   }
+  const visibleKeys = onVisibleKeys ? JSON.stringify(visible.map((row) => row.key)) : '';
+  useEffect(() => {
+    if (onVisibleKeys) onVisibleKeys(JSON.parse(visibleKeys) as string[]);
+  }, [onVisibleKeys, visibleKeys]);
   const mounted = visible.map((row) => {
     const className = rowClassName?.(row.item);
     const cached = rendered.current.get(row.key);

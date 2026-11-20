@@ -17,11 +17,20 @@
  *   拍一拍、熬夜催睡、朋友圈三种互动）不再是生态候选：聊天里的形式由聊天流程自己判断，朋友圈互动由
  *   朋友圈事件排期（moments-ai），所有人默认都有。
  */
+import { nextLocalMidnight } from '../../../platform/index.js';
+import {
+  backgroundRetry,
+  BACKGROUND_FRESHNESS_MS,
+  retrySuffix,
+} from '../domain/background-retry.js';
 import { ROMANCE_TITLE_STAGE } from '../domain/relationship-stage.js';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import { modelFailureReason } from '../domain/model-failure.js';
 import { and, desc, eq, gte, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
 import {
   Id,
+  MODEL_TASK_OUTCOME_PORT,
+  type ModelTaskOutcomePort,
   type AdultModelReadPort,
   type CharacterReadPort,
   type ChatReadPort,
@@ -49,6 +58,7 @@ import {
   DATABASE,
   ENVELOPE_CRYPTO,
   JOB_QUEUE,
+  modelTaskKey,
   newId,
   parseContract,
   type Clock,
@@ -236,6 +246,13 @@ export interface EcologyRequestJob {
   text: string;
 }
 
+interface MurmurResult {
+  text: string | null;
+  chargedMicros: number;
+  usageRecordId?: string;
+  failure?: string;
+  retryCount?: number;
+}
 @Injectable()
 export class EcologyService {
   constructor(
@@ -265,6 +282,9 @@ export class EcologyService {
     @Inject(MomentsAiService) private readonly momentsAi: MomentsAiService,
     @Inject(GroupChatService) private readonly groups: GroupChatService,
     @Inject(WeiboSyncService) private readonly weibo: WeiboSyncService,
+    @Optional()
+    @Inject(MODEL_TASK_OUTCOME_PORT)
+    private readonly taskOutcomes?: ModelTaskOutcomePort,
   ) {}
 
   // =========================================================================
@@ -283,6 +303,7 @@ export class EcologyService {
 
   async cleanup(): Promise<void> {
     const now = this.clock.nowMs();
+    await this.expireRetries();
     await this.db.db
       .delete(ecologyRuns)
       .where(lt(ecologyRuns.createdAt, new Date(now - RUN_RETENTION_DAYS * 86400_000)));
@@ -300,6 +321,19 @@ export class EcologyService {
 
   /** 用户级：每个参与的角色只看「最近一个已到点、还没跑过」的唤醒时刻；错过的更早时刻不补。 */
   async runForUser(userId: string): Promise<void> {
+    await this.expireRetries(userId);
+    // The credit event may precede a concurrent worker's deferred-row commit. Reconcile only a
+    // real balance wait for this user, through the wallet's existing insufficient-since flag.
+    const waiting = await this.db.query(
+      "SELECT 1 WHERE EXISTS (SELECT 1 FROM ai_runtime.ecology_runs WHERE user_id=$1 AND retry_kind IN ('wake','murmur') AND retry_reason='insufficient_balance' AND retry_at IS NULL AND retry_until>$2) OR EXISTS (SELECT 1 FROM ai_runtime.proactive_plans WHERE user_id=$1 AND status='planned' AND retry_reason='insufficient_balance' AND due_at=retry_until AND retry_until>$2)",
+      [userId, this.clock.now()],
+    );
+    if (waiting.rows.length && !(await this.billing.getSpendStatus(userId)).insufficient) {
+      await this.db.transaction(async (tx) => {
+        await this.settings.resume(userId, tx);
+        await this.balanceRestored(userId, tx);
+      });
+    }
     if (!(await this.settings.isActive(userId))) return;
     const config = await this.settings.config();
     if (!config.decisionModelKey) return; // 未配置决策模型：不运行（后台有提示）。
@@ -332,8 +366,20 @@ export class EcologyService {
         `slot:${local.date}:${due}`,
         'ecology',
         local.date,
+        profile.timeZone,
       );
-      if (!run) continue;
+      if (!run) {
+        if (
+          await this.resumeSlot(
+            userId,
+            contact.characterId,
+            `slot:${local.date}:${due}`,
+            local.hour >= config.wakeWindow.startHour && local.hour < config.wakeWindow.endHour,
+          )
+        )
+          woke++;
+        continue;
+      }
       woke++;
       await this.executeWake(run).catch(async (error: unknown) => {
         await this.finish(run.id, {
@@ -344,14 +390,290 @@ export class EcologyService {
     }
   }
 
+  async balanceRestored(userId: string, tx: DbTx) {
+    // Existing tickers only revisit their pending rows; a top-up cannot wake a daily-budget wait.
+    const now = this.clock.now();
+    const ecology = await tx.query<{ id: string; retry_kind: string }>(
+      "UPDATE ai_runtime.ecology_runs SET retry_at=$2 WHERE user_id=$1 AND retry_reason='insufficient_balance' AND retry_kind IN ('wake','murmur') AND retry_at IS NULL AND retry_until>$2 RETURNING id,retry_kind",
+      [userId, now],
+    );
+    const proactive = await tx.query<{ id: string }>(
+      "UPDATE ai_runtime.proactive_plans SET due_at=$2 WHERE user_id=$1 AND status='planned' AND retry_reason='insufficient_balance' AND retry_until>$2 AND due_at>$2 RETURNING id",
+      [userId, now],
+    );
+    const tasks = [
+      ...ecology.rows.map((row) => ({
+        purpose: 'behavior_planning' as const,
+        source: row.retry_kind === 'wake' ? 'eco:' + row.id + ':jev' : 'eco:murmur:' + row.id,
+      })),
+      ...proactive.rows.map((row) => ({
+        purpose: 'proactive' as const,
+        source: 'proactive:' + row.id,
+      })),
+    ];
+    for (const task of tasks)
+      await this.taskOutcomes?.record(
+        {
+          userId,
+          taskKey: modelTaskKey(userId, task.source),
+          purpose: task.purpose,
+          state: 'deferred',
+          reason: 'balance_restored',
+          retryAt: now.toISOString(),
+        },
+        tx,
+      );
+  }
+
+  async canResumeMessage(userId: string, characterId: string, runId: string) {
+    if (
+      !Id.safeParse(runId).success ||
+      !(await this.settings.isActive(userId, characterId, 'message'))
+    )
+      return false;
+    const [run] = await this.db.db
+      .select()
+      .from(ecologyRuns)
+      .where(
+        and(
+          eq(ecologyRuns.id, runId),
+          eq(ecologyRuns.userId, userId),
+          eq(ecologyRuns.characterId, characterId),
+        ),
+      );
+    if (!run || run.origin !== 'ecology' || run.status !== 'failed' || run.actionKey !== 'message')
+      return false;
+    const snapshot = await this.buildSnapshot(run);
+    if (
+      !snapshot ||
+      snapshot.autoOff ||
+      snapshot.balanceInsufficient ||
+      snapshot.local.date !== run.localDate ||
+      !snapshot.tools.includes('message')
+    )
+      return false;
+    const config = await this.settings.config();
+    const prefs = await this.settings.row(userId);
+    const { hour, minute } = snapshot.local;
+    if (
+      !config.decisionModelKey ||
+      hour < config.wakeWindow.startHour ||
+      hour >= config.wakeWindow.endHour
+    )
+      return false;
+    const range = config.levels[(prefs?.activityLevel ?? 'often') as keyof typeof config.levels];
+    const latest =
+      wakeSlots(userId, characterId, run.localDate, range, config.wakeWindow).filter(
+        (slot) => slot <= hour * 60 + minute,
+      ).length - 1;
+    return run.runKey === `slot:${run.localDate}:${latest}`;
+  }
+
+  private runTaskKey(run: RunRow, kind: 'wake' | 'murmur') {
+    return modelTaskKey(
+      run.userId,
+      kind === 'wake' ? 'eco:' + run.id + ':jev' : 'eco:murmur:' + run.id,
+    );
+  }
+
+  private async deferRun(
+    run: RunRow,
+    kind: 'wake' | 'murmur',
+    reason: string,
+    tx: DbTx,
+    count: number,
+  ) {
+    if (run.origin !== 'ecology' || !run.retryEpoch) return false;
+    const now = this.clock.now();
+    const until = run.retryUntil ?? new Date(run.scheduledAt.getTime() + BACKGROUND_FRESHNESS_MS);
+    const retry = backgroundRetry(reason, count, now, until);
+    if (!retry) return false;
+    await tx.db
+      .update(ecologyRuns)
+      .set({
+        retryKind: kind,
+        retryCount: count + 1,
+        retryReason: reason,
+        retryAt: retry.retryAt,
+        retryUntil: until,
+      })
+      .where(eq(ecologyRuns.id, run.id));
+    await this.taskOutcomes?.record(
+      {
+        userId: run.userId,
+        purpose: 'behavior_planning',
+        taskKey: this.runTaskKey(run, kind),
+        state: 'deferred',
+        reason,
+        retryAt: retry.retryAt?.toISOString(),
+      },
+      tx,
+    );
+    return true;
+  }
+
+  private async wakeFailure(run: RunRow, reason: string) {
+    const funds = reason === 'budget_exceeded' || reason === 'insufficient_balance';
+    const patch = {
+      status: funds ? ('paused' as const) : ('failed' as const),
+      outcome: funds ? reason : reason === 'interrupted' ? 'jev_timeout' : 'jev_' + reason,
+    };
+    if (!run.retryEpoch && !this.taskOutcomes) return this.finish(run.id, patch);
+    await this.db.transaction(async (tx) => {
+      await this.finish(run.id, patch, tx);
+      if (await this.deferRun(run, 'wake', reason, tx, run.retryCount)) return;
+      await this.taskOutcomes?.record(
+        {
+          userId: run.userId,
+          purpose: 'behavior_planning',
+          taskKey: this.runTaskKey(run, 'wake'),
+          state: funds || reason === 'request_too_large' ? 'blocked' : 'failed',
+          reason,
+        },
+        tx,
+      );
+    });
+  }
+
+  private async cancelRetry(run: RunRow, reason: string) {
+    await this.db.transaction(async (tx) => {
+      const rows = await tx.db
+        .update(ecologyRuns)
+        .set({
+          retryKind: null,
+          retryAt: null,
+          retryReason: null,
+          ...(run.retryKind?.endsWith('wake')
+            ? { status: 'skipped', outcome: reason, finishedAt: this.clock.now() }
+            : {}),
+        })
+        .where(
+          and(
+            eq(ecologyRuns.id, run.id),
+            eq(ecologyRuns.retryKind, run.retryKind!),
+            eq(ecologyRuns.retryCount, run.retryCount),
+          ),
+        )
+        .returning({ id: ecologyRuns.id });
+      if (rows.length)
+        await this.taskOutcomes?.record(
+          {
+            userId: run.userId,
+            purpose: 'behavior_planning',
+            taskKey: this.runTaskKey(run, run.retryKind?.endsWith('wake') ? 'wake' : 'murmur'),
+            state: reason === 'interrupted' ? 'failed' : 'cancelled',
+            reason,
+          },
+          tx,
+        );
+    });
+  }
+
+  private async expireRetries(userId?: string) {
+    const now = this.clock.now();
+    const expired = await this.db.db
+      .select()
+      .from(ecologyRuns)
+      .where(
+        and(
+          sql`${ecologyRuns.retryKind} IS NOT NULL AND ${ecologyRuns.retryUntil} <= ${now}
+        AND (${ecologyRuns.retryKind} IN ('wake','murmur') OR ${ecologyRuns.retryUntil} <= ${new Date(now.getTime() - 30 * 60_000)})`,
+          userId ? eq(ecologyRuns.userId, userId) : undefined,
+        ),
+      )
+      .limit(200);
+    for (const run of expired)
+      await this.cancelRetry(
+        run,
+        run.retryKind?.startsWith('running_') ? 'interrupted' : 'expired',
+      );
+  }
+
+  private async resumeSlot(userId: string, characterId: string, runKey: string, inWindow: boolean) {
+    const now = this.clock.now();
+    const [pending] = await this.db.db
+      .select()
+      .from(ecologyRuns)
+      .where(
+        and(
+          eq(ecologyRuns.userId, userId),
+          eq(ecologyRuns.characterId, characterId),
+          eq(ecologyRuns.runKey, runKey),
+          inArray(ecologyRuns.retryKind, ['wake', 'murmur']),
+          sql`${ecologyRuns.retryAt} <= ${now} AND ${ecologyRuns.retryUntil} > ${now}`,
+        ),
+      );
+    if (!pending) return false;
+    const epoch = await this.contacts.getActiveContactEpoch(userId, characterId);
+    if (
+      !inWindow ||
+      !epoch ||
+      epoch.version !== pending.retryEpoch ||
+      !(await this.settings.isActive(userId, characterId))
+    ) {
+      await this.cancelRetry(pending, 'context_expired');
+      return false;
+    }
+    const kind = pending.retryKind as 'murmur' | 'wake';
+    // Only one worker may advance this attempt. A crashed/ambiguous dispatch is never claimed again.
+    const [run] = await this.db.db
+      .update(ecologyRuns)
+      .set({ retryKind: 'running_' + kind, retryAt: null })
+      .where(
+        and(
+          eq(ecologyRuns.id, pending.id),
+          eq(ecologyRuns.retryKind, kind),
+          eq(ecologyRuns.retryCount, pending.retryCount),
+        ),
+      )
+      .returning();
+    if (!run) return false;
+    if (kind === 'wake') await this.executeWake(run);
+    else {
+      const snapshot = await this.buildSnapshot(run);
+      if (
+        !snapshot ||
+        snapshot.autoOff ||
+        snapshot.local.date !== run.localDate ||
+        run.murmurCiphertext
+      ) {
+        await this.cancelRetry(run, 'context_expired');
+        return false;
+      }
+      const spend = await this.billing.getSpendStatus(userId);
+      const result = spend.insufficient
+        ? {
+            text: null,
+            chargedMicros: 0,
+            failure: 'insufficient_balance',
+            retryCount: run.retryCount,
+          }
+        : await this.generateMurmur(run, snapshot, run.actionSummary ? [run.actionSummary] : []);
+      if (!result) {
+        await this.cancelRetry(run, 'context_unavailable');
+        return false;
+      }
+      await this.finish(run.id, {
+        status: run.status as EcologyRunStatus,
+        murmurOnly: true,
+        murmur: result.text ? { userId, text: result.text } : null,
+        murmurReceipt: { userId, result },
+      });
+    }
+    return true;
+  }
+
   private async claim(
     userId: string,
     characterId: string,
     runKey: string,
     origin: 'ecology' | 'user_request',
     localDate: string,
+    timeZone?: string,
   ): Promise<RunRow | null> {
     const now = this.clock.now();
+    const epoch =
+      origin === 'ecology' ? await this.contacts.getActiveContactEpoch(userId, characterId) : null;
     const [row] = await this.db.db
       .insert(ecologyRuns)
       .values({
@@ -363,6 +685,15 @@ export class EcologyService {
         localDate,
         status: 'running',
         scheduledAt: now,
+        retryEpoch: epoch?.version,
+        retryUntil: timeZone
+          ? new Date(
+              Math.min(
+                nextLocalMidnight(now, timeZone).getTime(),
+                now.getTime() + BACKGROUND_FRESHNESS_MS,
+              ),
+            )
+          : null,
         startedAt: now,
         createdAt: now,
       })
@@ -381,10 +712,14 @@ export class EcologyService {
       modelKey?: string | null;
       chargedMicros?: number;
       murmur?: { userId: string; text: string } | null;
+      murmurReceipt?: { userId: string; result: MurmurResult } | null;
       latencyMs?: number;
+      murmurOnly?: boolean;
     },
     tx?: DbTx,
   ): Promise<void> {
+    if (patch.murmurReceipt && !tx)
+      return this.db.transaction((transaction) => this.finish(runId, patch, transaction));
     const murmurCiphertext = patch.murmur
       ? await this.crypto.seal(
           patch.murmur.userId,
@@ -393,10 +728,17 @@ export class EcologyService {
           tx,
         )
       : undefined;
-    await (tx?.db ?? this.db.db)
+    const update = (tx?.db ?? this.db.db)
       .update(ecologyRuns)
       .set({
-        status: patch.status,
+        ...(patch.murmurOnly
+          ? {
+              chargedMicros: sql`${ecologyRuns.chargedMicros} + ${patch.murmurReceipt?.result.chargedMicros ?? 0}`,
+            }
+          : { status: patch.status, finishedAt: this.clock.now() }),
+        retryKind: null,
+        retryReason: null,
+        retryAt: null,
         ...(patch.outcome !== undefined ? { outcome: patch.outcome?.slice(0, 200) ?? null } : {}),
         ...(patch.actionKey !== undefined ? { actionKey: patch.actionKey } : {}),
         ...(patch.actionSummary !== undefined ? { actionSummary: patch.actionSummary } : {}),
@@ -404,9 +746,37 @@ export class EcologyService {
         ...(patch.chargedMicros !== undefined ? { chargedMicros: patch.chargedMicros } : {}),
         ...(patch.latencyMs !== undefined ? { latencyMs: patch.latencyMs } : {}),
         ...(murmurCiphertext ? { murmurCiphertext } : {}),
-        finishedAt: this.clock.now(),
       })
       .where(eq(ecologyRuns.id, runId));
+    if (patch.murmurReceipt && tx) {
+      const written = await update.returning();
+      if (!written.length) return;
+      const { userId, result } = patch.murmurReceipt;
+      if (
+        result.failure &&
+        (await this.deferRun(written[0]!, 'murmur', result.failure, tx, result.retryCount ?? 0))
+      )
+        return;
+      await this.taskOutcomes?.record(
+        {
+          userId,
+          purpose: 'behavior_planning',
+          taskKey: modelTaskKey(userId, 'eco:murmur:' + runId),
+          state: murmurCiphertext
+            ? 'displayed'
+            : !result.failure
+              ? 'filtered'
+              : ['budget_exceeded', 'insufficient_balance', 'request_too_large'].includes(
+                    result.failure,
+                  )
+                ? 'blocked'
+                : 'failed',
+          reason: murmurCiphertext ? null : (result.failure ?? 'display_filter'),
+          usageRecordId: result.usageRecordId,
+        },
+        tx,
+      );
+    } else await update;
   }
 
   // =========================================================================
@@ -415,23 +785,30 @@ export class EcologyService {
   /**
    * 批 EJ：一次唤醒最多一次原生判定（Jev）请求，对全部候选逐项问 act / defer（允许多项通过）。
    * Jev 不写正文、状态签名或碎碎念；通过的动作由程序排冲突后，交给用户自己选的模型逐项执行。
-   * 低把握、超时、陌生 ID、网关失败一律不做；不重试、不回落到文字模型判定。
+   * 低把握、陌生 ID 和未确认的派发不补做。明确的预算、并发或发送前截止只在同一时段内有界重试。
    */
   private async executeWake(run: RunRow): Promise<void> {
     const started = this.clock.nowMs();
     const { userId, characterId } = run;
     const config = await this.settings.config();
-    if (!config.decisionModelKey)
-      return this.finish(run.id, { status: 'skipped', outcome: 'model_not_configured' });
+    const skip = (reason: string) =>
+      run.retryKind === 'running_wake'
+        ? this.cancelRetry(run, reason)
+        : this.finish(run.id, { status: 'skipped', outcome: reason });
+    if (!config.decisionModelKey) return skip('model_not_configured');
     if ((await this.settings.decisionProblem(config.decisionModelKey)) !== null)
-      return this.finish(run.id, { status: 'skipped', outcome: 'model_not_decision' });
+      return skip('model_not_decision');
     const snapshot = await this.buildSnapshot(run);
-    if (!snapshot)
-      return this.finish(run.id, { status: 'skipped', outcome: 'context_unavailable' });
+    if (!snapshot) return skip('context_unavailable');
+    if (
+      run.retryKind === 'running_wake' &&
+      (snapshot.local.date !== run.localDate || snapshot.autoOff || !snapshot.tools.length)
+    )
+      return skip('context_expired');
     // 欠费即停：余额不足时不向 Jev 付费询问。
     if (snapshot.balanceInsufficient) {
       await this.settings.pause(userId, 'insufficient_balance');
-      return this.finish(run.id, { status: 'paused', outcome: 'insufficient_balance' });
+      return this.wakeFailure(run, 'insufficient_balance');
     }
     // 3 天自动关（对照表 v3）：72 小时无用户消息且主线已满 3 次，就关掉该角色生态；
     // 单独线（早安晚安、跟进）发了多少都不影响这个判定。关之前不问 Jev。
@@ -458,6 +835,7 @@ export class EcologyService {
         // 碎碎念每天都要写（对照表 v3「TA 的生活」）：没做什么时也写一句中性的，
         // 只基于角色自己的生活素材，不编造。生成失败或被过滤就留空，不伪造。
         murmur: murmur?.text ? { userId, text: murmur.text } : null,
+        murmurReceipt: murmur ? { userId, result: murmur } : null,
         modelKey: extra.modelKey,
         chargedMicros: (extra.chargedMicros ?? 0) + (murmur?.chargedMicros ?? 0),
         latencyMs: this.clock.nowMs() - started,
@@ -476,15 +854,13 @@ export class EcologyService {
       if (asked.error === 'insufficient_balance' || asked.error === 'budget_exceeded') {
         if (asked.error === 'insufficient_balance')
           await this.settings.pause(userId, 'insufficient_balance');
-        return this.finish(run.id, { status: 'paused', outcome: asked.error });
+        return this.wakeFailure(run, modelFailureReason(asked));
       }
-      // 超时也可能已被供应商处理：实际费用以网关结算为准，这里不宣称免费，也不重试。
-      return this.finish(run.id, {
-        status: 'failed',
-        outcome: asked.error === 'timeout' ? 'jev_timeout' : `jev_${asked.error}`,
-        modelKey: config.decisionModelKey,
-        latencyMs: this.clock.nowMs() - started,
-      });
+      // The outer timer cannot prove the provider call settled.
+      return this.wakeFailure(
+        run,
+        asked.error === 'timeout' ? 'interrupted' : modelFailureReason(asked),
+      );
     }
     let charged = asked.chargedMicros;
     const verdict = interpretJevAnswers(candidates, asked.answers);
@@ -504,6 +880,34 @@ export class EcologyService {
         trace += `${trace ? ' ' : ' | '}fb=${fallback.action}:${fallback.score.toFixed(2)}`;
       }
     }
+    const decisionReason = resolved.selected.length
+      ? 'jev_approved'
+      : selected.length
+        ? 'jev_rules_fallback'
+        : verdict.lowConfidence.length || verdict.invalid.length
+          ? 'jev_filtered'
+          : 'jev_declined';
+    if (this.taskOutcomes)
+      await this.db.transaction(async (tx) => {
+        await tx.db
+          .update(ecologyRuns)
+          .set({ outcome: decisionReason, modelKey: asked.modelKey })
+          .where(eq(ecologyRuns.id, run.id));
+        await this.taskOutcomes?.record(
+          {
+            userId,
+            purpose: 'behavior_planning',
+            taskKey: modelTaskKey(userId, 'eco:' + run.id + ':jev'),
+            state:
+              decisionReason === 'jev_filtered' || decisionReason === 'jev_rules_fallback'
+                ? 'filtered'
+                : 'saved',
+            reason: decisionReason,
+            usageRecordId: Id.safeParse(asked.usageRecordId).success ? asked.usageRecordId : null,
+          },
+          tx,
+        );
+      });
     if (!selected.length)
       return idle(
         `${verdict.lowConfidence.length ? 'jev_low_confidence' : verdict.invalid.length ? 'jev_invalid' : 'jev_declined'}${trace}`,
@@ -515,11 +919,13 @@ export class EcologyService {
       const recheck = await this.stillAllowed(userId, action);
       const outcome: ActionResult = recheck
         ? { ok: false, chargedMicros: 0, reason: recheck }
-        : await this.perform(run, action, snapshot).catch((error: unknown): ActionResult => ({
-            ok: false,
-            chargedMicros: error instanceof ProactiveChargeError ? error.chargedMicros : 0,
-            reason: error instanceof Error ? error.message : 'error',
-          }));
+        : await this.perform(run, action, snapshot, selected.length === 1).catch(
+            (error: unknown): ActionResult => ({
+              ok: false,
+              chargedMicros: error instanceof ProactiveChargeError ? error.chargedMicros : 0,
+              reason: error instanceof Error ? error.message : 'error',
+            }),
+          );
       charged += outcome.chargedMicros;
       done.push({ action, result: outcome });
       if (!outcome.ok && /insufficient_balance/.test(outcome.reason ?? '')) {
@@ -541,6 +947,7 @@ export class EcologyService {
         modelKey: asked.modelKey,
         chargedMicros: charged + (murmur?.chargedMicros ?? 0),
         murmur: murmur?.text ? { userId, text: murmur.text } : null,
+        murmurReceipt: murmur ? { userId, result: murmur } : null,
         latencyMs: this.clock.nowMs() - started,
       });
     }
@@ -564,6 +971,7 @@ export class EcologyService {
       modelKey: asked.modelKey,
       chargedMicros: charged + (murmur?.chargedMicros ?? 0),
       murmur: murmur?.text ? { userId, text: murmur.text } : null,
+      murmurReceipt: murmur ? { userId, result: murmur } : null,
       latencyMs: this.clock.nowMs() - started,
     });
   }
@@ -581,10 +989,11 @@ export class EcologyService {
     | {
         ok: true;
         answers: DecideOutput['answers'];
+        usageRecordId: string;
         chargedMicros: number;
         modelKey: string;
       }
-    | { ok: false; error: GenerateError | 'timeout' }
+    | { ok: false; error: GenerateError | 'timeout'; message?: string }
   > {
     const deadline = this.clock.nowMs() + JEV_TIMEOUT_MS;
     const call = this.media
@@ -604,7 +1013,8 @@ export class EcologyService {
           options: [...JEV_OPTIONS],
         })),
         deadlineAt: new Date(deadline).toISOString(),
-        idempotencyKey: `eco:${run.id}:jev`,
+        idempotencyKey: `eco:${run.id}:jev${retrySuffix(run.retryCount)}`,
+        taskKey: modelTaskKey(run.userId, 'eco:' + run.id + ':jev'),
       })
       .catch(() => ({ ok: false as const, error: 'provider_unavailable' as const }));
     let timer: NodeJS.Timeout | undefined;
@@ -617,6 +1027,7 @@ export class EcologyService {
       return {
         ok: true,
         answers: result.value.answers,
+        usageRecordId: result.value.usageRecordId,
         chargedMicros: result.value.chargedMicros,
         modelKey: result.value.modelKey,
       };
@@ -629,13 +1040,13 @@ export class EcologyService {
    * 碎碎念（对照表 v3「TA 的生活」）：每次唤醒写一两句第一人称的话，每天都要有，
    * 不管用户有没有互动。只基于角色自己的生活素材与本次真实做了什么写，不编造；只进 ecology_runs
    * 的加密展示字段，绝不写回记忆、绝不记成事实（无例外）。
-   * 返回 null = 没调到模型；text 为 null = 调了但生成失败 / 被过滤（费用照记，碎碎念留空，不重试、不伪造）。
+   * 被过滤的生成留空。已知临时失败可以在同一时段内单独再写碎碎念。
    */
   private async generateMurmur(
     run: RunRow,
     snapshot: Snapshot,
     doneSummaries: readonly string[],
-  ): Promise<{ text: string | null; chargedMicros: number } | null> {
+  ): Promise<MurmurResult | null> {
     // 碎碎念只是展示内容：任何失败（模型、资料、政策）都留空，绝不能打断唤醒本身。
     try {
       return await this.generateMurmurInner(run, snapshot, doneSummaries);
@@ -693,7 +1104,7 @@ export class EcologyService {
     run: RunRow,
     snapshot: Snapshot,
     doneSummaries: readonly string[],
-  ): Promise<{ text: string | null; chargedMicros: number } | null> {
+  ): Promise<MurmurResult | null> {
     const role = await this.characters.getForRuntime(run.userId, run.characterId).catch(() => null);
     if (!role) return null;
     const policy = await this.policy
@@ -707,12 +1118,12 @@ export class EcologyService {
         characterId: run.characterId,
         purpose: 'behavior_planning',
         billingOwner: 'user',
+        countAsBackground: true,
+        ecologyTask: true,
         ...(snapshot.privateMode
           ? {
               modelRole: 'adult' as const,
               conversationId: snapshot.conversationId,
-              countAsBackground: true,
-              ecologyTask: true,
             }
           : { modelRole: 'chat' as const }),
         responseFormat: 'text',
@@ -721,7 +1132,8 @@ export class EcologyService {
           ...(snapshot.privateMode ? { scenarioMode: 'adult' as const } : {}),
           promptTemplateVersion: 'ecology-murmur-v1',
         },
-        idempotencyKey: `eco:murmur:${run.id}`,
+        idempotencyKey: `eco:murmur:${run.id}${retrySuffix(run.retryKind === 'running_murmur' ? run.retryCount : 0)}`,
+        taskKey: modelTaskKey(run.userId, 'eco:murmur:' + run.id),
         messages: [
           {
             role: 'system',
@@ -735,11 +1147,23 @@ export class EcologyService {
         ],
       })
       .catch(() => null);
-    if (!r?.ok) return null;
+    if (!r?.ok)
+      return {
+        text: null,
+        chargedMicros: 0,
+        failure: r ? modelFailureReason(r) : 'provider_unavailable',
+        retryCount: run.retryKind === 'running_murmur' ? run.retryCount : 0,
+      };
     // 元话语 / 复述指令整条丢弃，不重试；超长按句末截断（见 domain/ecology-murmur.ts）。
     const text = finalizeMurmur(r.value.text);
     const safe = !!text && !healthPrivate(text) && outputAllowed(text, policy, false);
-    return { text: safe ? text : null, chargedMicros: r.value.chargedMicros };
+    return {
+      text: safe ? text : null,
+      chargedMicros: r.value.chargedMicros,
+      ...(Id.safeParse(r.value.usageRecordId).success
+        ? { usageRecordId: r.value.usageRecordId }
+        : {}),
+    };
   }
 
   /**
@@ -762,6 +1186,7 @@ export class EcologyService {
     run: RunRow,
     action: EcologyRunKind,
     snapshot: Snapshot,
+    onlyAction: boolean,
   ): Promise<ActionResult> {
     const { userId, characterId } = run;
     // Gate 不写正文；这里只给用户场景模型一句程序侧说明，target 由程序从快照里选。
@@ -777,7 +1202,7 @@ export class EcologyService {
         characterId,
         runId: run.id,
         brief,
-        extras: { extra: null, greeting },
+        extras: { extra: null, greeting, retryableMessage: onlyAction && action === 'message' },
       });
       return r.ok
         ? { ok: true, chargedMicros: r.chargedMicros, messageId: r.messageId }
