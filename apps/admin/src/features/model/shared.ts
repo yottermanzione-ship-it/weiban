@@ -42,6 +42,7 @@ export const ERROR_LABELS: Record<string, string> = {
   timeout_idle: '等待上游数据超时',
   timeout_progress: '等待模型生成进度超时',
   timeout_deadline: '调用总时限已到',
+  insufficient_fallback_time: '派发前剩余时间不足',
   stream_incomplete: '响应流提前中断',
   response_parse_error: '上游响应格式无效',
   response_too_large: '响应超过传输保护限制',
