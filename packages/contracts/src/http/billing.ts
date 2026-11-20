@@ -520,7 +520,16 @@ export const BillingAdminEndpoints = {
       page: z.coerce.number().int().min(1).max(1000000).default(1),
       pageSize: z.coerce.number().int().min(1).max(100).default(20),
       sort: z
-        .enum(['newest', 'oldest', 'balance_asc', 'balance_desc', 'spent_asc', 'spent_desc'])
+        .enum([
+          'newest',
+          'oldest',
+          'balance_asc',
+          'balance_desc',
+          'spent_asc',
+          'spent_desc',
+          'active_asc',
+          'active_desc',
+        ])
         .default('newest'),
     }),
     response: z.object({

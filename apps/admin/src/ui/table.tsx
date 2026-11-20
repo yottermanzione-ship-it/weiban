@@ -85,11 +85,12 @@ type ColumnPrefs = NonNullable<
 function columnTitle(title: ReactNode) {
   return typeof title === 'string'
     ? title
-    : isValidElement<{ children?: ReactNode }>(title)
-      ? Children.toArray(title.props.children)
+    : isValidElement<{ children?: ReactNode; 'aria-label'?: string }>(title)
+      ? (title.props['aria-label'] ??
+        Children.toArray(title.props.children)
           .filter((child) => typeof child === 'string' || typeof child === 'number')
           .join('')
-          .trim()
+          .trim())
       : '';
 }
 

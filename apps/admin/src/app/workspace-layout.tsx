@@ -44,10 +44,12 @@ const CST_TIME = new Intl.DateTimeFormat('sv-SE', {
 
 export function WorkspaceLayout({
   username,
+  preloadPage,
   onLogout,
   children,
 }: {
   username: string;
+  preloadPage: (path: string) => void;
   onLogout: () => void;
   children: ReactNode;
 }) {
@@ -91,6 +93,8 @@ export function WorkspaceLayout({
       label: (
         <Link
           to={item.path}
+          onPointerEnter={() => preloadPage(item.path)}
+          onFocus={() => preloadPage(item.path)}
           className="os-nav-link"
           aria-current={link.path === item.path ? 'page' : undefined}
         >
