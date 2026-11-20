@@ -7,6 +7,7 @@ import { MemoryFundingRecovery } from './memory-funding-recovery.js';
 import {
   isMemoryFundingBlock,
   memoryOnHold,
+  factJobKey,
   memoryFailureCode,
   memoryFundingCheckAt,
   type MemoryFundingBlock,
@@ -1521,10 +1522,10 @@ export class MemoryService {
     await this.chatSummaries?.reconcile();
   }
   async enqueue(tx: DbTx | undefined, job: MemoryJob, delayMs = 30000) {
-    await this.jobs.send(EXTRACT_MEMORY_JOB, job, {
+    await this.jobs.sendCoalesced(EXTRACT_MEMORY_JOB, job, {
       tx,
       startAfter: new Date(this.clock.nowMs() + delayMs),
-      singletonKey: 'facts:' + job.userId + ':' + job.conversationId,
+      singletonKey: factJobKey(job.userId, job.conversationId, job.epoch),
       retryLimit: 0,
     });
   }

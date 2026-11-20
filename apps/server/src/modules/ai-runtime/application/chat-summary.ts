@@ -242,7 +242,7 @@ export class ChatSummaryService {
       )
       .limit(20);
     for (const row of rows)
-      await this.jobs.send(CHAT_SUMMARY_JOB, row, {
+      await this.jobs.sendCoalesced(CHAT_SUMMARY_JOB, row, {
         singletonKey: `chat-summary:${row.id}`,
         retryLimit: 0,
       });

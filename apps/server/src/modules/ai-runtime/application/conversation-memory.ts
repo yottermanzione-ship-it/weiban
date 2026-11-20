@@ -127,8 +127,10 @@ export class ConversationMemoryService implements OnModuleInit {
     @Optional() @Inject(MODEL_TASK_OUTCOME_PORT) private readonly outcomes?: ModelTaskOutcomePort,
   ) {}
   async onModuleInit() {
-    await this.jobs.work<{ stateId: string }>('ai.extract_group_memory', (job) =>
-      this.group(job.data.stateId),
+    await this.jobs.workCoalesced<{ stateId: string }>(
+      'ai.extract_group_memory',
+      (job) => this.group(job.data.stateId),
+      (data) => data.stateId,
     );
     await this.jobs.work<{ callId: string }>('ai.extract_call_memory', (job) =>
       this.call(job.data.callId),
@@ -184,7 +186,7 @@ export class ConversationMemoryService implements OnModuleInit {
           !memoryOnHold(row.wait_reason) &&
           !(row.retry_after && row.retry_after > this.clock.now())
         )
-          await this.jobs.send(
+          await this.jobs.sendCoalesced(
             'ai.extract_group_memory',
             { stateId: row.id },
             {
@@ -236,7 +238,7 @@ export class ConversationMemoryService implements OnModuleInit {
       )
     ).rows;
     for (const row of groups)
-      await this.jobs.send(
+      await this.jobs.sendCoalesced(
         'ai.extract_group_memory',
         { stateId: row.id },
         { singletonKey: row.id, retryLimit: 5, retryBackoff: true },

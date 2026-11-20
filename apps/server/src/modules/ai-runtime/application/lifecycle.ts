@@ -29,6 +29,7 @@ import {
 } from '../infra/db/schema.js';
 import { GENERATE_REPLY_JOB, ReplyPlanStore, SWEEP_WAITING_REPLIES_JOB } from './plan-store.js';
 import { REPLY_WAIT_SWEEP_CRON } from '../domain/reply-delivery.js';
+import { factJobKey } from '../domain/memory-funding.js';
 import { MemoryService, EXTRACT_MEMORY_JOB, type MemoryJob } from './memory.js';
 import { PrivateDigestService, PRIVATE_DIGEST_JOB } from './private-digest.js';
 import { CHAT_SUMMARY_JOB } from './chat-summary.js';
@@ -160,15 +161,21 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
         await this.groupChat.recover(job.data.userId);
       },
     );
-    await this.jobs.work<MemoryJob>(EXTRACT_MEMORY_JOB, (j) => this.memory.extract(j.data), {
-      pollingIntervalSeconds: 0.5,
-      localConcurrency: 2,
-    });
-    await this.jobs.work<{ id: string }>(
+    await this.jobs.workCoalesced<MemoryJob>(
+      EXTRACT_MEMORY_JOB,
+      (j) => this.memory.extract(j.data),
+      (data) => factJobKey(data.userId, data.conversationId, data.epoch),
+      {
+        pollingIntervalSeconds: 0.5,
+        localConcurrency: 2,
+      },
+    );
+    await this.jobs.workCoalesced<{ id: string }>(
       CHAT_SUMMARY_JOB,
       async (j) => {
         await this.memory.chatSummaries?.run(j.data.id);
       },
+      (data) => 'chat-summary:' + data.id,
       { pollingIntervalSeconds: 2, localConcurrency: 1 },
     );
     // 旧私密降为日常任务只作取消兼容，不再生成或降范围。

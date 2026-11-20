@@ -1,5 +1,9 @@
 import { nextLocalMidnight, PLATFORM_TIME_ZONE } from '../../../platform/time/local-time.js';
 
+export function factJobKey(userId: string, conversationId: string, epoch: string) {
+  return `facts:${userId}:${conversationId}:${epoch}`;
+}
+
 export type MemoryFundingBlock = 'insufficient_balance' | 'budget_exceeded';
 
 export function memoryFailureCode(result: { error: string; message?: string }): string {

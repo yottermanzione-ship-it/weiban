@@ -153,7 +153,7 @@ export class ReplyPlanStore {
       await this.notifyDelivery(tx, row);
   }
   async manualTriggerVisible(row: ReplyPlan, tx: DbTx): Promise<boolean> {
-    if (row.failure !== 'manual_retry') return true;
+    if (!row.manualRequested) return true;
     const visible = await this.triggers?.visibleReplyTriggers(
       row.userId,
       row.conversationId,
@@ -254,15 +254,15 @@ export class ReplyPlanStore {
         return null;
       }
       const newest = all
-        .filter((p) => p.status === 'queued' && p.failure !== 'manual_retry')
+        .filter((p) => p.status === 'queued' && !p.manualRequested)
         .sort(
           (a, b) => b.triggerSeq - a.triggerSeq || b.createdAt.getTime() - a.createdAt.getTime(),
         )[0];
-      if (row.status === 'queued' && row.failure !== 'manual_retry' && newest?.id !== id) {
+      if (row.status === 'queued' && !row.manualRequested && newest?.id !== id) {
         await this.cancel(id, undefined, tx);
         return null;
       }
-      if (row.failure !== 'manual_retry') {
+      if (!row.manualRequested) {
         const superseded = await tx.db
           .update(replyPlans)
           .set({ status: 'cancelled', inputCiphertext: null, resultCiphertext: null })
@@ -271,7 +271,7 @@ export class ReplyPlanStore {
               eq(replyPlans.conversationId, row.conversationId),
               eq(replyPlans.status, 'queued'),
               ne(replyPlans.id, id),
-              or(isNull(replyPlans.failure), ne(replyPlans.failure, 'manual_retry')),
+              eq(replyPlans.manualRequested, false),
             ),
           )
           .returning();
@@ -306,12 +306,29 @@ export class ReplyPlanStore {
       plain.fill(0);
     }
   }
-  private async cancelledReceipt(tx: DbTx, row: ReplyPlan) {
+  private async cancelledReceipt(
+    tx: DbTx,
+    row: ReplyPlan,
+    purpose: 'chat_reply' | 'safety_followup' = 'chat_reply',
+  ) {
     if (row.nextBubble || !row.failure) return;
     const deliberate = ['source_unavailable', 'manual_retry', 'superseded'].includes(row.failure);
-    await this.receipt(tx, row, deliberate ? 'cancelled' : 'failed', row.failure);
+    await this.receipt(
+      tx,
+      row,
+      deliberate ? 'cancelled' : 'failed',
+      row.failure,
+      null,
+      undefined,
+      purpose,
+    );
   }
-  async cancel(id: string, reason?: string, transaction?: DbTx): Promise<void> {
+  async cancel(
+    id: string,
+    reason?: string,
+    transaction?: DbTx,
+    purpose: 'chat_reply' | 'safety_followup' = 'chat_reply',
+  ): Promise<void> {
     const apply = async (tx: DbTx) => {
       const [row] = await tx.db
         .update(replyPlans)
@@ -330,7 +347,7 @@ export class ReplyPlanStore {
           ),
         )
         .returning();
-      if (row) await this.cancelledReceipt(tx, row);
+      if (row) await this.cancelledReceipt(tx, row, purpose);
     };
     if (transaction) await apply(transaction);
     else await this.db.transaction(apply);
