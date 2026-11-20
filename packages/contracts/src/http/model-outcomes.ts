@@ -12,6 +12,7 @@ export const AdminTaskState = z.enum([
   'result_filtered',
   'summary_saved',
   'retry_pending',
+  'needs_review',
   'blocked_balance',
   'blocked_concurrency',
   'blocked_budget',

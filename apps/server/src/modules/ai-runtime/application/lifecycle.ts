@@ -153,10 +153,13 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       (j) => this.engine.run(j.data.planId),
       { pollingIntervalSeconds: 0.5, localConcurrency: 4 },
     );
-    await this.jobs.work<{ userId?: string }>('ai.recover_replies', async (job) => {
-      await this.store.recover(job.data.userId);
-      await this.groupChat.recover(job.data.userId);
-    });
+    await this.jobs.work<{ userId?: string; wake?: 'balance' | 'model' }>(
+      'ai.recover_replies',
+      async (job) => {
+        await this.store.recover(job.data.userId, job.data.wake);
+        await this.groupChat.recover(job.data.userId);
+      },
+    );
     await this.jobs.work<MemoryJob>(EXTRACT_MEMORY_JOB, (j) => this.memory.extract(j.data), {
       pollingIntervalSeconds: 0.5,
       localConcurrency: 2,
@@ -896,7 +899,7 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
         await this.ecologySettings.resume(event.payload.userId, tx);
         await this.jobs.send(
           'ai.recover_replies',
-          { userId: event.payload.userId },
+          { userId: event.payload.userId, wake: 'balance' },
           { tx, retryLimit: 10, retryBackoff: true },
         );
         // T-096：补揭晓每日一问、补生成回信与提醒说法。
@@ -914,7 +917,7 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
         if (event.payload.available) {
           await this.jobs.send(
             'ai.recover_replies',
-            {},
+            { wake: 'model' },
             { tx, retryLimit: 10, retryBackoff: true },
           );
           const users = await tx.query<{ user_id: string }>(
@@ -933,7 +936,11 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       consumer: 'ai.on_adult_checker_configured',
       eventType: 'model_access.adult_checker_configured',
       handle: async (_event, tx) => {
-        await this.jobs.send('ai.recover_replies', {}, { tx, retryLimit: 10, retryBackoff: true });
+        await this.jobs.send(
+          'ai.recover_replies',
+          { wake: 'model' },
+          { tx, retryLimit: 10, retryBackoff: true },
+        );
       },
     });
   }

@@ -15,7 +15,6 @@ import {
   AUDIT_LOG,
   CLOCK,
   LOGGER,
-  modelTaskKey,
   OUTBOX,
   type Outbox,
   P01_REPLY_DELAY,
@@ -26,9 +25,10 @@ import {
   type Logger,
 } from '../../../platform/index.js';
 import { CHAT_PARTICIPANT_PORT } from '../../chat/index.js';
+import { nextLocalMidnight, PLATFORM_TIME_ZONE } from '../../../platform/time/local-time.js';
 import { MODEL_GATEWAY_PORT, MODEL_PLATFORM_GATEWAY_PORT } from '../../model-access/index.js';
 import { replyPlans } from '../infra/db/schema.js';
-import { ReplyPlanStore, type ReplyPlan } from './plan-store.js';
+import { ReplyPlanStore, replyModelTaskKey, type ReplyPlan } from './plan-store.js';
 import { ReplyContext, ReplySnapshot } from './reply-context.js';
 import { modelFailureReason } from '../domain/model-failure.js';
 import { recordBlocked, withoutBlocked } from './model-blocked-messages.js';
@@ -85,7 +85,8 @@ const Result = z.object({
   charge: z
     .object({ usageRecordId: z.string().nullable(), chargedMicros: z.number().nonnegative() })
     .optional(),
-  usageRecordId: z.string().optional(),
+  usageRecordId: z.string().nullable().optional(),
+  modelPurpose: z.enum(['chat_reply', 'safety_followup']).optional(),
 });
 @Injectable()
 export class ReplyEngine {
@@ -178,6 +179,7 @@ export class ReplyEngine {
         {
           ...this.input(row, snapshot, 'check'),
           purpose: 'safety_check',
+          taskKey: replyModelTaskKey(row, 'safety_check'),
           messages: [
             {
               role: 'system',
@@ -205,7 +207,13 @@ export class ReplyEngine {
     // 仍用该用户的私密模型（私密内容不出私密范围，契约 3.29 平台端口 modelRole = adult）。
     const privateCare = inCare && snapshot.scope === 'adult';
     const careAware = (input: GenerateTextInput): GenerateTextInput =>
-      privateCare ? { ...input, purpose: 'safety_followup' } : input;
+      privateCare
+        ? {
+            ...input,
+            purpose: 'safety_followup',
+            taskKey: replyModelTaskKey(row, 'safety_followup'),
+          }
+        : input;
     // H3：一步看图——本轮新图附在请求里，回复正文后顺带输出描述尾标；这里剥掉尾标并收集描述。
     const slots = snapshot.imageSlots;
     const seen: (ImageCaption | null)[] = slots.map(() => null);
@@ -292,6 +300,7 @@ export class ReplyEngine {
       answer = await checked(await callModelForCare(gw, guard, facts, this.platform), guard);
     }
     let bubbles: string[] = [];
+    let adoptedUsageId: string | null = null;
     let fallbackReason: string | null = null;
     let stickerMood: StickerMood | null = null;
     let photoWanted = false;
@@ -307,6 +316,7 @@ export class ReplyEngine {
     ) {
       // 2026-10-30 双兜底出站过滤：只清本轮检出的习惯词，删完为空时 stripHabits 原样返回，绝不发空。
       bubbles = replyBubbles(answer.value.text);
+      if (bubbles.length) adoptedUsageId = answer.value.usageRecordId;
       stickerMood = marks.get(answer.value)?.mood ?? null;
       photoWanted = marks.get(answer.value)?.photo ?? false;
     }
@@ -355,8 +365,10 @@ export class ReplyEngine {
           'ai.generate_reply blocked-message record failed',
         ),
       );
-    if (inCare && !bubbles.every((b) => outputAllowed(b, snapshot.policy, false)))
+    if (inCare && !bubbles.every((b) => outputAllowed(b, snapshot.policy, false))) {
       bubbles = careFallback(undefined, snapshot.careVariant, null);
+      adoptedUsageId = null;
+    }
     // T-071 MED-04 第 2 条：识过图的回合，回复里出现名单外真人姓名 → 重写一次，仍不行用安全说法。
     if (!inCare && snapshot.allowedNames) {
       const bad = await this.mediaAi.offendingNames(
@@ -391,6 +403,7 @@ export class ReplyEngine {
             )
           ).length;
         bubbles = accepted ? again : ['图里的人我不太认得呢，你跟我说说？'];
+        adoptedUsageId = accepted && retried.ok ? retried.value.usageRecordId : null;
         const retriedMarks = accepted && retried.ok ? marks.get(retried.value) : undefined;
         stickerMood = retriedMarks?.mood ?? null;
         photoWanted = retriedMarks?.photo ?? false;
@@ -516,7 +529,8 @@ export class ReplyEngine {
         care: inCare,
         ...(contents ? { contents } : {}),
         ...(charge.chargedMicros > 0 ? { charge } : {}),
-        ...(charge.usageRecordId ? { usageRecordId: charge.usageRecordId } : {}),
+        usageRecordId: adoptedUsageId,
+        modelPurpose: privateCare ? 'safety_followup' : 'chat_reply',
       });
       const elapsed = this.clock.nowMs() - Date.parse(snapshot.triggerAt);
       const base = inCare ? 0 : replyDelay(bubbles.join(''), snapshot.instantReply, elapsed);
@@ -666,7 +680,7 @@ export class ReplyEngine {
       responseFormat: 'text',
       // 聊天由网关按当前模型核准的总输出能力分配，包含思考与图片描述，不再统一截成 600/900。
       idempotencyKey: `ai:${row.id}:${row.retryEpoch}:${suffix}`,
-      taskKey: modelTaskKey(row.userId, 'reply:' + row.id),
+      taskKey: replyModelTaskKey(row),
       meta: {
         personaVersion: snapshot.personaVersion,
         promptTemplateVersion: snapshot.promptTemplateVersion,
@@ -725,7 +739,10 @@ export class ReplyEngine {
   private async wait(row: ReplyPlan, reason: string): Promise<void> {
     // T-20261103e：due_at 记下次巡检最早什么时候再试（按已恢复次数退避）；只有可重试的失败会被巡检捡起。
     await this.store.db.transaction(async (tx) => {
-      const dueAt = new Date(this.clock.nowMs() + waitRetryDelayMs(row.retryEpoch));
+      const dueAt =
+        reason === 'budget_exceeded'
+          ? nextLocalMidnight(this.clock.now(), PLATFORM_TIME_ZONE)
+          : new Date(this.clock.nowMs() + waitRetryDelayMs(row.retryEpoch));
       const [updated] = await tx.db
         .update(replyPlans)
         .set({
@@ -746,9 +763,12 @@ export class ReplyEngine {
         )
         .returning();
       if (updated) {
-        const blocked = ['insufficient_balance', 'budget_exceeded', 'request_too_large'].includes(
-          reason,
-        );
+        const blocked = [
+          'insufficient_balance',
+          'budget_exceeded',
+          'request_too_large',
+          'interrupted',
+        ].includes(reason);
         const scheduled = retryableWait(reason);
         await this.store.receipt(
           tx,
@@ -756,7 +776,7 @@ export class ReplyEngine {
           blocked ? 'blocked' : scheduled ? 'deferred' : 'failed',
           reason,
           null,
-          scheduled ? dueAt : undefined,
+          scheduled || reason === 'budget_exceeded' ? dueAt : undefined,
         );
       }
     });
@@ -836,6 +856,7 @@ export class ReplyEngine {
           { length: Math.max(2, result.bubbles.length) },
           (_, i) => safe[i === 0 ? 0 : 1]!,
         );
+        result.usageRecordId = null;
       }
       await this.store.db.transaction(async (tx) => {
         if (!(await this.store.lock(tx, row.userId, row.conversationId))) return;
@@ -980,7 +1001,11 @@ export class ReplyEngine {
             row,
             'delivered',
             null,
-            result.usageRecordId ?? result.charge?.usageRecordId,
+            result.usageRecordId === undefined
+              ? result.charge?.usageRecordId
+              : result.usageRecordId,
+            undefined,
+            result.modelPurpose,
           );
         }
         if (

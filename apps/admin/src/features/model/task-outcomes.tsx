@@ -374,7 +374,14 @@ function TaskDrawer({ task, close }: { task: AdminModelTask; close: () => void }
       <p>
         开始 {formatDateTime(task.startedAt)} · 最后更新 {formatDateTime(task.updatedAt)}
       </p>
-      {task.retryAt && <p>下次重试 {formatDateTime(task.retryAt)}</p>}
+      {task.retryAt && (
+        <p>
+          {['insufficient_balance', 'budget_exceeded'].includes(task.reason ?? '')
+            ? '下次检查'
+            : '下次重试'}{' '}
+          {formatDateTime(task.retryAt)}
+        </p>
+      )}
       {task.reason && (
         <p>{RECEIPT_REASONS[task.reason] ?? ERROR_LABELS[task.reason] ?? task.reason}</p>
       )}
@@ -438,7 +445,7 @@ function Attempt({ item: a }: { item: AdminTaskAttempt }) {
           {a.priceVersionLabel ?? a.priceVersionId ?? '历史未记录'}
         </span>{' '}
         · {a.estimated ? '含本地计量或估算' : '记录的用量'}
-        ；输入包括发送给模型的上下文，输出是本次生成量。
+        。输入包括发送给模型的上下文，输出是本次生成量。
       </p>
       {(a.overallRemainingMs != null || a.crossModelReserveMs != null) && (
         <p>
@@ -460,7 +467,7 @@ function Attempt({ item: a }: { item: AdminTaskAttempt }) {
             .map(([k, v]) => (
               <div key={k}>
                 <dt>{DIAG_LABELS[k] ?? k}</dt>
-                <dd>{String(v)}</dd>
+                <dd>{DIAG_VALUES[k]?.[String(v)] ?? String(v)}</dd>
               </div>
             ))}
         </dl>
@@ -482,4 +489,28 @@ const DIAG_LABELS: Record<string, string> = {
   switchReason: '切换条件',
   failureDomain: '上游入口标识',
   rateLimitScope: '限流范围',
+};
+const DIAG_VALUES: Record<string, Record<string, string>> = {
+  stage: {
+    connect: '建立连接',
+    headers: '已收到响应头',
+    read: '读取响应',
+    decode: '解析响应',
+    complete: '响应结束',
+  },
+  emptyKind: {
+    absent: '没有正文字段',
+    whitespace: '正文只有空白字符',
+    reasoning_only: '仅返回思考内容',
+  },
+  rateLimitScope: { account: '整个上游账号', model: '当前模型' },
+  switchReason: {
+    no_backup: '当时没有合格的备用线路',
+    guard_armed: '已为备用线路预留时间',
+    progress_observed: '已收到有效生成进度',
+    backup_unavailable: '准备换路时备用线路已不可用',
+    progress_timeout: '长时间没有有效进度，触发换路',
+    non_streaming: '使用非流式请求',
+    terminal_frame: '已收到结束信号',
+  },
 };

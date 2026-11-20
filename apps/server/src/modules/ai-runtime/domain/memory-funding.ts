@@ -3,9 +3,15 @@ import { nextLocalMidnight, PLATFORM_TIME_ZONE } from '../../../platform/time/lo
 export type MemoryFundingBlock = 'insufficient_balance' | 'budget_exceeded';
 
 export function memoryFailureCode(result: { error: string; message?: string }): string {
-  return result.message === 'request_too_large' || result.message === 'concurrency_limited'
+  return result.message === 'request_too_large' ||
+    result.message === 'concurrency_limited' ||
+    result.message === 'interrupted'
     ? result.message
     : result.error;
+}
+
+export function memoryOnHold(reason: string | null | undefined): boolean {
+  return reason === 'insufficient_balance' || reason === 'interrupted';
 }
 
 export function isMemoryFundingBlock(reason: string): reason is MemoryFundingBlock {

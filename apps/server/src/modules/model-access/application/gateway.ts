@@ -303,11 +303,12 @@ export class ModelGateway implements ModelGatewayPort {
       routing.primary = primary.facts.modelKey;
       routing.remaining = await this.fallbackOptions(input, primary.facts.modelKey);
     }
+    let lastFailure = first;
     while (routing.remaining.length && this.clock.nowMs() < Date.parse(deadlineAt)) {
       const available = this.readyAlternates(routing, input.purpose);
       if (!available.length) {
         if (this.readyAlternates(routing, input.purpose, false).length)
-          return complete({ ...first, message: 'insufficient_fallback_time' });
+          return complete({ ...lastFailure, message: 'insufficient_fallback_time' });
         break;
       }
       const preferred =
@@ -336,6 +337,7 @@ export class ModelGateway implements ModelGatewayPort {
         this.logger.log(`model fallback (${input.purpose}): ${routing.primary} -> ${candidate}`);
         return complete(result);
       }
+      lastFailure = result;
       if (
         [
           'concurrency_limited',
@@ -348,7 +350,7 @@ export class ModelGateway implements ModelGatewayPort {
       )
         return complete(result);
     }
-    return complete(first);
+    return complete(lastFailure);
   }
   /**
    * internal 只供网关自己的降级使用（不属于契约）：fallbackModelKey = 普通后台任务备用模型。
@@ -826,7 +828,10 @@ export class ModelGateway implements ModelGatewayPort {
     };
     for (let ordinal = 0; ordinal < maximumAttempts; ordinal++) {
       const remaining = Math.floor(budgetMs - (performance.now() - wallStart));
-      if (remaining <= 0) break;
+      if (remaining <= 0) {
+        unavailableReason = 'timeout_deadline';
+        break;
+      }
       let candidate = candidates[index];
       while (candidate) {
         if (this.scheduler.isRouteCooling(model.modelKey, candidate.upstreamId))
@@ -1221,6 +1226,7 @@ export class ModelGateway implements ModelGatewayPort {
           index++;
           continue;
         }
+        if (errorCode === 'timeout_deadline') unavailableReason = errorCode;
         if (answer.category === 'content_rejected' || answer.category === 'bad_request')
           return completeFailure(
             answer.category,
@@ -1440,7 +1446,9 @@ export class ModelGateway implements ModelGatewayPort {
     const budgetedText =
       i.purpose === 'chat_reply' ||
       (i.purpose === 'memory' &&
-        ['context-fit-v2', 'chat-summary-v2'].includes(i.meta?.promptTemplateVersion ?? ''));
+        ['context-fit-v2', 'chat-summary-v2', 'chat-summary-v3'].includes(
+          i.meta?.promptTemplateVersion ?? '',
+        ));
     return (
       Id.safeParse(i.userId).success &&
       ModelPurpose.safeParse(i.purpose).success &&

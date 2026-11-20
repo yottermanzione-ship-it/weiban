@@ -11,7 +11,15 @@ import { CONTACTS_READ_PORT } from '../../contacts/index.js';
 import { replyPlans } from '../infra/db/schema.js';
 import { ReplyPlanStore, type ReplyPlan } from './plan-store.js';
 
-function issueOf(row: ReplyPlan): ReplyDeliveryIssue | null {
+const statusColumns = {
+  triggerId: replyPlans.triggerId,
+  retryEpoch: replyPlans.retryEpoch,
+  status: replyPlans.status,
+  failure: replyPlans.failure,
+  kind: replyPlans.kind,
+  nextBubble: replyPlans.nextBubble,
+};
+function issueOf(row: Pick<ReplyPlan, keyof typeof statusColumns>): ReplyDeliveryIssue | null {
   if (!row.failure || row.kind !== 'message' || row.nextBubble !== 0 || row.status === 'done')
     return null;
   const base = { messageId: row.triggerId, epoch: row.retryEpoch };
@@ -26,10 +34,13 @@ function issueOf(row: ReplyPlan): ReplyDeliveryIssue | null {
     case 'insufficient_balance':
     case 'budget_exceeded':
     case 'request_too_large':
+    case 'interrupted':
     case 'concurrency_limited':
       reason = row.failure;
       break;
     case 'wait_expired':
+    case 'timeout_deadline':
+    case 'upstream_cooldown':
     case 'route_unavailable_or_busy':
     case 'insufficient_fallback_time':
     case 'rate_limited':
@@ -42,12 +53,19 @@ function issueOf(row: ReplyPlan): ReplyDeliveryIssue | null {
       reason = 'model_unavailable';
       break;
     case 'account_limited':
+    case 'account_concurrency_limited':
+    case 'account_rate_limited':
       reason = 'concurrency_limited';
       break;
     default:
       reason = 'unavailable';
   }
-  const blocked = ['insufficient_balance', 'budget_exceeded', 'request_too_large'].includes(reason);
+  const blocked = [
+    'insufficient_balance',
+    'budget_exceeded',
+    'request_too_large',
+    'interrupted',
+  ].includes(reason);
   return {
     ...base,
     reason,
@@ -73,7 +91,7 @@ export class ReplyDeliveryStatusService {
       const visible = await this.chat.visibleReplyTriggers(userId, conversationId, ids, tx);
       if (!visible.length) return { items: [] };
       const plans = await tx.db
-        .select()
+        .select(statusColumns)
         .from(replyPlans)
         .where(
           and(
@@ -95,7 +113,12 @@ export class ReplyDeliveryStatusService {
       if (!(await this.chat.visibleReplyTriggers(userId, conversationId, [messageId], tx)).length)
         throw new AppError('not_found', '这条消息已不可见');
       const [row] = await tx.db
-        .select()
+        .select({
+          ...statusColumns,
+          id: replyPlans.id,
+          characterId: replyPlans.characterId,
+          createdAt: replyPlans.createdAt,
+        })
         .from(replyPlans)
         .where(
           and(

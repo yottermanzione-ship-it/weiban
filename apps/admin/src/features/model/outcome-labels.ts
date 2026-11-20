@@ -8,6 +8,7 @@ export const STATE_LABELS: Record<AdminTaskState, string> = {
   result_filtered: '业务结果已过滤',
   summary_saved: '摘要已落库',
   retry_pending: '待重试',
+  needs_review: '派发结果待核',
   blocked_balance: '发送前积分不足',
   blocked_concurrency: '发送前并发已满',
   blocked_budget: '发送前预算不足',
@@ -85,6 +86,17 @@ export function explainError(code: string) {
 }
 
 export const RECEIPT_REASONS: Record<string, string> = {
+  manual_retry_queued: '已在原消息上请求补发角色回复',
+  manual_retry: '用户在原消息上请求了重试',
+  source_unavailable: '原消息已隐藏、撤回或不可访问',
+  delivery_unavailable: '角色消息未能写入会话',
+  wait_expired: '超过本次回复的自动等待时限',
+  output_guard: '生成内容未通过发送检查',
+  relationship_changed: '生成期间好友关系发生变化',
+  memory_funding_ready: '余额已恢复，待办已重新排队',
+  group_memory_prepare_failed: '准备群聊记忆素材失败',
+  group_memory_gateway_failed: '群聊记忆模型调用失败',
+  group_memory_write_failed: '保存群聊记忆失败',
   no_route: '没有已启用的线路',
   route_unavailable_or_busy: '候选线路均不可用或暂无名额',
   no_matching_route_bounds: '没有线路的计费上限符合本次请求',

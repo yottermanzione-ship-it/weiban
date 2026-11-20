@@ -2,6 +2,7 @@ import { Inject, Injectable, Optional, type OnModuleInit } from '@nestjs/common'
 import { MODEL_TASK_OUTCOME_PORT, type ModelTaskOutcomePort } from '@weiban/contracts';
 import {
   isMemoryFundingBlock,
+  memoryOnHold,
   memoryFailureCode,
   memoryFundingCheckAt,
 } from '../domain/memory-funding.js';
@@ -180,7 +181,7 @@ export class ConversationMemoryService implements OnModuleInit {
         if (
           row &&
           (row.pending_count === 1 || row.pending_count === 20) &&
-          row.wait_reason !== 'insufficient_balance' &&
+          !memoryOnHold(row.wait_reason) &&
           !(row.retry_after && row.retry_after > this.clock.now())
         )
           await this.jobs.send(
@@ -226,7 +227,7 @@ export class ConversationMemoryService implements OnModuleInit {
     const now = this.clock.now();
     const groups = (
       await this.db.query<{ id: string }>(
-        `SELECT id FROM ai_runtime.group_memory_states WHERE pending_count>0 AND wait_reason IS DISTINCT FROM 'insufficient_balance' AND (retry_after IS NULL OR retry_after<=$1) AND (lease_until IS NULL OR lease_until<=$1) AND (pending_count>=$2 OR last_user_at<=$3) ORDER BY last_user_at LIMIT 100`,
+        `SELECT id FROM ai_runtime.group_memory_states WHERE pending_count>0 AND coalesce(wait_reason,'') NOT IN ('insufficient_balance','interrupted') AND (retry_after IS NULL OR retry_after<=$1) AND (lease_until IS NULL OR lease_until<=$1) AND (pending_count>=$2 OR last_user_at<=$3) ORDER BY last_user_at LIMIT 100`,
         [
           now,
           config.groupMemoryMessageThreshold ?? 20,
@@ -265,9 +266,11 @@ export class ConversationMemoryService implements OnModuleInit {
     reason?: string,
   ) {
     const at =
-      reason && isMemoryFundingBlock(reason)
-        ? memoryFundingCheckAt(reason, this.clock.now())
-        : new Date(this.clock.nowMs() + delay);
+      reason === 'interrupted'
+        ? null
+        : reason && isMemoryFundingBlock(reason)
+          ? memoryFundingCheckAt(reason, this.clock.now())
+          : new Date(this.clock.nowMs() + delay);
     await this.db.transaction(async (tx) => {
       const changed = await tx.query(
         `UPDATE ai_runtime.group_memory_states SET lease_id=NULL,lease_until=NULL,wait_reason=$5,retry_after=$3,prepared_ciphertext=CASE WHEN $4 THEN NULL ELSE prepared_ciphertext END,result_ciphertext=CASE WHEN $4 THEN NULL ELSE result_ciphertext END,generation=generation+CASE WHEN $4 THEN 1 ELSE 0 END WHERE id=$1 AND lease_id=$2`,
@@ -279,9 +282,9 @@ export class ConversationMemoryService implements OnModuleInit {
             userId: state.user_id,
             taskKey: modelTaskKey(state.user_id, `group-memory:${state.id}:${state.cursor_seq}`),
             purpose: 'memory',
-            state: 'deferred',
+            state: reason === 'interrupted' ? 'blocked' : 'deferred',
             reason,
-            retryAt: at.toISOString(),
+            retryAt: at?.toISOString(),
           },
           tx,
         );
@@ -307,7 +310,7 @@ export class ConversationMemoryService implements OnModuleInit {
       if (
         !row ||
         row.pending_count <= 0 ||
-        row.wait_reason === 'insufficient_balance' ||
+        memoryOnHold(row.wait_reason) ||
         (row.lease_until && row.lease_until > this.clock.now()) ||
         (row.retry_after && row.retry_after > this.clock.now())
       )
@@ -531,7 +534,7 @@ export class ConversationMemoryService implements OnModuleInit {
               state,
               token,
               reason === 'not_configured' ? 86400000 : 3600000,
-              true,
+              reason !== 'interrupted',
               reason,
             );
             return;

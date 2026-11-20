@@ -24,6 +24,7 @@ export const ReplyDeliveryIssue = z.object({
     'budget_exceeded',
     'concurrency_limited',
     'request_too_large',
+    'interrupted',
     'unavailable',
   ]),
   epoch: z.number().int().nonnegative(),

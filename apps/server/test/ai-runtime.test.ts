@@ -1199,6 +1199,28 @@ RETURNING seq::text AS seq, message_id`;
       await finish(hidden.id);
       expect((await store.get(hidden.id))?.failure).toBe('source_unavailable');
       expect(calls.length).toBe(callsBeforeHide);
+      const ambiguous = vi.spyOn(engine.gateway, 'generateText').mockResolvedValue({
+        ok: false,
+        error: 'provider_unavailable',
+        message: 'interrupted',
+      });
+      try {
+        const uncertain = await user('这条合成消息要核对发送结果。');
+        await finish(uncertain.id);
+        expect((await statuses(uncertain.triggerId)).body.items[0]).toMatchObject({
+          reason: 'interrupted',
+          state: 'blocked',
+          canRetry: false,
+        });
+        await store.recover(userId, 'balance');
+        await store.recover(userId, 'model');
+        await store.sweepWaiting();
+        expect((await retry(uncertain.triggerId, 0)).body.issue.canRetry).toBe(false);
+        await finish(uncertain.id);
+        expect(ambiguous).toHaveBeenCalledTimes(1);
+      } finally {
+        ambiguous.mockRestore();
+      }
     } finally {
       failure = null;
       response = originalResponse;

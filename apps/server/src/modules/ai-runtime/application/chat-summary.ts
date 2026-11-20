@@ -52,6 +52,7 @@ import { captionForMemory } from '../domain/image-caption.js';
 import { BILLING_USAGE_REFUND_PORT } from '../../billing/index.js';
 import {
   isMemoryFundingBlock,
+  memoryOnHold,
   memoryFailureCode,
   memoryFundingCheckAt,
 } from '../domain/memory-funding.js';
@@ -228,7 +229,7 @@ export class ChatSummaryService {
       .where(
         and(
           gt(chatSummaryStates.targetSeq, chatSummaryStates.coveredSeq),
-          sql`${chatSummaryStates.lastFailure} IS DISTINCT FROM 'insufficient_balance'`,
+          sql`coalesce(${chatSummaryStates.lastFailure},'') NOT IN ('insufficient_balance','interrupted')`,
           or(
             isNull(chatSummaryStates.retryAfter),
             lte(chatSummaryStates.retryAfter, this.clock.now()),
@@ -262,7 +263,7 @@ export class ChatSummaryService {
     if (
       !row ||
       row.s.targetSeq <= row.s.coveredSeq ||
-      row.s.lastFailure === 'insufficient_balance' ||
+      memoryOnHold(row.s.lastFailure) ||
       (row.s.retryAfter && row.s.retryAfter > this.clock.now())
     )
       return;
@@ -281,7 +282,7 @@ export class ChatSummaryService {
         .for('update');
       if (
         !s ||
-        s.lastFailure === 'insufficient_balance' ||
+        memoryOnHold(s.lastFailure) ||
         s.targetSeq <= s.coveredSeq ||
         (s.retryAfter && s.retryAfter > this.clock.now()) ||
         (s.leaseUntil && s.leaseUntil > this.clock.now())
@@ -605,21 +606,24 @@ export class ChatSummaryService {
       const message = error instanceof Error ? error.message : '';
       const known =
         /^(?:summary_(?:json|fields|reference_fields|unknown_source|too_long|empty|private_health|not_reduced|truncated|source_changed|state_changed|contact_changed|permission_changed|source_too_large|model_unavailable)|insufficient_balance|budget_exceeded|request_too_large|concurrency_limited|model_unavailable|provider_unavailable|content_rejected|bad_request|not_configured|policy_denied)$/u;
-      const reason = known.test(message) ? message : stage;
+      const reason = message === 'interrupted' || known.test(message) ? message : stage;
       const shrink =
         (!!summaryRepairInstruction(reason) || reason === 'request_too_large') && sourceChars > 0;
       const retryCharLimit = shrink
         ? Math.max(128, Math.floor(sourceChars / 2))
         : claimed.retryCharLimit;
       const exhausted = shrink && claimed.retryCharLimit !== null && sourceChars <= 128;
-      const retryAt = isMemoryFundingBlock(reason)
-        ? memoryFundingCheckAt(reason, this.clock.now())
-        : new Date(
-            this.clock.nowMs() +
-              (exhausted
-                ? 86400000
-                : [300000, 1800000, 7200000, 86400000][Math.min(claimed.attempts - 1, 3)]!),
-          );
+      const retryAt =
+        reason === 'interrupted'
+          ? null
+          : isMemoryFundingBlock(reason)
+            ? memoryFundingCheckAt(reason, this.clock.now())
+            : new Date(
+                this.clock.nowMs() +
+                  (exhausted
+                    ? 86400000
+                    : [300000, 1800000, 7200000, 86400000][Math.min(claimed.attempts - 1, 3)]!),
+              );
       new Logger(ChatSummaryService.name).warn({
         code: 'ai_chat_summary_failed',
         stateId: id,
@@ -654,7 +658,7 @@ export class ChatSummaryService {
             .set({
               leaseId: null,
               leaseUntil: null,
-              preparedCiphertext: null,
+              ...(reason === 'interrupted' ? {} : { preparedCiphertext: null }),
               lastFailure: reason,
               retryAfter: retryAt,
               retryCharLimit,
@@ -666,9 +670,9 @@ export class ChatSummaryService {
               taskKey,
               userId: row.p.userId,
               purpose: 'memory',
-              state: 'deferred',
+              state: reason === 'interrupted' ? 'blocked' : 'deferred',
               reason,
-              retryAt: retryAt.toISOString(),
+              retryAt: retryAt?.toISOString(),
               usageRecordId: claimed.attemptGeneration ? acceptedUsageId : null,
             },
             tx,

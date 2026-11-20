@@ -95,7 +95,7 @@ export class TaskOutcomeService implements ModelTaskOutcomePort {
           input.state,
           input.reason ?? null,
           usageId,
-          input.state === 'deferred' ? (input.retryAt ?? null) : null,
+          input.state === 'deferred' || input.state === 'blocked' ? (input.retryAt ?? null) : null,
           now,
         ],
       );

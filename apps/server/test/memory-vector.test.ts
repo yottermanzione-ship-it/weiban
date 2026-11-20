@@ -944,6 +944,35 @@ describeDb('滚动摘要失败恢复和记忆资金等待', () => {
     expect(Number((await state()).covered_seq)).toBe(msg.seq);
   });
 
+  it('已发出的摘要结果待核时保留原版和准备批次，后续事件不会再派一次', async () => {
+    const prior = await state();
+    const msg = await send('还有一条待核对的合成约定。'.repeat(14));
+    await ctx.dispatch();
+    const upstream = vi
+      .spyOn(ctx.app.get<ModelGatewayPort>(MODEL_GATEWAY_PORT), 'generateText')
+      .mockResolvedValue({ ok: false, error: 'provider_unavailable', message: 'interrupted' });
+    try {
+      await ctx.memory().compactWindow(ctx.userId, ctx.characterId, 'normal', msg.seq);
+      const paused = await state();
+      expect(paused).toMatchObject({
+        version: prior.version,
+        last_failure: 'interrupted',
+        retry_after: null,
+      });
+      clock.advance(86400000);
+      await ctx.memory().fundingRecovery!.check(ctx.userId);
+      await ctx.memory().chatSummaries!.reconcile();
+      await ctx.memory().chatSummaries!.run(paused.id);
+      expect(upstream).toHaveBeenCalledTimes(1);
+      const evidence = await ctx.db.query(
+        "SELECT 1 FROM model_access.task_outcomes WHERE user_id=$1 AND state='blocked' AND reason='interrupted'",
+        [ctx.userId],
+      );
+      expect(evidence.rowCount).toBe(1);
+    } finally {
+      upstream.mockRestore();
+    }
+  });
   it('退款待办处理后可回滚并重新升级', async () => {
     await roundTripMigration('0167_memory_summary_recovery');
     expect(

@@ -6,6 +6,7 @@ import { ChatSummaryService } from './chat-summary.js';
 import { MemoryFundingRecovery } from './memory-funding-recovery.js';
 import {
   isMemoryFundingBlock,
+  memoryOnHold,
   memoryFailureCode,
   memoryFundingCheckAt,
   type MemoryFundingBlock,
@@ -1483,7 +1484,7 @@ export class MemoryService {
       .where(eq(memoryStates.id, state.id));
     if (
       trigger &&
-      state.factWaitReason !== 'insufficient_balance' &&
+      !memoryOnHold(state.factWaitReason) &&
       !(state.retryAfter && state.retryAfter > this.clock.now())
     )
       await this.enqueue(tx, { ...job, urgent: true }, promise ? 0 : 30000);
@@ -1496,7 +1497,7 @@ export class MemoryService {
       .where(
         and(
           gt(memoryStates.factTriggerSeq, memoryStates.cursorSeq),
-          sql`${memoryStates.factWaitReason} IS DISTINCT FROM 'insufficient_balance'`,
+          sql`coalesce(${memoryStates.factWaitReason},'') NOT IN ('insufficient_balance','interrupted')`,
           or(isNull(memoryStates.retryAfter), lte(memoryStates.retryAfter, this.clock.now())),
         ),
       )
@@ -1544,15 +1545,18 @@ export class MemoryService {
         delayMs,
         [300000, 1800000, 7200000, 86400000][Math.min(attempts - 1, 3)]!,
       );
-      const retryAfter = funding
-        ? memoryFundingCheckAt(funding, this.clock.now())
-        : new Date(this.clock.nowMs() + delay);
+      const retryAfter =
+        reason === 'interrupted'
+          ? null
+          : funding
+            ? memoryFundingCheckAt(funding, this.clock.now())
+            : new Date(this.clock.nowMs() + delay);
       await tx.db
         .update(memoryStates)
         .set({
           retryAfter,
           factAttempts: attempts >= 4 ? 0 : attempts,
-          factWaitReason: funding ?? null,
+          factWaitReason: reason === 'interrupted' ? reason : (funding ?? null),
           factGeneration: now.factGeneration + (funding ? 1 : 0),
         })
         .where(eq(memoryStates.id, now.id));
@@ -1570,13 +1574,13 @@ export class MemoryService {
             ),
             userId: job.userId,
             purpose: 'memory',
-            state: 'deferred',
+            state: reason === 'interrupted' ? 'blocked' : 'deferred',
             reason: funding ?? reason,
-            retryAt: retryAfter.toISOString(),
+            retryAt: retryAfter?.toISOString(),
           },
           tx,
         );
-      if (!funding) await this.enqueue(tx, job, delay);
+      if (!funding && reason !== 'interrupted') await this.enqueue(tx, job, delay);
     });
   }
   async extract(job: MemoryJob): Promise<void> {
@@ -1598,7 +1602,7 @@ export class MemoryService {
       return this.state(tx, job);
     });
     if (
-      state.factWaitReason === 'insufficient_balance' ||
+      memoryOnHold(state.factWaitReason) ||
       (state.retryAfter && state.retryAfter > this.clock.now())
     )
       return;
@@ -1792,6 +1796,7 @@ export class MemoryService {
       : null;
     if (result && !result.ok) {
       const reason = memoryFailureCode(result);
+      if (reason === 'interrupted') return this.defer(job, state, 0, undefined, reason, lastSeq);
       if (isMemoryFundingBlock(reason)) {
         await this.defer(job, state, 0, reason, undefined, lastSeq);
         return;

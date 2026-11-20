@@ -88,6 +88,7 @@ const reasons: Record<ReplyDeliveryIssue['reason'], string> = {
   budget_exceeded: '今日预算已用完，这条消息还没有角色回复。',
   concurrency_limited: '模型调用繁忙，角色暂时没能回复。',
   request_too_large: '这次回复预计花费过高，已暂停。',
+  interrupted: '这次回复的发送结果待核实，已暂停重试。',
   unavailable: '这条消息的角色回复未完成。',
 };
 export function ReplyDeliveryNotice({
