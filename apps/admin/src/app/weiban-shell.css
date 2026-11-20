@@ -398,7 +398,6 @@
   padding: 28px;
 }
 
-.workspace-loading,
 .boot-screen {
   padding: 60px 16px;
   display: flex;
@@ -563,4 +562,9 @@
   color: var(--text-3);
   min-width: 22px;
   height: 22px;
+}
+
+.route-placeholder {
+  min-block-size: 170px;
+  padding: 20px;
 }

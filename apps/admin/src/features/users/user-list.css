@@ -1,0 +1,53 @@
+.user-centered-value {
+  display: inline-grid;
+  justify-items: start;
+  align-content: center;
+  text-align: left;
+  row-gap: 2px;
+  max-inline-size: 100%;
+}
+
+.user-membership-value {
+  inline-size: 106px;
+}
+
+.user-balance-value {
+  inline-size: 82px;
+}
+
+.user-column-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.user-column-sort svg {
+  flex: none;
+  color: var(--text-3);
+}
+
+.user-column-sort:hover,
+.user-column-sort[aria-pressed='true'],
+.user-column-sort[aria-pressed='true'] svg {
+  color: var(--accent-bright);
+}
+
+.user-dates {
+  display: grid;
+  justify-items: start;
+  align-content: center;
+  gap: 2px;
+}
+
+.user-dates small {
+  font-size: 12px;
+  color: var(--text-2);
+  margin-inline-end: 3px;
+}
