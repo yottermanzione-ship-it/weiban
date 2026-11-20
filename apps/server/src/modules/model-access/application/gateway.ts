@@ -1,6 +1,8 @@
 /** 全系统调用上游的唯一出口：选型/闸门→占位→冻结→调用→保存结果→结算。 */
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import { joinTextContinuation } from '../domain/text-continuation.js';
+import { providerDomain, type ProviderDiagnostic } from '../infra/provider-observation.js';
 import {
   contextBudget,
   contextTokens,
@@ -89,7 +91,15 @@ function usesModelOutputLimit(input: GenerateTextInput): boolean {
   );
 }
 
+type Alternate = { key: string; routes: VerifiedRoute[] };
+type TextRouting = {
+  expires: number;
+  primary?: string;
+  remaining?: Alternate[];
+  failedDomains: Set<string>;
+};
 type GatewayInternal = {
+  routing?: TextRouting;
   fallbackModelKey?: string;
   /** 2026-10-30 用户定：日常聊天失败后静默换模型用的备用模型，仅 chat_reply + modelRole=chat。 */
   chatFallbackModelKey?: string;
@@ -229,15 +239,28 @@ export class ModelGateway implements ModelGatewayPort {
   async generateText(input: GenerateTextInput, internal?: GatewayInternal): Promise<CachedResult> {
     // 主模型自身最多60秒；未指定整体时限时再留一分钟给备用，否则超时失败永远走不到备用。
     const deadlineAt = input.deadlineAt ?? new Date(this.clock.nowMs() + 120_000).toISOString();
-    const first = await this.generateOnce(input, internal);
-    if (first.ok) return first;
     const chat = input.purpose === 'chat_reply' && input.modelRole === 'chat';
     const background =
       FALLBACK_PURPOSES.includes(input.purpose) && input.modelRole === 'background';
-    if ((!chat && !background) || input.meta?.scenarioMode === 'adult' || internal?.trustedPlatform)
+    if (
+      (!chat && !background) ||
+      input.meta?.scenarioMode === 'adult' ||
+      internal?.trustedPlatform ||
+      internal?.chatFallbackModelKey ||
+      internal?.fallbackModelKey
+    )
+      return this.generateOnce(input, internal);
+    const routing: TextRouting = {
+      expires: performance.now() + Math.max(0, Date.parse(deadlineAt) - this.clock.nowMs()),
+      failedDomains: new Set(),
+    };
+    const first = await this.generateOnce(input, { ...internal, routing });
+    if (
+      first.ok ||
+      ['concurrency_limited', 'non_retryable_response'].includes(first.message ?? '') ||
+      !['provider_unavailable', 'model_unavailable'].includes(first.error)
+    )
       return first;
-    if (internal?.chatFallbackModelKey || internal?.fallbackModelKey) return first;
-    if (!['provider_unavailable', 'model_unavailable'].includes(first.error)) return first;
     // 整条备用链也是同一次逻辑请求。持久占位避免并发重试、时钟前进或价目/可用性
     // 改变后重新选型并收费；进程中断后的在途链也不盲目重发。
     const chainInput = {
@@ -261,12 +284,21 @@ export class ModelGateway implements ModelGatewayPort {
     const primaryKey = primary?.facts?.modelKey;
     if (!primaryKey || primary?.facts?.entry?.capabilities.includes('adult_content'))
       return complete(first);
-    let chain = await this.catalog.cheaperTextFallbacks(primaryKey).catch(() => []);
-    if (!chain.length)
-      chain = await this.catalog.alternateTextFallbacks(primaryKey).catch(() => []);
-    for (const candidate of chain) {
-      if (this.clock.nowMs() >= Date.parse(deadlineAt)) break;
-      if (primaryKey && candidate === primaryKey) continue;
+    routing.remaining ??= await this.fallbackOptions(input, primaryKey);
+    while (routing.remaining.length) {
+      const available = this.readyAlternates(routing, input.purpose);
+      if (!available.length) break;
+      const preferred =
+        available.find((a) =>
+          a.routes.some(
+            (r) =>
+              !routing.failedDomains.has(providerDomain(r.baseUrl)) &&
+              this.scheduler.canAcquireAccount(r) &&
+              !this.scheduler.isRouteCooling(a.key, r.upstreamId),
+          ),
+        ) ?? available[0]!;
+      const candidate = preferred.key;
+      routing.remaining = routing.remaining.filter((a) => a.key !== candidate);
       // 幂等键要新（否则会重放原失败结果），且尾巴仍保持 :reply 等后缀，
       // 否则回复引擎的扣费统计记不到这次成功调用的用量记录 ID。
       const fallbackKey = /:(reply|reply-blind|guard|names)$/.test(input.idempotencyKey)
@@ -279,6 +311,7 @@ export class ModelGateway implements ModelGatewayPort {
         { ...input, deadlineAt, idempotencyKey: fallbackKey },
         {
           ...internal,
+          routing,
           ...(chat ? { chatFallbackModelKey: candidate } : { fallbackModelKey: candidate }),
         },
       );
@@ -286,7 +319,11 @@ export class ModelGateway implements ModelGatewayPort {
         this.logger.log(`model fallback (${input.purpose}): ${primaryKey} -> ${candidate}`);
         return complete(result);
       }
-      if (!['provider_unavailable', 'model_unavailable'].includes(result.error)) break;
+      if (
+        ['concurrency_limited', 'non_retryable_response'].includes(result.message ?? '') ||
+        !['provider_unavailable', 'model_unavailable'].includes(result.error)
+      )
+        return complete(result);
     }
     return complete(first);
   }
@@ -294,6 +331,57 @@ export class ModelGateway implements ModelGatewayPort {
    * internal 只供网关自己的降级使用（不属于契约）：fallbackModelKey = 普通后台任务备用模型。
    * 每个备用仍完整执行鉴权、上下文容量、预算、幂等、预留与结算流程。
    */
+  private async fallbackOptions(
+    input: GenerateTextInput,
+    primaryKey: string,
+  ): Promise<Alternate[]> {
+    let keys = await this.catalog.cheaperTextFallbacks(primaryKey).catch(() => []);
+    if (!keys.length) keys = await this.catalog.alternateTextFallbacks(primaryKey).catch(() => []);
+    const images = input.messages.reduce((n, m) => n + (m.images?.length ?? 0), 0);
+    const options = await Promise.all(
+      keys
+        .filter((k) => k !== primaryKey)
+        .map(async (key) => {
+          const target = await this.resolver.resolve({
+            ...input,
+            hasImages: images > 0,
+            ...(input.modelRole === 'chat'
+              ? { chatFallbackModelKey: key }
+              : { fallbackModelKey: key }),
+          });
+          if (!target.ok || target.value.modelKey !== key) return null;
+          const candidates = await this.availableRoutes(target.value, null);
+          const requested = input.maxOutputTokens ?? DEFAULT_TOKENS[input.purpose] ?? 8000;
+          const proof = await this.bounds?.text(
+            key,
+            candidates,
+            images,
+            usesModelOutputLimit(input) ? null : requested,
+            thinkingBudgetForModel(input.purpose, requested, key),
+          );
+          if (!proof?.routes.length) return null;
+          return { key, routes: proof.routes };
+        }),
+    );
+    return options.filter((opt): opt is Alternate => opt !== null);
+  }
+
+  private readyAlternates(
+    routing: TextRouting,
+    purpose: GenerateTextInput['purpose'],
+  ): Alternate[] {
+    const remaining = routing.expires - performance.now();
+    return (routing.remaining ?? []).filter(({ key, routes }) =>
+      routes.some(
+        (r) =>
+          !r.probing &&
+          !this.scheduler.isRouteCooling(key, r.upstreamId) &&
+          this.scheduler.canAcquireAccount(r) &&
+          remaining >= this.scheduler.usefulWindowMs(key, r.upstreamId, purpose),
+      ),
+    );
+  }
+
   private async availableRoutes(
     model: Pick<ResolvedModel, 'modelKey' | 'upstreamId' | 'upstreamModelId'>,
     affinity: string | null,
@@ -568,7 +656,14 @@ export class ModelGateway implements ModelGatewayPort {
       thinkingBudgetForModel(input.purpose, requested, model.modelKey),
     );
     if (!verified) {
-      const result: CachedResult = { ok: false, error: 'model_unavailable' };
+      const detail = await this.catalog.availabilityDetails([model.modelKey]).catch(() => null);
+      const result: CachedResult = {
+        ok: false,
+        error: 'model_unavailable',
+        message:
+          detail?.get(model.modelKey) ??
+          (candidates.length ? 'no_matching_route_bounds' : 'no_route'),
+      };
       await this.cache.save(row, result, 'complete');
       return result;
     }
@@ -593,9 +688,22 @@ export class ModelGateway implements ModelGatewayPort {
       await this.cache.save(row, result, 'complete');
       return result;
     }
-    if (!(await this.scheduler.acquireUser(input.userId))) {
-      // 没有可用账号，或超过每用户并发 / 每分钟上限：按「模型暂时不可用」返回，不冻结、不扣费
-      const result: CachedResult = { ok: false, error: 'provider_unavailable' };
+    if (
+      !(await this.scheduler.acquireUser(
+        input.userId,
+        input.purpose === 'chat_reply',
+        Math.max(
+          0,
+          Math.min(250, input.deadlineAt ? Date.parse(input.deadlineAt) - this.clock.nowMs() : 250),
+        ),
+      ))
+    ) {
+      // Local admission never justifies another paid model attempt.
+      const result: CachedResult = {
+        ok: false,
+        error: 'provider_unavailable',
+        message: 'concurrency_limited',
+      };
       await this.cache.save(row, result, 'complete');
       return result;
     }
@@ -618,9 +726,21 @@ export class ModelGateway implements ModelGatewayPort {
     const maximum = input.maxOutputTokens ?? DEFAULT_TOKENS[input.purpose] ?? 8000;
     const modelOutputLimit = usesModelOutputLimit(input);
     // 3.24：Anthropic 原生协议自己处理系统消息（顶层 system + 缓存断点）；OpenAI 兼容按模型的系统消息放法改写。
+    const routing = internal?.routing;
+    if (routing && !routing.remaining) {
+      routing.primary = model.modelKey;
+      routing.remaining = await this.fallbackOptions(input, model.modelKey).catch(() => []);
+    }
+    if (routing?.failedDomains.size)
+      candidates = [...candidates].sort(
+        (a, b) =>
+          Number(routing.failedDomains.has(providerDomain(a.baseUrl))) -
+          Number(routing.failedDomains.has(providerDomain(b.baseUrl))),
+      );
     const fittedInputTokens = contextTokens(input.messages);
     const baseWire = await this.wireMessages(input);
-    const wire = applySystemMessageMode(baseWire, model.systemMessageMode);
+    let continuation:
+      { prefix: string; routeId: string; extra: AdapterMessage[]; cost: number } | undefined;
     const promptCacheKey = privateChatPromptCacheKey(input, model.modelKey);
     const wallStart = performance.now();
     const deadlineAt = new Date(
@@ -638,6 +758,7 @@ export class ModelGateway implements ModelGatewayPort {
       index = 0;
     let priceVersionId = internal?.priceVersionId;
     let answer: TextResult;
+    let unavailableReason: string | undefined;
     const maximumAttempts = 3 + candidates.length;
     const completeFailure = async (
       error:
@@ -647,8 +768,9 @@ export class ModelGateway implements ModelGatewayPort {
         | 'budget_exceeded'
         | 'content_rejected'
         | 'bad_request',
+      message?: string,
     ): Promise<CachedResult> => {
-      const result: CachedResult = { ok: false, error };
+      const result: CachedResult = { ok: false, error, ...(message ? { message } : {}) };
       await this.cache.save(row, result, 'complete');
       return result;
     };
@@ -656,15 +778,34 @@ export class ModelGateway implements ModelGatewayPort {
       const remaining = Math.floor(budgetMs - (performance.now() - wallStart));
       if (remaining <= 0) break;
       let candidate = candidates[index];
-      while (candidate && !this.scheduler.acquireAccount(candidate))
+      while (
+        candidate &&
+        (this.scheduler.isRouteCooling(model.modelKey, candidate.upstreamId) ||
+          (routing &&
+            (internal?.fallbackModelKey || internal?.chatFallbackModelKey) &&
+            Math.min(remaining, routing.expires - performance.now()) <
+              this.scheduler.usefulWindowMs(model.modelKey, candidate.upstreamId, input.purpose)) ||
+          !this.scheduler.acquireAccount(candidate))
+      )
         candidate = candidates[++index];
-      if (!candidate) break;
+      if (!candidate) {
+        unavailableReason =
+          remaining <= 0 || (routing && routing.expires - performance.now() < 8000)
+            ? 'insufficient_fallback_time'
+            : 'route_unavailable_or_busy';
+        break;
+      }
       const route = candidate;
+      if (continuation?.routeId !== route.upstreamId) continuation = undefined;
+      const currentWire = continuation ? [...baseWire, ...continuation.extra] : baseWire;
+      const wire = applySystemMessageMode(currentWire, model.systemMessageMode);
       // 思考型聊天也使用线路核准的总额度；与计费 ceiling / 估算 / 实际请求保持同一上限。
       const attemptOutputLimit = Math.min(
         32000,
         route.billingBounds.text!.maxOutputTokens,
-        usableContextTokens(route.billingBounds.text!.contextTokens) - fittedInputTokens,
+        usableContextTokens(route.billingBounds.text!.contextTokens) -
+          fittedInputTokens -
+          (continuation?.cost ?? 0),
         modelOutputLimit
           ? route.billingBounds.text!.maxOutputTokens
           : outputBudget + thinkingBudget,
@@ -724,7 +865,7 @@ export class ModelGateway implements ModelGatewayPort {
             latencyMs: 0,
             retryCount: ordinal,
           });
-          return completeFailure(reserveErrorToGenerate(reserve.error));
+          return completeFailure(reserveErrorToGenerate(reserve.error), reserve.error);
         }
         const hold = reserve.value;
         priceVersionId ??= hold.priceVersionId;
@@ -749,6 +890,10 @@ export class ModelGateway implements ModelGatewayPort {
         const sent =
           !!currentProof &&
           budgetMs - (performance.now() - wallStart) > 0 &&
+          (!routing ||
+            !(internal?.chatFallbackModelKey || internal?.fallbackModelKey) ||
+            routing.expires - performance.now() >=
+              this.scheduler.usefulWindowMs(model.modelKey, route.upstreamId, input.purpose)) &&
           boundsEvidence(currentProof) === boundsEvidence(route.billingBounds) &&
           !!this.billing.beginCall &&
           (await this.billing.beginCall({
@@ -758,20 +903,62 @@ export class ModelGateway implements ModelGatewayPort {
             upstreamModelId: route.upstreamModelId,
           }));
         let dispatchTiming: DispatchTiming | undefined;
+        let providerDiagnostic: ProviderDiagnostic | undefined;
         if (sent) {
           await this.recorder.markAttemptSent(attemptId);
           try {
             answer = isFakeModel(route.upstreamModelId, this.config.nodeEnv === 'production')
               ? fakeAnswer(input, wire)
               : await this.upstreams.withApiKey(route.upstreamId, async (apiKey) => {
+                  const modelRemaining = budgetMs - (performance.now() - wallStart);
+                  const totalRemaining = routing
+                    ? Math.max(0, routing.expires - performance.now())
+                    : modelRemaining;
+                  const alternatives = routing ? this.readyAlternates(routing, input.purpose) : [];
+                  // Keep the existing per-model maximum. Reserve a useful share of the overall
+                  // deadline only if a verified, affordable, currently available alternate can use it.
+                  const usefulReserve = alternatives.length
+                    ? Math.min(
+                        ...alternatives.flatMap((a) =>
+                          a.routes
+                            .filter(
+                              (r) =>
+                                !r.probing &&
+                                !this.scheduler.isRouteCooling(a.key, r.upstreamId) &&
+                                this.scheduler.canAcquireAccount(r),
+                            )
+                            .map((r) =>
+                              this.scheduler.usefulWindowMs(a.key, r.upstreamId, input.purpose),
+                            ),
+                        ),
+                      )
+                    : 0;
+                  const reserve =
+                    Number.isFinite(usefulReserve) &&
+                    usefulReserve > 0 &&
+                    totalRemaining >= 2 * (usefulReserve + 500)
+                      ? Math.max(
+                          usefulReserve + 500,
+                          Math.min(Math.floor(totalRemaining / 3), STANDARD_TEXT_IDLE_MS),
+                        )
+                      : 0;
                   const deadlineMs = Math.max(
                     1,
-                    Math.floor(budgetMs - (performance.now() - wallStart)),
+                    Math.floor(Math.min(modelRemaining, totalRemaining - reserve)),
                   );
                   const timeoutMs = Math.min(
-                    thinkingBudget > 0 || modelOutputLimit
-                      ? LONG_TEXT_IDLE_MS
-                      : STANDARD_TEXT_IDLE_MS,
+                    Math.max(
+                      thinkingBudget > 0 || modelOutputLimit
+                        ? LONG_TEXT_IDLE_MS
+                        : STANDARD_TEXT_IDLE_MS,
+                      Math.ceil(
+                        this.scheduler.usefulWindowMs(
+                          model.modelKey,
+                          route.upstreamId,
+                          input.purpose,
+                        ) * 1.5,
+                      ),
+                    ),
                     deadlineMs,
                   );
                   const protocol = textProtocolOf(route.kind);
@@ -787,10 +974,13 @@ export class ModelGateway implements ModelGatewayPort {
                   const reserveMs = Math.min(STANDARD_TEXT_IDLE_MS, Math.floor(deadlineMs / 2));
                   const dispatch = {
                     protocol,
+                    onDiagnostic: (d) => {
+                      providerDiagnostic = d;
+                    },
                     baseUrl: route.baseUrl,
                     apiKey,
                     model: route.upstreamModelId,
-                    messages: protocol === 'anthropic' ? baseWire : wire,
+                    messages: protocol === 'anthropic' ? currentWire : wire,
                     maxOutputTokens: attemptOutputLimit,
                     outputParameter: route.billingBounds.text!.outputParameter,
                     temperature: input.temperature ?? DEFAULT_TEMPERATURE[input.purpose],
@@ -799,7 +989,7 @@ export class ModelGateway implements ModelGatewayPort {
                     promptCacheKey,
                     timeoutMs,
                     deadlineMs,
-                    ...(protocol === 'openai_compatible' && reserveMs > 0 && backupAvailable()
+                    ...(reserveMs > 0 && backupAvailable()
                       ? {
                           failover: {
                             progressTimeoutMs: Math.min(timeoutMs, deadlineMs - reserveMs),
@@ -816,6 +1006,8 @@ export class ModelGateway implements ModelGatewayPort {
                     timeoutMs: dispatch.timeoutMs,
                     progressTimeoutMs: dispatch.failover?.progressTimeoutMs ?? null,
                     routePriority: route.routePriority ?? null,
+                    crossModelReserveMs: Math.floor(reserve),
+                    overallRemainingMs: Math.ceil(totalRemaining),
                   };
                   const adapterStart = performance.now();
                   try {
@@ -839,10 +1031,31 @@ export class ModelGateway implements ModelGatewayPort {
             answer.category === 'invalid_key' &&
             (await this.upstreams.confirmAuthRejection(route.upstreamId))
           )
-            answer = { ...answer, category: 'content_rejected', retryable: false };
+            answer =
+              providerDiagnostic?.providerCode &&
+              [
+                'permission_error',
+                'permission_denied',
+                'insufficient_permissions',
+                'model_access_denied',
+                'model_not_allowed',
+              ].includes(providerDiagnostic.providerCode)
+                ? {
+                    ...answer,
+                    category: 'provider_error',
+                    diagnostic: 'permission_denied',
+                    retryable: true,
+                  }
+                : { ...answer, category: 'content_rejected', retryable: false };
         } else answer = { ok: false, category: 'provider_error', retryable: false };
         // 3.26（G3-2）：上游没报用量时不再算「成本未知、暂停线路」，改按本地分词估算计费并标记「估算」。
         // 失败且连估算都没有（HTTP 报错、网络中断）时：上游明确拒绝的错误按 0 计；其余按估算的输入 token 由平台吸收。
+        if (continuation && answer.ok) {
+          const complete = joinTextContinuation(continuation.prefix, answer.text);
+          answer = complete
+            ? { ...answer, text: complete }
+            : { ok: false, category: 'truncated', retryable: false, usage: answer.usage };
+        }
         const known = !!answer.usage && !answer.usage.estimated;
         const failureUsage = sent && !answer.ok ? this.failureUsage(answer, wire) : undefined;
         const errorCode = answer.ok
@@ -858,6 +1071,7 @@ export class ModelGateway implements ModelGatewayPort {
           errorCode,
           known ? 'reported' : answer.usage || failureUsage?.estimated ? 'estimated' : 'unknown',
           dispatchTiming,
+          providerDiagnostic,
         );
         const latencyMs = Math.round(performance.now() - attemptStart);
         // 批 EJ：调用方要求抢救时，正文 JSON 没写完就交回已写出的部分（照常计费），不加大额度重试；
@@ -880,6 +1094,13 @@ export class ModelGateway implements ModelGatewayPort {
             known ? 'reported' : 'missing',
           ).catch(() => undefined);
         if (answer.ok) {
+          if (dispatchTiming)
+            this.scheduler.noteDuration(
+              model.modelKey,
+              route.upstreamId,
+              input.purpose,
+              dispatchTiming.adapterElapsedMs,
+            );
           const result: CachedResult = {
             ok: true,
             value: {
@@ -944,13 +1165,35 @@ export class ModelGateway implements ModelGatewayPort {
           continue;
         }
         if (answer.category === 'content_rejected' || answer.category === 'bad_request')
-          return completeFailure(answer.category);
+          return completeFailure(
+            answer.category,
+            answer.category === 'bad_request' ? providerDiagnostic?.requestField : undefined,
+          );
+        if (answer.category === 'provider_error' && !answer.retryable)
+          return completeFailure('provider_unavailable', 'non_retryable_response');
         const empty = answer.category === 'empty_output' || answer.category === 'truncated';
         // 3.26：缺用量不再等于「线路暂停、必须换线路」；只按错误类别决定是否切换线路。
         if (FAILOVER_CATEGORIES.includes(answer.category)) {
           await this.scheduler
-            .recordFailure(route.upstreamId, answer.category, model.modelKey)
+            .recordFailure(
+              route.upstreamId,
+              answer.diagnostic === 'permission_denied' ? 'permission_denied' : answer.category,
+              model.modelKey,
+              providerDiagnostic?.retryAfterMs,
+            )
             .catch(() => undefined);
+          if (['network_error', 'provider_error', 'rate_limited'].includes(answer.category)) {
+            const domain = providerDomain(route.baseUrl);
+            routing?.failedDomains.add(domain);
+            const rest = candidates.slice(index + 1);
+            // Prefer an approved independently addressed entry after a shared entrance fails.
+            rest.sort(
+              (a, b) =>
+                Number(providerDomain(a.baseUrl) === domain) -
+                Number(providerDomain(b.baseUrl) === domain),
+            );
+            candidates = [...candidates.slice(0, index + 1), ...rest];
+          }
           index++;
           if (index < candidates.length) continue;
           break;
@@ -967,6 +1210,26 @@ export class ModelGateway implements ModelGatewayPort {
         if (empty && modelOutputLimit && input.purpose !== 'chat_reply') break;
         if (empty && !emptyRetried) {
           emptyRetried = true;
+          if (
+            input.purpose === 'chat_reply' &&
+            input.responseFormat !== 'json' &&
+            answer.category === 'truncated' &&
+            answer.partialText
+          ) {
+            const extra: AdapterMessage[] = [
+              { role: 'assistant', content: answer.partialText },
+              { role: 'user', content: '请直接接着上一条未写完的回复完成尾段，不重述已有部分。' },
+            ];
+            const cost = contextTokens(extra.map((m) => ({ content: m.content })));
+            if (
+              usableContextTokens(route.billingBounds.text!.contextTokens) -
+                fittedInputTokens -
+                cost <
+              attemptOutputLimit
+            )
+              break;
+            continuation = { routeId: route.upstreamId, prefix: answer.partialText, extra, cost };
+          }
           const platformCap =
             input.purpose === 'safety_check'
               ? 300
@@ -992,7 +1255,7 @@ export class ModelGateway implements ModelGatewayPort {
         this.scheduler.releaseAccount(route.upstreamId);
       }
     }
-    return completeFailure('provider_unavailable');
+    return completeFailure('provider_unavailable', unavailableReason);
   }
   /**
    * 3.26（G3-2）：失败调用交给计费的用量。

@@ -52,6 +52,8 @@ export interface DispatchTiming {
   progressTimeoutMs: number | null;
   routePriority: number | null;
   adapterElapsedMs: number;
+  crossModelReserveMs?: number;
+  overallRemainingMs?: number;
 }
 
 export interface StartUsageInput {
@@ -132,6 +134,7 @@ export class UsageRecorder {
     errorCode: string | null,
     usageState?: 'reported' | 'estimated' | 'unknown',
     dispatchTiming?: DispatchTiming,
+    providerDiagnostic?: import('../infra/provider-observation.js').ProviderDiagnostic,
   ) {
     await this.database.db
       .update(generationAttempts)
@@ -140,7 +143,7 @@ export class UsageRecorder {
         reportedUsage: usage,
         ...(dispatchTiming
           ? {
-              boundSnapshot: sql`jsonb_set(${generationAttempts.boundSnapshot}, '{dispatchTiming}', ${JSON.stringify(dispatchTiming)}::jsonb)`,
+              boundSnapshot: sql`${generationAttempts.boundSnapshot} || ${JSON.stringify({ dispatchTiming, ...(providerDiagnostic ? { providerDiagnostic } : {}) })}::jsonb`,
             }
           : {}),
         usageState: usageState ?? (known ? 'reported' : 'unknown'),

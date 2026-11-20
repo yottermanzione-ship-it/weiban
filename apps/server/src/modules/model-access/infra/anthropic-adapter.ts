@@ -20,6 +20,7 @@
  *
  * 安全：密钥只放在 x-api-key 头；不跟随重定向；任何错误只返回类别，不记录上游原文；响应最多读 2MB。
  */
+import { ProviderObservation } from './provider-observation.js';
 import {
   completeJsonPrefix,
   estimateInputTokens,
@@ -248,7 +249,6 @@ export function supportsThinkingDisabled(model: string): boolean {
 
 export class AnthropicTextAdapter implements TextAdapter {
   async generate(input: Parameters<TextAdapter['generate']>[0]): Promise<TextResult> {
-    const startedAt = performance.now();
     const request = toAnthropicRequest(input.messages);
     const body = {
       model: input.model,
@@ -265,12 +265,13 @@ export class AnthropicTextAdapter implements TextAdapter {
             : {}),
     };
     const inputEstimate = estimateInputTokens(input.messages);
+    const obs = new ProviderObservation(input);
     try {
       // 每次 generate 恰好一次 HTTP；重试由网关另建 attempt 并预留风险。
       const response = await fetch(anthropicUrl(input.baseUrl, 'messages'), {
         method: 'POST',
         redirect: 'manual',
-        signal: AbortSignal.timeout(input.timeoutMs),
+        signal: obs.controller.signal,
         headers: {
           ...anthropicHeaders(input.apiKey),
           Accept: 'text/event-stream',
@@ -278,9 +279,17 @@ export class AnthropicTextAdapter implements TextAdapter {
         },
         body: JSON.stringify(body),
       });
-      const read = await readLimited(response, startedAt);
-      if (read === null) return { ok: false, category: 'provider_error', retryable: false };
-      const raw = read.text;
+      obs.headers(response);
+      const read = await readLimited(response, obs);
+      if (read === null)
+        return {
+          ok: false,
+          category: 'provider_error',
+          diagnostic: 'response_too_large',
+          retryable: false,
+        };
+      const raw = read.raw;
+      obs.diagnostic.stage = 'decode';
       if (!response.ok) {
         let error: Record<string, unknown> | undefined;
         try {
@@ -289,17 +298,48 @@ export class AnthropicTextAdapter implements TextAdapter {
         } catch {
           /* 非 JSON 错误页：只看状态码 */
         }
+        obs.error(error);
         return { ok: false, ...classifyAnthropicError(response.status, error) };
       }
-      const contentType = response.headers.get('content-type') ?? '';
-      const parsed = contentType.includes('application/json') ? parseJson(raw) : parseStream(raw);
-      if (parsed.error) return { ok: false, ...classifyAnthropicError(0, parsed.error) };
+      const parsed = read.stream ?? parseJson(raw);
+      if (parsed.error) {
+        obs.error(parsed.error);
+        return { ok: false, ...classifyAnthropicError(0, parsed.error) };
+      }
+      if (parsed.malformed)
+        return {
+          ok: false,
+          category: 'provider_error',
+          diagnostic: 'response_parse_error',
+          retryable: true,
+        };
+      if (read.stream && !parsed.done && !parsed.stopReason)
+        return {
+          ok: false,
+          category: 'network_error',
+          diagnostic: 'stream_incomplete',
+          retryable: true,
+        };
+      obs.diagnostic.stage = 'complete';
       const rawText = parsed.text;
       const usage = anthropicUsage(parsed.usage, inputEstimate, rawText);
       if (parsed.stopReason === 'refusal')
         return { ok: false, category: 'content_rejected', retryable: false, usage };
       const text = stripReasoning(rawText);
-      if (!text) return { ok: false, category: 'empty_output', retryable: true, usage };
+      if (!text) {
+        obs.empty(rawText, parsed.reasoning === true || !!rawText.trim());
+        if (parsed.stopReason === 'max_tokens' && parsed.reasoning)
+          return {
+            ok: false,
+            category: 'truncated',
+            truncation: 'reasoning',
+            retryable: true,
+            usage,
+          };
+        return { ok: false, category: 'empty_output', retryable: true, usage };
+      }
+      if (parsed.stopReason === 'max_tokens' && input.responseFormat !== 'json')
+        return { ok: false, category: 'truncated', retryable: true, usage, partialText: text };
       if (parsed.stopReason === 'max_tokens' && input.responseFormat === 'json') {
         // 批 EJ：完整 JSON 之后只剩空白时按成功返回（同 OpenAI 兼容适配器）。
         const complete = completeJsonPrefix(stripJsonFence(text));
@@ -316,10 +356,14 @@ export class AnthropicTextAdapter implements TextAdapter {
         ok: true,
         text: input.responseFormat === 'json' ? stripJsonFence(text) : text,
         usage,
-        ...(read.firstDeltaMs !== null ? { ttftMs: read.firstDeltaMs } : {}),
+        ...(obs.diagnostic.firstProgressMs !== undefined
+          ? { ttftMs: obs.diagnostic.firstProgressMs }
+          : {}),
       };
     } catch {
-      return { ok: false, category: 'network_error', retryable: true };
+      return { ok: false, category: 'network_error', diagnostic: obs.timeout, retryable: true };
+    } finally {
+      obs.close();
     }
   }
 }
@@ -327,38 +371,58 @@ export class AnthropicTextAdapter implements TextAdapter {
 /** 读完响应（最多 2MB）；顺带记下第一段正文到达的时间（首字耗时）。 */
 async function readLimited(
   response: Response,
-  startedAt: number,
-): Promise<{ text: string; firstDeltaMs: number | null } | null> {
-  if (!response.body) return { text: '', firstDeltaMs: null };
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let text = '';
-  let bytes = 0;
-  let firstDeltaMs: number | null = null;
+  obs: ProviderObservation,
+): Promise<{ raw: string; stream?: Parsed } | null> {
+  if (!response.body) return { raw: '' };
+  const reader = response.body.getReader(),
+    decoder = new TextDecoder();
+  let isStream =
+    response.ok && /text\/event-stream/i.test(response.headers.get('content-type') ?? '');
+  let fragment = '',
+    bytes = 0;
+  const parsed: Parsed = { text: '', usage: {}, stopReason: null };
   try {
     for (;;) {
       const part = await reader.read();
-      if (part.done) break;
+      if (part.done) {
+        fragment += decoder.decode();
+        if (isStream) readEvents(fragment.split('\n'), parsed, obs);
+        break;
+      }
+      obs.data();
       bytes += part.value.length;
-      if (bytes > MAX_RESPONSE_BYTES) {
+      fragment += decoder.decode(part.value, { stream: true });
+      if (response.ok && !isStream && /^\s*(?:event:|data:|:)/.test(fragment)) isStream = true;
+      if (isStream) {
+        const lines = fragment.split('\n');
+        fragment = lines.pop()!;
+        readEvents(lines, parsed, obs);
+      } else if (fragment.trimStart().startsWith('{')) obs.endProgress('non_streaming');
+      if (
+        bytes > (isStream ? 64_000_000 : MAX_RESPONSE_BYTES) ||
+        fragment.length + parsed.text.length > MAX_RESPONSE_BYTES
+      ) {
         await reader.cancel();
         return null;
       }
-      text += decoder.decode(part.value, { stream: true });
-      if (firstDeltaMs === null && text.includes('"text_delta"'))
-        firstDeltaMs = Math.round(performance.now() - startedAt);
+      if (parsed.done || parsed.error) {
+        await reader.cancel();
+        break;
+      }
     }
-    text += decoder.decode();
+    return { raw: fragment, ...(isStream ? { stream: parsed } : {}) };
   } finally {
     reader.releaseLock();
   }
-  return { text, firstDeltaMs };
 }
 
 interface Parsed {
   text: string;
   usage: Record<string, unknown>;
   stopReason: string | null;
+  done?: boolean;
+  reasoning?: boolean;
+  malformed?: boolean;
   error?: Record<string, unknown>;
 }
 
@@ -375,6 +439,8 @@ function parseJson(raw: string): Parsed {
       };
     const content = Array.isArray(message.content) ? (message.content as Block[]) : [];
     return {
+      reasoning: content.some((b) => b.type === 'thinking'),
+      malformed: !Array.isArray(message.content),
       text: content
         .filter((b) => b.type === 'text' && typeof b.text === 'string')
         .map((b) => b.text as string)
@@ -383,7 +449,7 @@ function parseJson(raw: string): Parsed {
       stopReason: typeof message.stop_reason === 'string' ? message.stop_reason : null,
     };
   } catch {
-    return { text: '', usage: {}, stopReason: null, error: { type: 'api_error' } };
+    return { text: '', usage: {}, stopReason: null, malformed: true };
   }
 }
 
@@ -391,47 +457,71 @@ function parseJson(raw: string): Parsed {
  * SSE：message_start（含输入用量）→ content_block_delta（text_delta 累积；thinking_delta 忽略）→
  * message_delta（stop_reason、输出用量）→ message_stop；error 事件按错误处理；ping 忽略。
  */
-export function parseStream(raw: string): Parsed {
-  const usage: Record<string, unknown> = {};
-  let text = '';
-  let stopReason: string | null = null;
-  let error: Record<string, unknown> | undefined;
-  let sawEvent = false;
-  for (const line of raw.split(/\r?\n/)) {
+function readEvents(lines: string[], result: Parsed, obs?: ProviderObservation): void {
+  for (const raw of lines) {
+    const line = raw.trim();
     if (!line.startsWith('data:')) continue;
     const data = line.slice(5).trim();
-    if (!data || data === '[DONE]') continue;
-    let event: Record<string, unknown>;
+    if (!data) continue;
+    if (data === '[DONE]') {
+      result.done = true;
+      obs?.endProgress('terminal_frame');
+      break;
+    }
+    let event: Block;
     try {
-      event = JSON.parse(data) as Record<string, unknown>;
+      event = JSON.parse(data) as Block;
     } catch {
+      result.malformed = true;
       continue;
     }
-    sawEvent = true;
+    if (!event || typeof event !== 'object') {
+      result.malformed = true;
+      continue;
+    }
+    const delta = event.delta as Block | undefined;
     switch (event.type) {
       case 'message_start':
-        mergeUsage(usage, (event.message as Record<string, unknown> | undefined)?.usage);
+        mergeUsage(result.usage, (event.message as Block | undefined)?.usage);
         break;
-      case 'content_block_delta': {
-        const delta = event.delta as Record<string, unknown> | undefined;
-        if (delta?.type === 'text_delta' && typeof delta.text === 'string') text += delta.text;
+      case 'content_block_delta':
+        if (delta?.type === 'text_delta' && typeof delta.text === 'string') {
+          result.text += delta.text;
+          if (delta.text.trim()) obs?.progress();
+        }
+        if (
+          delta?.type === 'thinking_delta' &&
+          typeof delta.thinking === 'string' &&
+          delta.thinking.trim()
+        ) {
+          result.reasoning = true;
+          obs?.progress();
+        }
         break;
-      }
-      case 'message_delta': {
-        const delta = event.delta as Record<string, unknown> | undefined;
-        if (typeof delta?.stop_reason === 'string') stopReason = delta.stop_reason;
-        mergeUsage(usage, event.usage);
+      case 'message_delta':
+        if (typeof delta?.stop_reason === 'string') {
+          result.stopReason = delta.stop_reason;
+          obs?.endProgress('terminal_frame');
+        }
+        mergeUsage(result.usage, event.usage);
         break;
-      }
+      case 'message_stop':
+        result.done = true;
+        obs?.endProgress('terminal_frame');
+        break;
       case 'error':
-        error = (event.error as Record<string, unknown>) ?? { type: 'api_error' };
-        break;
-      default:
+        result.error = (event.error as Block) ?? { type: 'api_error' };
+        obs?.endProgress('terminal_frame');
         break;
     }
+    if (result.done || result.error) break;
   }
-  if (!sawEvent) return parseJson(raw);
-  return { text, usage, stopReason, ...(error ? { error } : {}) };
+}
+export function parseStream(raw: string): Parsed {
+  if (!/^\s*data:/m.test(raw)) return parseJson(raw);
+  const result: Parsed = { text: '', usage: {}, stopReason: null };
+  readEvents(raw.split('\n'), result);
+  return result;
 }
 
 /** 要求 JSON 时去掉 ```json 围栏（Claude 没有 response_format，靠提示词约束格式）。 */

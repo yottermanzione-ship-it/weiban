@@ -26,7 +26,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { UpstreamStatus } from '@weiban/contracts';
 import { createHash } from 'node:crypto';
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { CLOCK, DATABASE, type Clock, type Database } from '../../../platform/index.js';
 import { modelRoutes, upstreams } from '../infra/db/schema.js';
 import { GatewayLimitsService } from './limits.js';
@@ -69,9 +69,30 @@ export class UpstreamScheduler {
   private readonly accountInFlight = new Map<string, number>();
   private readonly userInFlight = new Map<string, number>();
   private readonly accountHits = new Map<string, number[]>();
+  private readonly durations = new Map<string, number[]>();
+  /** Only locally observed successful adapter durations are samples; no provider text is retained. */
+  noteDuration(model: string, route: string, purpose: string, ms: number) {
+    if (!Number.isFinite(ms) || ms <= 0) return;
+    const key = [model, route, purpose].join('|');
+    const list = this.durations.get(key) ?? [];
+    list.push(ms);
+    if (list.length > 20) list.shift();
+    if (!this.durations.has(key) && this.durations.size >= 4096)
+      this.durations.delete(this.durations.keys().next().value!);
+    this.durations.set(key, list);
+  }
+  usefulWindowMs(model: string, route: string, purpose: string): number {
+    const samples = this.durations.get([model, route, purpose].join('|'));
+    if (!samples?.length) return 8000;
+    const sorted = [...samples].sort((a, b) => a - b);
+    return Math.min(30000, Math.max(5000, sorted[Math.floor(sorted.length / 2)]!));
+  }
   private readonly userHits = new Map<string, number[]>();
   /** 线路级失败：key = 模型|上游，值 = {连续失败数，冷却到期毫秒}。 */
-  private readonly routeFailures = new Map<string, { count: number; cooldownUntil: number }>();
+  private readonly routeFailures = new Map<
+    string,
+    { count: number; cooldownUntil: number; rateFailures?: number }
+  >();
 
   private routeKey(modelKey: string, upstreamId: string): string {
     return `${modelKey}|${upstreamId}`;
@@ -82,7 +103,8 @@ export class UpstreamScheduler {
     const entry = this.routeFailures.get(this.routeKey(modelKey, upstreamId));
     if (!entry || entry.cooldownUntil === 0) return null;
     if (entry.cooldownUntil <= this.clock.nowMs()) {
-      this.routeFailures.delete(this.routeKey(modelKey, upstreamId));
+      if (!entry.rateFailures || this.clock.nowMs() - entry.cooldownUntil > 300_000)
+        this.routeFailures.delete(this.routeKey(modelKey, upstreamId));
       return null;
     }
     return entry.cooldownUntil;
@@ -156,20 +178,57 @@ export class UpstreamScheduler {
 
   // ---------- 每用户限流 ----------
 
-  /** 占用一个用户槽位；超出每用户并发或每分钟上限时返回 false（不占用）。 */
-  async acquireUser(userId: string): Promise<boolean> {
+  private readonly waiting = new Map<
+    string,
+    Array<{ interactive: boolean; wake: () => boolean }>
+  >();
+  /** Under contention an interactive request gets the next free slot. No quota is taken while queued. */
+  async acquireUser(userId: string, interactive = true, waitMs = 0): Promise<boolean> {
     const limits = await this.limits.get();
-    const inFlight = this.userInFlight.get(userId) ?? 0;
-    if (limits.perUserConcurrency !== null && inFlight >= limits.perUserConcurrency) return false;
-    if (!this.hit(this.userHits, userId, limits.perUserRpm)) return false;
-    this.userInFlight.set(userId, inFlight + 1);
-    return true;
+    const take = () => {
+      const n = this.userInFlight.get(userId) ?? 0;
+      if (limits.perUserConcurrency !== null && n >= limits.perUserConcurrency) return false;
+      if (!this.hit(this.userHits, userId, limits.perUserRpm)) return false;
+      this.userInFlight.set(userId, n + 1);
+      return true;
+    };
+    if (take()) return true;
+    if (waitMs <= 0 || (this.waiting.get(userId)?.length ?? 0) >= 8) return false;
+    return new Promise((resolve) => {
+      const q = this.waiting.get(userId) ?? [];
+      const remove = () => {
+        const pos = q.indexOf(item);
+        if (pos >= 0) q.splice(pos, 1);
+        if (!q.length) this.waiting.delete(userId);
+      };
+      const timer = setTimeout(
+        () => {
+          remove();
+          resolve(false);
+        },
+        Math.min(250, waitMs),
+      );
+      const item = {
+        interactive,
+        wake: () => {
+          if (!take()) return false;
+          clearTimeout(timer);
+          remove();
+          resolve(true);
+          return true;
+        },
+      };
+      q.push(item);
+      this.waiting.set(userId, q);
+    });
   }
 
   releaseUser(userId: string): void {
     const n = (this.userInFlight.get(userId) ?? 1) - 1;
     if (n <= 0) this.userInFlight.delete(userId);
     else this.userInFlight.set(userId, n);
+    const queue = this.waiting.get(userId);
+    (queue?.find((q) => q.interactive) ?? queue?.[0])?.wake();
   }
 
   // ---------- 每账号限流 ----------
@@ -205,12 +264,15 @@ export class UpstreamScheduler {
   // ---------- 健康 ----------
 
   async recordSuccess(upstreamId: string, modelKey?: string): Promise<void> {
-    if (modelKey) this.routeFailures.delete(this.routeKey(modelKey, upstreamId));
+    if (modelKey && !this.isRouteCooling(modelKey, upstreamId))
+      this.routeFailures.delete(this.routeKey(modelKey, upstreamId));
     const now = this.clock.now();
     const [row] = await this.database.db
       .update(upstreams)
       .set({ consecutiveFailures: 0, cooldownUntil: null, lastUsedAt: now })
-      .where(eq(upstreams.id, upstreamId))
+      .where(
+        and(eq(upstreams.id, upstreamId), inArray(upstreams.status, ['active', 'unavailable'])),
+      )
       .returning({ status: upstreams.status });
     if (row && row.status !== 'active')
       await this.upstreams.reportStatus(upstreamId, 'active', 'gateway');
@@ -224,7 +286,12 @@ export class UpstreamScheduler {
    * T-20261104a：密钥失效先确认（UpstreamService.keyStillWorks，同一把密钥的连通测试，结果缓存 60 秒）；
    * 测试通过说明密钥没坏，不累计失败、不暂停、不标状态。网关一般已先问过并把这次改按内容被拒处理，这里是兜底。
    */
-  async recordFailure(upstreamId: string, category: string, modelKey?: string): Promise<void> {
+  async recordFailure(
+    upstreamId: string,
+    category: string,
+    modelKey?: string,
+    retryAfterMs?: number,
+  ): Promise<void> {
     if (category === 'invalid_key' && (await this.upstreams.keyStillWorks(upstreamId))) return;
     const limits = await this.limits.get();
     const now = this.clock.nowMs();
@@ -233,7 +300,13 @@ export class UpstreamScheduler {
       const key = this.routeKey(modelKey, upstreamId);
       const entry = this.routeFailures.get(key) ?? { count: 0, cooldownUntil: 0 };
       entry.count += 1;
-      if (entry.count >= limits.failureThreshold) entry.cooldownUntil = until.getTime();
+      if (category === 'rate_limited') {
+        entry.rateFailures = (entry.rateFailures ?? 0) + 1;
+        const delay =
+          retryAfterMs ?? Math.min(60_000, 2000 * 2 ** Math.min(entry.rateFailures - 1, 5));
+        entry.cooldownUntil = Math.max(entry.cooldownUntil, now + Math.max(1000, delay));
+      } else if (category === 'permission_denied' || entry.count >= limits.failureThreshold)
+        entry.cooldownUntil = Math.max(entry.cooldownUntil, until.getTime());
       this.routeFailures.set(key, entry);
       return;
     }
