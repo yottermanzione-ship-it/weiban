@@ -23,6 +23,16 @@ export const PURPOSE_LABELS: Record<string, string> = {
 };
 
 export const ERROR_LABELS: Record<string, string> = {
+  concurrency_limited: '付费并发已满',
+  request_too_large: '单次费用保护',
+  route_risk_blocked: '发前授权复核未通过',
+  budget_exceeded: '预算拦截',
+  cancelled: '已取消',
+  truncated_partial: '已接收部分结果',
+  price_missing: '缺少可用价格或计费上限',
+  permission_denied: '模型访问权限不足',
+  permission_unconfirmed: '账号权限待核',
+  auth_check_unavailable: '账号自检暂不可用',
   invalid_key: '密钥失效',
   quota_exhausted: '余额不足',
   insufficient_balance: '积分不足',

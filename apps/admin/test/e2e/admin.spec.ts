@@ -554,3 +554,20 @@ test('账号改名后旧名称搜索、模型线路和已有提醒使用正确�
     expect((await rename(original)).ok()).toBe(true);
   }
 });
+
+test('运营可从首页进入已救回任务，查看每条线路与用量、导出筛选结果', async ({ page }) => {
+  await page.clock.setSystemTime(new Date('2026-10-05T13:00:00Z'));
+  await login(page);
+  await page.getByRole('link', { name: /备用救回/ }).click();
+  const task = page.getByRole('row').filter({ hasText: 'browser/outcome-primary' });
+  await expect(task).toContainText('角色消息已入库');
+  await task.getByRole('button', { name: '详情' }).click();
+  const drawer = page.getByRole('dialog');
+  await expect(drawer).toContainText('browser/outcome-standby');
+  await expect(drawer).toContainText('213456');
+  await expect(drawer).toContainText('超时');
+  await page.keyboard.press('Escape');
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: '导出筛选结果' }).click();
+  expect((await download).suggestedFilename()).toContain('模型任务结果');
+});

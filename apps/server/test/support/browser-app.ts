@@ -5,6 +5,8 @@ import { resolve } from 'node:path';
 import sharp from 'sharp';
 import { ChatGroupService } from '../../src/modules/chat/testing.js';
 import {
+  MODEL_TASK_OUTCOME_PORT,
+  type ModelTaskOutcomePort,
   AdminCharacterWrite,
   AdminScenarioModeCreate,
   CharacterCard,
@@ -31,6 +33,7 @@ import { MediaAssetService, MediaService } from '../../src/modules/media/testing
 import { BillingAdminService, PriceService } from '../../src/modules/billing/testing.js';
 import {
   CatalogService,
+  UsageRecorder,
   ScenarioService,
   UpstreamService,
 } from '../../src/modules/model-access/testing.js';
@@ -163,6 +166,43 @@ await app.get(CatalogService).upsert(admin, chatModel, {
   },
   enabled: true,
 });
+// 合成任务验证后台按业务采用回执展示成功，同时保留失败线路。
+const taskKey = newId();
+const taskUsage = app.get(UsageRecorder);
+for (const [index, modelKey] of ['browser/outcome-primary', 'browser/outcome-standby'].entries()) {
+  const { record } = await taskUsage.start({
+    input: {
+      userId: admin,
+      purpose: 'chat_reply',
+      billingOwner: 'user',
+      modelRole: 'chat',
+      taskKey,
+      idempotencyKey: newId(),
+    },
+    modelKey,
+    upstreamId: upstream.upstreamId,
+    upstreamModelId: modelKey,
+    countsAsBackground: false,
+  });
+  await taskUsage.finish(record.id, {
+    status: index ? 'succeeded' : 'failed',
+    errorCode: index ? null : 'timeout_progress',
+    inputTokens: 213456,
+    cachedInputTokens: 120,
+    outputTokens: index ? 80 : 0,
+    estimated: !index,
+    latencyMs: 780,
+    retryCount: 0,
+  });
+  if (index)
+    await app.get<ModelTaskOutcomePort>(MODEL_TASK_OUTCOME_PORT).record({
+      taskKey,
+      userId: admin,
+      purpose: 'chat_reply',
+      state: 'delivered',
+      usageRecordId: record.id,
+    });
+}
 // Real playable WAV through encrypted media storage; a tone tests playback, not voice quality.
 const sampleRate = 8000;
 const wav = Buffer.alloc(44 + sampleRate * 10 * 2);

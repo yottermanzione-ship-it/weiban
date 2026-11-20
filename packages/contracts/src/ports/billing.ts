@@ -288,6 +288,13 @@ export interface UsageBillingState {
  * - 启用模型前检查价目表：model-access 启用模型目录条目时，确认当前生效价目表里有这个模型的价格。
  */
 export interface BillingChargeQueryPort {
+  /** 后台业务结果按用量 ID 批量核对真实用户扣款和退款。单次最多 1000 个。 */
+  getHistoricalPriceVersionLabels?(
+    ids: readonly string[],
+  ): Promise<Array<{ id: string; label: string }>>;
+  getUsageAccountAmounts?(
+    ids: readonly string[],
+  ): Promise<Array<{ usageRecordId: string; chargedMicros: number; refundedMicros: number }>>;
   /** 3.16提供方必须接入；可选仅兼容旧组合根，缺失时新对账明确不可用。最多1000个ID。 */
   getBillingStatesByHoldIds?(holdIds: readonly string[]): Promise<UsageBillingState[]>;
   /** 按用量记录 ID 查扣费（一次最多 1,000 个 ID，超过抛异常）；没有扣费的 ID 不出现在结果里。 */

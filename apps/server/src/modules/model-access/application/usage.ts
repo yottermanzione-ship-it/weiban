@@ -526,7 +526,7 @@ export class AdminUsageService {
    * 后台展示「这是谁」：一次批量取昵称 + 登录名（端口一次最多 500 个 ID，这里分批）。
    * 取不到（账号已注销）就不出现在结果里，界面自行退回用户 ID 短码；查询失败不影响用量数据。
    */
-  private async labelsOf(userIds: Iterable<string>): Promise<Record<string, IdentityUserLabel>> {
+  async labelsOf(userIds: Iterable<string>): Promise<Record<string, IdentityUserLabel>> {
     const ids = [...new Set(userIds)].filter(Boolean);
     if (!ids.length || !this.directory) return {};
     const out: Record<string, IdentityUserLabel> = {};

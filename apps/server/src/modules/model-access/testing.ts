@@ -55,3 +55,5 @@ export { WebCandidateSearch } from './application/web-candidates.js';
 export { applySystemMessageMode } from './domain/system-messages.js';
 
 export { ModelAdminService } from './application/models.js';
+
+export { AdminTaskService } from './application/admin-tasks.js';

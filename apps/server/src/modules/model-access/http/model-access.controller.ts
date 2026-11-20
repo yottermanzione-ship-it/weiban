@@ -46,6 +46,7 @@ import { ModelStatusService } from '../application/resolver.js';
 import { SelectionService } from '../application/selection.js';
 import { ScenarioService } from '../application/scenarios.js';
 import { UpstreamService } from '../application/upstreams.js';
+import { AdminTaskService } from '../application/admin-tasks.js';
 import { AdminUsageService } from '../application/usage.js';
 
 const E = ModelAccessEndpoints;
@@ -305,6 +306,7 @@ export class ModelAdminController {
     @Inject(UpstreamService) private readonly upstreams: UpstreamService,
     @Inject(CatalogService) private readonly catalog: CatalogService,
     @Inject(AdminUsageService) private readonly usage: AdminUsageService,
+    @Inject(AdminTaskService) private readonly tasks: AdminTaskService,
     @Inject(ModelAdminService) private readonly models: ModelAdminService,
     @Inject(ModelTestService) private readonly modelTest: ModelTestService,
     @Inject(ModelDeletionService) private readonly deletion: ModelDeletionService,
@@ -591,6 +593,46 @@ export class ModelAdminController {
     @Body(new ContractPipe(schema(U.usageSummary.body))) body: Out<typeof U.usageSummary.body>,
   ) {
     return this.usage.summary(body);
+  }
+
+  @Post('usage/tasks/overview')
+  @HttpCode(200)
+  @RequireAuth(U.modelTaskOverview.auth)
+  taskOverview(
+    @Body(new ContractPipe(schema(U.modelTaskOverview.body)))
+    body: Out<typeof U.modelTaskOverview.body>,
+  ) {
+    return this.tasks.overview(body.filter);
+  }
+
+  @Post('usage/tasks')
+  @HttpCode(200)
+  @RequireAuth(U.listModelTasks.auth)
+  listModelTasks(
+    @Body(new ContractPipe(schema(U.listModelTasks.body))) body: Out<typeof U.listModelTasks.body>,
+  ) {
+    return this.tasks.list(body);
+  }
+
+  @Post('usage/tasks/attempts')
+  @HttpCode(200)
+  @RequireAuth(U.listTaskAttempts.auth)
+  taskAttempts(
+    @Body(new ContractPipe(schema(U.listTaskAttempts.body)))
+    body: Out<typeof U.listTaskAttempts.body>,
+  ) {
+    return this.tasks.attempts(body);
+  }
+
+  @Post('usage/tasks/export')
+  @HttpCode(200)
+  @RequireAuth(U.exportModelTasks.auth)
+  exportTasks(
+    @CurrentPrincipal() me: AuthPrincipal,
+    @Body(new ContractPipe(schema(U.exportModelTasks.body)))
+    body: Out<typeof U.exportModelTasks.body>,
+  ) {
+    return this.tasks.export(me.userId, body.filter);
   }
 
   @Post('usage/records')

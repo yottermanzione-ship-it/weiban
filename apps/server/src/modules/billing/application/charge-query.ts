@@ -88,6 +88,40 @@ export class ChargeQueryService implements BillingChargeQueryPort {
     }));
   }
 
+  async getHistoricalPriceVersionLabels(ids: readonly string[]) {
+    if (ids.length > MAX_IDS || ids.some((id) => !Id.safeParse(id).success))
+      throw new AppError('bad_request', '无效的价目版本编号');
+    if (!ids.length) return [];
+    return (
+      await this.database.query<{ id: string; label: string }>(
+        'SELECT id,version_label AS label FROM billing.price_versions WHERE id=ANY($1::uuid[])',
+        [ids],
+      )
+    ).rows;
+  }
+
+  async getUsageAccountAmounts(ids: readonly string[]) {
+    if (ids.length > MAX_IDS || ids.some((id) => !Id.safeParse(id).success))
+      throw new AppError('bad_request', '无效的用量记录编号');
+    if (!ids.length) return [];
+    const result = await this.database.query<{ id: string; charged: string; refunded: string }>(
+      `WITH ledger AS (
+        SELECT e.usage_record_id id, sum(-e.amount_micros) FILTER(WHERE e.type='charge' AND NOT e.absorbed) charged,
+               sum(e.amount_micros) FILTER(WHERE e.type='refund') refunded
+        FROM billing.ledger_entries e JOIN billing.accounts a ON a.id=e.account_id AND a.kind='user'
+        WHERE e.usage_record_id=ANY($1::uuid[]) AND e.type IN ('charge','refund') GROUP BY e.usage_record_id
+      )
+      SELECT id, coalesce(charged,0)::text charged, coalesce(refunded,0)::text refunded
+      FROM unnest($1::uuid[]) ids(id) LEFT JOIN ledger USING(id)`,
+      [ids],
+    );
+    return result.rows.map((r) => ({
+      usageRecordId: r.id,
+      chargedMicros: Number(r.charged),
+      refundedMicros: Number(r.refunded),
+    }));
+  }
+
   async getChargesByUsageRecordIds(usageRecordIds: readonly string[]): Promise<UsageCharge[]> {
     if (usageRecordIds.length > MAX_IDS) {
       throw new AppError('bad_request', `一次最多查询 ${MAX_IDS} 个用量记录 ID`);

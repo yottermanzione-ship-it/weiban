@@ -32,6 +32,13 @@ import {
 } from '../common.js';
 import { BillingOwner, ModelPurpose } from '../ports/model-gateway.js';
 import { AdminUserLabel } from './admin-users.js';
+import { adminTaskEndpoints } from './model-outcomes.js';
+export {
+  AdminTaskState,
+  AdminTaskFilter,
+  AdminModelTask,
+  AdminTaskAttempt,
+} from './model-outcomes.js';
 
 // ---------- 模型目录 ----------
 export const ModelLeaderboardSource = z.object({
@@ -1857,6 +1864,7 @@ export type AdminUsageOverview = z.infer<typeof AdminUsageOverview>;
 export const ADMIN_USAGE_EXPORT_MAX_ROWS = 50_000 as const;
 
 export const ModelAccessAdminUsageEndpoints = {
+  ...adminTaskEndpoints,
   usageSummary: defineEndpoint({
     method: 'POST',
     path: `${API_PREFIX}/admin/model/usage/summary`,

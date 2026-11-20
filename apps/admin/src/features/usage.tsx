@@ -6,6 +6,7 @@ import {
   ModelAccessAdminEndpoints,
   ModelAccessAdminUsageEndpoints,
   ModelKey,
+  Id,
   type AdminUsageSummary,
 } from '@weiban/contracts';
 import { api } from '../data/client.js';
@@ -14,6 +15,7 @@ import { DataTable, type ProColumns } from '../ui/table.js';
 import { Page } from '../ui/page.js';
 import { formatInt, formatPercent, formatYuan, pointsOf } from '../ui/format.js';
 import { PURPOSE_LABELS, modelLabel, rangeOf, type RangeKey } from './model/shared.js';
+import { ModelTasksTab } from './model/task-outcomes.js';
 import { RecordsTab } from './model/records.js';
 import { UserIdentity } from './users/identity.js';
 
@@ -37,7 +39,9 @@ export function UsagePage() {
   const [params, setParams] = useSearchParams();
   const range = RANGES.find((item) => item.value === params.get('range'))?.value ?? '7d';
   const group = GROUPS.find((item) => item.value === params.get('group'))?.value ?? 'model';
-  const view = params.get('view') === 'records' ? 'records' : 'summary';
+  const view = ['records', 'tasks'].includes(params.get('view') ?? '')
+    ? params.get('view')!
+    : 'summary';
   const modelsRemote = useRemote(ModelAccessAdminEndpoints.modelLabels);
   const models = modelsRemote.data?.items ?? [];
   const upstreamsRemote = useRemote(ModelAccessAdminEndpoints.listUpstreams);
@@ -80,6 +84,21 @@ export function UsagePage() {
                 onGroup={(next) => changeParam('group', next)}
                 modelName={(key) => modelLabel(models, key)}
                 upstreamName={(id) => upstreams.find((item) => item.upstreamId === id)?.name ?? id}
+              />
+            ),
+          },
+          {
+            key: 'tasks',
+            label: '任务结果',
+            children: (
+              <ModelTasksTab
+                key={params.toString()}
+                range={range}
+                usageRecordId={Id.safeParse(params.get('usage')).data}
+                state={params.get('state')}
+                rescued={params.get('rescued') === '1'}
+                models={models}
+                upstreams={upstreams}
               />
             ),
           },

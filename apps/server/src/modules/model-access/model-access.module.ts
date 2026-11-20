@@ -51,6 +51,7 @@ import { ScenarioService } from './application/scenarios.js';
 import { RealtimeVoiceStore } from './application/realtime-voices.js';
 import { UpstreamService } from './application/upstreams.js';
 import { MODEL_TASK_OUTCOME_PORT } from '@weiban/contracts';
+import { AdminTaskService } from './application/admin-tasks.js';
 import { TaskOutcomeService } from './application/task-outcomes.js';
 import { AdminUsageService, UsageRecorder } from './application/usage.js';
 import { ModelAdminController, ModelController } from './http/model-access.controller.js';
@@ -149,6 +150,7 @@ import {
     { provide: MODEL_QUOTE_PORT, useExisting: ModelQuoteService },
     UsageRecorder,
     AdminUsageService,
+    AdminTaskService,
     TaskOutcomeService,
     { provide: MODEL_TASK_OUTCOME_PORT, useExisting: TaskOutcomeService },
     UsageReconciliationService,
