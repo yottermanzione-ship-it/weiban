@@ -3,7 +3,7 @@
  * 这些参数影响全站，改完立即生效；写操作会记审计。
  */
 import { useEffect, useState } from 'react';
-import { Alert, Button, Form, InputNumber, Space } from 'antd';
+import { Alert, Button, Form, InputNumber } from 'antd';
 import { Link } from 'react-router-dom';
 import {
   FamiliarityStageThresholds,
@@ -13,20 +13,32 @@ import {
 } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { errorText, useRemote } from '../data/hooks.js';
-import { FieldHelp, FormSection, Page, SectionCard, useToast } from '../ui/page.js';
+import { FieldHelp, FormSection, Page, SectionCard, StatusTag, useToast } from '../ui/page.js';
 import { useFormFeedback } from '../data/form-feedback.js';
 
 export function SettingsPage() {
   return (
-    <Page title="系统设置" desc="影响全站的参数。改完立即生效，请确认后再保存。">
+    <Page
+      title={
+        <>
+          <Link className="os-back-link" to="/dashboard">
+            ← 返回驾驶舱
+          </Link>
+          系统设置
+        </>
+      }
+      desc="影响全站的参数。改完立即生效，请确认后再保存。"
+    >
       <SectionCard
         title="情景模式与提示词"
         desc="修改日常、树洞、打气等模式的预设提示词，保存后后续回复生效，无需发布新版本。"
       >
         <Link to="/scenario-modes">管理情景模式与提示词</Link>
       </SectionCard>
-      <LimitsCard />
-      <FamiliarityStagesCard />
+      <div className="os-settings-grid">
+        <LimitsCard />
+        <FamiliarityStagesCard />
+      </div>
       <SectionCard title="其它设置" desc="分散在各自页面，避免重复维护">
         <ul className="link-list">
           <li>公告与版本策略：内容运营 › 公告 / 系统 › 版本策略</li>
@@ -52,9 +64,13 @@ function LimitsCard() {
   const feedback = useFormFeedback(form);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [changed, setChanged] = useState(false);
 
   useEffect(() => {
-    if (remote.data) form.setFieldsValue(remote.data);
+    if (remote.data) {
+      form.setFieldsValue(remote.data);
+      setChanged(false);
+    }
   }, [remote.data, form]);
 
   async function save() {
@@ -72,6 +88,7 @@ function LimitsCard() {
         },
       });
       toast.success('已保存');
+      setChanged(false);
       remote.refresh();
     } catch (e) {
       setError(feedback.report(e));
@@ -85,14 +102,19 @@ function LimitsCard() {
       title="每用户限流与线路健康"
       desc="防止单个用户把额度用光；线路连续失败会自动暂停"
       extra={
-        <Button type="primary" loading={saving} onClick={() => void save()}>
-          保存
-        </Button>
+        <StatusTag tone={changed ? 'warning' : 'default'}>
+          {remote.loading ? '同步中' : changed ? '未保存' : remote.error ? '读取失败' : '已同步'}
+        </StatusTag>
       }
     >
       {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 12 }} />}
       {remote.error && <Alert type="error" showIcon message={remote.error} />}
-      <Form form={form} layout="vertical">
+      <Form
+        form={form}
+        layout="vertical"
+        disabled={remote.loading || !!remote.error || saving}
+        onValuesChange={() => setChanged(true)}
+      >
         <FormSection title="每个用户" />
         <div className="form-two">
           <Form.Item
@@ -129,9 +151,20 @@ function LimitsCard() {
             <InputNumber min={10} max={86400} style={{ width: '100%' }} />
           </Form.Item>
         </div>
-        <Space>
-          <Button onClick={() => form.resetFields()}>还原</Button>
-        </Space>
+        <div className="os-settings-save">
+          <Button
+            disabled={!changed}
+            onClick={() => {
+              if (remote.data) form.setFieldsValue(remote.data);
+              setChanged(false);
+            }}
+          >
+            还原
+          </Button>
+          <Button type="primary" loading={saving} disabled={!changed} onClick={() => void save()}>
+            保存
+          </Button>
+        </div>
       </Form>
     </SectionCard>
   );
@@ -179,14 +212,9 @@ function FamiliarityStagesCard() {
       title="好感度阶段"
       desc="每条有效消息 +4 点（PRO+ ×2），这里设到每个阶段需要的累计点数"
       extra={
-        <Button
-          type="primary"
-          loading={saving}
-          disabled={!changed || !parsed.success}
-          onClick={() => void save()}
-        >
-          保存
-        </Button>
+        <StatusTag tone={changed ? 'warning' : 'default'}>
+          {remote.loading ? '同步中' : changed ? '未保存' : remote.error ? '读取失败' : '已同步'}
+        </StatusTag>
       }
     >
       {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 12 }} />}
@@ -211,7 +239,7 @@ function FamiliarityStagesCard() {
             <InputNumber
               min={0}
               max={1000000}
-              disabled={i === 0}
+              disabled={i === 0 || saving || remote.loading || !!remote.error}
               style={{ width: '100%' }}
               value={values[i]}
               onChange={(v) =>
@@ -226,6 +254,16 @@ function FamiliarityStagesCard() {
         {names[(remote.data?.freeCeilingLevel ?? 3) - 1] ?? '亲密好友'}
         」，充值或开通会员后解除；未成年设定的角色同样最高到这一阶段。调高阈值不会让已经达到的阶段回落。
       </FieldHelp>
+      <div className="os-settings-save">
+        <Button
+          type="primary"
+          loading={saving}
+          disabled={!changed || !parsed.success || remote.loading || !!remote.error}
+          onClick={() => void save()}
+        >
+          保存
+        </Button>
+      </div>
     </SectionCard>
   );
 }

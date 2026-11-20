@@ -3,6 +3,7 @@
  * 完成后默认把角色加到申请人通讯录；所有写操作服务器记审计并通知申请人。
  */
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Alert,
   Button,
@@ -11,7 +12,7 @@ import {
   Input,
   InputNumber,
   Modal,
-  Select,
+  Segmented,
   Space,
   Switch,
   Tabs,
@@ -31,7 +32,7 @@ import { RecordDrawer } from '../ui/drawer.js';
 import { FieldHelp, FormSection, Page, SectionCard, StatusTag, useToast } from '../ui/page.js';
 import { formatDateTime } from '../ui/format.js';
 import { useFormFeedback } from '../data/form-feedback.js';
-import { UserIdentity, userDisplayName, UserPicker } from './users/identity.js';
+import { shortUserId, UserIdentity, userDisplayName, UserPicker } from './users/identity.js';
 
 const STATUS_LABELS: Record<string, string> = {
   pending: '待处理',
@@ -72,10 +73,12 @@ export function RoleRequestsPage() {
 }
 
 function RequestList() {
-  const [status, setStatus] = useState<'' | RoleRequestStatus>('pending');
+  const [params] = useSearchParams();
+  const linkedStatus = params.get('status') === 'completed' ? 'completed' : 'pending';
+  const [status, setStatus] = useState<'' | RoleRequestStatus>(linkedStatus);
   const [userId, setUserId] = useState('');
   const [applied, setApplied] = useState<{ status: '' | RoleRequestStatus; userId: string }>({
-    status: 'pending',
+    status: linkedStatus,
     userId: '',
   });
   const [items, setItems] = useState<AdminRoleRequest[]>([]);
@@ -175,38 +178,47 @@ function RequestList() {
     <div className="tab-body">
       <DataTable<AdminRoleRequest>
         rowKey="requestId"
+        exportCsv={{
+          filename: '微伴制作申请',
+          fields: [
+            { title: '用户编号', value: (row) => shortUserId(row.userId) },
+            { title: '角色', value: (row) => row.roleName },
+            { title: '状态', value: (row) => STATUS_LABELS[row.status] },
+            { title: '最近更新', value: (row) => formatDateTime(row.updatedAt) },
+          ],
+        }}
         columns={columns}
         data={items}
         loading={loading}
         error={error}
         onRefresh={() => void load()}
         onRowClick={(row) => setSelected(row.requestId)}
+        views={
+          <Segmented<'' | RoleRequestStatus>
+            className="os-view-tabs"
+            value={status}
+            onChange={(value) => {
+              setStatus(value);
+              setApplied({ status: value, userId });
+            }}
+            options={[
+              { value: '', label: '全部状态' },
+              { value: 'pending', label: '待处理 · ' + pendingCount },
+              { value: 'in_progress', label: '制作中' },
+              { value: 'completed', label: '已完成' },
+              { value: 'rejected', label: '已拒绝' },
+              { value: 'cancelled', label: '已撤回' },
+            ]}
+          />
+        }
         filters={
-          <>
-            <Select
-              style={{ width: 160 }}
-              value={status}
-              onChange={(value) => {
-                setStatus(value);
-                setApplied({ status: value, userId });
-              }}
-              options={[
-                { value: '', label: '全部状态' },
-                { value: 'pending', label: `待处理${pendingCount ? `（${pendingCount}）` : ''}` },
-                { value: 'in_progress', label: '制作中' },
-                { value: 'completed', label: '已完成' },
-                { value: 'rejected', label: '已拒绝' },
-                { value: 'cancelled', label: '已撤回' },
-              ]}
-            />
-            <UserPicker
-              value={userId}
-              onChange={(value) => {
-                setUserId(value);
-                setApplied({ status, userId: value });
-              }}
-            />
-          </>
+          <UserPicker
+            value={userId}
+            onChange={(value) => {
+              setUserId(value);
+              setApplied({ status, userId: value });
+            }}
+          />
         }
         emptyTitle={applied.status === 'pending' ? '没有待处理的申请' : '没有符合条件的申请'}
         emptyHint="用户提交申请后会出现在这里；先看需求，再去「角色库」把人设做好。"
@@ -237,7 +249,7 @@ function RequestList() {
 
 type Action = 'accept' | 'progress' | 'complete' | 'reject';
 
-function RequestDrawer({
+export function RequestDrawer({
   requestId,
   onClose,
   onChanged,

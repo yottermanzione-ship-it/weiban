@@ -1,20 +1,14 @@
-/**
- * 后台通用的「这是谁」展示：优先昵称（identity.profiles.nickname），其次登录名，
- * 两者都取不到才显示用户 ID 短码。不造任何昵称，缺就是缺。
- *
- * 复制完整用户 ID 的能力保留：主行的 title 是完整 UUID；抽屉里另有可复制的完整 ID。
- * 排序 / 筛选 / 分页 / 导出仍然按 userId，本组件只改「显示成什么」。
- */
+//** 后台身份优先显示昵称和登录名，编号仅显示脱敏短码。 */
 import { useState, type CSSProperties } from 'react';
-import { Select, Typography } from 'antd';
+import { App, Select } from 'antd';
+import { redactContact } from '../../ui/csv.js';
 import { AdminUsersEndpoints, Id, type AdminUserLabel } from '@weiban/contracts';
 import { useRemote } from '../../data/hooks.js';
 import { useAsync } from '../../data/use-async.js';
 import { api } from '../../data/client.js';
 
-/** 短码：UUID 前 8 位 + 省略号（完整值放 title）。 */
 export function shortUserId(userId: string): string {
-  return `${userId.slice(0, 8)}…`;
+  return userId.slice(0, 4) + '…' + userId.slice(-4);
 }
 
 /**
@@ -26,9 +20,9 @@ export function userDisplayName(
   label: AdminUserLabel | undefined,
   deleted = false,
 ): string {
-  const nickname = label?.nickname?.trim();
-  const username = label?.username?.trim();
-  if (nickname || username) return nickname || username!;
+  const nickname = redactContact(label?.nickname?.trim() ?? '');
+  const username = redactContact(label?.username?.trim() ?? '');
+  if (nickname || username) return nickname || username;
   return deleted ? '已注销账号' : shortUserId(userId);
 }
 
@@ -50,24 +44,40 @@ export function UserIdentity({
   compact?: boolean;
 }) {
   const nickname = label?.nickname?.trim() ?? '';
-  const username = label?.username?.trim() ?? '';
+  const username = redactContact(label?.username?.trim() ?? '');
   const main = userDisplayName(userId, label, deleted);
-  const sub = [...(nickname && username ? [username] : []), shortUserId(userId)].join(' · ');
-  if (compact) return <span title={userId}>{main}</span>;
+  const sub = nickname && username ? username : null;
+  if (compact) return <span>{main}</span>;
   return (
     <div className="cell-main">
-      <span className="cell-title" title={userId}>
-        {main}
+      <span className="cell-title">{main}</span>
+      <span className="cell-sub">
+        {sub && <>{sub} · </>}
+        <MaskedId id={userId} />
       </span>
-      <Typography.Text
-        className="cell-sub mono"
-        title={userId}
-        copyable={{ text: userId, tooltips: ['复制用户编号', '已复制'] }}
-        onClick={(event) => event.stopPropagation()}
-      >
-        {sub}
-      </Typography.Text>
     </div>
+  );
+}
+
+export function MaskedId({ id }: { id: string }) {
+  const { message } = App.useApp();
+  const code = shortUserId(id);
+  return (
+    <button
+      type="button"
+      className="os-id-chip mono"
+      title="复制脱敏编号"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(code);
+          message.success('已复制编号短码');
+        } catch {
+          message.error('复制失败');
+        }
+      }}
+    >
+      {code}
+    </button>
   );
 }
 
@@ -99,8 +109,8 @@ export function UserPicker(props: UserPickerProps) {
   }
   const options = [...labels].map(([id, label]) => ({
     value: id,
+    title: shortUserId(id),
     label: `${userDisplayName(id, label)}${label.nickname || label.username ? ` · ${shortUserId(id)}` : ''}`,
-    title: id,
   }));
   return (
     <Select<string | string[]>

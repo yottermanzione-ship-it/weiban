@@ -1,3 +1,4 @@
+import { downloadCsvRows } from '../../ui/csv.js';
 import { useEffect, useMemo, useState } from 'react';
 import { Button, DatePicker, Input, Select, Space, Tag, Typography } from 'antd';
 import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
@@ -168,50 +169,36 @@ export function RecordsTab({
         '状态',
         '错误类型',
       ];
-      const lines = r.items.map((x) =>
-        [
-          formatDateTime(x.createdAt),
-          // 导出仍以用户 ID 为准，同时带上昵称 / 登录名，人看得懂也能和账本对上。
-          `${userDisplayName(x.userId, { nickname: x.nickname, username: x.username })} (${x.userId})`,
-          x.characterId ?? '',
-          PURPOSE_LABELS[x.purpose] ?? x.purpose,
-          x.modelKey,
-          upstreamName(x.upstreamId),
-          x.upstreamModelId ?? '',
-          x.inputTokens,
-          x.cachedInputTokens,
-          x.cacheWrite5mTokens ?? 0,
-          x.cacheWrite1hTokens ?? 0,
-          x.outputTokens,
-          x.reasoningTokens ?? '',
-          x.audioInputTokens ?? '',
-          x.audioOutputTokens ?? '',
-          x.ttsChars ?? '',
-          x.asrSeconds ?? '',
-          usageSource(x),
-          x.latencyMs,
-          (x.costMicros / 1_000_000).toFixed(4),
-          x.costKnown === false ? '待核' : x.costKnown ? '已记' : '未知',
-          pointsOf(x.chargedMicros).toFixed(2),
-          x.status === 'succeeded' ? '成功' : '失败',
-          x.errorCode ?? '',
-        ]
-          .map((v) => {
-            const text = String(v);
-            const safe =
-              typeof v === 'string' && /^[\s]*[=+\-@\t\r\n]/.test(text) ? `'${text}` : text;
-            return `"${safe.replace(/"/g, '""')}"`;
-          })
-          .join(','),
-      );
-      const blob = new Blob(['\ufeff' + [header.join(','), ...lines].join('\n')], {
-        type: 'text/csv;charset=utf-8',
-      });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `调用记录-${new Date().toISOString().slice(0, 10)}.csv`;
-      a.click();
-      window.setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+      const rows = r.items.map((x) => [
+        formatDateTime(x.createdAt),
+        userDisplayName(x.userId, { nickname: x.nickname, username: x.username }) +
+          ' (' +
+          shortUserId(x.userId) +
+          ')',
+        x.characterId ?? '',
+        PURPOSE_LABELS[x.purpose] ?? x.purpose,
+        x.modelKey,
+        upstreamName(x.upstreamId),
+        x.upstreamModelId ?? '',
+        x.inputTokens,
+        x.cachedInputTokens,
+        x.cacheWrite5mTokens ?? 0,
+        x.cacheWrite1hTokens ?? 0,
+        x.outputTokens,
+        x.reasoningTokens ?? '',
+        x.audioInputTokens ?? '',
+        x.audioOutputTokens ?? '',
+        x.ttsChars ?? '',
+        x.asrSeconds ?? '',
+        usageSource(x),
+        x.latencyMs,
+        (x.costMicros / 1_000_000).toFixed(4),
+        x.costKnown === false ? '待核' : x.costKnown ? '已记' : '未知',
+        pointsOf(x.chargedMicros).toFixed(2),
+        x.status === 'succeeded' ? '成功' : '失败',
+        x.errorCode ?? '',
+      ]);
+      downloadCsvRows('调用记录-' + new Date().toISOString().slice(0, 10), header, rows);
       if (r.truncated) toast.warning('结果太多，只导出了前 5 万行，请缩小时间范围');
       else toast.success(`已导出 ${r.items.length} 行`);
     } catch (e) {

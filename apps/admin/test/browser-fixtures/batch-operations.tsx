@@ -5,7 +5,7 @@ import { App, ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN.js';
 import { DataTable } from '../../src/ui/table.js';
 import { BatchStatusActions } from '../../src/ui/batch-status.js';
-import '../../src/app/styles.css';
+import '../../src/app/weiban-os.css';
 type Row = { id: string; name: string; enabled: boolean };
 const calls: Array<{ id: string; enabled: boolean }> = [];
 Object.assign(window, { batchCalls: calls });

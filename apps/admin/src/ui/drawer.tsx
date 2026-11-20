@@ -51,7 +51,7 @@ export function RecordDrawer({
   onClose,
   title,
   subtitle,
-  width = 640,
+  width,
   loading,
   children,
   footer,
@@ -194,7 +194,7 @@ export function RecordDrawer({
       <Drawer
         open={open}
         onClose={close}
-        width={width}
+        width={`min(${width ?? (form || draft ? 640 : 480)}px, 100vw)`}
         maskClosable
         destroyOnHidden
         title={
@@ -205,7 +205,10 @@ export function RecordDrawer({
         }
         extra={extra}
         footer={footer}
-        styles={{ body: { paddingTop: 16, background: '#F4F5F7' }, footer: { background: '#fff' } }}
+        styles={{
+          body: { paddingTop: 16, background: 'var(--bg-canvas)' },
+          footer: { background: 'var(--bg-sidebar)' },
+        }}
       >
         {loading ? (
           <div className="drawer-loading">

@@ -10,7 +10,7 @@ import {
   type AdminModel,
 } from '@weiban/contracts';
 import '../../../../docs/design/tokens.css';
-import '../../src/app/styles.css';
+import '../../src/app/weiban-os.css';
 import { ModelWizard } from '../../src/features/model/models.js';
 import { api } from '../../src/data/client.js';
 const saved: unknown[] = [];

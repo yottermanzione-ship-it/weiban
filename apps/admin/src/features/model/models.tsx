@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import dayjs from 'dayjs';
+import { useSearchParams } from 'react-router-dom';
+import { FacetFilter, FilterChips } from '../../ui/grid-controls.js';
 import {
   Alert,
   AutoComplete,
@@ -12,6 +14,7 @@ import {
   InputNumber,
   Modal,
   Select,
+  Segmented,
   Space,
   Switch,
   Tag,
@@ -53,7 +56,7 @@ import {
   useDangerConfirm,
   useToast,
 } from '../../ui/page.js';
-import { formatPoints } from '../../ui/format.js';
+import { formatPercent, formatPoints } from '../../ui/format.js';
 import {
   CAPABILITY_LABELS,
   SCENARIO_LABELS,
@@ -150,9 +153,12 @@ export function ModelsTab({
 }) {
   const toast = useToast();
   const confirm = useDangerConfirm();
+  const [params, setParams] = useSearchParams();
+  const linkedModel = params.get('modelKey');
   const [use, setUse] = useState<UseFilter>('all');
   const [status, setStatus] = useState<'all' | 'on' | 'off'>('all');
   const [query, setQuery] = useState('');
+  const [vendors, setVendors] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [sort, setSort] = useState<
@@ -172,17 +178,27 @@ export function ModelsTab({
   };
   const remote = useRemote(listModelPage, { query: { ...filter, page, pageSize, sort } });
   const { models: parsed, issues: invalidModels } = parseAdminModelPreviews(remote.data?.items);
-  const list = parsed.filter((m) => !m.deletedAt);
+  const pageModels = parsed.filter((m) => !m.deletedAt);
+  const list = vendors.length
+    ? pageModels.filter((model) => vendors.includes(model.vendorName))
+    : pageModels;
   const loading = remote.loading;
   const loadError = remote.error;
   const selection = useListSelection<Pick<AdminModelLabel, 'modelKey' | 'displayName'>>(
-    JSON.stringify(filter),
+    JSON.stringify([filter, vendors]),
     list,
     (m) => m.modelKey,
   );
 
   const [editing, setEditing] = useState<string | null>(null);
   const [savingNew, setSavingNew] = useState(false);
+  useEffect(() => {
+    if (linkedModel) {
+      setSavingNew(false);
+      setFocusBounds(false);
+      setEditing(linkedModel);
+    }
+  }, [linkedModel]);
   const [focusBounds, setFocusBounds] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const detail = useRemote(
@@ -199,6 +215,14 @@ export function ModelsTab({
   const closeEditor = () => {
     setEditing(null);
     setSavingNew(false);
+    if (linkedModel)
+      setParams(
+        (next) => {
+          next.delete('modelKey');
+          return next;
+        },
+        { replace: true },
+      );
   };
   const [error, setError] = useState('');
   const [deleteVersion, setDeleteVersion] = useState(0);
@@ -695,9 +719,11 @@ export function ModelsTab({
         onRowClick={openEditor}
         selectedKeys={selection.keys}
         selectionHint={
-          <Button type="link" size="small" onClick={() => void selectMatching()}>
-            选择全部匹配模型
-          </Button>
+          vendors.length === 0 && (
+            <Button type="link" size="small" onClick={() => void selectMatching()}>
+              选择全部匹配模型
+            </Button>
+          )
         }
         onSelectionChange={(keys) => selection.select(keys)}
         pagination={{
@@ -729,16 +755,44 @@ export function ModelsTab({
             批量删除（{selection.rows.length}）
           </Button>
         )}
+        expandable={{
+          expandedRowRender: (row) => <ModelQuoteCards modelKey={row.modelKey} />,
+          expandRowByClick: false,
+        }}
+        exportCsv={{
+          filename: '微伴模型目录',
+          fields: [
+            { title: '模型', value: modelDisplayName },
+            { title: '模型键', value: (row) => row.modelKey },
+            { title: '厂商', value: (row) => row.vendorName },
+            { title: '优先级', value: (row) => row.sortOrder },
+            { title: '状态', value: (row) => (row.enabled ? '已上架' : '已下架') },
+          ],
+        }}
+        views={
+          <Segmented<'all' | 'on' | 'off'>
+            className="os-view-tabs"
+            value={status}
+            onChange={(value) => {
+              setPage(1);
+              setStatus(value);
+            }}
+            options={[
+              { value: 'all', label: '全部' },
+              { value: 'on', label: '已上架' },
+              { value: 'off', label: '已下架' },
+            ]}
+          />
+        }
         filters={
           <>
             <Input.Search
               allowClear
               placeholder="搜索模型名"
-              style={{ width: 200 }}
               value={query}
               onChange={(e) => {
                 setPage(1);
-                setQuery(e.target.value);
+                setQuery(e.target.value.slice(0, 200));
               }}
             />
             <Select
@@ -756,24 +810,60 @@ export function ModelsTab({
                 })),
               ]}
             />
-            <Select
-              style={{ width: 120 }}
-              value={status}
-              onChange={(v) => {
-                setPage(1);
-                setStatus(v);
-              }}
-              options={[
-                { value: 'all', label: '全部状态' },
-                { value: 'on', label: '已上架' },
-                { value: 'off', label: '已下架' },
-              ]}
+            <FacetFilter
+              label="厂商（本页）"
+              value={vendors}
+              onChange={setVendors}
+              options={[...new Set([...pageModels.map((model) => model.vendorName), ...vendors])]
+                .sort()
+                .map((value) => ({
+                  value,
+                  label: value,
+                  count: pageModels.filter((model) => model.vendorName === value).length,
+                }))}
             />
           </>
         }
-        emptyTitle={emptyState.emptyTitle}
-        emptyHint={emptyState.emptyHint}
-        emptyAction={emptyState.emptyAction}
+        chips={
+          <FilterChips
+            count={vendors.length ? list.length : remote.data?.total}
+            chips={[
+              ...(query
+                ? [
+                    {
+                      key: 'q',
+                      label: '搜索：' + query,
+                      remove: () => {
+                        setQuery('');
+                        setPage(1);
+                      },
+                    },
+                  ]
+                : []),
+              ...vendors.map((value) => ({
+                key: value,
+                label: value,
+                remove: () => setVendors(vendors.filter((vendor) => vendor !== value)),
+              })),
+            ]}
+            onClear={() => {
+              setQuery('');
+              setUse('all');
+              setStatus('all');
+              setVendors([]);
+              setPage(1);
+            }}
+          />
+        }
+        emptyTitle={vendors.length ? '本页没有匹配模型' : emptyState.emptyTitle}
+        emptyHint={vendors.length ? undefined : emptyState.emptyHint}
+        emptyAction={
+          vendors.length ? (
+            <Button onClick={() => setVendors([])}>清空厂商筛选</Button>
+          ) : (
+            emptyState.emptyAction
+          )
+        }
       />
       {(savingNew || editing) &&
         ((savingNew ? modelKeys.data : detail.data) ? (
@@ -2142,6 +2232,79 @@ function RouteBoundsEditor({
           },
         ]}
       />
+    </div>
+  );
+}
+
+function ModelQuoteCards({ modelKey }: { modelKey: string }) {
+  const remote = useRemote(ModelAccessAdminEndpoints.modelDetail, { params: { modelKey } });
+  const model = remote.data;
+  if (remote.error)
+    return (
+      <Alert
+        type="error"
+        showIcon
+        message={remote.error}
+        action={<Button onClick={remote.refresh}>重试</Button>}
+      />
+    );
+  if (!model)
+    return (
+      <div role="status" className="cell-sub">
+        正在读取报价…
+      </div>
+    );
+  const tokens = [
+    ['input', '输入'],
+    ['output', '输出'],
+    ['cache', '缓存读取'],
+    ['cacheWrite5m', '缓存写入 · 5 分钟'],
+    ['cacheWrite1h', '缓存写入 · 1 小时'],
+  ] as const;
+  const quotes = [
+    ...tokens.flatMap(([key, label]) =>
+      model.rates?.[key] == null
+        ? []
+        : [
+            {
+              key,
+              label: label + ' / 百万 token',
+              sale: model.rates[key],
+              cost: model.costRates?.[key],
+            },
+          ],
+    ),
+    ...(model.serviceRates ?? []).map((rate) => ({
+      key: rate.unit,
+      label: rate.unit === 'unsupported' ? '新计费单位' : SERVICE_UNIT_LABELS[rate.unit],
+      sale: rate.price,
+      cost: rate.cost,
+    })),
+  ];
+  if (!quotes.length) return <span className="cell-sub">现行价目表还没有配置此模型</span>;
+  return (
+    <div className="os-quote-grid">
+      {quotes.map((quote, index) => (
+        <div className="os-quote" key={quote.key + ':' + index}>
+          <strong>{quote.label}</strong>
+          <span>
+            用户价 <b className="mono">¥{quote.sale}</b>
+          </span>
+          <span>
+            成本价 <b className="mono">{quote.cost == null ? '—' : '¥' + quote.cost}</b>
+          </span>
+          <span>
+            毛利率{' '}
+            <b className="mono">
+              {formatPercent(
+                quote.sale > 0 && quote.cost != null
+                  ? (quote.sale - quote.cost) / quote.sale
+                  : undefined,
+              )}
+            </b>
+          </span>
+        </div>
+      ))}
     </div>
   );
 }

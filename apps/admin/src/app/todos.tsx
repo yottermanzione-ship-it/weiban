@@ -1,95 +1,81 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
+  ClientLogAdminEndpoints,
   IdentityAdminEndpoints,
   PlazaAdminEndpoints,
   PushAdminEndpoints,
   RoleRequestAdminEndpoints,
   SupportAdminEndpoints,
+  type ClientLogIssue,
 } from '@weiban/contracts';
 import { api } from '../data/client.js';
+import { settle } from '../data/use-async.js';
 
 export interface TodoCounts {
-  roleRequests: number;
-  support: number;
-  reports: number;
-  deletions: number;
-  alerts: number;
+  roleRequests?: number;
+  support?: number;
+  reports?: number;
+  deletions?: number;
+  alerts?: number;
+  clientIssues?: number;
 }
-
-const EMPTY: TodoCounts = { roleRequests: 0, support: 0, reports: 0, deletions: 0, alerts: 0 };
 
 interface TodoState {
   counts: TodoCounts;
+  clientIssues?: ClientLogIssue[];
+  clientIssuesHasMore: boolean;
+  syncedAt?: Date;
   loading: boolean;
   partial: boolean;
   refresh: () => void;
 }
 
-const TodoContext = createContext<TodoState>({
-  counts: EMPTY,
-  loading: true,
-  partial: false,
-  refresh: () => {},
-});
+const INITIAL = { counts: {}, clientIssuesHasMore: false, loading: true, partial: false };
+const TodoContext = createContext<TodoState>({ ...INITIAL, refresh: () => {} });
 
-async function safe<T>(work: Promise<T>): Promise<T | undefined> {
-  try {
-    return await work;
-  } catch {
-    return undefined;
-  }
-}
-
-/** 菜单角标与工作台待办共用一份计数，信息级提示在运行提醒里查阅。 */
+/** 导航、提醒菜单和驾驶舱共用一份数据。异常列表只取最新一页。 */
 export function TodoProvider({ children }: { children: ReactNode }) {
-  const [counts, setCounts] = useState<TodoCounts>(EMPTY);
-  const [loading, setLoading] = useState(true);
-  const [partial, setPartial] = useState(false);
+  const [state, setState] = useState<Omit<TodoState, 'refresh'>>(INITIAL);
   const [revision, setRevision] = useState(0);
-  const alive = useRef(true);
-
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-    };
-  }, []);
+  const refresh = useCallback(() => setRevision((value) => value + 1), []);
 
   useEffect(() => {
     let active = true;
     void (async () => {
-      const [requests, support, reports, deletions, alerts] = await Promise.all([
-        safe(api.call(RoleRequestAdminEndpoints.list, { query: { status: 'pending', limit: 1 } })),
-        safe(api.call(SupportAdminEndpoints.list, { query: { status: 'open', limit: 1 } })),
-        safe(api.call(PlazaAdminEndpoints.pendingReportCount)),
-        safe(api.call(IdentityAdminEndpoints.pendingDeletionCount)),
-        safe(
+      const [requests, support, reports, deletions, alerts, issues] = await Promise.all([
+        settle(
+          api.call(RoleRequestAdminEndpoints.list, { query: { status: 'pending', limit: 1 } }),
+        ),
+        settle(api.call(SupportAdminEndpoints.list, { query: { status: 'open', limit: 1 } })),
+        settle(api.call(PlazaAdminEndpoints.pendingReportCount)),
+        settle(api.call(IdentityAdminEndpoints.pendingDeletionCount)),
+        settle(
           api.call(PushAdminEndpoints.listAdminAlerts, {
             query: { status: 'open', view: 'actionable', limit: 1 },
           }),
         ),
+        settle(api.call(ClientLogAdminEndpoints.list, { query: { status: 'open', limit: 30 } })),
       ]);
-      if (!active || !alive.current) return;
-      setPartial(
-        [requests, support, reports, deletions, alerts].some((value) => value === undefined),
+      if (!active) return;
+      const partial = [requests, support, reports, deletions, alerts, issues].some(
+        (value) => value === undefined,
       );
-      setCounts({
-        roleRequests: requests?.pendingCount ?? 0,
-        support: support?.openCount ?? 0,
-        reports: reports?.total ?? 0,
-        deletions: deletions?.total ?? 0,
-        alerts: alerts?.openCount ?? 0,
-      });
-      setLoading(false);
+      setState((previous) => ({
+        counts: {
+          roleRequests: requests?.pendingCount,
+          support: support?.openCount,
+          reports: reports?.total,
+          deletions: deletions?.total,
+          alerts: alerts?.openCount,
+          clientIssues: issues?.items.length,
+        },
+        clientIssues: issues?.items,
+        clientIssuesHasMore: Boolean(issues?.nextCursor),
+        loading: false,
+        partial,
+        syncedAt: partial ? previous.syncedAt : new Date(),
+      }));
     })();
     return () => {
       active = false;
@@ -97,27 +83,23 @@ export function TodoProvider({ children }: { children: ReactNode }) {
   }, [revision]);
 
   useEffect(() => {
-    const refresh = () => setRevision((v) => v + 1);
     const timer = window.setInterval(refresh, 60_000);
-    window.addEventListener('weiban-admin:alerts-changed', refresh);
+    const events = [
+      'weiban-admin:alerts-changed',
+      'weiban-admin:role-requests-changed',
+      'weiban-admin:client-issues-changed',
+    ];
+    events.forEach((event) => window.addEventListener(event, refresh));
     return () => {
       window.clearInterval(timer);
-      window.removeEventListener('weiban-admin:alerts-changed', refresh);
+      events.forEach((event) => window.removeEventListener(event, refresh));
     };
-  }, []);
+  }, [refresh]);
 
-  const refresh = useCallback(() => setRevision((v) => v + 1), []);
-  const value = useMemo(
-    () => ({ counts, loading, refresh, partial }),
-    [counts, loading, refresh, partial],
-  );
+  const value = useMemo(() => ({ ...state, refresh }), [state, refresh]);
   return <TodoContext.Provider value={value}>{children}</TodoContext.Provider>;
 }
 
-export function useTodos(): TodoState {
+export function useTodos() {
   return useContext(TodoContext);
-}
-
-export function totalTodos(counts: TodoCounts): number {
-  return counts.roleRequests + counts.support + counts.reports + counts.deletions + counts.alerts;
 }

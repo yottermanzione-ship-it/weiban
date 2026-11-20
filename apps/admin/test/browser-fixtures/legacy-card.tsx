@@ -13,10 +13,10 @@ import {
 } from '@weiban/contracts';
 import { ApiFailure } from '@weiban/client-core';
 import '../../../../docs/design/tokens.css';
-import '../../src/app/styles.css';
+import '../../src/app/weiban-os.css';
 import { LegacyCharacterEditor } from '../../src/components/legacy-card-editor.js';
 import { api } from '../../src/data/client.js';
-import { adminTheme } from '../../src/app/theme.js';
+import { getWeibanTheme } from '../../src/app/theme.js';
 
 const CHARACTER_ID = '11111111-2222-7333-8444-555555555555';
 const AVATAR_MEDIA = '01a16dd0-04d5-770f-acbb-3c94e4960a61';
@@ -258,7 +258,7 @@ function Fixture() {
 }
 
 createRoot(document.getElementById('root')!).render(
-  <ConfigProvider theme={adminTheme}>
+  <ConfigProvider theme={getWeibanTheme('dark')}>
     <App>
       <Fixture />
     </App>
