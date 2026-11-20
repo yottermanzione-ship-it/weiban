@@ -684,6 +684,7 @@ data class AdminModelTask(
     @SerialName("firstModel") val `firstModel`: String?,
     @SerialName("lastModel") val `lastModel`: String?,
     @SerialName("rescued") val `rescued`: Boolean,
+    @SerialName("standbySuccessWithDelivery") val `standbySuccessWithDelivery`: Boolean? = null,
     @SerialName("chargedMicros") val `chargedMicros`: Long,
     @SerialName("refundedMicros") val `refundedMicros`: Long?,
     @SerialName("reportedCostMicros") val `reportedCostMicros`: Long,
@@ -1151,6 +1152,7 @@ data class AdminSupportTicket(
 @Serializable
 data class AdminTaskAttempt(
     @SerialName("usageRecordId") val `usageRecordId`: Id,
+    @SerialName("businessEvidence") val `businessEvidence`: String? = null,
     @SerialName("createdAt") val `createdAt`: Timestamp,
     @SerialName("completedAt") val `completedAt`: Timestamp?,
     @SerialName("modelKey") val `modelKey`: String,
