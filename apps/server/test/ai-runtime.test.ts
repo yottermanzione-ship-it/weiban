@@ -210,12 +210,20 @@ describeDb('ai-runtime 真实PG：设置/加密计划/合并/幂等/关怀/删�
     }
     throw Error('reply did not finish');
   }
-  async function user(text: string) {
-    await app
+  async function user(text: string, sender = userId, conversationId = cid) {
+    const { message } = await app
       .get<ChatUserPort>(CHAT_USER_PORT)
-      .sendMessage(userId, cid, { clientMsgId: newId(), content: { type: 'text', text } });
+      .sendMessage(sender, conversationId, {
+        clientMsgId: newId(),
+        content: { type: 'text', text },
+      });
     await dispatch();
-    return (await plans()).at(-1)!;
+    const [plan] = await db.db
+      .select()
+      .from(replyPlans)
+      .where(eq(replyPlans.triggerId, message.messageId));
+    if (!plan) throw new Error('该测试消息没有对应的回复计划');
+    return plan;
   }
   it('用户侧通话记录保留在聊天中，但结束、取消和未接通均不排普通回复', async () => {
     await dispatch();
@@ -1316,6 +1324,18 @@ RETURNING seq::text AS seq, message_id`;
     }
   });
   it('私密安全跟进使用平台端口，气泡未送达时失败仍归同一安全任务', async () => {
+    // A high-risk turn keeps this conversation in care even if delivery fails.
+    const identity = app.get(IdentityCommands);
+    const careUserId = await identity.createAdmin('ai_care_fixture', 'correct horse battery');
+    await identity.setRole('ai_care_fixture', 'user');
+    const contacts = app.get(ContactsCommands);
+    await contacts.add(careUserId, { characterId });
+    const contact = (await new ContactsTestQueries(db).row(careUserId, characterId))!;
+    clock.advance(Math.max(0, contact.accept_after.getTime() - clock.nowMs()));
+    await contacts.accept({ userId: careUserId, characterId, requestId: contact.request_id });
+    const careConversation = (await app
+      .get<ChatReadPort>(CHAT_READ_PORT)
+      .findDirectConversation(careUserId, characterId))!.conversationId;
     const original = engine.context.build.bind(engine.context);
     const build = vi.spyOn(engine.context, 'build').mockImplementation(async (...args) => {
       const snapshot = await original(...args);
@@ -1344,7 +1364,7 @@ RETURNING seq::text AS seq, message_id`;
       .spyOn(engine.quirks, 'choose')
       .mockResolvedValue({ kind: 'none', respondAt: null, typingCycles: 0 });
     try {
-      const row = await user('合成环境中的关怀投递检查。');
+      const row = await user('合成环境中的关怀投递检查。', careUserId, careConversation);
       const before = calls.length;
       clock.advance(3000);
       await engine.run(row.id);
@@ -1374,7 +1394,7 @@ RETURNING seq::text AS seq, message_id`;
         (
           await db.query(
             'SELECT 1 FROM chat.messages WHERE conversation_id=$1 AND client_msg_id=$2',
-            [cid, 'reply:' + row.triggerId + ':0'],
+            [careConversation, 'reply:' + row.triggerId + ':0'],
           )
         ).rowCount,
       ).toBe(0);
