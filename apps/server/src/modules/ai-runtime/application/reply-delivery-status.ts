@@ -141,6 +141,7 @@ export class ReplyDeliveryStatusService {
         .set({
           status: 'queued',
           failure: 'manual_retry',
+          manualRequested: true,
           retryEpoch: row.retryEpoch + 1,
           inputCiphertext: null,
           resultCiphertext: null,

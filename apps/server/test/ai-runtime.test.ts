@@ -1201,6 +1201,51 @@ RETURNING seq::text AS seq, message_id`;
       await finish(hidden.id);
       expect((await store.get(hidden.id))?.failure).toBe('source_unavailable');
       expect(calls.length).toBe(callsBeforeHide);
+      const retryThenWait = await user('合成的待重试话题。');
+      await finish(retryThenWait.id);
+      expect((await retry(retryThenWait.triggerId, 0)).body.issue.state).toBe('retrying');
+      await finish(retryThenWait.id);
+      expect(await store.get(retryThenWait.id)).toMatchObject({
+        status: 'waiting',
+        manualRequested: true,
+      });
+      await http()
+        .post(`/api/v1/conversations/${cid}/messages/${retryThenWait.triggerId}/hide`)
+        .set('Authorization', auth())
+        .send({});
+      failure = null;
+      await store.recover(userId, 'model');
+      const absentCalls = calls.length;
+      await finish(retryThenWait.id);
+      expect(await store.get(retryThenWait.id)).toMatchObject({
+        status: 'cancelled',
+        failure: 'source_unavailable',
+      });
+      expect(calls.length).toBe(absentCalls);
+      failure = 'provider_unavailable';
+      const withdrew = await user('生成后撤回的合成消息。');
+      await finish(withdrew.id);
+      expect((await retry(withdrew.triggerId, 0)).body.issue.state).toBe('retrying');
+      failure = null;
+      await engine.run(withdrew.id);
+      expect((await store.get(withdrew.id))?.status).toBe('sending');
+      await http()
+        .post(`/api/v1/conversations/${cid}/messages/${withdrew.triggerId}/recall`)
+        .set('Authorization', auth())
+        .send({})
+        .expect(200);
+      const countBeforeRecall = calls.length;
+      await finish(withdrew.id);
+      expect((await store.get(withdrew.id))?.failure).toBe('source_unavailable');
+      expect(calls.length).toBe(countBeforeRecall);
+      expect(
+        (
+          await db.query(
+            'SELECT 1 FROM chat.messages WHERE conversation_id=$1 AND client_msg_id=$2',
+            [cid, 'reply:' + withdrew.triggerId + ':0'],
+          )
+        ).rowCount,
+      ).toBe(0);
       const ambiguous = vi.spyOn(engine.gateway, 'generateText').mockResolvedValue({
         ok: false,
         error: 'provider_unavailable',
@@ -1226,6 +1271,75 @@ RETURNING seq::text AS seq, message_id`;
     } finally {
       failure = null;
       response = originalResponse;
+      choice.mockRestore();
+    }
+  });
+  it('私密安全跟进使用平台端口，气泡未送达时失败仍归同一安全任务', async () => {
+    const original = engine.context.build.bind(engine.context);
+    const build = vi.spyOn(engine.context, 'build').mockImplementation(async (...args) => {
+      const snapshot = await original(...args);
+      return (
+        snapshot && {
+          ...snapshot,
+          scope: 'adult',
+          forceCareFallback: false,
+          highRisk: true,
+          suspected: false,
+        }
+      );
+    });
+    const platform = vi.spyOn(engine.platform!, 'generatePlatformText').mockResolvedValue({
+      ok: true,
+      value: {
+        text: '我听到了，先找一个安全的地方。',
+        modelKey: 'fixture/care',
+        usageRecordId: newId(),
+        chargedMicros: 0,
+        latencyMs: 1,
+        usage: { inputTokens: 8, cachedInputTokens: 0, outputTokens: 8, estimated: false },
+      },
+    });
+    const choice = vi
+      .spyOn(engine.quirks, 'choose')
+      .mockResolvedValue({ kind: 'none', respondAt: null, typingCycles: 0 });
+    try {
+      const row = await user('合成环境中的关怀投递检查。');
+      const before = calls.length;
+      clock.advance(3000);
+      await engine.run(row.id);
+      expect((await store.get(row.id))?.status).toBe('sending');
+      expect(platform).toHaveBeenCalledOnce();
+      expect(platform.mock.calls[0]![0]).toMatchObject({
+        purpose: 'safety_followup',
+        modelRole: 'adult',
+      });
+      expect(calls.length).toBe(before);
+      const reject = vi
+        .spyOn(engine.writer, 'postMessage')
+        .mockResolvedValueOnce({ ok: false, error: 'not_conversation_member' });
+      try {
+        await finish(row.id);
+      } finally {
+        reject.mockRestore();
+      }
+      const receipt = await db.query<{ purpose: string; state: string; reason: string }>(
+        'SELECT purpose,state,reason FROM model_access.task_outcomes WHERE task_key=$1',
+        [platform.mock.calls[0]![0].taskKey],
+      );
+      expect(receipt.rows).toEqual([
+        { purpose: 'safety_followup', state: 'failed', reason: 'delivery_unavailable' },
+      ]);
+      expect(
+        (
+          await db.query(
+            'SELECT 1 FROM chat.messages WHERE conversation_id=$1 AND client_msg_id=$2',
+            [cid, 'reply:' + row.triggerId + ':0'],
+          )
+        ).rowCount,
+      ).toBe(0);
+    } finally {
+      build.mockRestore();
+      platform.mockRestore();
       choice.mockRestore();
     }
   });

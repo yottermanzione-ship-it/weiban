@@ -855,7 +855,7 @@ describeDb('滚动摘要失败恢复和记忆资金等待', () => {
     ).rows[0]!;
     expect(g).toMatchObject({ pending_count: 16, wait_reason: 'insufficient_balance' });
     const queue = await ctx.db.query(
-      "SELECT 1 FROM pgboss.job WHERE name='ai.extract_group_memory' AND data->>'stateId'=$1",
+      "SELECT 1 FROM pgboss.job WHERE name='ai.extract_group_memory_keyed' AND data->>'stateId'=$1",
       [groupState.id],
     );
     expect(queue.rowCount).toBe(1);
@@ -893,14 +893,24 @@ describeDb('滚动摘要失败恢复和记忆资金等待', () => {
     const groupJobs = async () =>
       (
         await ctx.db.query(
-          "SELECT 1 FROM pgboss.job WHERE name='ai.extract_group_memory' AND data->>'stateId'=$1",
+          "SELECT 1 FROM pgboss.job WHERE name='ai.extract_group_memory_keyed' AND data->>'stateId'=$1",
           [groupState.id],
         )
       ).rowCount ?? 0;
     const queued = await groupJobs();
-    await wallet.check(ctx.userId);
-    await wallet.check(ctx.userId);
-    expect(await groupJobs()).toBe(queued + 1);
+    await Promise.all([
+      wallet.check(ctx.userId),
+      send('请记住材料已准备好。').then(() => ctx.dispatch()),
+    ]);
+    await Promise.all([wallet.check(ctx.userId), ctx.memory().reconcile(), groups.recover()]);
+    const queueCounts = await ctx.db.query<{ name: string; n: number }>(
+      `SELECT name,count(*)::int n FROM pgboss.job
+      WHERE name=ANY($1::text[]) AND state<'active' GROUP BY name ORDER BY name`,
+      [['ai.compact_chat_keyed', 'ai.extract_group_memory_keyed', 'ai.extract_memory_keyed']],
+    );
+    expect(queueCounts.rows.map((row) => row.n)).toEqual([1, 1, 1]);
+    expect(queued).toBe(1);
+    expect(await groupJobs()).toBe(1);
     await run();
     expect(ctx.calls.length - before).toBe(6);
     const resumed = ctx.calls.slice(before + 3);
@@ -944,7 +954,27 @@ describeDb('滚动摘要失败恢复和记忆资金等待', () => {
     expect(Number((await state()).covered_seq)).toBe(msg.seq);
   });
 
-  it('已发出的摘要结果待核时保留原版和准备批次，后续事件不会再派一次', async () => {
+  it('执行中的键可存一笔后继，同键重叠唤醒只存一笔且不能并发取出', async () => {
+    const jobs = ctx.app.get<JobQueue>(JOB_QUEUE);
+    const name = 'test.memory_wake';
+    const key = newId();
+    const post = () => jobs.sendCoalesced(name, { key }, { singletonKey: key, retryLimit: 0 });
+    await Promise.all([post(), post(), post()]);
+    const q = name + '_keyed';
+    expect(await jobs.boss.findJobs(q, { key, queued: true })).toHaveLength(1);
+    const [active] = await jobs.boss.fetch(q, { ignoreStartAfter: true });
+    expect(active).toBeDefined();
+    await Promise.all([post(), post()]);
+    expect(await jobs.boss.findJobs(q, { key, queued: true })).toHaveLength(1);
+    expect(await jobs.boss.fetch(q, { ignoreStartAfter: true })).toHaveLength(0);
+    await jobs.boss.complete(q, active!.id);
+    const [next] = await jobs.boss.fetch(q, { ignoreStartAfter: true });
+    expect(next?.id).toBeDefined();
+    expect(next?.id).not.toBe(active!.id);
+    await jobs.boss.complete(q, next!.id);
+  });
+
+  it('已发出的三类记忆结果待核时保留待办，后续事件不会再派一次', async () => {
     const prior = await state();
     const msg = await send('还有一条待核对的合成约定。'.repeat(14));
     await ctx.dispatch();
@@ -953,6 +983,19 @@ describeDb('滚动摘要失败恢复和记忆资金等待', () => {
       .mockResolvedValue({ ok: false, error: 'provider_unavailable', message: 'interrupted' });
     try {
       await ctx.memory().compactWindow(ctx.userId, ctx.characterId, 'normal', msg.seq);
+      const group = (
+        await ctx.db.query<{ id: string; conversation_id: string }>(
+          'SELECT id,conversation_id FROM ai_runtime.group_memory_states WHERE user_id=$1',
+          [ctx.userId],
+        )
+      ).rows[0]!;
+      await send('请记住我们的合成约定。', group.conversation_id);
+      await ctx.dispatch();
+      clock.advance(11 * 60000);
+      const groups = ctx.app.get(ConversationMemoryService);
+      await groups.group(group.id);
+      await ctx.memory().extract(await ctx.jobFor());
+      expect(upstream).toHaveBeenCalledTimes(3);
       const paused = await state();
       expect(paused).toMatchObject({
         version: prior.version,
@@ -963,12 +1006,20 @@ describeDb('滚动摘要失败恢复和记忆资金等待', () => {
       await ctx.memory().fundingRecovery!.check(ctx.userId);
       await ctx.memory().chatSummaries!.reconcile();
       await ctx.memory().chatSummaries!.run(paused.id);
-      expect(upstream).toHaveBeenCalledTimes(1);
+      await send('请记住另一条合成约定。');
+      await send('另一条合成群消息。', group.conversation_id);
+      await ctx.dispatch();
+      clock.advance(11 * 60000);
+      await ctx.memory().reconcile();
+      await groups.recover();
+      await groups.group(group.id);
+      await ctx.memory().extract(await ctx.jobFor());
+      expect(upstream).toHaveBeenCalledTimes(3);
       const evidence = await ctx.db.query(
         "SELECT 1 FROM model_access.task_outcomes WHERE user_id=$1 AND state='blocked' AND reason='interrupted'",
         [ctx.userId],
       );
-      expect(evidence.rowCount).toBe(1);
+      expect(evidence.rowCount).toBe(3);
     } finally {
       upstream.mockRestore();
     }

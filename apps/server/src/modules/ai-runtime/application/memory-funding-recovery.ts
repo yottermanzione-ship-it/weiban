@@ -18,7 +18,7 @@ import {
   type JobQueue,
   type EventBus,
 } from '../../../platform/index.js';
-import { memoryFundingCheckAt } from '../domain/memory-funding.js';
+import { factJobKey, memoryFundingCheckAt } from '../domain/memory-funding.js';
 import { ReplyPlanStore } from './plan-store.js';
 
 const RECHECK = 'ai.recheck_memory_funding';
@@ -123,13 +123,13 @@ export class MemoryFundingRecovery implements OnModuleInit {
         );
       if (!ready) return;
       for (const summary of summaries.rows)
-        await this.jobs.send(
+        await this.jobs.sendCoalesced(
           'ai.compact_chat',
           { id: summary.id },
           { tx, singletonKey: 'chat-summary:' + summary.id, retryLimit: 0 },
         );
       for (const group of groups.rows)
-        await this.jobs.send(
+        await this.jobs.sendCoalesced(
           'ai.extract_group_memory',
           { stateId: group.id },
           { tx, singletonKey: group.id, retryLimit: 2 },
@@ -137,7 +137,7 @@ export class MemoryFundingRecovery implements OnModuleInit {
       for (const fact of facts.rows) {
         const epoch = await this.contacts.getActiveContactEpoch(userId, fact.character_id, tx);
         if (epoch)
-          await this.jobs.send(
+          await this.jobs.sendCoalesced(
             'ai.extract_memory',
             {
               userId,
@@ -146,7 +146,11 @@ export class MemoryFundingRecovery implements OnModuleInit {
               epoch: epoch.version,
               urgent: true,
             },
-            { tx, singletonKey: fact.id, retryLimit: 2 },
+            {
+              tx,
+              singletonKey: factJobKey(userId, fact.conversation_id, epoch.version),
+              retryLimit: 0,
+            },
           );
       }
     });

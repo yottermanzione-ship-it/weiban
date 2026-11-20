@@ -131,7 +131,7 @@ export class ReplyEngine {
       return;
     }
     if (
-      row.failure === 'manual_retry' &&
+      row.manualRequested &&
       !(await this.store.db.transaction((tx) => this.store.manualTriggerVisible(row, tx)))
     ) {
       await this.store.cancel(id, 'source_unavailable');
@@ -150,6 +150,15 @@ export class ReplyEngine {
     }
     const saved = await this.saveInput(row, snapshot);
     if (!saved) return;
+    // Preparing the snapshot can take time; the original trigger may have been
+    // recalled or hidden since the initial ownership check.
+    if (
+      row.manualRequested &&
+      !(await this.store.db.transaction((tx) => this.store.manualTriggerVisible(row, tx)))
+    ) {
+      await this.store.cancel(id, 'source_unavailable');
+      return;
+    }
     await this.writer.markRead({
       conversationId: row.conversationId,
       participantId: snapshot.participantId,
@@ -790,6 +799,9 @@ export class ReplyEngine {
   }
   private async emit(row: ReplyPlan): Promise<void> {
     const result = Result.parse(await this.store.open(row, 'result'));
+    const purpose =
+      result.modelPurpose ??
+      (result.care && result.snapshot.scope === 'adult' ? 'safety_followup' : 'chat_reply');
     // T-20261103e：上线前已生成、还没开始发的旧结果也按同一规则封顶（发出第一条时连同结果重新加密保存）。
     if (row.nextBubble === 0 && result.contents) {
       const fitted = fitReplyContents(result.contents, fixedPrefix(result.snapshot.quirk.kind));
@@ -844,7 +856,7 @@ export class ReplyEngine {
           scope: 'normal',
         });
         if (!safe.ok) {
-          await this.store.cancel(row.id);
+          await this.store.cancel(row.id, 'delivery_unavailable', undefined, purpose);
           return;
         }
         conversation.contentScope = 'normal';
@@ -875,7 +887,7 @@ export class ReplyEngine {
       conversation.contentScope !== result.snapshot.scope ||
       !result.bubbles.every((b) => outputAllowed(b, policy, result.snapshot.scope === 'adult'))
     ) {
-      await this.store.cancel(row.id);
+      await this.store.cancel(row.id, 'delivery_unavailable', undefined, purpose);
       return;
     }
     await this.writer.markRead({
@@ -932,7 +944,7 @@ export class ReplyEngine {
           messageId: result.quirkDraftMessageId,
         });
         if (!recalled.ok && recalled.error === 'not_sender') {
-          await this.store.cancel(row.id);
+          await this.store.cancel(row.id, 'delivery_unavailable', undefined, purpose);
           return;
         }
       }
@@ -956,11 +968,8 @@ export class ReplyEngine {
           )) !== result.snapshot.memoryRevision
         )
           return;
-        if (
-          pending.failure === 'manual_retry' &&
-          !(await this.store.manualTriggerVisible(pending, tx))
-        ) {
-          await this.store.cancel(pending.id, 'source_unavailable', tx);
+        if (pending.manualRequested && !(await this.store.manualTriggerVisible(pending, tx))) {
+          await this.store.cancel(pending.id, 'source_unavailable', tx, purpose);
           return;
         }
         const posted = await this.writer.postMessage(
@@ -992,7 +1001,15 @@ export class ReplyEngine {
             .update(replyPlans)
             .set({ status: 'cancelled', inputCiphertext: null, resultCiphertext: null })
             .where(eq(replyPlans.id, row.id));
-          await this.store.receipt(tx, row, 'failed', 'delivery_unavailable');
+          await this.store.receipt(
+            tx,
+            row,
+            'failed',
+            'delivery_unavailable',
+            null,
+            undefined,
+            purpose,
+          );
           return;
         }
         if (row.nextBubble === (result.snapshot.quirk.kind === 'recall' && !result.care ? 1 : 0)) {
@@ -1005,7 +1022,7 @@ export class ReplyEngine {
               ? result.charge?.usageRecordId
               : result.usageRecordId,
             undefined,
-            result.modelPurpose,
+            purpose,
           );
         }
         if (

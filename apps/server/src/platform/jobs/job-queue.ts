@@ -65,6 +65,7 @@ export class JobQueue {
   private bossInstance: PgBoss;
   private started = false;
   private readonly knownQueues = new Set<string>();
+  private readonly statelyQueues = new Set<string>();
   private readonly pendingWorkers: Array<{
     name: string;
     handler: JobHandler<unknown>;
@@ -151,6 +152,55 @@ export class JobQueue {
     return this.boss.send(name, data, sendOptions);
   }
 
+  /**
+   * The new queue has a database-enforced queued and active slot per business key.
+   * Keep a follow-up behind an active worker. An immediate wake can advance a delayed
+   * job, without replacing its saved retry payload or postponing an earlier wake.
+   */
+  async sendCoalesced<T extends object>(
+    name: string,
+    data: T,
+    options: JobSendOptions & { singletonKey: string },
+  ) {
+    const queue = name + '_keyed';
+    this.statelyQueues.add(queue);
+    const send = () => this.send(queue, data, options);
+    const inserted = await send();
+    const now = this.options.clock.now();
+    if (
+      inserted ||
+      (options.startAfter?.getTime() ?? now.getTime() + (options.delayMs ?? 0)) > now.getTime()
+    )
+      return inserted;
+    const advanced = await this.boss.update(queue, undefined, {
+      singletonKey: options.singletonKey,
+      startAfter: now,
+      ...(options.tx ? { db: txAdapter(options.tx) } : {}),
+    });
+    // The worker may claim the previously queued row between the insert and the update.
+    return advanced.updated ? null : send();
+  }
+
+  async workCoalesced<T extends object>(
+    name: string,
+    handler: JobHandler<T>,
+    keyOf: (data: T) => string,
+    options: JobWorkerOptions = {},
+  ) {
+    const queue = name + '_keyed';
+    this.statelyQueues.add(queue);
+    await this.work(queue, handler, options);
+    // pg-boss policies cannot be changed in place. Existing durable jobs drain into
+    // the new queue, under exactly the same key as normal work and recovery.
+    await this.work<T>(
+      name,
+      async (job) => {
+        await this.sendCoalesced(name, job.data, { singletonKey: keyOf(job.data), retryLimit: 0 });
+      },
+      options,
+    );
+  }
+
   /** 登记处理函数。每次处理一个任务；抛错则按重试策略重试。 */
   async work<T>(
     name: string,
@@ -235,7 +285,10 @@ export class JobQueue {
     const existing = await this.boss.getQueue(name);
     if (!existing) {
       try {
-        await this.boss.createQueue(name);
+        await this.boss.createQueue(
+          name,
+          this.statelyQueues.has(name) ? { policy: 'stately' } : {},
+        );
       } catch (error) {
         // 另一个进程可能同时创建了同名队列
         if (!(await this.boss.getQueue(name))) throw error;

@@ -506,6 +506,7 @@ export const replyPlans = aiRuntimeSchema.table(
     resultCiphertext: bytes('result_ciphertext'),
     nextBubble: integer('next_bubble').notNull().default(0),
     retryEpoch: integer('retry_epoch').notNull().default(0),
+    manualRequested: boolean('manual_requested').notNull().default(false),
     failure: text('failure'),
     careUntil: timestamp('care_until', { withTimezone: true }),
   },
