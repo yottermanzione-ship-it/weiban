@@ -1117,7 +1117,9 @@ RETURNING seq::text AS seq, message_id`;
         status: 'waiting',
         failure: 'insufficient_balance',
       });
-      await store.recover(userId);
+      await store.recover(undefined, 'model');
+      expect(await store.get(broke.id)).toMatchObject({ status: 'waiting', retryEpoch: 0 });
+      await store.recover(userId, 'balance');
       expect((await store.get(broke.id))?.status).toBe('queued');
       await finish(broke.id);
       expect((await store.get(broke.id))?.status).toBe('done');

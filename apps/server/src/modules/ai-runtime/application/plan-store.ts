@@ -424,7 +424,7 @@ export class ReplyPlanStore {
     if (rows.length === 200)
       await this.jobs.send(
         'ai.recover_replies',
-        { userId, wake },
+        { userId, wake, target: 'direct' },
         {
           retryLimit: 10,
           retryBackoff: true,

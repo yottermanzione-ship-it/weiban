@@ -189,10 +189,14 @@ export class GroupReplyStore {
         if (updated) await this.schedule(updated, tx);
       });
     if (rows.length === 200)
-      await this.jobs.send('ai.recover_replies', userId ? { userId } : {}, {
-        retryLimit: 10,
-        retryBackoff: true,
-      });
+      await this.jobs.send(
+        'ai.recover_replies',
+        { userId, target: 'group' },
+        {
+          retryLimit: 10,
+          retryBackoff: true,
+        },
+      );
   }
 
   async reconcile(): Promise<void> {
