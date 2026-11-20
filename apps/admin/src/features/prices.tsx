@@ -7,6 +7,8 @@ import {
   Form,
   Input,
   InputNumber,
+  Progress,
+  Segmented,
   Select,
   Space,
   Table,
@@ -26,8 +28,9 @@ import { errorText, useRemote } from '../data/hooks.js';
 import { DataTable, type ProColumns } from '../ui/table.js';
 import { DrawerActions, RecordDrawer } from '../ui/drawer.js';
 import { FieldHelp, FormSection, Page, StatusTag, useDangerConfirm, useToast } from '../ui/page.js';
-import { formatDateTime, formatYuan } from '../ui/format.js';
+import { formatDateTime, formatPercent, formatYuan } from '../ui/format.js';
 import { useFormFeedback } from '../data/form-feedback.js';
+import { FacetFilter, FilterChips } from '../ui/grid-controls.js';
 import { splitSelected } from './batch-helpers.js';
 
 type PriceVersion = z.infer<typeof AdminPriceVersion>;
@@ -261,12 +264,12 @@ export function PricesPage() {
   ];
 
   const versions = list.data?.items ?? [];
-  const hasDraft = versions.some((version) => version.status === 'draft');
+  const vendors = new Map(catalog.data?.items.map((model) => [model.modelKey, model.vendorName]));
 
   return (
     <Page
-      title="AI 模型价格"
-      desc="这里按「价目表版本」管理所有模型的价格。点「条数」打开条目列表：草稿版可以勾选后批量删除条目；已生效 / 已停用的版本只读。日常单个调价建议在「模型管理 › 模型」里改，系统会自动生成新版本。"
+      title="价目表"
+      desc="查看当前报价、历史版本和调价草稿。"
       extra={
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setEditing({ mode: 'new' })}>
           新建价格版本
@@ -274,15 +277,14 @@ export function PricesPage() {
       }
     >
       {error && <Alert type="error" showIcon message={error} />}
-      {list.data && !hasDraft && (
-        <Alert
-          type="info"
-          showIcon
-          message="当前没有草稿版本"
-          description="已生效、已停用的价目表都不可修改。要批量删除价格条目，请先点某个版本的「复制调价」或右上角「新建价格版本」生成草稿。"
-          style={{ marginBottom: 12 }}
-        />
-      )}
+      <PriceDirectory
+        versions={versions}
+        vendorByKey={vendors}
+        error={list.error}
+        loading={list.loading}
+        refresh={list.refresh}
+      />
+      <h2 className="os-table-heading">价格版本管理</h2>
       <DataTable<PriceVersion>
         rowKey="priceVersionId"
         columns={columns}
@@ -430,6 +432,335 @@ export function PricesPage() {
       )}
     </Page>
   );
+}
+
+function PriceDirectory({
+  versions,
+  vendorByKey,
+  loading,
+  error,
+  refresh,
+}: {
+  versions: PriceVersion[];
+  vendorByKey: ReadonlyMap<string, string>;
+  loading: boolean;
+  error: string;
+  refresh: () => void;
+}) {
+  const [versionId, setVersionId] = useState<string>();
+  const [view, setView] = useState<'items' | 'models'>('items');
+  const [vendors, setVendors] = useState<string[]>([]);
+  const [units, setUnits] = useState<string[]>([]);
+  const [query, setQuery] = useState('');
+  const [zeroMargin, setZeroMargin] = useState(false);
+  const [modelDetail, setModelDetail] = useState<string>();
+  const published = versions.filter((version) => version.status !== 'draft');
+  const version =
+    published.find((item) => item.priceVersionId === versionId) ??
+    published.find((item) => item.status === 'active');
+  const vendorOf = (key: string) =>
+    vendorByKey.get(key) ?? (key.includes('/') ? key.split('/')[0]! : '未登记');
+  const items = (version?.items ?? []).map((item, index) => ({
+    ...item,
+    key: String(index),
+    vendor: vendorOf(item.modelKey),
+  }));
+  const hasFilter = !!(query.trim() || vendors.length || units.length || zeroMargin);
+  const filtered = items.filter(
+    (item) =>
+      item.modelKey.toLowerCase().includes(query.trim().toLowerCase()) &&
+      (!vendors.length || vendors.includes(item.vendor)) &&
+      (!units.length || units.includes(item.unit)) &&
+      (!zeroMargin || (item.priceMicros > 0 && item.priceMicros === item.costMicros)),
+  );
+  const grouped = new Map<string, typeof items>();
+  for (const item of filtered) {
+    const group = grouped.get(item.modelKey);
+    if (group) group.push(item);
+    else grouped.set(item.modelKey, [item]);
+  }
+  const filters = (
+    <>
+      <Input.Search
+        allowClear
+        placeholder="搜索模型键"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+      />
+      <FacetFilter
+        label="厂商"
+        value={vendors}
+        onChange={setVendors}
+        options={[...new Set([...items.map((item) => item.vendor), ...vendors])]
+          .sort()
+          .map((value) => ({
+            value,
+            label: value,
+            count: items.filter((item) => item.vendor === value).length,
+          }))}
+      />
+      <FacetFilter
+        label="计费项"
+        value={units}
+        onChange={setUnits}
+        options={[...new Set([...items.map((item) => item.unit), ...units])]
+          .sort()
+          .map((value) => ({
+            value,
+            label: UNIT_LABELS[value] ?? value,
+            count: items.filter((item) => item.unit === value).length,
+          }))}
+      />
+      <Checkbox checked={zeroMargin} onChange={(event) => setZeroMargin(event.target.checked)}>
+        零毛利
+      </Checkbox>
+    </>
+  );
+  const clear = () => {
+    setQuery('');
+    setVendors([]);
+    setUnits([]);
+    setZeroMargin(false);
+  };
+  const chips = (
+    <FilterChips
+      count={view === 'items' ? filtered.length : grouped.size}
+      onClear={clear}
+      chips={[
+        ...(query.trim()
+          ? [{ key: 'query', label: '搜索：' + query, remove: () => setQuery('') }]
+          : []),
+        ...vendors.map((value) => ({
+          key: 'vendor:' + value,
+          label: value,
+          remove: () => setVendors(vendors.filter((entry) => entry !== value)),
+        })),
+        ...units.map((value) => ({
+          key: 'unit:' + value,
+          label: UNIT_LABELS[value] ?? value,
+          remove: () => setUnits(units.filter((entry) => entry !== value)),
+        })),
+        ...(zeroMargin
+          ? [{ key: 'margin', label: '零毛利', remove: () => setZeroMargin(false) }]
+          : []),
+      ]}
+    />
+  );
+
+  type Entry = (typeof items)[number];
+  const margin = (item: Entry) =>
+    item.priceMicros > 0 ? (item.priceMicros - item.costMicros) / item.priceMicros : null;
+  const detailColumns: ProColumns<Entry>[] = [
+    {
+      title: '模型',
+      dataIndex: 'modelKey',
+      sorter: (a, b) => a.modelKey.localeCompare(b.modelKey),
+      render: (_, item) => <span className="cell-title">{item.modelKey}</span>,
+    },
+    {
+      title: '厂商',
+      dataIndex: 'vendor',
+      render: (_, item) => <span className="os-category">{item.vendor}</span>,
+    },
+    { title: '计费项', width: 190, render: (_, item) => UNIT_LABELS[item.unit] ?? item.unit },
+    {
+      title: '用户价（¥）',
+      align: 'right',
+      sorter: (a, b) => a.priceMicros - b.priceMicros,
+      render: (_, item) => <code>{formatYuan(item.priceMicros, 6)}</code>,
+    },
+    {
+      title: '成本价（¥）',
+      align: 'right',
+      sorter: (a, b) => a.costMicros - b.costMicros,
+      render: (_, item) => <code>{formatYuan(item.costMicros, 6)}</code>,
+    },
+    {
+      title: '毛利率',
+      align: 'right',
+      width: 120,
+      sorter: (a, b, order) => comparePrice(margin(a), margin(b), order),
+      render: (_, item) => {
+        const value = margin(item);
+        if (value == null) return '—';
+        return (
+          <div className={value <= 0 ? 'os-profit is-low' : 'os-profit'}>
+            <code>{formatPercent(value)}</code>
+            <Progress
+              size="small"
+              showInfo={false}
+              percent={Math.max(0, Math.min(100, value * 100))}
+              strokeColor={value > 0 ? { '0%': '#10b981', '100%': '#22d3ee' } : 'var(--error)'}
+            />
+          </div>
+        );
+      },
+    },
+    { title: '分时价', render: (_, item) => item.band?.name ?? '全天' },
+  ];
+  const first = (entries: Entry[], unit: string) =>
+    entries.find((item) => !item.band && item.unit === unit);
+  const extra = (entries: Entry[]) =>
+    first(entries, 'cache_write_5m_tokens_per_million') ??
+    entries.find(
+      (item) =>
+        !item.band &&
+        ![
+          'input_tokens_per_million',
+          'output_tokens_per_million',
+          'cached_input_tokens_per_million',
+        ].includes(item.unit),
+    );
+  const groupRows = [...grouped].map(([modelKey, entries]) => ({ modelKey, entries }));
+  type ModelGroup = (typeof groupRows)[number];
+  const priceColumns: { title: string; value: (group: ModelGroup) => Entry | undefined }[] = [
+    { title: '输入', value: (group) => first(group.entries, 'input_tokens_per_million') },
+    { title: '输出', value: (group) => first(group.entries, 'output_tokens_per_million') },
+    { title: '缓存读', value: (group) => first(group.entries, 'cached_input_tokens_per_million') },
+    { title: '缓存写 / 其他', value: (group) => extra(group.entries) },
+  ];
+  const groupColumns: ProColumns<ModelGroup>[] = [
+    {
+      title: '模型',
+      dataIndex: 'modelKey',
+      sorter: (a, b) => a.modelKey.localeCompare(b.modelKey),
+    },
+    {
+      title: '厂商',
+      render: (_, group) => <span className="os-category">{vendorOf(group.modelKey)}</span>,
+    },
+    ...priceColumns.map(({ title, value }): ProColumns<ModelGroup> => ({
+      title: title + '（用户 / 成本）',
+      align: 'right',
+      sorter: (a, b, order) => comparePrice(value(a)?.priceMicros, value(b)?.priceMicros, order),
+      render: (_, group) => {
+        const item = value(group);
+        return item ? (
+          <code title={UNIT_LABELS[item.unit]}>
+            {formatYuan(item.priceMicros, 4)} / {formatYuan(item.costMicros, 4)}
+          </code>
+        ) : (
+          '—'
+        );
+      },
+    })),
+  ];
+
+  const views = (
+    <div className="os-price-views">
+      <Segmented<'items' | 'models'>
+        className="os-view-tabs"
+        value={view}
+        onChange={setView}
+        options={[
+          { value: 'items', label: '按计费项展开' },
+          { value: 'models', label: '按模型汇总' },
+        ]}
+        aria-label="价目视图"
+      />
+      <Select
+        aria-label="价目表版本"
+        placeholder="暂无已发布版本"
+        value={version?.priceVersionId}
+        style={{ minWidth: 185, maxWidth: '100%' }}
+        onChange={(value) => {
+          setVersionId(value);
+          clear();
+        }}
+        options={published.map((item) => ({
+          value: item.priceVersionId,
+          label: item.versionLabel + (item.status === 'active' ? ' · 生效中' : ' · 已停用'),
+        }))}
+      />
+    </div>
+  );
+  const table = {
+    loading,
+    error,
+    onRefresh: refresh,
+    views,
+    filters,
+    chips,
+    emptyTitle: hasFilter ? '没有匹配报价' : '暂无已发布价目',
+    emptyHint: hasFilter ? undefined : '启用价格版本后可在这里查看报价。',
+    emptyAction: hasFilter ? <Button onClick={clear}>清空筛选</Button> : undefined,
+  };
+  return (
+    <>
+      {version?.status === 'retired' && (
+        <Alert type="info" showIcon message="已停用的历史版本 · 只读" />
+      )}
+      {view === 'items' ? (
+        <DataTable<Entry>
+          key="price-items"
+          {...table}
+          rowKey="key"
+          data={filtered}
+          columns={detailColumns}
+          onRowClick={(row) => setModelDetail(row.modelKey)}
+          exportCsv={{
+            filename: '微伴价目表',
+            fields: [
+              { title: '模型', value: (row) => row.modelKey },
+              { title: '厂商', value: (row) => row.vendor },
+              { title: '计费项', value: (row) => UNIT_LABELS[row.unit] ?? row.unit },
+              { title: '用户价（¥）', value: (row) => row.priceMicros / 1_000_000 },
+              { title: '成本价（¥）', value: (row) => row.costMicros / 1_000_000 },
+              { title: '分时价', value: (row) => row.band?.name },
+            ],
+          }}
+        />
+      ) : (
+        <DataTable<ModelGroup>
+          key="price-models"
+          {...table}
+          rowKey="modelKey"
+          data={groupRows}
+          columns={groupColumns}
+          onRowClick={(row) => setModelDetail(row.modelKey)}
+        />
+      )}
+      {modelDetail && (
+        <RecordDrawer
+          open
+          title={modelDetail}
+          subtitle={version?.versionLabel}
+          onClose={() => setModelDetail(undefined)}
+        >
+          {items
+            .filter((item) => item.modelKey === modelDetail)
+            .map((item) => (
+              <div className="os-quote" key={item.key}>
+                <strong>
+                  {UNIT_LABELS[item.unit] ?? item.unit}
+                  {item.band ? ' · ' + item.band.name : ''}
+                </strong>
+                <span>
+                  用户价 <code>{formatYuan(item.priceMicros, 6)}</code>
+                </span>
+                <span>
+                  成本价 <code>{formatYuan(item.costMicros, 6)}</code>
+                </span>
+                <span>
+                  毛利率 <code>{formatPercent(margin(item))}</code>
+                </span>
+              </div>
+            ))}
+        </RecordDrawer>
+      )}
+    </>
+  );
+}
+
+function comparePrice(
+  left: number | null | undefined,
+  right: number | null | undefined,
+  order?: string | null,
+) {
+  if (left == null && right == null) return 0;
+  if (left == null || right == null)
+    return (left == null ? 1 : -1) * (order === 'descend' ? -1 : 1);
+  return left - right;
 }
 
 function VersionDrawer({

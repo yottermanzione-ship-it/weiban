@@ -2,7 +2,7 @@
  * 帮助与反馈：用户提交的反馈与投诉。回复会通知用户；标记解决会关闭工单。
  */
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Button, Checkbox, Input, Select, Space, Timeline } from 'antd';
+import { Alert, Button, Checkbox, Input, Segmented, Space, Timeline } from 'antd';
 import { SupportAdminEndpoints, type AdminSupportTicket } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { errorText } from '../data/hooks.js';
@@ -12,7 +12,9 @@ import { RecordDrawer } from '../ui/drawer.js';
 import { TicketRuntimeLogs } from './client-logs.js';
 import { FieldHelp, Page, SectionCard, StatusTag, useToast } from '../ui/page.js';
 import { formatDateTime } from '../ui/format.js';
-import { UserIdentity, userDisplayName } from './users/identity.js';
+import { UserIdentity, shortUserId, userDisplayName } from './users/identity.js';
+import { FacetFilter, FilterChips } from '../ui/grid-controls.js';
+import { redactContact } from '../ui/csv.js';
 
 const STATUS_LABELS: Record<string, string> = {
   open: '待处理',
@@ -23,7 +25,8 @@ const STATUS_LABELS: Record<string, string> = {
 export function SupportAdminPage() {
   const toast = useToast();
   const [status, setStatus] = useState<'open' | 'replied' | 'resolved'>('open');
-  const [kind, setKind] = useState('');
+  const [kinds, setKinds] = useState<('feedback' | 'complaint')[]>([]);
+  const kind = kinds.length === 1 ? kinds[0] : undefined;
   const [items, setItems] = useState<AdminSupportTicket[]>([]);
   const [openCount, setOpenCount] = useState(0);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -44,7 +47,7 @@ export function SupportAdminPage() {
       const page = await api.call(SupportAdminEndpoints.list, {
         query: {
           status,
-          kind: (kind || undefined) as 'feedback' | undefined,
+          kind,
           limit: 100,
           cursor: after,
         },
@@ -91,7 +94,7 @@ export function SupportAdminPage() {
     },
     {
       title: '内容',
-      render: (_, row) => <span className="cell-clamp">{row.text}</span>,
+      render: (_, row) => <span className="cell-clamp">{redactContact(row.text)}</span>,
     },
     {
       title: '状态',
@@ -109,18 +112,19 @@ export function SupportAdminPage() {
     {
       title: '提交时间',
       width: 150,
-      render: (_, row) => formatDateTime(row.createdAt),
+      sorter: (a, b) => a.createdAt.localeCompare(b.createdAt),
+      render: (_, row) => <code>{formatDateTime(row.createdAt)}</code>,
     },
   ];
 
   return (
     <Page
-      title="帮助与反馈"
+      title="工单"
       desc="用户提交的反馈与投诉。点一行看详情并回复；回复会推送给用户。"
       extra={<Button onClick={() => void load()}>刷新</Button>}
     >
       <BulkTable<AdminSupportTicket>
-        scope={status + '|' + kind}
+        scope={JSON.stringify([status, kinds])}
         nameOf={(r) => r.text.slice(0, 36)}
         afterBatch={() => void load()}
         allMatching={() =>
@@ -129,7 +133,7 @@ export function SupportAdminPage() {
               api.call(SupportAdminEndpoints.list, {
                 query: {
                   status,
-                  kind: (kind || undefined) as 'feedback' | undefined,
+                  kind,
                   limit: 100,
                   cursor,
                 },
@@ -157,33 +161,53 @@ export function SupportAdminPage() {
         error={error}
         onRefresh={() => void load()}
         onRowClick={(row) => setSelected(row.ticketId)}
-        filters={
-          <>
-            <Select
-              style={{ width: 130 }}
-              value={status}
-              onChange={setStatus}
-              options={[
-                { value: 'open', label: `待处理${openCount ? `（${openCount}）` : ''}` },
-                { value: 'replied', label: '已回复' },
-                { value: 'resolved', label: '已解决' },
-              ]}
-            />
-            <Select
-              allowClear
-              style={{ width: 120 }}
-              placeholder="全部类型"
-              value={kind || undefined}
-              onChange={(value) => setKind(value ?? '')}
-              options={[
-                { value: 'feedback', label: '反馈' },
-                { value: 'complaint', label: '投诉' },
-              ]}
-            />
-          </>
+        views={
+          <Segmented<'open' | 'replied' | 'resolved'>
+            className="os-view-tabs"
+            value={status}
+            onChange={setStatus}
+            options={[
+              { value: 'open', label: '待处理 · ' + openCount },
+              { value: 'replied', label: '已回复' },
+              { value: 'resolved', label: '已解决' },
+            ]}
+          />
         }
-        emptyTitle={status === 'open' ? '没有待处理的反馈' : '没有记录'}
-        emptyHint="用户在网页端「设置 › 帮助与反馈」提交后会出现在这里。"
+        filters={
+          <FacetFilter
+            label="工单类型"
+            value={kinds}
+            onChange={setKinds}
+            options={[
+              { value: 'feedback', label: '反馈' },
+              { value: 'complaint', label: '投诉' },
+            ]}
+          />
+        }
+        chips={
+          <FilterChips
+            chips={kinds.map((value) => ({
+              key: value,
+              label: value === 'feedback' ? '反馈' : '投诉',
+              remove: () => setKinds(kinds.filter((item) => item !== value)),
+            }))}
+            onClear={() => setKinds([])}
+          />
+        }
+        exportCsv={{
+          filename: '微伴工单',
+          fields: [
+            { title: '用户编号', value: (row) => shortUserId(row.userId) },
+            { title: '类型', value: (row) => (row.kind === 'complaint' ? '投诉' : '反馈') },
+            { title: '状态', value: (row) => STATUS_LABELS[row.status] },
+            { title: '提交时间', value: (row) => formatDateTime(row.createdAt) },
+          ],
+        }}
+        emptyTitle={
+          kinds.length ? '没有匹配工单' : status === 'open' ? '暂无待处理工单' : '暂无工单'
+        }
+        emptyHint={kinds.length ? undefined : '用户提交反馈或投诉后会出现在这里。'}
+        emptyAction={kinds.length > 0 && <Button onClick={() => setKinds([])}>清空筛选</Button>}
         footer={
           cursor ? (
             <Button size="small" loading={loading} onClick={() => void load(cursor)}>
@@ -206,7 +230,7 @@ export function SupportAdminPage() {
   );
 }
 
-function TicketDrawer({
+export function TicketDrawer({
   ticketId,
   onClose,
   onChanged,

@@ -184,13 +184,14 @@ test('扫码收款：后台配置、手机签名到账、积分和会员页面�
   await expect(page.getByText('监控上报记录', { exact: true })).toBeVisible();
   const payerRow = page.getByRole('row').filter({ hasText: manualOrder.id });
   await expect(page.getByRole('columnheader', { name: '付款人', exact: true })).toBeVisible();
+  const payerId = manualOrder.userId!;
+  const payerCode = payerId.slice(0, 4) + '…' + payerId.slice(-4);
   await expect(payerRow.locator('.cell-title')).toHaveText('其他用户');
-  await expect(payerRow.locator('.cell-title')).toHaveAttribute('title', manualOrder.userId!);
+  await expect(payerRow).not.toContainText(payerId);
+  await expect(payerRow.locator('[title="' + payerId + '"]')).toHaveCount(0);
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
-  await payerRow.locator('.ant-typography-copy').click();
-  await expect
-    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
-    .toBe(manualOrder.userId);
+  await payerRow.getByRole('button', { name: payerCode, exact: true }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(payerCode);
   // A promotion can contain the exact pending amount. Preserve it for review and
   // make it visible without refreshing the page, but never credit that order.
   const uncertainId = createHash('sha256').update(randomBytes(16)).digest('hex');
@@ -231,8 +232,10 @@ test('扫码收款：后台配置、手机签名到账、积分和会员页面�
     .click();
   const settle = page.getByRole('button', { name: '已核实实际收款，登记入账' });
   await expect(
-    page.getByRole('dialog', { name: '核实漏报到账' }).locator('.cell-title'),
-  ).toHaveAttribute('title', manualOrder.userId!);
+    page
+      .getByRole('dialog', { name: '核实漏报到账' })
+      .getByRole('button', { name: payerCode, exact: true }),
+  ).toBeVisible();
   await expect(settle).toBeDisabled();
   await page
     .getByLabel('账单实收金额', { exact: true })

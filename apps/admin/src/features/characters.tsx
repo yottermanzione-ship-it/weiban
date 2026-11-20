@@ -3,10 +3,23 @@ import { useListSelection } from '../data/list-selection.js';
  * 角色库：官方角色的列表与人设编辑。上架前需要通过三项检查。
  * 人设内容仍由 WB-Card schema 驱动（components/card-editor），只换了外观。
  */
-import { useEffect, useRef, useState } from 'react';
-import { Alert, Avatar, Button, Checkbox, DatePicker, Input, Select, Space, Upload } from 'antd';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Alert,
+  Avatar,
+  Button,
+  Checkbox,
+  DatePicker,
+  Input,
+  Segmented,
+  Select,
+  Space,
+  Upload,
+} from 'antd';
 import { PlusOutlined, UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { useSearchParams } from 'react-router-dom';
+import { FacetFilter, FilterChips } from '../ui/grid-controls.js';
 import {
   AdminCharacterWrite,
   AgeSetting,
@@ -152,18 +165,24 @@ function draftOf(row: AdminCharacter): AdminCharacterWrite {
 }
 
 export function CharactersPage() {
+  const [params, setParams] = useSearchParams();
+  const linked = params.get('characterId');
   const toast = useToast();
   const confirm = useDangerConfirm();
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<CharacterPublishStatus | ''>('');
+  const [bases, setBases] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const filters = { q: query.trim(), status: status || undefined };
   const list = useRemote(CharacterAdminEndpoints.directory, {
     query: { ...filters, page, pageSize },
   });
-  const rows = list.data?.items ?? [];
-  const selection = useListSelection(JSON.stringify(filters), rows, (r) => r.characterId);
+  const pageRows = list.data?.items ?? [];
+  const rows = bases.length
+    ? pageRows.filter((row) => bases.includes(row.classification.basis))
+    : pageRows;
+  const selection = useListSelection(JSON.stringify([filters, bases]), rows, (r) => r.characterId);
   const selectedRows = selection.rows;
   const setSelected = selection.select;
   const editRequest = useRef(0);
@@ -173,19 +192,36 @@ export function CharactersPage() {
     },
     [],
   );
-  async function editCharacter(row: AdminCharacterIndexItem) {
-    const request = ++editRequest.current;
-    setBusy(row.characterId);
-    try {
-      const result = await api.call(CharacterAdminEndpoints.getCharacter, {
-        params: { characterId: row.characterId },
-      });
-      if (request === editRequest.current) setEditing(result);
-    } catch (e) {
-      if (request === editRequest.current) toast.error(errorText(e));
-    } finally {
-      if (request === editRequest.current) setBusy(null);
-    }
+  const editCharacter = useCallback(
+    async (id: string) => {
+      const request = ++editRequest.current;
+      setBusy(id);
+      try {
+        const result = await api.call(CharacterAdminEndpoints.getCharacter, {
+          params: { characterId: id },
+        });
+        if (request === editRequest.current) setEditing(result);
+      } catch (e) {
+        if (request === editRequest.current) toast.error(errorText(e));
+      } finally {
+        if (request === editRequest.current) setBusy(null);
+      }
+    },
+    [toast],
+  );
+  useEffect(() => {
+    if (linked) void editCharacter(linked);
+  }, [linked, editCharacter]);
+  function closeEditor() {
+    setEditing(null);
+    if (linked)
+      setParams(
+        (next) => {
+          next.delete('characterId');
+          return next;
+        },
+        { replace: true },
+      );
   }
   async function selectMatching() {
     try {
@@ -395,7 +431,7 @@ export function CharactersPage() {
           >
             {row.name.slice(0, 1)}
           </Avatar>
-          <button className="record-link" onClick={() => void editCharacter(row)}>
+          <button className="record-link" onClick={() => void editCharacter(row.characterId)}>
             {row.name}
           </button>
         </Space>
@@ -423,9 +459,18 @@ export function CharactersPage() {
     {
       title: '分类',
       width: 100,
-      render: (_, row) => BASIS_LABELS[row.classification.basis] ?? row.classification.basis,
+      render: (_, row) => (
+        <span className="os-category">
+          {BASIS_LABELS[row.classification.basis] ?? row.classification.basis}
+        </span>
+      ),
     },
-    { title: '资料版本', width: 120, render: (_, row) => `第 ${row.revision} 版` },
+    {
+      title: '资料版本',
+      width: 120,
+      align: 'right',
+      render: (_, row) => <span className="mono">{row.revision}</span>,
+    },
     {
       title: '最近更新',
       width: 150,
@@ -437,7 +482,7 @@ export function CharactersPage() {
       fixed: 'right',
       render: (_, row) => (
         <Space size={4}>
-          <Button type="link" size="small" onClick={() => void editCharacter(row)}>
+          <Button type="link" size="small" onClick={() => void editCharacter(row.characterId)}>
             编辑
           </Button>
           {row.format === 'legacy' ? (
@@ -491,14 +536,16 @@ export function CharactersPage() {
         loading={list.loading}
         error={list.error}
         onRefresh={list.refresh}
-        onRowClick={(row) => void editCharacter(row)}
+        onRowClick={(row) => void editCharacter(row.characterId)}
         selectedKeys={selection.keys}
         onSelectionChange={(keys) => setSelected(keys.map(String))}
         preserveSelection
         selectionHint={
-          <Button type="link" size="small" onClick={() => void selectMatching()}>
-            选择全部匹配角色
-          </Button>
+          bases.length === 0 && (
+            <Button type="link" size="small" onClick={() => void selectMatching()}>
+              选择全部匹配角色
+            </Button>
+          )
         }
         pagination={{
           current: page,
@@ -554,38 +601,106 @@ export function CharactersPage() {
             </Button>
           </BatchBar>
         )}
+        views={
+          <Segmented<CharacterPublishStatus | ''>
+            className="os-view-tabs"
+            value={status}
+            onChange={(value) => {
+              setPage(1);
+              setStatus(value);
+            }}
+            options={[
+              { value: '', label: '全部' },
+              ...Object.entries(STATUS_LABELS).map(([value, label]) => ({
+                value: value as CharacterPublishStatus,
+                label,
+              })),
+            ]}
+          />
+        }
         filters={
           <>
             <Input.Search
               allowClear
               placeholder="搜索名字、别名、作品"
-              style={{ width: 260 }}
               value={query}
-              onChange={(e) => {
+              onChange={(event) => {
                 setPage(1);
-                setQuery(e.target.value);
+                setQuery(event.target.value.slice(0, 200));
               }}
             />
-            <Select
-              style={{ width: 130 }}
-              value={status}
-              onChange={(value) => {
-                setPage(1);
-                setStatus(value);
-              }}
-              options={[
-                { value: '', label: '全部状态' },
-                ...Object.entries(STATUS_LABELS).map(([value, label]) => ({ value, label })),
-              ]}
+            <FacetFilter
+              label="分类（本页）"
+              value={bases}
+              onChange={setBases}
+              options={Object.entries(BASIS_LABELS).map(([value, label]) => ({
+                value,
+                label,
+                count: pageRows.filter((row) => row.classification.basis === value).length,
+              }))}
             />
           </>
         }
-        emptyTitle="还没有角色"
-        emptyHint="点右上角「新建角色」，填好名字、人设和至少一条备用开场白，再上架。"
+        chips={
+          <FilterChips
+            count={bases.length ? rows.length : list.data?.total}
+            chips={[
+              ...(query
+                ? [
+                    {
+                      key: 'q',
+                      label: '搜索：' + query,
+                      remove: () => {
+                        setQuery('');
+                        setPage(1);
+                      },
+                    },
+                  ]
+                : []),
+              ...bases.map((value) => ({
+                key: value,
+                label: BASIS_LABELS[value],
+                remove: () => setBases(bases.filter((basis) => basis !== value)),
+              })),
+            ]}
+            onClear={() => {
+              setBases([]);
+              setQuery('');
+              setStatus('');
+              setPage(1);
+            }}
+          />
+        }
+        exportSelection={selectedRows}
+        exportCsv={{
+          filename: '微伴角色库',
+          fields: [
+            { title: '角色', value: (row) => row.name },
+            { title: '状态', value: (row) => STATUS_LABELS[row.status] },
+            { title: '分类', value: (row) => BASIS_LABELS[row.classification.basis] },
+            { title: '资料版本', value: (row) => row.revision },
+            { title: '更新时间', value: (row) => formatDateTime(row.updatedAt) },
+          ],
+        }}
+        emptyTitle={query || status || bases.length ? '没有匹配角色' : '还没有角色'}
+        emptyHint={query || status || bases.length ? undefined : '新建并完善人设后，可在这里上架。'}
         emptyAction={
-          <Button type="primary" onClick={() => setEditing('new')}>
-            新建第一个角色
-          </Button>
+          query || status || bases.length ? (
+            <Button
+              onClick={() => {
+                setQuery('');
+                setStatus('');
+                setBases([]);
+                setPage(1);
+              }}
+            >
+              清空筛选
+            </Button>
+          ) : (
+            <Button type="primary" onClick={() => setEditing('new')}>
+              新建第一个角色
+            </Button>
+          )
         }
       />
       {batch && (
@@ -811,7 +926,7 @@ export function CharactersPage() {
       {editing && editing !== 'new' && editing.format === 'legacy' ? (
         <LegacyCharacterDrawer
           character={editing}
-          onClose={() => setEditing(null)}
+          onClose={closeEditor}
           onSaved={(text) => {
             toast.success(text);
             list.refresh();
@@ -821,7 +936,7 @@ export function CharactersPage() {
         editing && (
           <CharacterDrawer
             character={editing === 'new' ? null : editing}
-            onClose={() => setEditing(null)}
+            onClose={closeEditor}
             onSaved={(text) => {
               toast.success(text);
               list.refresh();

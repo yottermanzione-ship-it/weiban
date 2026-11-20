@@ -1,9 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Alert, Button, DatePicker, Input, Select, Space, Table, Typography } from 'antd';
+import { Link, useSearchParams } from 'react-router-dom';
+import { FacetFilter, FilterChips } from '../ui/grid-controls.js';
+import {
+  Alert,
+  Button,
+  DatePicker,
+  Input,
+  Segmented,
+  Select,
+  Space,
+  Table,
+  Typography,
+} from 'antd';
 import {
   ClientLogAdminEndpoints as E,
-  ClientLogKind,
   ClientLogListQuery,
   type ClientLogIssue,
   type ClientRuntimeEvent,
@@ -104,7 +114,12 @@ export function TicketRuntimeLogs({ ticketId }: { ticketId: string }) {
   );
 }
 export function ClientLogsPage() {
-  const [filters, setFilters] = useState<z.input<typeof ClientLogListQuery>>({ limit: 30 });
+  const [params] = useSearchParams();
+  const [filters, setFilters] = useState<z.input<typeof ClientLogListQuery>>({
+    limit: 30,
+    status: params.get('status') === 'open' ? 'open' : undefined,
+  });
+  const [categories, setCategories] = useState<string[]>([]);
   const [page, setPage] = useState<List>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -147,7 +162,13 @@ export function ClientLogsPage() {
     { title: '端', dataIndex: 'appKind', width: 90 },
     {
       title: '次数 / 近30天登录人数',
-      render: (_, r) => `${r.totalCount} / ${r.affectedUsers}`,
+      sorter: (a, b) => a.totalCount - b.totalCount,
+      align: 'right',
+      render: (_, r) => (
+        <code>
+          {r.totalCount} / {r.affectedUsers}
+        </code>
+      ),
       width: 170,
     },
     { title: '版本', render: (_, r) => `${r.firstVersion} → ${r.lastVersion}`, width: 160 },
@@ -164,8 +185,11 @@ export function ClientLogsPage() {
     },
     { title: '状态', render: (_, r) => states[r.status], width: 90 },
   ];
+  const rows = (page?.items ?? []).filter(
+    (item) => !categories.length || categories.includes(item.kind),
+  );
   return (
-    <Page title="客户端报错" desc="仅技术信息；明细 30 天、问题 180 天；同类问题按指纹合并。">
+    <Page title="客户端异常" desc="仅技术信息；明细 30 天、问题 180 天；同类问题按指纹合并。">
       <Space wrap>
         <Select
           aria-label="端"
@@ -174,23 +198,6 @@ export function ClientLogsPage() {
           value={filters?.appKind}
           options={['web', 'pwa', 'android'].map((value) => ({ value, label: value }))}
           onChange={(appKind) => setFilters((f) => ({ ...f, appKind }))}
-        />
-        <Select
-          aria-label="类型"
-          placeholder="全部类型"
-          allowClear
-          style={{ width: 180 }}
-          value={filters?.kind}
-          options={ClientLogKind.options.map((value) => ({ value, label: kinds[value] }))}
-          onChange={(kind) => setFilters((f) => ({ ...f, kind }))}
-        />
-        <Select
-          aria-label="状态"
-          placeholder="全部状态"
-          allowClear
-          value={filters?.status}
-          options={Object.entries(states).map(([value, label]) => ({ value, label }))}
-          onChange={(status) => setFilters((f) => ({ ...f, status }))}
         />
         <Select
           aria-label="版本"
@@ -216,7 +223,11 @@ export function ClientLogsPage() {
         </Button>
       </Space>
       {error && <Alert type="error" showIcon message={error} />}
-      <p>今天新增问题 {page?.todayIssues ?? 0} 个</p>
+      {page && (
+        <div className="cell-sub">
+          今天新增问题 <code>{page.todayIssues}</code> 个
+        </div>
+      )}
       <SectionCard title="今日已上报会话的受影响比例">
         <p>分母仅为成功上报的会话，离线或未上报会话不在统计内。</p>
         <Space wrap>
@@ -231,8 +242,76 @@ export function ClientLogsPage() {
       <DataTable
         rowKey="fingerprint"
         columns={columns}
-        data={page?.items ?? []}
+        data={rows}
         loading={loading}
+        error={error}
+        onRefresh={() => void load()}
+        onRowClick={(row) => setSelected(row.fingerprint)}
+        views={
+          <Segmented<string>
+            className="os-view-tabs"
+            value={filters.status ?? 'all'}
+            onChange={(value) =>
+              setFilters((current) => ({
+                ...current,
+                status: value === 'all' ? undefined : (value as ClientLogIssue['status']),
+              }))
+            }
+            options={[
+              { value: 'all', label: '全部' },
+              ...Object.entries(states).map(([value, label]) => ({ value, label })),
+            ]}
+          />
+        }
+        filters={
+          <FacetFilter
+            label="异常分类（已加载）"
+            value={categories}
+            onChange={setCategories}
+            options={Object.entries(kinds).map(([value, label]) => ({
+              value,
+              label,
+              count: page?.items.filter((item) => item.kind === value).length,
+            }))}
+          />
+        }
+        chips={
+          <FilterChips
+            count={rows.length}
+            chips={categories.map((value) => ({
+              key: value,
+              label: kinds[value],
+              remove: () => setCategories(categories.filter((kind) => kind !== value)),
+            }))}
+            onClear={() => setCategories([])}
+          />
+        }
+        exportCsv={{
+          filename: '微伴客户端异常',
+          fields: [
+            { title: '分类', value: (row) => kinds[row.kind] },
+            { title: '客户端', value: (row) => row.appKind },
+            { title: '次数', value: (row) => row.totalCount },
+            { title: '最近上报', value: (row) => formatDateTime(row.lastSeenAt) },
+            { title: '状态', value: (row) => states[row.status] },
+          ],
+        }}
+        emptyTitle={categories.length || filters.status ? '没有匹配的异常' : '暂无客户端异常'}
+        emptyHint={
+          categories.length || filters.status ? undefined : '收到新的客户端技术上报后会自动归类。'
+        }
+        emptyAction={
+          (categories.length > 0 || !!filters.status) && (
+            <Button
+              onClick={() => {
+                setCategories([]);
+                setFilters({ limit: 30 });
+              }}
+            >
+              清空筛选
+            </Button>
+          )
+        }
       />
       {page?.nextCursor && (
         <Button disabled={loading} onClick={() => void load(page.nextCursor!)}>
@@ -250,7 +329,7 @@ export function ClientLogsPage() {
     </Page>
   );
 }
-function IssueDrawer({
+export function IssueDrawer({
   fingerprint,
   onClose,
   onChanged,
@@ -276,6 +355,7 @@ function IssueDrawer({
     try {
       await api.call(E.update, { params: { fingerprint }, body: { status, note } });
       remote.refresh();
+      window.dispatchEvent(new Event('weiban-admin:client-issues-changed'));
       onChanged();
     } catch (e) {
       setError(errorText(e));
@@ -351,11 +431,7 @@ function IssueDrawer({
           <SectionCard title="受影响用户（最近 100 人）">
             <Space wrap>
               {remote.data.users.map((u) => (
-                <Link
-                  key={u.userId}
-                  to={'/accounts?userId=' + u.userId + '&tab=runtime'}
-                  title={u.userId}
-                >
+                <Link key={u.userId} to={'/accounts?userId=' + u.userId + '&tab=runtime'}>
                   {userDisplayName(u.userId, { nickname: u.nickname, username: u.username })}
                 </Link>
               ))}

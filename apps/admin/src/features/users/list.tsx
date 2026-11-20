@@ -27,11 +27,14 @@ import {
   type UserRow,
 } from './shared.js';
 import { UserDetailDrawer } from './detail.js';
+import { UserIdentity, shortUserId, userDisplayName } from './identity.js';
+import { FilterChips } from '../../ui/grid-controls.js';
+import { redactContact } from '../../ui/csv.js';
 
 type Quick = 'all' | 'pro' | 'expiring' | 'banned';
 
 export function UserListPage() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const linkedUser = searchParams.get('userId');
   const linkedTab = searchParams.get('tab');
   const overview = useRemote(AdminUsersEndpoints.overview, { query: { view: 'counts' } });
@@ -72,7 +75,6 @@ export function UserListPage() {
   const [ackDelete, setAckDelete] = useState(false);
   useEffect(() => {
     if (linkedUser) {
-      setQuery(linkedUser);
       setOpenId(linkedUser);
       setOpenTab(linkedTab === 'runtime' ? 'runtime' : 'profile');
     }
@@ -84,11 +86,20 @@ export function UserListPage() {
 
   function open(userId: string, tab: 'profile' | 'membership' = 'profile') {
     setOpenTab(tab);
-    if (!list.some((r) => r.userId === userId)) {
-      changeQuery(userId);
-      changeQuick('all');
-    }
     setOpenId(userId);
+  }
+
+  function closeUser() {
+    setOpenId(null);
+    if (linkedUser)
+      setSearchParams(
+        (params) => {
+          params.delete('userId');
+          params.delete('tab');
+          return params;
+        },
+        { replace: true },
+      );
   }
 
   async function selectMatching() {
@@ -144,7 +155,7 @@ export function UserListPage() {
   const nameOf = (id: string | null) => {
     if (!id) return '系统';
     const row = list.find((r) => r.userId === id);
-    return row ? displayName(row.user) : `${id.slice(0, 8)}…`;
+    return row ? userDisplayName(id, row.user) : shortUserId(id);
   };
 
   const columns: ProColumns<UserRow>[] = [
@@ -152,15 +163,7 @@ export function UserListPage() {
       title: '用户',
       width: 240,
       render: (_, { user }) => (
-        <div className="cell-main">
-          <span className="cell-title">
-            {user.nickname || user.username || '已注销账号'}
-            {user.role === 'admin' && <span className="cell-sub"> · 管理员</span>}
-          </span>
-          <span className="cell-sub">
-            {user.username} · <span className="mono">{user.userId.slice(0, 8)}</span>
-          </span>
-        </div>
+        <UserIdentity userId={user.userId} label={user} deleted={user.status === 'deleting'} />
       ),
     },
     {
@@ -181,12 +184,16 @@ export function UserListPage() {
       title: '余额（积分）',
       width: 140,
       key: 'balance',
+      align: 'right',
+      sortOrder: sort === 'balance_asc' ? 'ascend' : sort === 'balance_desc' ? 'descend' : null,
       sorter: true,
       render: (_, { account }) =>
         account ? (
           <div className="cell-main">
-            <span className="cell-title">{formatPoints(account.balanceMicros)}</span>
-            <span className="cell-sub">赠送 {formatPoints(account.bonusBalanceMicros ?? 0)}</span>
+            <span className="cell-title mono">{formatPoints(account.balanceMicros)}</span>
+            <span className="cell-sub mono">
+              赠送 {formatPoints(account.bonusBalanceMicros ?? 0)}
+            </span>
           </div>
         ) : (
           '—'
@@ -196,11 +203,13 @@ export function UserListPage() {
       title: '近 30 天消耗',
       width: 130,
       key: 'spent',
+      align: 'right',
+      sortOrder: sort === 'spent_asc' ? 'ascend' : sort === 'spent_desc' ? 'descend' : null,
       sorter: true,
       render: (_, { account }) =>
         account ? (
           <div className="cell-main">
-            <span>{formatPoints(account.spentLast30DaysMicros)} 积分</span>
+            <span className="mono">{formatPoints(account.spentLast30DaysMicros)} 积分</span>
             <span className="cell-sub">{formatYuan(account.spentLast30DaysMicros)}</span>
           </div>
         ) : (
@@ -211,10 +220,11 @@ export function UserListPage() {
       title: '注册 / 活跃',
       width: 150,
       key: 'created',
+      sortOrder: sort === 'oldest' ? 'ascend' : sort === 'newest' ? 'descend' : null,
       sorter: true,
       render: (_, { user }) => (
         <div className="cell-main">
-          <span>{formatDate(user.createdAt)}</span>
+          <span className="mono">{formatDate(user.createdAt)}</span>
           <span className="cell-sub">
             {user.lastActiveAt ? `${relativeTime(user.lastActiveAt)}活跃` : '没活跃过'}
           </span>
@@ -310,37 +320,94 @@ export function UserListPage() {
             </Button>
           </BatchBar>
         )}
+        views={
+          <Segmented<Quick>
+            className="os-view-tabs"
+            value={quick}
+            onChange={changeQuick}
+            options={[
+              { value: 'all', label: ov ? '全部账号 · ' + ov.totalUsers : '全部账号' },
+              { value: 'pro', label: ov ? 'PRO+ · ' + ov.proPlusUsers : 'PRO+' },
+              {
+                value: 'expiring',
+                label: ov
+                  ? '7 天内到期 · ' + (ov.expiringSoonCount ?? ov.expiringSoon.length)
+                  : '7 天内到期',
+              },
+              { value: 'banned', label: '已封禁' },
+            ]}
+          />
+        }
         filters={
           <Space wrap>
             <Input.Search
               allowClear
               placeholder="搜索账号 / 昵称 / 用户 ID"
-              style={{ width: 260 }}
               value={query}
-              onChange={(e) => changeQuery(e.target.value)}
+              onChange={(e) => changeQuery(e.target.value.slice(0, 200))}
             />
-            <Segmented<Quick>
-              value={quick}
-              onChange={changeQuick}
-              options={[
-                { value: 'all', label: '全部账号' },
-                { value: 'pro', label: ov ? 'PRO+ · ' + ov.proPlusUsers : 'PRO+' },
-                {
-                  value: 'expiring',
-                  label: ov
-                    ? '7 天内到期 · ' + (ov.expiringSoonCount ?? ov.expiringSoon.length)
-                    : '7 天内到期',
-                },
-                { value: 'banned', label: '已封禁' },
-              ]}
-            />
+            <Button
+              onClick={() => {
+                setPage(1);
+                setSort('balance_asc');
+              }}
+            >
+              余额从低到高
+            </Button>
           </Space>
         }
+        chips={
+          <FilterChips
+            count={users.data?.total}
+            chips={
+              query.trim()
+                ? [
+                    {
+                      key: 'q',
+                      label: '关键词：' + redactContact(query.trim()),
+                      remove: () => changeQuery(''),
+                    },
+                  ]
+                : []
+            }
+            onClear={() => {
+              changeQuery('');
+              changeQuick('all');
+            }}
+          />
+        }
+        exportSelection={selectedRows}
+        exportCsv={{
+          filename: '微伴用户',
+          fields: [
+            { title: '用户编号', value: (row) => shortUserId(row.userId) },
+            { title: '用户昵称', value: (row) => userDisplayName(row.userId, row.user) },
+            { title: '会员', value: ({ user }) => user.membership.tier },
+            {
+              title: '余额（积分）',
+              value: ({ account }) => (account ? formatPoints(account.balanceMicros) : null),
+            },
+            { title: '注册时间', value: ({ user }) => formatDate(user.createdAt) },
+            {
+              title: '状态',
+              value: ({ user }) =>
+                user.status === 'deleting' ? '注销中' : user.ban ? '封禁' : '正常',
+            },
+          ],
+        }}
         emptyTitle={query.trim() || quick !== 'all' ? '没有符合条件的用户' : '还没有用户'}
-        emptyHint={
-          query.trim() || quick !== 'all'
-            ? '换个关键词，或切回「全部」。'
-            : '用户在网页端注册后会自动出现在这里，不需要手动添加。'
+        emptyHint={query.trim() || quick !== 'all' ? undefined : '用户注册后会自动出现在这里。'}
+        emptyAction={
+          (query.trim() || quick !== 'all') && (
+            <Button
+              onClick={() => {
+                changeQuery('');
+                changeQuick('all');
+              }}
+            >
+              清空筛选
+            </Button>
+          )
         }
       />
       {batch && (
@@ -422,7 +489,7 @@ export function UserListPage() {
         </BatchOperationModal>
       )}
       {openId && !openRow && (
-        <RecordDrawer open title="用户详情" onClose={() => setOpenId(null)}>
+        <RecordDrawer open title="用户详情" onClose={closeUser}>
           {detail.error ? (
             <Alert
               type="error"
@@ -441,7 +508,7 @@ export function UserListPage() {
           row={openRow}
           nameOf={nameOf}
           initialTab={openTab}
-          onClose={() => setOpenId(null)}
+          onClose={closeUser}
           onChanged={() => {
             refreshAll();
             detail.refresh();

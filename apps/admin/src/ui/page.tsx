@@ -111,17 +111,8 @@ export function EmptyHint({
   );
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  success: 'green',
-  warning: 'orange',
-  error: 'red',
-  processing: 'blue',
-  default: 'default',
-  purple: 'purple',
-  cyan: 'cyan',
-};
-
-export type StatusTone = keyof typeof STATUS_COLORS;
+export type StatusTone =
+  'success' | 'warning' | 'error' | 'processing' | 'default' | 'purple' | 'cyan';
 
 /** 状态标签：颜色只表达状态，不表达品牌。 */
 export function StatusTag({
@@ -132,7 +123,7 @@ export function StatusTag({
   children: ReactNode;
 }) {
   return (
-    <Tag color={STATUS_COLORS[tone]} bordered={false} className="status-tag">
+    <Tag className="status-tag" data-tone={tone}>
       {children}
     </Tag>
   );

@@ -1100,7 +1100,7 @@ function BansTab() {
           form={form}
           layout="vertical"
           initialValues={{ period: '7', reason: '' }}
-          style={{ background: '#fff', padding: 16, borderRadius: 8 }}
+          style={{ background: 'var(--bg-surface)', padding: 16, borderRadius: 8 }}
         >
           <FormSection title="停权对象" />
           <Form.Item

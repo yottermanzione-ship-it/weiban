@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { expect, test, type Page } from '@playwright/test';
 
 async function signIn(page: Page) {
@@ -80,7 +81,7 @@ test('user and character drawers fetch detail on demand and column controls chan
   await page.getByRole('spinbutton', { name: '分类列宽（像素）' }).press('Tab');
   await expect.poll(async () => Math.round((await name.boundingBox())!.width)).toBe(320);
   await expect.poll(async () => Math.round((await classification.boundingBox())!.width)).toBe(80);
-  await page.getByText('紧凑', { exact: true }).click();
+  await page.locator('.table-layout-settings').getByText('紧凑', { exact: true }).click();
   await expect
     .poll(async () => (await roleRows.first().boundingBox())!.height)
     .toBeLessThan(originalHeight);
@@ -95,7 +96,7 @@ test('user and character drawers fetch detail on demand and column controls chan
     .toBe(originalHeight);
   await page.getByRole('button', { name: '调整列宽和密度' }).click();
   await page.setViewportSize({ width: 390, height: 844 });
-  const scroll = page.locator('.adjustable-table .ant-table-content');
+  const scroll = page.locator('.adjustable-table :is(.ant-table-content, .ant-table-body)');
   const horizontal = await scroll.evaluate((element) => {
     element.scrollLeft = element.scrollWidth;
     return {
@@ -260,5 +261,38 @@ test('model directory reads one page, sorts globally and fetches exact detail', 
       });
       expect(removed.ok(), await removed.text()).toBe(true);
     }
+  }
+});
+
+test('Weiban OS persists appearance, opens search results and exports masked user IDs', async ({
+  page,
+}) => {
+  await signIn(page);
+  await expect(page.getByRole('heading', { name: '30 日计费与流量趋势' })).toBeVisible();
+  const html = page.locator('html');
+  await expect(html).toHaveAttribute('data-theme', 'dark');
+  await page.getByRole('button', { name: '切换主题', exact: true }).click();
+  await expect(html).toHaveAttribute('data-theme', 'light');
+  await page.reload();
+  await expect(html).toHaveAttribute('data-theme', 'light');
+
+  await page.keyboard.press('Control+k');
+  const spotlight = page.getByRole('combobox', { name: '检索页面、用户、角色、模型' });
+  await spotlight.fill('browser_other');
+  await expect(page.getByRole('option', { name: /browser_other/ })).toBeVisible();
+  await spotlight.press('Enter');
+  await expect(page.getByRole('tab', { name: '基本资料' })).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  const incoming = observe(page, '/billing/users');
+  await page.getByRole('button', { name: '刷新', exact: true }).click();
+  const users = (await (await incoming).json()).items as { userId: string }[];
+  expect(users.length).toBeGreaterThan(0);
+  const downloadEvent = page.waitForEvent('download');
+  await page.getByRole('button', { name: '导出本页 CSV' }).click();
+  const csv = await readFile(await (await downloadEvent).path(), 'utf8');
+  for (const { userId } of users) {
+    expect(csv).not.toContain(userId);
+    expect(csv).toContain(userId.slice(0, 4) + '…' + userId.slice(-4));
   }
 });
