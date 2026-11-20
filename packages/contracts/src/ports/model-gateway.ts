@@ -316,6 +316,8 @@ export interface ModelNotificationReadPort {
 
 /** 公共计费字段。 */
 export interface MediaCallBase {
+  /** Stable business receipt key shared across eligible attempts. */
+  taskKey?: string;
   userId: string;
   purpose: ModelPurpose;
   billingOwner: BillingOwner;

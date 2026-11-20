@@ -11,9 +11,10 @@
  *   脱敏后的摘要（不含原文、经期、成人内容、图片语音）。
  * - 每次（选项 ≥ 2 时）写决策记录：决策、置信度、理由、实现、退回原因；涉及经期的理由只存固定代码 health_timing。
  */
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { and, desc, eq, gte, inArray, lt, type SQL } from 'drizzle-orm';
+import { MODEL_TASK_OUTCOME_PORT, Id, type ModelTaskOutcomePort } from '@weiban/contracts';
 import type {
   GenerateError,
   ModelGatewayMediaPort,
@@ -29,6 +30,8 @@ import {
   DATABASE,
   LOGGER,
   newId,
+  modelTaskKey,
+  type DbTx,
   type AuditLog,
   type Clock,
   type Database,
@@ -296,6 +299,9 @@ export class PlannerService {
     @Inject(MODEL_GATEWAY_MEDIA_PORT) private readonly media: ModelGatewayMediaPort,
     @Inject(BILLING_DAILY_SPEND_READ_PORT) private readonly dailySpend: BillingDailySpendReadPort,
     @Inject(IDENTITY_READ_PORT) private readonly identity: IdentityReadPort,
+    @Optional()
+    @Inject(MODEL_TASK_OUTCOME_PORT)
+    private readonly taskOutcomes?: ModelTaskOutcomePort,
   ) {}
 
   // =========================================================================
@@ -352,6 +358,7 @@ export class PlannerService {
       impl = 'rules_model';
 
     let result: PlanResult;
+    let source: string | null = null;
     let charged = 0;
     if (impl === 'rules') {
       result = rule('rules', null);
@@ -362,6 +369,12 @@ export class PlannerService {
     } else {
       const timeoutMs =
         req.timeoutMs ?? (req.path === 'reply' ? REPLY_TIMEOUT_MS : PROACTIVE_TIMEOUT_MS);
+      if (impl !== 'jev' || config.modelKey)
+        source =
+          `${impl === 'jev' ? 'plan-jev' : 'plan'}:${req.decisionType}:${req.idempotencyKey}`.slice(
+            0,
+            200,
+          );
       const outcome = await this.withTimeout(
         impl === 'jev'
           ? this.callJev(req, options, config, timeoutMs)
@@ -412,7 +425,7 @@ export class PlannerService {
         charged = outcome.value.chargedMicros;
       }
     }
-    await this.record(req, options, result, this.clock.nowMs() - started, charged);
+    await this.saveDecisions(req.userId, source, [{ req, options, result, charged }], started);
     return result;
   }
 
@@ -520,6 +533,7 @@ export class PlannerService {
     });
     let results = items.map((item) => fallbackResult(item, null));
     let charged = 0;
+    let source: string | null = null;
     const pending = items.filter((item) => item.options.length > 1);
     // 不把成人/健康请求偷偷换成另一家付费模型，也不让积极规则借此批准。
     if (req.adult || req.periodHint || req.decisionType === 'play_slot') {
@@ -532,6 +546,7 @@ export class PlannerService {
       else {
         const timeoutMs =
           req.timeoutMs ?? (req.path === 'reply' ? REPLY_TIMEOUT_MS : PROACTIVE_TIMEOUT_MS);
+        if (impl !== 'jev' || config.modelKey) source = 'plan-batch:' + batchKey;
         outcome = await this.withTimeout(
           this.callBatch(req, pending, config, batchKey, timeoutMs),
           timeoutMs,
@@ -577,14 +592,17 @@ export class PlannerService {
       });
     }
     // 多题共享同一个用量记录；金额只在第一行计一次，钱包仍由网关统一扣费。
-    for (const [index, item] of items.entries())
-      await this.record(
-        item.request,
-        item.options,
-        results[index]!,
-        this.clock.nowMs() - started,
-        index === 0 ? charged : 0,
-      );
+    await this.saveDecisions(
+      req.userId,
+      source,
+      items.map((item, index) => ({
+        req: item.request,
+        options: item.options,
+        result: results[index]!,
+        charged: index === 0 ? charged : 0,
+      })),
+      started,
+    );
     return Object.fromEntries(items.map((item, index) => [item.id, results[index]!]));
   }
 
@@ -904,39 +922,85 @@ export class PlannerService {
     return { decisionType: req.decisionType, features, summary };
   }
 
+  private async saveDecisions(
+    userId: string,
+    source: string | null,
+    rows: Array<{ req: PlanRequest; options: string[]; result: PlanResult; charged: number }>,
+    started: number,
+  ) {
+    try {
+      await this.db.transaction(async (tx) => {
+        const recorded: PlanResult[] = [];
+        for (const row of rows) {
+          const saved = await this.record(
+            tx,
+            row.req,
+            row.options,
+            row.result,
+            this.clock.nowMs() - started,
+            row.charged,
+          );
+          if (saved && row.options.length > 1) recorded.push(row.result);
+        }
+        if (!source || !recorded.length) return;
+        const adopted = recorded.find((result) => !result.fallback);
+        const fallback = recorded.find((result) => result.fallback)?.fallback;
+        const usage = recorded.find(
+          (result) => Id.safeParse(result.usageRecordId).success,
+        )?.usageRecordId;
+        await this.taskOutcomes?.record(
+          {
+            userId,
+            taskKey: modelTaskKey(userId, source),
+            purpose: 'behavior_planning',
+            state: adopted ? 'saved' : 'filtered',
+            reason: adopted
+              ? fallback
+                ? 'planning_partial_saved'
+                : 'planning_choice_saved'
+              : 'planning_rules_' + (fallback ?? 'used'),
+            usageRecordId: usage,
+          },
+          tx,
+        );
+      });
+    } catch (e) {
+      this.logger.warn({ error: e instanceof Error ? e.name : 'unknown' }, 'planner record failed');
+    }
+  }
+
   private async record(
+    tx: DbTx,
     req: PlanRequest,
     options: string[],
     result: PlanResult,
     latencyMs: number,
     chargedMicros: number,
-  ): Promise<void> {
-    try {
-      await this.db.db
-        .insert(planningDecisions)
-        .values({
-          id: newId(),
-          userId: req.userId,
-          characterId: req.characterId ?? null,
-          conversationId: req.conversationId ?? null,
-          decisionType: req.decisionType,
-          options: options.slice(0, 50).map((o) => o.slice(0, 60)),
-          choice: result.choice.slice(0, 60),
-          confidence: result.confidence,
-          reason: result.reason.slice(0, 80),
-          implementation: result.implementation,
-          fallback: result.fallback,
-          latencyMs: Math.max(0, Math.round(latencyMs)),
-          usageRecordId: result.usageRecordId,
-          chargedMicros: Math.max(0, Math.round(chargedMicros)),
-          path: req.path,
-          decisionKey: req.decisionKey?.slice(0, 200) ?? null,
-          createdAt: this.clock.now(),
-        })
-        .onConflictDoNothing();
-    } catch (e) {
-      this.logger.warn({ error: e instanceof Error ? e.name : 'unknown' }, 'planner record failed');
-    }
+  ) {
+    const saved = await tx.db
+      .insert(planningDecisions)
+      .values({
+        id: newId(),
+        userId: req.userId,
+        characterId: req.characterId ?? null,
+        conversationId: req.conversationId ?? null,
+        decisionType: req.decisionType,
+        options: options.slice(0, 50).map((o) => o.slice(0, 60)),
+        choice: result.choice.slice(0, 60),
+        confidence: result.confidence,
+        reason: result.reason.slice(0, 80),
+        implementation: result.implementation,
+        fallback: result.fallback,
+        latencyMs: Math.max(0, Math.round(latencyMs)),
+        usageRecordId: result.usageRecordId,
+        chargedMicros: Math.max(0, Math.round(chargedMicros)),
+        path: req.path,
+        decisionKey: req.decisionKey?.slice(0, 200) ?? null,
+        createdAt: this.clock.now(),
+      })
+      .onConflictDoNothing()
+      .returning({ id: planningDecisions.id });
+    return saved.length > 0;
   }
 
   // =========================================================================

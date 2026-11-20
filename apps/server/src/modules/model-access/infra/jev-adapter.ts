@@ -145,11 +145,12 @@ export async function jevDecide(
   if (Buffer.byteLength(body, 'utf8') > 32000)
     return { ok: false, category: 'bad_request', zeroCost: true };
   let response: Response;
+  const deadline = AbortSignal.timeout(Math.max(1, Math.min(10000, input.timeoutMs ?? 10000)));
   try {
     response = await fetch(endpoint, {
       method: 'POST',
       redirect: 'manual',
-      signal: AbortSignal.timeout(Math.max(1, Math.min(10000, input.timeoutMs ?? 10000))),
+      signal: deadline,
       headers: { Authorization: `Bearer ${target.apiKey}`, 'Content-Type': 'application/json' },
       body,
     });
@@ -203,6 +204,11 @@ export async function jevDecide(
     const value = parseDecisionReply(raw, input.questions);
     return value ? { ok: true, value } : { ok: false, category: 'provider_error' };
   } catch {
-    return { ok: false, category: 'network_error' };
+    // No upstream idempotency receipt proves the decision was not processed.
+    return {
+      ok: false,
+      category: 'network_error',
+      ...(deadline.aborted ? { cause: 'interrupted' as const } : {}),
+    };
   }
 }

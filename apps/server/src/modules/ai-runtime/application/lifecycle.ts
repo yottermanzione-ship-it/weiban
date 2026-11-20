@@ -135,6 +135,8 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       await this.jobs.send('ai.reconcile', {}, { retryLimit: 10, retryBackoff: true });
   }
   async onModuleInit(): Promise<void> {
+    this.proactive.checkEcologyMessage = (userId, characterId, runId) =>
+      this.ecology.canResumeMessage(userId, characterId, runId);
     this.catalogDeletion.bindEcology({
       isReferenced: (keys) => this.ecologySettings.usesDecisionModel(keys),
       clear: (tx, keys, operator) => this.ecologySettings.clearDeletedDecision(tx, keys, operator),
@@ -894,6 +896,7 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       handle: async (event, tx) => {
         // v5 角色生态：积分恢复后解除「积分不足静默暂停」。
         await this.ecologySettings.resume(event.payload.userId, tx);
+        await this.ecology.balanceRestored(event.payload.userId, tx);
         await this.jobs.send(
           'ai.recover_replies',
           { userId: event.payload.userId },

@@ -549,6 +549,10 @@ export const proactivePlans = aiRuntimeSchema.table(
     priority: integer('priority').notNull().default(0),
     status: text('status').notNull(),
     dueAt: timestamp('due_at', { withTimezone: true }).notNull(),
+    retryCount: integer('retry_count').notNull().default(0),
+    retryReason: text('retry_reason'),
+    retryEpoch: text('retry_epoch'),
+    retryUntil: timestamp('retry_until', { withTimezone: true }),
     /** 第一次因 P-09 延后的时间；超过 60 分钟放弃。 */
     deferredSince: timestamp('deferred_since', { withTimezone: true }),
     outcome: text('outcome'),
@@ -560,6 +564,9 @@ export const proactivePlans = aiRuntimeSchema.table(
     unique('proactive_plan_source_idx').on(t.userId, t.characterId, t.sourceRef),
     check('proactive_plan_status', sql`${t.status} IN ('planned','generating','sent','dropped')`),
     index('proactive_plan_due_idx').on(t.status, t.dueAt),
+    index('proactive_retry_expiry_idx')
+      .on(t.retryUntil)
+      .where(sql`${t.retryReason} IS NOT NULL AND ${t.status}='planned'`),
     index('proactive_plan_topic_idx').on(t.userId, t.characterId, t.topicKey),
   ],
 );

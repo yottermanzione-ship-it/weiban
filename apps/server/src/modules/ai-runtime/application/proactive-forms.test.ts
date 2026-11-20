@@ -142,7 +142,9 @@ function harness(
     value: { text: opts.text ?? RAW, usageRecordId: 'text-usage', chargedMicros: 100 },
   }));
   const readMessages = vi.fn(async () => opts.history ?? tenTexts());
-  const update = () => ({ set: () => ({ where: async () => undefined }) });
+  const update = () => ({
+    set: () => ({ where: () => ({ returning: async () => [{ id: 'plan-1' }] }) }),
+  });
   const tx = { query: async () => undefined, db: { update } };
   const transaction = vi.fn(async (fn: (t: typeof tx) => unknown) => fn(tx));
   const service = Object.create(ProactiveSchedulerService.prototype) as ProactiveSchedulerService;
@@ -255,7 +257,7 @@ const META_SAMPLES = [
 
 describe('主动消息绑定角色并拦截思考', () => {
   it.each(META_SAMPLES.map((text, index) => ({ text, index: index + 1 })))(
-    '合成样例 $index 重试一次仍拦截，没有发消息或进入写入事务',
+    '合成样例 $index 重试一次仍拦截，没有发送消息且留下过滤回执',
     async ({ text }) => {
       const h = harness({ text });
       expect(await h.send()).toMatchObject({ ok: false, reason: 'output_guard' });
@@ -268,7 +270,7 @@ describe('主动消息绑定角色并拦截思考', () => {
       });
       expect(retry!.idempotencyKey).not.toBe(first!.idempotencyKey);
       expect(h.posted).toEqual([]);
-      expect(h.transaction).not.toHaveBeenCalled();
+      expect(h.transaction).toHaveBeenCalledTimes(1);
       expect(h.planExtras).not.toHaveBeenCalled();
       expect(h.warn.mock.calls).toEqual([
         [

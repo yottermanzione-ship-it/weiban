@@ -44,6 +44,7 @@ export type MediaAdapterResult<T> =
   | {
       ok: false;
       category: MediaFailure;
+      cause?: 'interrupted';
       zeroCost?: boolean;
       localRateLimit?: boolean;
       reportedUsage?: ReportedMediaUsage;
