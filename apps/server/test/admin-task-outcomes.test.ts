@@ -400,6 +400,48 @@ describeDb('管理任务结果：业务证据、账本与原始线路', () => {
         boundSnapshot: {},
       });
     }
+    // 旧版把纯发前拦截的回复计划也记为 cancelled/failed。用量行可没有 hold 或 attempt。
+    const oldReply = newId(),
+      conversation = newId(),
+      generation = newId();
+    await db.query(
+      `INSERT INTO ai_runtime.reply_plans(id,user_id,character_id,conversation_id,trigger_id,trigger_seq,kind,status,due_at,created_at,failure)
+     VALUES($1,$2,$3,$4,$5,1,'message','cancelled',$6,$6,'model_failure')`,
+      [oldReply, owner, role, conversation, newId(), clock.now()],
+    );
+    const exactHash = createHash('sha256')
+      .update(owner + '\0ai:' + oldReply + ':0:reply')
+      .digest('hex');
+    await db.query(
+      `INSERT INTO model_access.generation_results(id,user_id,key_hash,request_hash,phase,created_at,expires_at)
+     VALUES($1,$2,$3,'fixture','complete',$4,$4::timestamptz + interval '1 day')`,
+      [generation, owner, exactHash, clock.now()],
+    );
+    const blocked = await usage.start({
+      input: {
+        userId: owner,
+        characterId: role,
+        conversationId: conversation,
+        purpose: 'chat_reply',
+        billingOwner: 'user',
+        modelRole: 'chat',
+        idempotencyKey: `gateway:${generation}:attempt:0`,
+      },
+      modelKey: 'fixture/chat',
+      upstreamId: newId(),
+      upstreamModelId: 'fixture',
+      countsAsBackground: false,
+    });
+    await usage.finish(blocked.record.id, {
+      status: 'failed',
+      errorCode: 'insufficient_balance',
+      inputTokens: 0,
+      cachedInputTokens: 0,
+      outputTokens: 0,
+      estimated: false,
+      latencyMs: 0,
+      retryCount: 0,
+    });
     await db.transaction(async (tx) => {
       for (const suffix of ['.down', ''])
         await tx.query(
@@ -408,6 +450,13 @@ describeDb('管理任务结果：业务证据、账本与原始线路', () => {
             'utf8',
           ),
         );
+      expect(
+        (
+          await tx.query('SELECT state,reason FROM model_access.task_outcomes WHERE task_key=$1', [
+            modelTaskKey(owner, 'reply:' + oldReply),
+          ])
+        ).rows,
+      ).toEqual([{ state: 'blocked', reason: 'insufficient_balance' }]);
       const taskKey = modelTaskKey(owner, biz);
       expect(
         (
