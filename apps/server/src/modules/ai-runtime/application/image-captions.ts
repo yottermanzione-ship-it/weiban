@@ -65,11 +65,12 @@ export class ImageCaptionStore {
     userId: string,
     mediaIds: readonly string[],
     scopes: readonly ContentScope[],
+    tx?: DbTx,
   ): Promise<CaptionMap> {
     const out = new Map<string, ImageCaption>();
     if (!mediaIds.length || !scopes.length) return out;
     try {
-      const rows = await this.db.db
+      const rows = await (tx ?? this.db).db
         .select()
         .from(imageCaptions)
         .where(
@@ -86,6 +87,7 @@ export class ImageCaptionStore {
           aad: this.aad(r.mediaId, r.scope as ContentScope),
           sealed: r.captionCiphertext,
         })),
+        tx,
       );
       rows.forEach((row, index) => {
         if (out.has(row.mediaId)) return;
@@ -107,9 +109,10 @@ export class ImageCaptionStore {
     userId: string,
     messages: readonly Message[],
     scopes: readonly ContentScope[],
+    tx?: DbTx,
   ): Promise<CaptionMap> {
     const ids = captionMediaIds(messages);
-    return ids.length ? this.load(userId, ids, scopes) : NO_CAPTIONS;
+    return ids.length ? this.load(userId, ids, scopes, tx) : NO_CAPTIONS;
   }
 
   /** 存一张图的描述（同一用户、同一张图、同一范围只存第一次）。 */

@@ -5,6 +5,7 @@ import type {
   NudgeContent,
   CallTranscriptTurn,
   MediaTranscriptPort,
+  Tx,
 } from '@weiban/contracts';
 import { captionSnapshot } from '../domain/image-caption.js';
 import type { CaptionMap } from './image-captions.js';
@@ -72,6 +73,7 @@ export function readableMessageText(m: Message, captions?: CaptionMap): string {
 export async function withVoiceTranscripts(
   messages: readonly Message[],
   transcripts?: MediaTranscriptPort,
+  tx?: Tx,
 ): Promise<Message[]> {
   if (!transcripts) return [...messages];
   const texts = new Map<string, string>();
@@ -87,7 +89,7 @@ export async function withVoiceTranscripts(
   for (let i = 0; i < ids.length; i += 8) {
     await Promise.all(
       ids.slice(i, i + 8).map(async (id) => {
-        const value = await transcripts.getTranscript(id).catch(() => null);
+        const value = await transcripts.getTranscript(id, tx).catch(() => null);
         if (value?.status === 'ready' && value.text) texts.set(id, value.text);
       }),
     );

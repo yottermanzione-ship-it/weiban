@@ -1,3 +1,4 @@
+import { fixtureMemoryUsage } from './support/memory-usage.js';
 import 'reflect-metadata';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
@@ -86,7 +87,7 @@ describeDb('电话与文字共用上下文：真实数据库及加密存档，�
           usage: { inputTokens: 10, cachedInputTokens: 0, outputTokens: 10, estimated: false },
           chargedMicros: 1,
           latencyMs: 1,
-          usageRecordId: newId(),
+          usageRecordId: await fixtureMemoryUsage(db, clock, input),
         },
       };
     },
@@ -381,7 +382,7 @@ describeDb('电话与文字共用上下文：真实数据库及加密存档，�
     modelResult = JSON.stringify({ operations: [], episode: '' });
     const summaries = requests
       .slice(before)
-      .filter((r) => r.meta?.promptTemplateVersion === 'chat-summary-v2');
+      .filter((r) => r.meta?.promptTemplateVersion === 'chat-summary-v3');
     const content = summaries.map((r) => r.messages[1]!.content).join('\n');
     for (const marker of ['VOICE_CONTEXT_CANARY', 'PHONE_BEGIN', 'PHONE_END', '角色接话'])
       expect(content).toContain(marker);

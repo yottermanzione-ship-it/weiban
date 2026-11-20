@@ -1,4 +1,5 @@
 import { MemoryService } from './application/memory.js';
+import { MemoryFundingRecovery } from './application/memory-funding-recovery.js';
 import { ChatSummaryService } from './application/chat-summary.js';
 import { PrivateDigestService } from './application/private-digest.js';
 import { ImageCaptionStore } from './application/image-captions.js';
@@ -150,6 +151,7 @@ import {
     CompanionSettingsService,
     ScenarioCatalog,
     MemoryService,
+    MemoryFundingRecovery,
     ChatSummaryService,
     // H2：切出私密模式时的干净整理。
     PrivateDigestService,

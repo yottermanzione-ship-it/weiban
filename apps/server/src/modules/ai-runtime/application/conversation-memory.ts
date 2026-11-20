@@ -1,4 +1,10 @@
-import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Optional, type OnModuleInit } from '@nestjs/common';
+import { MODEL_TASK_OUTCOME_PORT, type ModelTaskOutcomePort } from '@weiban/contracts';
+import {
+  isMemoryFundingBlock,
+  memoryFailureCode,
+  memoryFundingCheckAt,
+} from '../domain/memory-funding.js';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type {
@@ -14,6 +20,7 @@ import {
   EVENT_BUS,
   JOB_QUEUE,
   newId,
+  modelTaskKey,
   type Clock,
   type Database,
   type DbTx,
@@ -72,6 +79,7 @@ type GroupState = {
   cursor_seq: string;
   last_user_seq: string;
   pending_count: number;
+  wait_reason: string | null;
   last_user_at: Date;
   lease_id: string | null;
   lease_until: Date | null;
@@ -115,6 +123,7 @@ export class ConversationMemoryService implements OnModuleInit {
     @Inject(EVENT_BUS) private readonly bus: EventBus,
     @Inject(JOB_QUEUE) private readonly jobs: JobQueue,
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
+    @Optional() @Inject(MODEL_TASK_OUTCOME_PORT) private readonly outcomes?: ModelTaskOutcomePort,
   ) {}
   async onModuleInit() {
     await this.jobs.work<{ stateId: string }>('ai.extract_group_memory', (job) =>
@@ -158,17 +167,28 @@ export class ConversationMemoryService implements OnModuleInit {
         )
           return;
         const row = (
-          await tx.query<{ id: string; pending_count: number }>(
-            `INSERT INTO ai_runtime.group_memory_states(id,user_id,conversation_id,last_user_seq,pending_count,last_user_at) VALUES($1,$2,$3,$4,1,$5) ON CONFLICT(user_id,conversation_id) DO UPDATE SET pending_count=ai_runtime.group_memory_states.pending_count+CASE WHEN EXCLUDED.last_user_seq>ai_runtime.group_memory_states.last_user_seq THEN 1 ELSE 0 END,last_user_seq=greatest(ai_runtime.group_memory_states.last_user_seq,EXCLUDED.last_user_seq),last_user_at=greatest(ai_runtime.group_memory_states.last_user_at,EXCLUDED.last_user_at) RETURNING id,pending_count`,
+          await tx.query<{
+            id: string;
+            pending_count: number;
+            wait_reason: string | null;
+            retry_after: Date | null;
+          }>(
+            `INSERT INTO ai_runtime.group_memory_states(id,user_id,conversation_id,last_user_seq,pending_count,last_user_at) VALUES($1,$2,$3,$4,1,$5) ON CONFLICT(user_id,conversation_id) DO UPDATE SET pending_count=ai_runtime.group_memory_states.pending_count+CASE WHEN EXCLUDED.last_user_seq>ai_runtime.group_memory_states.last_user_seq THEN 1 ELSE 0 END,last_user_seq=greatest(ai_runtime.group_memory_states.last_user_seq,EXCLUDED.last_user_seq),last_user_at=greatest(ai_runtime.group_memory_states.last_user_at,EXCLUDED.last_user_at) RETURNING id,pending_count,wait_reason,retry_after`,
             [newId(), p.senderRefId, p.conversationId, p.seq, new Date(event.occurredAt)],
           )
         ).rows[0];
-        if (row)
+        if (
+          row &&
+          (row.pending_count === 1 || row.pending_count === 20) &&
+          row.wait_reason !== 'insufficient_balance' &&
+          !(row.retry_after && row.retry_after > this.clock.now())
+        )
           await this.jobs.send(
             'ai.extract_group_memory',
             { stateId: row.id },
             {
               tx,
+              singletonKey: row.id,
               delayMs: row.pending_count >= 20 ? 0 : 600000,
               retryLimit: 5,
               retryBackoff: true,
@@ -206,7 +226,7 @@ export class ConversationMemoryService implements OnModuleInit {
     const now = this.clock.now();
     const groups = (
       await this.db.query<{ id: string }>(
-        `SELECT id FROM ai_runtime.group_memory_states WHERE pending_count>0 AND (retry_after IS NULL OR retry_after<=$1) AND (lease_until IS NULL OR lease_until<=$1) AND (pending_count>=$2 OR last_user_at<=$3) ORDER BY last_user_at LIMIT 100`,
+        `SELECT id FROM ai_runtime.group_memory_states WHERE pending_count>0 AND wait_reason IS DISTINCT FROM 'insufficient_balance' AND (retry_after IS NULL OR retry_after<=$1) AND (lease_until IS NULL OR lease_until<=$1) AND (pending_count>=$2 OR last_user_at<=$3) ORDER BY last_user_at LIMIT 100`,
         [
           now,
           config.groupMemoryMessageThreshold ?? 20,
@@ -237,11 +257,35 @@ export class ConversationMemoryService implements OnModuleInit {
       [new Date(now.getTime() - 30 * 86400000)],
     );
   }
-  private async deferGroup(state: GroupState, token: string, delay: number, clear = false) {
-    await this.db.query(
-      `UPDATE ai_runtime.group_memory_states SET lease_id=NULL,lease_until=NULL,retry_after=$3,prepared_ciphertext=CASE WHEN $4 THEN NULL ELSE prepared_ciphertext END,result_ciphertext=CASE WHEN $4 THEN NULL ELSE result_ciphertext END,generation=generation+CASE WHEN $4 THEN 1 ELSE 0 END WHERE id=$1 AND lease_id=$2`,
-      [state.id, token, new Date(this.clock.nowMs() + delay), clear],
-    );
+  private async deferGroup(
+    state: GroupState,
+    token: string,
+    delay: number,
+    clear = false,
+    reason?: string,
+  ) {
+    const at =
+      reason && isMemoryFundingBlock(reason)
+        ? memoryFundingCheckAt(reason, this.clock.now())
+        : new Date(this.clock.nowMs() + delay);
+    await this.db.transaction(async (tx) => {
+      const changed = await tx.query(
+        `UPDATE ai_runtime.group_memory_states SET lease_id=NULL,lease_until=NULL,wait_reason=$5,retry_after=$3,prepared_ciphertext=CASE WHEN $4 THEN NULL ELSE prepared_ciphertext END,result_ciphertext=CASE WHEN $4 THEN NULL ELSE result_ciphertext END,generation=generation+CASE WHEN $4 THEN 1 ELSE 0 END WHERE id=$1 AND lease_id=$2`,
+        [state.id, token, at, clear, reason ?? null],
+      );
+      if (changed.rowCount && reason)
+        await this.outcomes?.record(
+          {
+            userId: state.user_id,
+            taskKey: modelTaskKey(state.user_id, `group-memory:${state.id}:${state.cursor_seq}`),
+            purpose: 'memory',
+            state: 'deferred',
+            reason,
+            retryAt: at.toISOString(),
+          },
+          tx,
+        );
+    });
   }
   async group(id: string) {
     const base = (
@@ -263,6 +307,7 @@ export class ConversationMemoryService implements OnModuleInit {
       if (
         !row ||
         row.pending_count <= 0 ||
+        row.wait_reason === 'insufficient_balance' ||
         (row.lease_until && row.lease_until > this.clock.now()) ||
         (row.retry_after && row.retry_after > this.clock.now())
       )
@@ -287,6 +332,7 @@ export class ConversationMemoryService implements OnModuleInit {
       return row;
     });
     if (!state) return;
+    let failureStage = 'group_memory_prepare_failed';
     try {
       let prepared = state.prepared_ciphertext
         ? await this.open(
@@ -304,7 +350,7 @@ export class ConversationMemoryService implements OnModuleInit {
         !conversation.participants.some((p) => p.kind === 'user' && p.refId === state.user_id)
       ) {
         await this.db.query(
-          'UPDATE ai_runtime.group_memory_states SET pending_count=0,lease_id=NULL,lease_until=NULL,prepared_ciphertext=NULL,result_ciphertext=NULL WHERE id=$1 AND lease_id=$2',
+          'UPDATE ai_runtime.group_memory_states SET pending_count=0,wait_reason=NULL,retry_after=NULL,lease_id=NULL,lease_until=NULL,prepared_ciphertext=NULL,result_ciphertext=NULL WHERE id=$1 AND lease_id=$2',
           [id, token],
         );
         return;
@@ -435,6 +481,8 @@ export class ConversationMemoryService implements OnModuleInit {
         );
       }
       let result: z.infer<typeof GroupResult> = { characters: [], episode: '' };
+      let usageRecordId: string | null = null;
+      const taskKey = modelTaskKey(state.user_id, `group-memory:${id}:${state.cursor_seq}`);
       if (prepared.sourceIds.length && prepared.targets.length) {
         if (state.result_ciphertext)
           result = await this.open(
@@ -444,6 +492,7 @@ export class ConversationMemoryService implements OnModuleInit {
             GroupResult,
           );
         else {
+          failureStage = 'group_memory_gateway_failed';
           const generated = await this.gateway.generateText({
             userId: state.user_id,
             purpose: 'memory',
@@ -454,6 +503,7 @@ export class ConversationMemoryService implements OnModuleInit {
             maxOutputTokens: 3200,
             responseFormat: 'json',
             idempotencyKey: prepared.batchId,
+            taskKey,
             messages: [
               {
                 role: 'system',
@@ -475,15 +525,20 @@ export class ConversationMemoryService implements OnModuleInit {
             },
           });
           if (!generated.ok) {
-            const wait = ['insufficient_balance', 'budget_exceeded', 'not_configured'].includes(
-              generated.error,
+            const reason = memoryFailureCode(generated);
+            // Rebuild from the still-pending cursor after recovery; do not replay a cached funding failure.
+            await this.deferGroup(
+              state,
+              token,
+              reason === 'not_configured' ? 86400000 : 3600000,
+              true,
+              reason,
             );
-            // 批 EJ：模型失败（截断等）时清掉已准备的批次（generation+1 → 新幂等键），1 小时后重新准备；
-            // 否则同一 batchId 会一直回放网关缓存的失败，这批群聊记忆永远整理不了。等余额 / 配置时保留原批次。
-            await this.deferGroup(state, token, wait ? 86400000 : 3600000, !wait);
             return;
           }
+          usageRecordId = generated.value.usageRecordId;
           result = GroupResult.parse(JSON.parse(generated.value.text));
+          failureStage = 'group_memory_write_failed';
           await this.db.query(
             'UPDATE ai_runtime.group_memory_states SET result_ciphertext=$3 WHERE id=$1 AND lease_id=$2',
             [
@@ -516,6 +571,7 @@ export class ConversationMemoryService implements OnModuleInit {
       )
         throw new Error('group_memory_invalid_output');
       const frozen = prepared;
+      failureStage = 'group_memory_write_failed';
       await this.db.transaction(async (tx) => {
         if (!(await this.store.lock(tx, state.user_id))) return;
         const current = (
@@ -538,6 +594,7 @@ export class ConversationMemoryService implements OnModuleInit {
           if (!source || source.status !== 'normal' || source.labels?.includes('health'))
             throw new Error('group_memory_snapshot_changed');
         }
+        let hasChanges = false;
         for (const target of frozen.targets) {
           const applied = await this.memory.applyExternal(tx, {
             userId: state.user_id,
@@ -553,8 +610,9 @@ export class ConversationMemoryService implements OnModuleInit {
               result.characters.find((c) => c.characterId === target.id)?.operations ?? [],
           });
           if (!applied) throw new Error('group_memory_snapshot_changed');
-          if (result.episode)
-            await this.episodes.record(tx, {
+          hasChanges ||= applied.changed;
+          if (result.episode) {
+            const episode = await this.episodes.record(tx, {
               userId: state.user_id,
               characterId: target.id,
               epoch: target.epoch,
@@ -566,11 +624,26 @@ export class ConversationMemoryService implements OnModuleInit {
               scope: 'normal',
               withCharacterIds: frozen.targets.filter((t) => t.id !== target.id).map((t) => t.id),
             });
+            hasChanges ||= !!episode;
+          }
         }
         await tx.query(
-          'UPDATE ai_runtime.group_memory_states SET cursor_seq=$3,pending_count=greatest(0,pending_count-$4),lease_id=NULL,lease_until=NULL,retry_after=NULL,prepared_ciphertext=NULL,result_ciphertext=NULL WHERE id=$1 AND lease_id=$2',
+          'UPDATE ai_runtime.group_memory_states SET cursor_seq=$3,pending_count=greatest(0,pending_count-$4),lease_id=NULL,lease_until=NULL,retry_after=NULL,wait_reason=NULL,prepared_ciphertext=NULL,result_ciphertext=NULL WHERE id=$1 AND lease_id=$2',
           [id, token, frozen.toSeq, frozen.userCount],
         );
+        if (frozen.sourceIds.length && frozen.targets.length) {
+          await this.outcomes?.record(
+            {
+              taskKey,
+              userId: state.user_id,
+              purpose: 'memory',
+              state: hasChanges ? 'saved' : 'filtered',
+              reason: hasChanges ? 'group_memory_saved' : 'memory_no_new_facts',
+              usageRecordId,
+            },
+            tx,
+          );
+        }
       });
     } catch (error) {
       const reset =
@@ -582,7 +655,14 @@ export class ConversationMemoryService implements OnModuleInit {
             'group_memory_snapshot_changed',
             'memory_external_invalid_source',
           ].includes(error.message));
-      await this.deferGroup(state, token, 3600000, reset);
+      const reason =
+        error instanceof Error &&
+        ['group_memory_snapshot_changed', 'memory_external_invalid_source'].includes(error.message)
+          ? 'group_memory_source_changed'
+          : reset
+            ? 'group_memory_fields'
+            : failureStage;
+      await this.deferGroup(state, token, 3600000, reset, reason);
     }
   }
   async call(id: string) {

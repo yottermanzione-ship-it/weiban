@@ -64,7 +64,12 @@ export function validateSummaryAnswer(
   raw: unknown,
   sources: ReadonlyMap<string, { at: string }>,
 ): Omit<ChatSummaryItem, 'id'>[] {
-  const answer = SummaryAnswer.parse(raw);
+  const parsed = SummaryAnswer.safeParse(raw);
+  if (!parsed.success) {
+    const references = parsed.error.issues.some((issue) => issue.path.includes('sourceIds'));
+    throw new Error(references ? 'summary_reference_fields' : 'summary_fields');
+  }
+  const answer = parsed.data;
   // Do not discard an otherwise grounded result merely for a small target overrun.
   // Whole-result and per-item limits remain; nothing is truncated to fit.
   if (answer.items.reduce((n, i) => n + i.text.length, 0) > 1600)
@@ -74,6 +79,53 @@ export function validateSummaryAnswer(
     if (dates.some((at) => !at)) throw new Error('summary_unknown_source');
     return { text: item.text, at: (dates as string[]).sort()[0]! };
   });
+}
+
+type SummaryPiece = { id: string; messageId: string; at: string; sender: string; text: string };
+type SummaryBatch = {
+  previous: readonly ChatSummaryItem[];
+  messages: readonly SummaryPiece[];
+  partialMessageId: string | null;
+  shortRefs?: boolean;
+};
+
+/** Only a complete JSON fence around the entire response is a transport wrapper. */
+export function parseSummaryJson(text: string): unknown {
+  const body = text.trim();
+  const fenced = /^```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n```$/iu.exec(body);
+  try {
+    return JSON.parse(fenced?.[1] ?? body);
+  } catch {
+    throw new Error('summary_json');
+  }
+}
+
+/** The validator and the model use the same request-local vocabulary. */
+export function summarySubmission(batch: SummaryBatch) {
+  const previous = batch.previous.map((item, i) => ({
+    ...item,
+    id: batch.shortRefs ? `p${i + 1}` : item.id,
+  }));
+  const messages = batch.messages.map((item, i) =>
+    batch.shortRefs ? { id: `m${i + 1}`, at: item.at, sender: item.sender, text: item.text } : item,
+  );
+  const sources = new Map([...previous, ...messages].map((item) => [item.id, { at: item.at }]));
+  // Older inputs exposed both the fragment id and its messageId. The latter identifies
+  // exactly one whole submitted source only when neither end was split.
+  if (!batch.shortRefs) {
+    const counts = new Map<string, number>();
+    for (const item of batch.messages)
+      counts.set(item.messageId, (counts.get(item.messageId) ?? 0) + 1);
+    for (const item of batch.messages)
+      if (
+        counts.get(item.messageId) === 1 &&
+        item.messageId !== batch.partialMessageId &&
+        item.id === `${item.messageId}:0:${item.text.length}` &&
+        !sources.has(item.messageId)
+      )
+        sources.set(item.messageId, { at: item.at });
+  }
+  return { payload: { previous, messages }, sources };
 }
 
 /** 候选闸门不等于永久事实；后续模型仍须判断是否稳定、有用户来源。 */
@@ -90,3 +142,26 @@ export const CHAT_SUMMARY_PROMPT = [
   '用旧回顾加新内容重新归纳，不逐句抄写，不凭空补事实。每个要点必须引用给定的sourceIds；不同时间的无关事件分开写，旧事实与新事实不要混成同一个要点。',
   '只输出JSON：{"items":[{"text":"简短回顾","sourceIds":["实际给定的来源id"]}]}。最多24项，所有text合计不超过1200个中文字。已有重要内容不能因本批只是闲聊而全部清空。',
 ].join('\n');
+
+export const SHORT_REF_SUMMARY_PROMPT =
+  CHAT_SUMMARY_PROMPT +
+  '\n资料只用本次给定的 p 或 m 编号引用。返回含 items 数组的单个 JSON 对象；每条含 text 和 sourceIds。来源不清的要点不写。';
+
+export function summaryRepairInstruction(reason: string | null): string {
+  switch (reason) {
+    case 'summary_json':
+    case 'summary_fields':
+    case 'summary_reference_fields':
+      return '\n本轮只填结构：顶层 items 必须是数组；即便只有一条，也要在数组里同时填 text 和 sourceIds。';
+    case 'summary_unknown_source':
+      return '\n逐条核对来源，只能使用本次资料中确实存在的编号。';
+    case 'summary_not_reduced':
+    case 'summary_too_long':
+    case 'summary_truncated':
+      return '\n用更少、更短的要点合并同一件事，确保所有要点及引用均已写完。';
+    case 'summary_empty':
+      return '\n请保留旧回顾中仍有来源的要点。';
+    default:
+      return '';
+  }
+}
