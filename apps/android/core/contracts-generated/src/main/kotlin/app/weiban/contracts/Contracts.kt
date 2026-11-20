@@ -1158,6 +1158,9 @@ data class AdminTaskAttempt(
     @SerialName("upstreamName") val `upstreamName`: String?,
     @SerialName("upstreamModelId") val `upstreamModelId`: String,
     @SerialName("ordinal") val `ordinal`: Long?,
+    @SerialName("requestPriceLimit") val `requestPriceLimit`: AdminTaskAttemptRequestPriceLimit? = null,
+    @SerialName("cancellationReason") val `cancellationReason`: VoiceCancellationReason? = null,
+    @SerialName("holdStatus") val `holdStatus`: String? = null,
     @SerialName("status") val `status`: String,
     @SerialName("errorCode") val `errorCode`: String?,
     @SerialName("sent") val `sent`: String,
@@ -7788,6 +7791,12 @@ data class ModelAccessAdminEndpointsTestUpstreamParams(
 )
 
 @Serializable
+data class ModelAccessAdminEndpointsTestUpstreamQuery(
+    @EncodeDefault
+    @SerialName("quotaVerified") val `quotaVerified`: String? = "yes",
+)
+
+@Serializable
 data class ModelAccessAdminEndpointsUpdateArenaNameParams(
     @SerialName("modelKey") val `modelKey`: String,
 )
@@ -13099,6 +13108,8 @@ data class VoiceAdminEndpointsUpdateVoiceParams(
     @SerialName("voiceId") val `voiceId`: Id,
 )
 
+typealias VoiceCancellationReason = String
+
 @Serializable
 data class VoiceContent(
     @EncodeDefault
@@ -13631,6 +13642,13 @@ data class AdminSearchEntityUpdateInputSourcesItem(
 data class AdminSupportTicketTarget(
     @SerialName("type") val `type`: String,
     @SerialName("id") val `id`: Id,
+)
+
+@Serializable
+data class AdminTaskAttemptRequestPriceLimit(
+    @SerialName("estimatedSellMicros") val `estimatedSellMicros`: Long,
+    @SerialName("limitMicros") val `limitMicros`: Long,
+    @SerialName("priceVersionId") val `priceVersionId`: Id,
 )
 
 @Serializable

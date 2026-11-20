@@ -438,8 +438,42 @@ export class UpstreamService {
     });
   }
 
+  /** 管理员的真实模型测试已获得供应商输出用量；仅恢复测试所用账号的同一次额度隔离。 */
+  async restoreTestedQuota(adminId: string, tested: Upstream, startedAt: number): Promise<void> {
+    await this.database.transaction(async (tx) => {
+      const locked = await this.lock(tx, tested.upstreamId);
+      if (
+        locked.status !== 'quota_exhausted' ||
+        locked.statusChangedAt.toISOString() !== tested.statusChangedAt ||
+        locked.baseUrl !== tested.baseUrl ||
+        locked.kind !== tested.kind ||
+        (locked.keyRotatedAt?.getTime() ?? 0) > startedAt
+      )
+        return;
+      const now = this.clock.now();
+      await tx.db
+        .update(upstreams)
+        .set({ lastTestedAt: now, cooldownUntil: null, consecutiveFailures: 0, lastError: null })
+        .where(eq(upstreams.id, locked.id));
+      await this.applyStatus(tx, locked, 'active', 'admin_test', null, true);
+      await this.audit.record(
+        {
+          module: 'model_access',
+          action: 'upstream.quota_verified',
+          actorType: 'admin',
+          actorId: adminId,
+          targetType: 'upstream',
+          targetId: locked.id,
+          details: { evidence: 'model_test_output' },
+        },
+        tx,
+      );
+    });
+  }
+
   /** 手动连通测试：用已保存的密钥测试并刷新状态（失败也返回 200 + 新状态）。 */
-  async test(adminId: string, upstreamId: string): Promise<Upstream> {
+  async test(adminId: string, upstreamId: string, quotaVerified = false): Promise<Upstream> {
+    const startedAt = this.clock.nowMs();
     const row = await this.get(upstreamId);
     const failure = await this.withApiKey(upstreamId, (apiKey) =>
       this.runProbe(row.kind as Kind, row.baseUrl, apiKey),
@@ -448,6 +482,14 @@ export class UpstreamService {
     this.forgetKeyCheck(upstreamId);
     return this.database.transaction(async (tx) => {
       const locked = await this.lock(tx, upstreamId);
+      if (
+        locked.statusChangedAt.getTime() !== row.statusChangedAt.getTime() ||
+        locked.status !== row.status ||
+        locked.baseUrl !== row.baseUrl ||
+        locked.kind !== row.kind ||
+        (locked.keyRotatedAt?.getTime() ?? 0) > startedAt
+      )
+        return this.getIn(tx, upstreamId);
       await tx.db
         .update(upstreams)
         .set({
@@ -458,7 +500,21 @@ export class UpstreamService {
             : { cooldownUntil: null, consecutiveFailures: 0, lastError: null }),
         })
         .where(eq(upstreams.id, upstreamId));
-      await this.applyStatus(tx, locked, statusAfterTest(failure), 'admin_test', failure);
+      const next = statusAfterTest(failure);
+      // 硬隔离中的账号自检超时，不能因此降为允许自动探测的临时故障。
+      if (!(
+        failure &&
+        next === 'unavailable' &&
+        (locked.status === 'invalid' || locked.status === 'quota_exhausted')
+      ))
+        await this.applyStatus(
+          tx,
+          locked,
+          next,
+          'admin_test',
+          failure,
+          quotaVerified && row.status === 'quota_exhausted',
+        );
       await this.audit.record(
         {
           module: 'model_access',
@@ -467,7 +523,7 @@ export class UpstreamService {
           actorId: adminId,
           targetType: 'upstream',
           targetId: upstreamId,
-          details: { result: failure ?? 'ok' },
+          details: { result: failure ?? 'ok', ...(quotaVerified ? { quotaVerified: true } : {}) },
         },
         tx,
       );
@@ -578,6 +634,12 @@ export class UpstreamService {
         .where(eq(upstreams.id, upstreamId))
         .for('update');
       if (!row || row.deletedAt) return false;
+      // 在途成功、临时故障或旧探针均不能解除账号级隔离。恢复须经管理员验证。
+      if (
+        (row.status === 'invalid' || row.status === 'quota_exhausted') &&
+        (status === 'active' || status === 'unavailable')
+      )
+        return false;
       return this.applyStatus(tx, row, status, source, failure);
     });
   }
@@ -751,7 +813,15 @@ export class UpstreamService {
     next: UpstreamStatus,
     source: StatusSource,
     failure: UpstreamTestFailure | string | null,
+    quotaVerified = false,
   ): Promise<boolean> {
+    // 列模型和换密钥都不能证明供应商账户有可用额度。
+    if (
+      row.status === 'quota_exhausted' &&
+      next !== row.status &&
+      !(next === 'active' && quotaVerified)
+    )
+      return false;
     if (row.status === next) return false;
     const now = this.clock.now();
     await tx.db

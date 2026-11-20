@@ -1,7 +1,7 @@
 /** 持久幂等占位先于冻结；结果先于结算保存，进程重启可重放结算而不再次调用上游。 */
 import { Inject, Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type {
   GenerateTextInput,
   GenerateTextOutput,
@@ -87,9 +87,22 @@ export class GenerationCache {
     await this.database.db
       .update(generationResults)
       .set({ ciphertext, phase })
-      .where(eq(generationResults.id, row.id));
+      .where(and(eq(generationResults.id, row.id), eq(generationResults.replayBlocked, false)));
+  }
+  /** 无法核实结果时保留原请求的去重凭据；没有保存任何生成内容。 */
+  async markInterrupted(row: GenerationRow, blockReplay: boolean): Promise<void> {
+    await this.database.db
+      .update(generationResults)
+      .set({
+        phase: 'complete',
+        replayBlocked: blockReplay,
+        ciphertext: null,
+      })
+      .where(and(eq(generationResults.id, row.id), eq(generationResults.phase, 'pending')));
   }
   async open(row: GenerationRow): Promise<CachedResult> {
+    if (row.phase === 'complete' && !row.ciphertext)
+      return { ok: false, error: 'provider_unavailable', message: 'interrupted' };
     if (!row.ciphertext) throw new Error('网关结果尚未写入');
     const buffer = await this.crypto.open(row.userId, `generation:${row.id}`, row.ciphertext);
     try {

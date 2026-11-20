@@ -38,6 +38,7 @@ export {
   AdminTaskFilter,
   AdminModelTask,
   AdminTaskAttempt,
+  VoiceCancellationReason,
 } from './model-outcomes.js';
 
 // ---------- 模型目录 ----------
@@ -1489,8 +1490,9 @@ export const ModelAccessAdminEndpoints = {
     path: `${API_PREFIX}/admin/model/upstreams/:upstreamId/test`,
     auth: 'admin',
     params: z.object({ upstreamId: Id }),
+    query: z.object({ quotaVerified: z.literal('yes').optional() }),
     response: Upstream,
-    summary: '手动连通测试，刷新状态',
+    summary: '手动连通测试，可附管理员已核实供应商额度的确认',
   }),
   deleteUpstream: defineEndpoint({
     method: 'DELETE',

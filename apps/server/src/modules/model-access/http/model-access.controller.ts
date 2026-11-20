@@ -540,8 +540,9 @@ export class ModelAdminController {
   testUpstream(
     @CurrentPrincipal() me: AuthPrincipal,
     @Param(new ContractPipe(schema(A.testUpstream.params))) params: { upstreamId: string },
+    @Query(new ContractPipe(schema(A.testUpstream.query))) query: Out<typeof A.testUpstream.query>,
   ): Promise<Upstream> {
-    return this.upstreams.test(me.userId, params.upstreamId);
+    return this.upstreams.test(me.userId, params.upstreamId, query.quotaVerified === 'yes');
   }
 
   @Delete('upstreams/:upstreamId')

@@ -90,6 +90,21 @@ export type ReserveError =
   | 'concurrency_limited' // 3.27：同一用户同时进行的付费调用已达上限（网关对外报 provider_unavailable）
   | 'request_too_large'; // 3.27：单次预估超过异常巨额拦截线（网关对外报 budget_exceeded）
 
+/** 触发保护时本次请求的定价快照，金额均为人民币微元，未扣款。 */
+export interface RequestPriceLimit {
+  estimatedSellMicros: number;
+  limitMicros: number;
+  priceVersionId: string;
+}
+export type ReserveResult =
+  | PortResult<ReserveOutput, Exclude<ReserveError, 'request_too_large'>>
+  | {
+      ok: false;
+      error: 'request_too_large';
+      message: string;
+      requestPriceLimit: RequestPriceLimit;
+    };
+
 export interface SettleInput {
   holdId: string;
   /** model-access 的用量记录 ID：同一个 ID 只扣一次（幂等）。 */
@@ -201,7 +216,7 @@ export interface BillingReservationPort {
    * 原子地冻结用户（或平台账户）的钱，同时预留平台每日成本预算（billing.md 第 7 节，Q-007）；
    * 任一不够即整体失败，不留半个冻结。
    */
-  estimateAndReserve(input: ReserveInput): Promise<PortResult<ReserveOutput, ReserveError>>;
+  estimateAndReserve(input: ReserveInput): Promise<ReserveResult>;
   settle(input: SettleInput): Promise<SettleOutput>;
   /** v1.1：返回值由 void 改为 ReleaseOutput（尚无实现，调用方可忽略返回值）。 */
   release(input: ReleaseInput): Promise<ReleaseOutput>;

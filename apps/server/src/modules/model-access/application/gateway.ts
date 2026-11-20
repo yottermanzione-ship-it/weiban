@@ -268,6 +268,7 @@ export class ModelGateway implements ModelGatewayPort {
     if (
       first.ok ||
       [
+        'interrupted',
         'concurrency_limited',
         'non_retryable_response',
         'auth_check_unavailable',
@@ -340,6 +341,7 @@ export class ModelGateway implements ModelGatewayPort {
       lastFailure = result;
       if (
         [
+          'interrupted',
           'concurrency_limited',
           'non_retryable_response',
           'auth_check_unavailable',
@@ -915,6 +917,8 @@ export class ModelGateway implements ModelGatewayPort {
           await this.recorder.finish(usage.record.id, {
             status: 'failed',
             errorCode: reserve.error,
+            requestPriceLimit:
+              reserve.error === 'request_too_large' ? reserve.requestPriceLimit : undefined,
             inputTokens: 0,
             cachedInputTokens: 0,
             outputTokens: 0,
@@ -1401,13 +1405,13 @@ export class ModelGateway implements ModelGatewayPort {
       if (row.phase === 'result') return this.finalize(row, await this.cache.open(row));
       // 不确定的在途调用不重发，避免进程崩溃后重复向供应商付费。
       if (this.clock.nowMs() - row.createdAt.getTime() > 90000)
-        return { ok: false, error: 'provider_unavailable' };
+        return { ok: false, error: 'provider_unavailable', message: 'interrupted' };
       await new Promise<void>((resolve) => setTimeout(resolve, 100));
       const next = await this.cache.get(row.id);
       if (!next) return { ok: false, error: 'bad_request' };
       row = next;
     }
-    return { ok: false, error: 'provider_unavailable' };
+    return { ok: false, error: 'provider_unavailable', message: 'interrupted' };
   }
   /**
    * T-071：把 images 读成 data URL（只在服务器内部，不落日志）。读取失败的图片跳过。

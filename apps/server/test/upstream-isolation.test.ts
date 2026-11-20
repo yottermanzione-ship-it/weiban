@@ -192,7 +192,7 @@ describeDb('T-20261104a 上游判定自检与用户之间拦截隔离（真实�
       'UPDATE model_access.upstreams SET consecutive_failures = 0, cooldown_until = NULL WHERE id = $1',
       [upstreamId],
     );
-    await app.get(UpstreamService).reportStatus(upstreamId, 'active', 'probe');
+    await app.get(UpstreamService).test(admin, upstreamId);
     await app.get(UpstreamScheduler).recordSuccess(upstreamId, modelKey);
     app.get(UpstreamService).forgetKeyCheck(upstreamId);
     calls = 0;

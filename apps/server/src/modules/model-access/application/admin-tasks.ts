@@ -277,6 +277,7 @@ ${taskCte}
      SELECT u.id AS "usageRecordId",to_char(u.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "cursorStamp",u.created_at AS "createdAt",u.completed_at AS "completedAt",u.model_key AS "modelKey",
        u.upstream_id AS "upstreamId",account.name AS "upstreamName",u.upstream_model_id AS "upstreamModelId",
        u.input_tokens AS "inputTokens",u.cached_input_tokens AS "cachedInputTokens",u.output_tokens AS "outputTokens",u.cache_write_5m_tokens AS "cacheWrite5mTokens",u.cache_write_1h_tokens AS "cacheWrite1hTokens",u.reasoning_tokens AS "reasoningTokens",u.price_version_id AS "priceVersionId",
+       u.request_price_limit AS "requestPriceLimit", u.cancellation_reason AS "cancellationReason",
        a.ordinal,u.status,u.error_code AS "errorCode",u.cost_micros::float8 AS "costMicros",u.absorbed_cost_micros::float8 AS "absorbedCostMicros",
        u.cost_known AS "costKnown",u.estimated,u.latency_ms AS "latencyMs",u.hold_id AS "holdId",a.phase,
        a.bound_snapshot->'dispatchTiming' AS timing,a.bound_snapshot->'providerDiagnostic' AS "providerDiagnostic"
@@ -295,11 +296,12 @@ ${taskCte}
       ]) ?? [],
     ]);
     const versionLabels = new Map(versions.map((v) => [v.id, v.label]));
-    const risk = new Map(holds.map((h) => [h.holdId, h.risk]));
+    const byHold = new Map(holds.map((h) => [h.holdId, h]));
     const items: AdminTaskAttempt[] = rows.map(
       ({ holdId, phase, timing, providerDiagnostic, cursorStamp: _stamp, ...r }) => {
         const t = dataObject(timing),
-          sentAt = holdId ? risk.get(holdId)?.sentAt : undefined;
+          hold = holdId ? byHold.get(holdId) : undefined,
+          sentAt = hold?.risk?.sentAt;
         const amt = amounts.get(r.usageRecordId);
         if (!amt) throw new AppError('service_unavailable', '账本返回不完整');
         const sent =
@@ -309,14 +311,15 @@ ${taskCte}
               ? 'authorized'
               : r.errorCode === 'route_risk_blocked' ||
                   (!holdId && preflight[r.errorCode ?? '']) ||
-                  risk.get(holdId ?? '')?.phase === 'reserved' ||
+                  hold?.risk?.phase === 'reserved' ||
                   (r.errorCode === 'cancelled' &&
-                    risk.has(holdId ?? '') &&
-                    risk.get(holdId ?? '')?.phase === 'resolved')
+                    hold?.status === 'released' &&
+                    hold.risk?.phase === 'resolved')
                 ? 'not_sent'
                 : 'unknown';
         return {
           ...r,
+          holdStatus: hold?.status ?? null,
           ...amt,
           priceVersionLabel: r.priceVersionId
             ? (versionLabels.get(r.priceVersionId) ?? null)

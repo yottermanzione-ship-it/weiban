@@ -10,6 +10,7 @@ import { DATABASE, TestClock, newId, type Database } from '../src/platform/index
 import { IdentityCommands } from '../src/modules/identity/index.js';
 import {
   BillingAdminService,
+  PostpaidSettingsService,
   PriceService,
   ReservationService,
 } from '../src/modules/billing/testing.js';
@@ -29,6 +30,8 @@ import {
   UsageRecorder,
   GatewayMaintenance,
   AdminUsageService,
+  AdminTaskService,
+  ModelTestService,
   ModelGatewayMedia,
   WebToolsStore,
 } from '../src/modules/model-access/testing.js';
@@ -329,7 +332,13 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
       'UPDATE model_access.upstreams SET consecutive_failures = 0, cooldown_until = NULL WHERE id = $1',
       [upstreamId],
     );
-    await app.get(UpstreamService).reportStatus(upstreamId, 'active', 'probe');
+    const actualMode = mode;
+    try {
+      mode = 'ok';
+      await app.get(UpstreamService).test(admin, upstreamId, true);
+    } finally {
+      mode = actualMode;
+    }
     await app.get(UpstreamScheduler).recordSuccess(upstreamId, modelKey);
     // T-20261104a：密钥自检结论缓存 60 秒，用例之间清掉，免得上一个用例的结论带到下一个。
     app.get(UpstreamService).forgetKeyCheck(upstreamId);
@@ -677,6 +686,33 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
         });
       expect(calls).toBe(attempts);
       expect((await app.get(UpstreamService).get(upstreamId)).status).toBe(status);
+      if (failure === 'invalid' || failure === 'quota') {
+        const scheduler = app.get(UpstreamScheduler),
+          service = app.get(UpstreamService);
+        await scheduler.recordSuccess(upstreamId, modelKey); // 已在途的成功回包。
+        await service.reportStatus(upstreamId, 'active', 'probe'); // 隔离前启动的成功探针。
+        expect((await service.get(upstreamId)).status).toBe(status);
+        expect((await gateway.generateText(input())).ok).toBe(false);
+        expect(calls).toBe(attempts);
+        const alertKind = failure === 'quota' ? 'upstream_quota_exhausted' : 'upstream_invalid';
+        const raised = await db.query(
+          "SELECT 1 FROM platform.outbox WHERE event_type='platform.admin_alert_raised' AND event->'payload'->>'kind'=$1 AND event->'payload'->'refs'->>'upstreamId'=$2",
+          [alertKind, upstreamId],
+        );
+        expect(raised.rowCount).toBeGreaterThan(0);
+        mode = 'ok';
+        if (failure === 'quota') {
+          expect((await service.test(admin, upstreamId)).status).toBe('quota_exhausted');
+          expect(await scheduler.plan(modelKey, null)).toEqual([]);
+        }
+        expect((await service.test(admin, upstreamId, failure === 'quota')).status).toBe('active');
+        if (failure === 'quota') {
+          await service.reportStatus(upstreamId, 'quota_exhausted', 'gateway', 'quota_exhausted');
+          const verified = await app.get(ModelTestService).test(admin, modelKey);
+          expect(verified.routes.some((r) => r.ok && (r.outputTokens ?? 0) > 0)).toBe(true);
+          expect((await service.get(upstreamId)).status).toBe('active');
+        }
+      }
       if (failure === 'down') {
         const scheduler = app.get(UpstreamScheduler);
         expect(scheduler.isRouteCooling(modelKey, upstreamId)).toBe(true);
@@ -770,6 +806,16 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
     await expect(gateway.generateText(request)).rejects.toThrow('simulated DB outage');
     const again = await gateway.generateText(request);
     expect(again.ok).toBe(true);
+    expect(await gateway.generateText(request)).toEqual(again);
+    if (!again.ok) throw Error('已保存的结果应可重放');
+    expect(
+      (
+        await db.query(
+          'SELECT 1 FROM billing.ledger_entries WHERE usage_record_id=$1 AND NOT absorbed',
+          [again.value.usageRecordId],
+        )
+      ).rowCount,
+    ).toBe(1);
     expect(calls).toBe(1);
     spy.mockRestore();
   });
@@ -801,7 +847,7 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
     await app.get(GatewayMaintenance).probeUpstreams();
     expect((await app.get(UpstreamService).get(upstreamId)).status).toBe('active');
     const row = await app.get(GenerationCache).claim(input());
-    clock.advance(91000);
+    clock.advance(151000);
     await app.get(GatewayMaintenance).recover();
     expect((await app.get(GenerationCache).get(row.row.id))?.phase).toBe('complete');
     clock.advance(86400001);
@@ -1014,4 +1060,99 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
     );
     expect(chargesAfter.rows[0]!.n - chargesBefore.rows[0]!.n).toBe(1);
   });
+  it('超额拦截的任务明细与计费审计同价；没有供应商请求、冻结或派发', async () => {
+    const settings = app.get(PostpaidSettingsService),
+      previous = await settings.get();
+    const taskKey = newId();
+    try {
+      await settings.update(admin, { largeRequestLimitPoints: 1 });
+      expect((await gateway.generateText(input({ taskKey }))).ok).toBe(false);
+      expect(calls).toBe(0);
+      const page = await app.get(AdminTaskService).attempts({ taskKey, limit: 10 });
+      expect(page.items).toHaveLength(1);
+      const item = page.items[0]!;
+      const audit = (
+        await db.query<{ details: { estimateMicros: number; limitMicros: number } }>(
+          "SELECT details FROM platform.audit_log WHERE action='postpaid.request_too_large' ORDER BY occurred_at DESC,id DESC LIMIT 1",
+        )
+      ).rows[0]!;
+      expect(item).toMatchObject({
+        sent: 'not_sent',
+        errorCode: 'request_too_large',
+        chargedMicros: 0,
+        costMicros: 0,
+        ordinal: null,
+        requestPriceLimit: {
+          estimatedSellMicros: audit.details.estimateMicros,
+          limitMicros: audit.details.limitMicros,
+          priceVersionId: item.priceVersionId,
+        },
+      });
+      expect(item.requestPriceLimit!.estimatedSellMicros).toBeGreaterThan(10000);
+      expect(
+        (
+          await db.query('SELECT hold_id FROM model_access.usage_records WHERE id=$1', [
+            item.usageRecordId,
+          ])
+        ).rows[0]!.hold_id,
+      ).toBeNull();
+    } finally {
+      await settings.update(admin, { largeRequestLimitPoints: previous.largeRequestLimitPoints });
+    }
+  });
+
+  it.each([true, false])(
+    '供应商调用已发出，计量回执已存=%s：原键跨日重放不再次派单或扣款',
+    async (receiptSaved) => {
+      const cache = app.get(GenerationCache),
+        maintenance = app.get(GatewayMaintenance);
+      const request = input({ taskKey: newId() });
+      const prevTime = clock.nowMs();
+      // 两个断点分别位于持久化计量回执之前、写入加密结果之前。
+      const failure = new Error('simulated interruption');
+      const save = receiptSaved
+        ? vi.spyOn(cache, 'save').mockRejectedValueOnce(failure)
+        : vi.spyOn(app.get(UsageRecorder), 'finishAttempt').mockRejectedValueOnce(failure);
+      try {
+        await expect(gateway.generateText(request)).rejects.toThrow('simulated interruption');
+        save.mockRestore();
+        expect(calls).toBe(1);
+        clock.advance(151000);
+        await maintenance.recover();
+        expect((await cache.claim(request)).row.phase).toBe('pending');
+        expect(await gateway.generateText(request)).toMatchObject({
+          ok: false,
+          message: 'interrupted',
+        });
+        clock.advance(600000);
+        await maintenance.recover();
+        const recovered = (await cache.claim(request)).row;
+        expect(recovered).toMatchObject({
+          phase: 'complete',
+          ciphertext: null,
+          replayBlocked: true,
+        });
+        clock.advance(86400001);
+        await maintenance.recover();
+        expect(await gateway.generateText(request)).toMatchObject({
+          ok: false,
+          message: 'interrupted',
+        });
+        const [record] = (
+          await app.get(AdminTaskService).attempts({ taskKey: request.taskKey!, limit: 5 })
+        ).items;
+        expect(record).toMatchObject({
+          status: 'failed',
+          errorCode: 'interrupted',
+          costKnown: receiptSaved,
+          inputTokens: receiptSaved ? 70 : 0,
+          chargedMicros: 0,
+        });
+        expect(calls).toBe(1);
+      } finally {
+        save.mockRestore();
+        clock.set(prevTime);
+      }
+    },
+  );
 });

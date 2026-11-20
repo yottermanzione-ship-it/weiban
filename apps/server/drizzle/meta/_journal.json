@@ -329,9 +329,7 @@
       "version": "7",
       "when": 1795600000000,
       "tag": "0056_account_deletion",
-      "dependsOn": [
-        "0060_plaza"
-      ],
+      "dependsOn": ["0060_plaza"],
       "breakpoints": true
     },
     {
@@ -1095,6 +1093,13 @@
       "version": "7",
       "when": 1795203300000,
       "tag": "0168_model_task_outcomes",
+      "breakpoints": true
+    },
+    {
+      "idx": 169,
+      "version": "7",
+      "when": 1795203360000,
+      "tag": "0169_billing_dispatch_evidence",
       "breakpoints": true
     }
   ]

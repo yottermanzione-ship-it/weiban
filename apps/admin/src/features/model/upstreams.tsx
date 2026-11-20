@@ -52,6 +52,8 @@ import {
 /** 3.24：测试结果的大白话（失败时写清楚是密钥、余额还是网络）。 */
 function testResultText(u: Upstream, ms: number): string {
   if (u.status === 'active') return `连通正常，耗时 ${ms}ms`;
+  if (u.status === 'quota_exhausted' && !u.lastError)
+    return '账号连通，仍需核实供应商额度后恢复派单。';
   const reason =
     u.status === 'invalid'
       ? '密钥无效'
@@ -95,7 +97,7 @@ export function UpstreamsTab({
       (!query.trim() || u.name.includes(query.trim())),
   );
 
-  async function test(ids: string[]) {
+  async function test(ids: string[], quotaVerified = false) {
     if (!ids.length) return;
     setTesting(ids);
     setError('');
@@ -104,6 +106,7 @@ export function UpstreamsTab({
       if (ids.length === 1) {
         const result = await api.call(ModelAccessAdminEndpoints.testUpstream, {
           params: { upstreamId: ids[0]! },
+          query: quotaVerified ? { quotaVerified: 'yes' } : {},
         });
         const text = testResultText(result, Math.round(performance.now() - started));
         if (result.status === 'active') toast.success(text);
@@ -409,8 +412,21 @@ export function UpstreamsTab({
       fixed: 'right',
       render: (_, u) => (
         <Space size={4}>
-          <Button type="link" size="small" onClick={() => void test([u.upstreamId])}>
-            测试
+          <Button
+            type="link"
+            size="small"
+            onClick={() => {
+              if (u.status !== 'quota_exhausted') return void test([u.upstreamId]);
+              modal.confirm({
+                title: `恢复「${u.name}」的调用？`,
+                content: '请先在供应商账户核实可用额度。确认后将测试连接，成功后恢复派单。',
+                okText: '额度已核实，测试恢复',
+                cancelText: '取消',
+                onOk: () => test([u.upstreamId], true),
+              });
+            }}
+          >
+            {u.status === 'quota_exhausted' ? '核实额度并恢复' : '测试'}
           </Button>
           <Button type="link" size="small" onClick={() => setEditing(u)}>
             编辑

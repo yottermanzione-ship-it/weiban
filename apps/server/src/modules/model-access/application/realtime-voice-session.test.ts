@@ -179,6 +179,12 @@ describe('实时语音会话：按回应分模态 token 计费', () => {
     expect(result.chargedMicros).toBe(100);
     // 预冻结的下一段没用上：直接释放，不留残余冻结
     expect(ops.cancelCharge).toHaveBeenCalledTimes(1);
+    expect(ops.cancelCharge).toHaveBeenCalledWith(
+      expect.objectContaining({ sent: false }),
+      'unused_realtime_segment',
+    );
+    await session.close();
+    expect(ops.cancelCharge).toHaveBeenCalledTimes(1);
     expect(ops.failUnknown).not.toHaveBeenCalled();
   });
 

@@ -10,6 +10,7 @@
  */
 import type {
   GenerateError,
+  VoiceCancellationReason,
   MediaCallResult,
   RealtimeVoiceEvent,
   RealtimeVoiceSession,
@@ -31,7 +32,7 @@ export interface RealtimeBillingOps<C extends { sent: boolean; usageRecordId: st
   ): Promise<{ ok: true; value: MediaCallResult } | { ok: false; error: GenerateError }>;
   /** 已发给供应商却拿不到用量：按「成本待核」释放，不按估算扣用户。 */
   failUnknown(charge: C): Promise<void>;
-  cancelCharge(charge: C): Promise<void>;
+  cancelCharge(charge: C, reason: VoiceCancellationReason): Promise<void>;
 }
 
 interface ResponseState<C> {
@@ -70,6 +71,7 @@ export class RealtimeVoice<
   private active: ResponseState<C> | null = null;
   private readonly inflight = new Set<ResponseState<C>>();
   private ended = false;
+  private unusedReason: VoiceCancellationReason = 'unused_realtime_segment';
   private closed = false;
   private closing: Promise<MediaCallResult> | null = null;
   private chargedMicros = 0;
@@ -183,6 +185,7 @@ export class RealtimeVoice<
   private end(reason: 'insufficient_balance' | 'time_limit' | 'failed'): void {
     if (this.ended || this.closed) return;
     this.ended = true;
+    this.unusedReason = `realtime_${reason}`;
     this.interrupt();
     this.emit({ kind: 'ended', reason });
   }
@@ -300,7 +303,7 @@ export class RealtimeVoice<
         charge = next.value;
       }
       if (!charge.sent && !(await this.ops.beginCharge(charge))) {
-        await this.ops.cancelCharge(charge);
+        await this.ops.cancelCharge(charge, 'authorization_denied');
         response.cancelled = true;
         this.conn.cancelResponse();
         this.end('failed');
@@ -377,7 +380,7 @@ export class RealtimeVoice<
       const pending = this.pending;
       this.pending = null;
       if (pending.sent) await this.ops.failUnknown(pending);
-      else await this.ops.cancelCharge(pending);
+      else await this.ops.cancelCharge(pending, this.unusedReason);
     }
     this.endStream();
     return {

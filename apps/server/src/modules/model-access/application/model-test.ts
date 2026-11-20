@@ -228,6 +228,12 @@ export class ModelTestService {
           outputTokens: null,
         };
       }
+      if (
+        upstream.status === 'quota_exhausted' &&
+        outcome.errorCode === null &&
+        (outcome.outputTokens ?? 0) > 0
+      )
+        await this.upstreams.restoreTestedQuota(adminId, upstream, started);
       routes.push({
         upstreamId: target.upstreamId,
         upstreamName: upstream.name,
