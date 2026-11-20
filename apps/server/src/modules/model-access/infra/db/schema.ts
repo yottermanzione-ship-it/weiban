@@ -316,6 +316,7 @@ export const usageRecords = modelAccessSchema.table(
   'usage_records',
   {
     id: uuid('id').primaryKey(),
+    taskKey: uuid('task_key'),
     createdAt: tz('created_at').notNull(),
     completedAt: tz('completed_at'),
     /** 发起调用的用户；平台账户调用为发起操作的管理员。 */
@@ -376,6 +377,7 @@ export const usageRecords = modelAccessSchema.table(
   },
   (t) => [
     uniqueIndex('usage_records_idempotency_key').on(t.idempotencyKey),
+    index('usage_records_task_idx').on(t.taskKey, t.createdAt, t.id),
     index('usage_records_created_idx').on(t.createdAt, t.id),
     index('usage_records_user_created_idx').on(t.userId, t.createdAt),
     index('usage_records_character_created_idx').on(t.characterId, t.createdAt),
@@ -482,3 +484,23 @@ export const sharedSearchReceipts = modelAccessSchema.table('shared_search_recei
   items: jsonb('items').notNull().$type<import('@weiban/contracts').WebSearchResultItem[]>(),
   createdAt: tz('created_at').notNull(),
 });
+
+/** 业务确认回执不存模型输出。单任务最终状态与原始调用分开保留。 */
+export const taskOutcomes = modelAccessSchema.table(
+  'task_outcomes',
+  {
+    taskKey: uuid('task_key').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    purpose: text('purpose').notNull(),
+    state: text('state').notNull(),
+    reason: text('reason'),
+    usageRecordId: uuid('usage_record_id'),
+    retryAt: tz('retry_at'),
+    createdAt: tz('created_at').notNull(),
+    updatedAt: tz('updated_at').notNull(),
+  },
+  (t) => [
+    index('task_outcomes_created_idx').on(t.createdAt, t.taskKey),
+    index('task_outcomes_user_idx').on(t.userId),
+  ],
+);

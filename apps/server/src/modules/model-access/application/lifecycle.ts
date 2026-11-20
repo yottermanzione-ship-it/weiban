@@ -28,6 +28,7 @@ import {
   scenarioSelections,
   selections,
   usageRecords,
+  taskOutcomes,
   generationResults,
   generationAttempts,
   platformPurposeLimits,
@@ -155,6 +156,10 @@ export class ModelAccessLifecycle implements OnModuleInit, UserDataOwner {
 
   async purgeUser(userId: string): Promise<number> {
     return this.database.transaction(async (tx) => {
+      const tasks = await tx.db
+        .delete(taskOutcomes)
+        .where(eq(taskOutcomes.userId, userId))
+        .returning({ id: taskOutcomes.taskKey });
       const a = await tx.db
         .delete(selections)
         .where(eq(selections.userId, userId))
@@ -197,6 +202,7 @@ export class ModelAccessLifecycle implements OnModuleInit, UserDataOwner {
         )
         .returning();
       return (
+        tasks.length +
         search.length +
         a.length +
         b.length +
@@ -252,7 +258,12 @@ export class ModelAccessLifecycle implements OnModuleInit, UserDataOwner {
       .select({ n: count() })
       .from(characterScenarioOverrides)
       .where(eq(characterScenarioOverrides.userId, userId));
+    const [tasks] = await this.database.db
+      .select({ n: count() })
+      .from(taskOutcomes)
+      .where(eq(taskOutcomes.userId, userId));
     return (
+      Number(tasks?.n ?? 0) +
       (search?.n ?? 0) +
       (e?.n ?? 0) +
       (f?.n ?? 0) +
