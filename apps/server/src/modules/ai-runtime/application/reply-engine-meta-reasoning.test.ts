@@ -55,8 +55,9 @@ function harness(outputs: string[], queuedText?: string) {
   let stored: unknown = queuedText ? { snapshot, bubbles: [queuedText], care: false } : null;
   const update = () => ({
     set: (values: Record<string, unknown>) => ({
-      where: async () => {
+      where: () => {
         Object.assign(row, values);
+        return { returning: async () => [{ ...row }] };
       },
     }),
   });
@@ -80,6 +81,7 @@ function harness(outputs: string[], queuedText?: string) {
     };
   });
   const warn = vi.fn();
+  const receipt = vi.fn();
   const postMessage = vi.fn(async (input: { content: MessageContent }) => ({
     ok: true as const,
     value: { messageId: randomUUID(), content: input.content },
@@ -94,6 +96,7 @@ function harness(outputs: string[], queuedText?: string) {
         part === 'input' ? snapshot : stored,
       db: { db: { update }, transaction: async (fn: (tx: unknown) => unknown) => fn(tx) },
       seal,
+      receipt,
       schedule: async () => undefined,
     },
     context: {
@@ -112,7 +115,7 @@ function harness(outputs: string[], queuedText?: string) {
     clock: { now: () => now, nowMs: () => now.getTime() },
     logger: { warn },
   });
-  return { row, run: () => engine.run(row.id), generateText, postMessage, seal, warn };
+  return { row, run: () => engine.run(row.id), generateText, postMessage, seal, warn, receipt };
 }
 
 describe('私聊正文检查', () => {
@@ -126,6 +129,7 @@ describe('私聊正文检查', () => {
     expect(h.postMessage.mock.calls.map(([input]) => input.content)).toEqual([
       { type: 'text', text: NORMAL },
     ]);
+    expect(h.receipt.mock.calls.map((call) => call[2])).toEqual(['delivered']);
   });
 
   it('补写后仍是思考则等待，没有待发结果', async () => {
@@ -134,6 +138,9 @@ describe('私聊正文检查', () => {
     expect(h.row).toMatchObject({ status: 'waiting', failure: 'provider_unavailable' });
     expect(h.seal).not.toHaveBeenCalled();
     expect(h.postMessage).not.toHaveBeenCalled();
+    expect(h.receipt.mock.calls.map((call) => call.slice(2, 4))).toEqual([
+      ['deferred', 'provider_unavailable'],
+    ]);
     const [first, retry] = h.generateText.mock.calls.map(([input]) => input);
     expect(h.generateText).toHaveBeenCalledTimes(2);
     expect(retry!.messages.slice(0, -1)).toEqual(first!.messages);
@@ -159,5 +166,6 @@ describe('私聊正文检查', () => {
     expect(h.row).toMatchObject({ status: 'waiting', resultCiphertext: null });
     expect(h.generateText).not.toHaveBeenCalled();
     expect(h.postMessage).not.toHaveBeenCalled();
+    expect(h.receipt.mock.calls.map((call) => call[2])).toEqual(['deferred']);
   });
 });
