@@ -1126,6 +1126,85 @@ RETURNING seq::text AS seq, message_id`;
       choice.mockRestore();
     }
   });
+  it('原消息上的未送达状态、隔离与并发重试，后续交谈不会冒充这条回复', async () => {
+    const originalResponse = response;
+    const choice = vi
+      .spyOn(engine.quirks, 'choose')
+      .mockResolvedValue({ kind: 'none', respondAt: null, typingCycles: 0 });
+    const statuses = (messageId: string) =>
+      http()
+        .post(`/api/v1/conversations/${cid}/reply-statuses`)
+        .set('Authorization', auth())
+        .send({ messageIds: [messageId] });
+    const retry = (messageId: string, epoch: number) =>
+      http()
+        .post(`/api/v1/conversations/${cid}/messages/${messageId}/retry-reply`)
+        .set('Authorization', auth())
+        .send({ epoch });
+    try {
+      failure = 'provider_unavailable';
+      const missed = await user('测试原消息，约在图书馆门口。');
+      await finish(missed.id);
+      expect((await statuses(missed.triggerId)).body.items).toEqual([
+        expect.objectContaining({ messageId: missed.triggerId, state: 'waiting', canRetry: true }),
+      ]);
+      failure = null;
+      response = '下一条独立消息收到了。';
+      await finish((await user('这是一条后发的独立消息。')).id);
+      await store.recover(userId);
+      await finish(missed.id);
+      const old = (await store.get(missed.id))!;
+      expect(old.status).toBe('cancelled');
+      expect((await statuses(missed.triggerId)).body.items[0]).toMatchObject({
+        state: 'failed',
+        epoch: old.retryEpoch,
+      });
+      expect(
+        (
+          await http()
+            .post(`/api/v1/conversations/${newId()}/messages/${missed.triggerId}/retry-reply`)
+            .set('Authorization', auth())
+            .send({ epoch: old.retryEpoch })
+        ).status,
+      ).toBe(404);
+      const both = await Promise.all([
+        retry(missed.triggerId, old.retryEpoch),
+        retry(missed.triggerId, old.retryEpoch),
+      ]);
+      expect(both.map((r) => r.status)).toEqual([200, 200]);
+      expect((await store.get(missed.id))?.retryEpoch).toBe(old.retryEpoch + 1);
+      response = '就约在图书馆门口。';
+      const before = calls.filter((c) => c.purpose === 'chat_reply').length;
+      await finish(missed.id);
+      expect((await store.get(missed.id))?.status).toBe('done');
+      expect(calls.filter((c) => c.purpose === 'chat_reply').length - before).toBe(1);
+      expect((await statuses(missed.triggerId)).body.items).toEqual([]);
+      expect((await retry(missed.triggerId, old.retryEpoch)).body.issue).toBeNull();
+      const sent = await db.query<{ n: number }>(
+        'SELECT count(*)::int n FROM chat.messages WHERE conversation_id=$1 AND client_msg_id=$2',
+        [cid, 'reply:' + missed.triggerId + ':0'],
+      );
+      expect(sent.rows[0]!.n).toBe(1);
+      failure = 'provider_unavailable';
+      const hidden = await user('一条待隐藏的合成消息。');
+      await finish(hidden.id);
+      expect((await retry(hidden.triggerId, 0)).body.issue?.state).toBe('retrying');
+      await http()
+        .post(`/api/v1/conversations/${cid}/messages/${hidden.triggerId}/hide`)
+        .set('Authorization', auth())
+        .send({});
+      expect((await statuses(hidden.triggerId)).body.items).toEqual([]);
+      expect((await retry(hidden.triggerId, 0)).status).toBe(404);
+      const callsBeforeHide = calls.length;
+      await finish(hidden.id);
+      expect((await store.get(hidden.id))?.failure).toBe('source_unavailable');
+      expect(calls.length).toBe(callsBeforeHide);
+    } finally {
+      failure = null;
+      response = originalResponse;
+      choice.mockRestore();
+    }
+  });
   it('已有私聊从连续相同的开头恢复，保留原文并允许自然确认在场', async () => {
     const previous = response;
     const choice = vi.spyOn(engine.quirks, 'choose').mockResolvedValue({

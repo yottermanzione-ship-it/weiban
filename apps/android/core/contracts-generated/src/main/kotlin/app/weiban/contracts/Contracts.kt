@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 7.14. Regenerate: pnpm android:generate
+// Contract 7.15. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "7.14"
+const val CONTRACT_VERSION: String = "7.15"
 
 @Serializable
 data class AccountAlias(
@@ -666,6 +666,32 @@ data class AdminModelPreview(
 )
 
 @Serializable
+data class AdminModelTask(
+    @SerialName("taskKey") val `taskKey`: Id,
+    @SerialName("userId") val `userId`: Id,
+    @SerialName("userLabel") val `userLabel`: AdminUserLabel?,
+    @SerialName("conversationKind") val `conversationKind`: String?,
+    @SerialName("promptTemplateVersion") val `promptTemplateVersion`: String?,
+    @SerialName("startedAt") val `startedAt`: Timestamp,
+    @SerialName("updatedAt") val `updatedAt`: Timestamp,
+    @SerialName("purpose") val `purpose`: String,
+    @SerialName("state") val `state`: AdminTaskState,
+    @SerialName("retryAt") val `retryAt`: Timestamp?,
+    @SerialName("reason") val `reason`: String?,
+    @SerialName("attemptCount") val `attemptCount`: Long,
+    @SerialName("failedAttempts") val `failedAttempts`: Long,
+    @SerialName("modelCount") val `modelCount`: Long,
+    @SerialName("firstModel") val `firstModel`: String?,
+    @SerialName("lastModel") val `lastModel`: String?,
+    @SerialName("rescued") val `rescued`: Boolean,
+    @SerialName("chargedMicros") val `chargedMicros`: Long,
+    @SerialName("refundedMicros") val `refundedMicros`: Long?,
+    @SerialName("reportedCostMicros") val `reportedCostMicros`: Long,
+    @SerialName("estimatedCostMicros") val `estimatedCostMicros`: Long,
+    @SerialName("pendingCosts") val `pendingCosts`: Long,
+)
+
+@Serializable
 data class AdminModelTestResult(
     @SerialName("modelKey") val `modelKey`: String,
     @SerialName("enabled") val `enabled`: Boolean,
@@ -1121,6 +1147,74 @@ data class AdminSupportTicket(
     @SerialName("nickname") val `nickname`: String?,
     @SerialName("handledBy") val `handledBy`: Id?,
 )
+
+@Serializable
+data class AdminTaskAttempt(
+    @SerialName("usageRecordId") val `usageRecordId`: Id,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("completedAt") val `completedAt`: Timestamp?,
+    @SerialName("modelKey") val `modelKey`: String,
+    @SerialName("upstreamId") val `upstreamId`: Id,
+    @SerialName("upstreamName") val `upstreamName`: String?,
+    @SerialName("upstreamModelId") val `upstreamModelId`: String,
+    @SerialName("ordinal") val `ordinal`: Long?,
+    @SerialName("status") val `status`: String,
+    @SerialName("errorCode") val `errorCode`: String?,
+    @SerialName("sent") val `sent`: String,
+    @SerialName("costMicros") val `costMicros`: Long,
+    @SerialName("chargedMicros") val `chargedMicros`: Long,
+    @SerialName("refundedMicros") val `refundedMicros`: Long?,
+    @SerialName("absorbedCostMicros") val `absorbedCostMicros`: Long,
+    @SerialName("costKnown") val `costKnown`: Boolean,
+    @SerialName("estimated") val `estimated`: Boolean,
+    @SerialName("latencyMs") val `latencyMs`: Long,
+    @SerialName("inputTokens") val `inputTokens`: Long,
+    @SerialName("cachedInputTokens") val `cachedInputTokens`: Long,
+    @SerialName("cacheWrite5mTokens") val `cacheWrite5mTokens`: Long,
+    @SerialName("cacheWrite1hTokens") val `cacheWrite1hTokens`: Long,
+    @SerialName("outputTokens") val `outputTokens`: Long,
+    @SerialName("reasoningTokens") val `reasoningTokens`: Long?,
+    @SerialName("priceVersionId") val `priceVersionId`: Id?,
+    @SerialName("priceVersionLabel") val `priceVersionLabel`: String?,
+    @SerialName("overallRemainingMs") val `overallRemainingMs`: Long?,
+    @SerialName("crossModelReserveMs") val `crossModelReserveMs`: Long?,
+    @SerialName("routePriority") val `routePriority`: Long?,
+    @SerialName("deadlineMs") val `deadlineMs`: Long?,
+    @SerialName("timeoutMs") val `timeoutMs`: Long?,
+    @SerialName("progressTimeoutMs") val `progressTimeoutMs`: Long?,
+    @SerialName("adapterElapsedMs") val `adapterElapsedMs`: Long?,
+    @SerialName("diagnostic") val `diagnostic`: AdminTaskAttemptDiagnostic?,
+)
+
+@Serializable
+data class AdminTaskFilter(
+    @SerialName("from") val `from`: Timestamp,
+    @SerialName("to") val `to`: Timestamp,
+    @SerialName("state") val `state`: AdminTaskState? = null,
+    @SerialName("rescued") val `rescued`: Boolean? = null,
+    @SerialName("userIds") val `userIds`: List<Id>? = null,
+    @SerialName("usageRecordId") val `usageRecordId`: Id? = null,
+    @SerialName("purpose") val `purpose`: ModelPurpose? = null,
+    @SerialName("modelKey") val `modelKey`: String? = null,
+    @SerialName("upstreamId") val `upstreamId`: Id? = null,
+    @SerialName("errorCode") val `errorCode`: String? = null,
+)
+
+@Serializable
+data class AdminTaskFilterInput(
+    @SerialName("from") val `from`: Timestamp,
+    @SerialName("to") val `to`: Timestamp,
+    @SerialName("state") val `state`: AdminTaskState? = null,
+    @SerialName("rescued") val `rescued`: Boolean? = null,
+    @SerialName("userIds") val `userIds`: List<Id>? = null,
+    @SerialName("usageRecordId") val `usageRecordId`: Id? = null,
+    @SerialName("purpose") val `purpose`: ModelPurpose? = null,
+    @SerialName("modelKey") val `modelKey`: String? = null,
+    @SerialName("upstreamId") val `upstreamId`: Id? = null,
+    @SerialName("errorCode") val `errorCode`: String? = null,
+)
+
+typealias AdminTaskState = String
 
 @Serializable
 data class AdminTopupEntry(
@@ -7724,6 +7818,17 @@ data class ModelAccessAdminEndpointsUpstreamModelReferencesResponse(
 )
 
 @Serializable
+data class ModelAccessAdminUsageEndpointsExportModelTasksBody(
+    @SerialName("filter") val `filter`: AdminTaskFilterInput,
+)
+
+@Serializable
+data class ModelAccessAdminUsageEndpointsExportModelTasksResponse(
+    @SerialName("items") val `items`: List<AdminModelTask>,
+    @SerialName("truncated") val `truncated`: Boolean,
+)
+
+@Serializable
 data class ModelAccessAdminUsageEndpointsExportUsageRecordsBody(
     @SerialName("filter") val `filter`: AdminUsageFilterInput,
 )
@@ -7732,6 +7837,32 @@ data class ModelAccessAdminUsageEndpointsExportUsageRecordsBody(
 data class ModelAccessAdminUsageEndpointsExportUsageRecordsResponse(
     @SerialName("items") val `items`: List<AdminUsageRecord>,
     @SerialName("truncated") val `truncated`: Boolean,
+)
+
+@Serializable
+data class ModelAccessAdminUsageEndpointsListModelTasksBody(
+    @SerialName("filter") val `filter`: AdminTaskFilterInput,
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
+@Serializable
+data class ModelAccessAdminUsageEndpointsListModelTasksResponse(
+    @SerialName("items") val `items`: List<AdminModelTask>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class ModelAccessAdminUsageEndpointsListTaskAttemptsBody(
+    @SerialName("taskKey") val `taskKey`: Id,
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+)
+
+@Serializable
+data class ModelAccessAdminUsageEndpointsListTaskAttemptsResponse(
+    @SerialName("items") val `items`: List<AdminTaskAttempt>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
 )
 
 @Serializable
@@ -7745,6 +7876,18 @@ data class ModelAccessAdminUsageEndpointsListUsageRecordsBody(
 data class ModelAccessAdminUsageEndpointsListUsageRecordsResponse(
     @SerialName("items") val `items`: List<AdminUsageRecord>,
     @SerialName("nextCursor") val `nextCursor`: String?,
+)
+
+@Serializable
+data class ModelAccessAdminUsageEndpointsModelTaskOverviewBody(
+    @SerialName("filter") val `filter`: AdminTaskFilterInput,
+)
+
+@Serializable
+data class ModelAccessAdminUsageEndpointsModelTaskOverviewResponse(
+    @SerialName("total") val `total`: Long,
+    @SerialName("rescued") val `rescued`: Long,
+    @SerialName("states") val `states`: List<ModelAccessAdminUsageEndpointsModelTaskOverviewResponseStatesItem>,
 )
 
 @Serializable
@@ -10231,6 +10374,46 @@ data class ReminderWrite(
     @SerialName("health") val `health`: Boolean,
     @SerialName("bypassDoNotDisturb") val `bypassDoNotDisturb`: Boolean,
     @SerialName("enabled") val `enabled`: Boolean,
+)
+
+@Serializable
+data class ReplyDeliveryEndpointsRetryBody(
+    @SerialName("epoch") val `epoch`: Long,
+)
+
+@Serializable
+data class ReplyDeliveryEndpointsRetryParams(
+    @SerialName("conversationId") val `conversationId`: Id,
+    @SerialName("messageId") val `messageId`: Id,
+)
+
+@Serializable
+data class ReplyDeliveryEndpointsRetryResponse(
+    @SerialName("issue") val `issue`: ReplyDeliveryIssue?,
+)
+
+@Serializable
+data class ReplyDeliveryEndpointsStatusesBody(
+    @SerialName("messageIds") val `messageIds`: List<Id>,
+)
+
+@Serializable
+data class ReplyDeliveryEndpointsStatusesParams(
+    @SerialName("conversationId") val `conversationId`: Id,
+)
+
+@Serializable
+data class ReplyDeliveryEndpointsStatusesResponse(
+    @SerialName("items") val `items`: List<ReplyDeliveryIssue>,
+)
+
+@Serializable
+data class ReplyDeliveryIssue(
+    @SerialName("messageId") val `messageId`: Id,
+    @SerialName("state") val `state`: String,
+    @SerialName("reason") val `reason`: String,
+    @SerialName("epoch") val `epoch`: Long,
+    @SerialName("canRetry") val `canRetry`: Boolean,
 )
 
 @Serializable
@@ -13451,6 +13634,23 @@ data class AdminSupportTicketTarget(
 )
 
 @Serializable
+data class AdminTaskAttemptDiagnostic(
+    @SerialName("stage") val `stage`: String? = null,
+    @SerialName("httpStatus") val `httpStatus`: Long? = null,
+    @SerialName("providerCode") val `providerCode`: String? = null,
+    @SerialName("requestId") val `requestId`: String? = null,
+    @SerialName("retryAfterMs") val `retryAfterMs`: Long? = null,
+    @SerialName("lastDataMs") val `lastDataMs`: Long? = null,
+    @SerialName("lastProgressMs") val `lastProgressMs`: Long? = null,
+    @SerialName("firstProgressMs") val `firstProgressMs`: Long? = null,
+    @SerialName("emptyKind") val `emptyKind`: String? = null,
+    @SerialName("requestField") val `requestField`: String? = null,
+    @SerialName("switchReason") val `switchReason`: String? = null,
+    @SerialName("failureDomain") val `failureDomain`: String? = null,
+    @SerialName("rateLimitScope") val `rateLimitScope`: String? = null,
+)
+
+@Serializable
 data class AdminUsageOverviewAccounts(
     @SerialName("total") val `total`: Long,
     @SerialName("available") val `available`: Long,
@@ -15060,6 +15260,12 @@ data class ModelAccessAdminEndpointsUpstreamModelReferencesResponseItemsItem(
     @SerialName("modelKey") val `modelKey`: AdminModelKey,
     @SerialName("displayName") val `displayName`: String,
     @SerialName("upstreamModelId") val `upstreamModelId`: String,
+)
+
+@Serializable
+data class ModelAccessAdminUsageEndpointsModelTaskOverviewResponseStatesItem(
+    @SerialName("state") val `state`: AdminTaskState,
+    @SerialName("count") val `count`: Long,
 )
 
 @Serializable

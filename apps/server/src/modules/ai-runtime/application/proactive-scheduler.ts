@@ -23,6 +23,7 @@ import { BrainContextService, brainMessages, brainTail } from './brain.js';
 import { SharedEpisodesService } from './shared-episodes.js';
 import { and, asc, desc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import {
+  Id,
   type BillingReadPort,
   type CharacterReadPort,
   type ChatParticipantPort,
@@ -36,6 +37,8 @@ import {
   type IdentityReadPort,
   type MessageContent,
   type ModelGatewayPort,
+  MODEL_TASK_OUTCOME_PORT,
+  type ModelTaskOutcomePort,
   type MediaReadPort,
   type PolicyPort,
   type ProactiveMessagePort,
@@ -100,6 +103,8 @@ import { EcologySettingsService } from './ecology-settings.js';
 import { characterView, roleDefaultVoiceId } from './character-view.js';
 import { withoutBlocked } from './model-blocked-messages.js';
 import { healthPrivate } from '../domain/memory.js';
+import { modelFailureReason } from '../domain/model-failure.js';
+import { modelTaskKey } from '../../../platform/index.js';
 import type { EcologyActionKey } from '@weiban/contracts';
 
 /**
@@ -380,6 +385,9 @@ export class ProactiveSchedulerService {
     @Optional() @Inject(GROWTH_PET_READ_PORT) private readonly pets?: PetReadPort,
     @Optional() @Inject(GROWTH_PET_ALBUM) private readonly album?: PetAlbum,
     @Optional() @Inject(LOGGER) private readonly logger?: Logger,
+    @Optional()
+    @Inject(MODEL_TASK_OUTCOME_PORT)
+    private readonly taskOutcomes?: ModelTaskOutcomePort,
   ) {}
 
   private readonly handlers: Array<{ prefix: string; handle: ProactivePlanHandler }> = [];
@@ -1272,6 +1280,7 @@ export class ProactiveSchedulerService {
       ecologyTask: !care,
       responseFormat: 'text',
       idempotencyKey: `proactive:${plan.id}${care && adult && !privateModel ? ':care-normal' : ''}`,
+      taskKey: modelTaskKey(plan.userId, 'proactive:' + plan.id),
       messages: [
         ...brainMessages(
           (privateModel ? privateBrain : normalBrain)!,
@@ -1317,7 +1326,7 @@ ${careNote}`
       result = await this.adultBoundary.generate(request, adultUsed);
     }
     if (!result.ok) {
-      return this.fail(plan, `model_${result.error}`);
+      return this.fail(plan, `model_${modelFailureReason(result)}`);
     }
     // 先剥掉形式标记再检查完整正文，不能让思考文本进入拆条或语音合成。
     const prepare = (text: string) => {
@@ -1333,7 +1342,7 @@ ${careNote}`
         characterId: plan.characterId,
       });
       result = await this.adultBoundary.generate(metaReasoningRetryInput(request), adultUsed);
-      if (!result.ok) return this.fail(plan, `model_${result.error}`, textCharged);
+      if (!result.ok) return this.fail(plan, `model_${modelFailureReason(result)}`, textCharged);
       textCharged += result.value.chargedMicros;
       marked = prepare(result.value.text);
       if (looksLikeMetaReasoning(marked.text)) return this.fail(plan, 'output_guard', textCharged);
@@ -1606,6 +1615,16 @@ ${careNote}`
           .update(proactivePlans)
           .set({ status: 'sent', outcome: 'sent', messageId: firstId, updatedAt: this.clock.now() })
           .where(eq(proactivePlans.id, plan.id));
+        await this.taskOutcomes?.record(
+          {
+            taskKey: modelTaskKey(plan.userId, 'proactive:' + plan.id),
+            userId: plan.userId,
+            purpose: 'proactive',
+            state: 'delivered',
+            usageRecordId: Id.safeParse(charge.usageRecordId).success ? charge.usageRecordId : null,
+          },
+          tx,
+        );
         await this.audit.record(
           {
             module: 'ai_runtime',
@@ -1677,15 +1696,45 @@ ${careNote}`
   }
 
   private async drop(plan: Plan, outcome: string): Promise<void> {
-    await this.db.db
-      .update(proactivePlans)
-      .set({ status: 'dropped', outcome, updatedAt: this.clock.now() })
-      .where(
-        and(
-          eq(proactivePlans.id, plan.id),
-          inArray(proactivePlans.status, ['planned', 'generating']),
-        ),
-      );
+    await this.db.transaction(async (tx) => {
+      const changed = await tx.db
+        .update(proactivePlans)
+        .set({ status: 'dropped', outcome, updatedAt: this.clock.now() })
+        .where(
+          and(
+            eq(proactivePlans.id, plan.id),
+            inArray(proactivePlans.status, ['planned', 'generating']),
+          ),
+        )
+        .returning({ id: proactivePlans.id });
+      if (
+        changed.length &&
+        (outcome.startsWith('model_') ||
+          outcome === 'output_guard' ||
+          outcome === 'relationship_changed')
+      ) {
+        const code = outcome.replace(/^model_/, '');
+        const blocked = ['budget_exceeded', 'insufficient_balance', 'request_too_large'].includes(
+          code,
+        );
+        await this.taskOutcomes?.record(
+          {
+            taskKey: modelTaskKey(plan.userId, 'proactive:' + plan.id),
+            userId: plan.userId,
+            purpose: 'proactive',
+            state: blocked
+              ? 'blocked'
+              : outcome === 'output_guard'
+                ? 'filtered'
+                : outcome === 'relationship_changed'
+                  ? 'cancelled'
+                  : 'failed',
+            reason: /^[a-z][a-z0-9_]{0,79}$/.test(code) ? code : 'provider_unavailable',
+          },
+          tx,
+        );
+      }
+    });
   }
 
   private async dropWhere(where: ReturnType<typeof and>, outcome: string): Promise<void> {

@@ -253,7 +253,7 @@ type ContextRequest = Omit<
     | 'kind'
   >,
   'kind'
-> & { kind: ReplyPlan['kind'] | 'call' };
+> & { kind: ReplyPlan['kind'] | 'call'; failure?: string | null };
 export interface CallContextInput {
   userId: string;
   characterId: string;
@@ -403,8 +403,8 @@ export class ReplyContext {
     const latest = history.filter((m) => m.senderKind !== 'system').at(-1);
     // 旧气泡可以在新用户消息之后送达，不能把‘最后一条是角色’当作新用户已被回复。
     const answered = await this.store.db.query<{ seq: string }>(
-      "SELECT coalesce(max(trigger_seq),0) seq FROM ai_runtime.reply_plans WHERE conversation_id=$1 AND kind='message' AND (status='done' OR (status='sending' AND next_bubble>0))",
-      [row.conversationId],
+      "SELECT coalesce(max(trigger_seq),0) seq FROM ai_runtime.reply_plans WHERE conversation_id=$1 AND kind='message' AND ($2::bigint IS NULL OR trigger_seq<$2) AND (status='done' OR (status='sending' AND next_bubble>0))",
+      [row.conversationId, row.failure === 'manual_retry' ? row.triggerSeq : null],
     );
     if (row.kind === 'message' && Number(answered.rows[0]?.seq ?? 0) >= row.triggerSeq) return null;
     if (row.kind === 'message' && latest?.senderKind !== 'user' && !forceCareFallback) return null;

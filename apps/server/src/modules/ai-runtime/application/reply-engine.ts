@@ -15,6 +15,7 @@ import {
   AUDIT_LOG,
   CLOCK,
   LOGGER,
+  modelTaskKey,
   OUTBOX,
   type Outbox,
   P01_REPLY_DELAY,
@@ -29,6 +30,7 @@ import { MODEL_GATEWAY_PORT, MODEL_PLATFORM_GATEWAY_PORT } from '../../model-acc
 import { replyPlans } from '../infra/db/schema.js';
 import { ReplyPlanStore, type ReplyPlan } from './plan-store.js';
 import { ReplyContext, ReplySnapshot } from './reply-context.js';
+import { modelFailureReason } from '../domain/model-failure.js';
 import { recordBlocked, withoutBlocked } from './model-blocked-messages.js';
 import { callModelForCare, careFallback } from './safety-care.js';
 import { HEALTH_LABEL } from './health-care.js';
@@ -42,6 +44,7 @@ import {
   fixedPrefix,
   lateRecoveryHint,
   permanentFailure,
+  retryableWait,
   waitRetryDelayMs,
 } from '../domain/reply-delivery.js';
 import {
@@ -82,6 +85,7 @@ const Result = z.object({
   charge: z
     .object({ usageRecordId: z.string().nullable(), chargedMicros: z.number().nonnegative() })
     .optional(),
+  usageRecordId: z.string().optional(),
 });
 @Injectable()
 export class ReplyEngine {
@@ -123,6 +127,13 @@ export class ReplyEngine {
     if (!row) return;
     if (row.status === 'sending') {
       await this.emit(row);
+      return;
+    }
+    if (
+      row.failure === 'manual_retry' &&
+      !(await this.store.db.transaction((tx) => this.store.manualTriggerVisible(row, tx)))
+    ) {
+      await this.store.cancel(id, 'source_unavailable');
       return;
     }
     const snapshot = row.inputCiphertext
@@ -314,7 +325,7 @@ export class ReplyEngine {
       else if ((!answer.ok && answer.error === 'content_rejected') || answer.ok)
         bubbles = splitReply(snapshot.deflect, snapshot.splitBubbles);
       else {
-        await this.wait(row, answer.error);
+        await this.wait(row, modelFailureReason(answer));
         return;
       }
     }
@@ -505,6 +516,7 @@ export class ReplyEngine {
         care: inCare,
         ...(contents ? { contents } : {}),
         ...(charge.chargedMicros > 0 ? { charge } : {}),
+        ...(charge.usageRecordId ? { usageRecordId: charge.usageRecordId } : {}),
       });
       const elapsed = this.clock.nowMs() - Date.parse(snapshot.triggerAt);
       const base = inCare ? 0 : replyDelay(bubbles.join(''), snapshot.instantReply, elapsed);
@@ -654,6 +666,7 @@ export class ReplyEngine {
       responseFormat: 'text',
       // 聊天由网关按当前模型核准的总输出能力分配，包含思考与图片描述，不再统一截成 600/900。
       idempotencyKey: `ai:${row.id}:${row.retryEpoch}:${suffix}`,
+      taskKey: modelTaskKey(row.userId, 'reply:' + row.id),
       meta: {
         personaVersion: snapshot.personaVersion,
         promptTemplateVersion: snapshot.promptTemplateVersion,
@@ -711,24 +724,42 @@ export class ReplyEngine {
   }
   private async wait(row: ReplyPlan, reason: string): Promise<void> {
     // T-20261103e：due_at 记下次巡检最早什么时候再试（按已恢复次数退避）；只有可重试的失败会被巡检捡起。
-    await this.store.db.db
-      .update(replyPlans)
-      .set({
-        status: 'waiting',
-        failure: reason,
-        resultCiphertext: null,
-        leaseId: null,
-        leaseUntil: null,
-        dueAt: new Date(this.clock.nowMs() + waitRetryDelayMs(row.retryEpoch)),
-      })
-      .where(
-        and(
-          eq(replyPlans.id, row.id),
-          row.status === 'sending'
-            ? and(eq(replyPlans.status, 'sending'), eq(replyPlans.nextBubble, 0))
-            : eq(replyPlans.leaseId, row.leaseId!),
-        ),
-      );
+    await this.store.db.transaction(async (tx) => {
+      const dueAt = new Date(this.clock.nowMs() + waitRetryDelayMs(row.retryEpoch));
+      const [updated] = await tx.db
+        .update(replyPlans)
+        .set({
+          status: 'waiting',
+          failure: reason,
+          resultCiphertext: null,
+          leaseId: null,
+          leaseUntil: null,
+          dueAt,
+        })
+        .where(
+          and(
+            eq(replyPlans.id, row.id),
+            row.status === 'sending'
+              ? and(eq(replyPlans.status, 'sending'), eq(replyPlans.nextBubble, 0))
+              : eq(replyPlans.leaseId, row.leaseId!),
+          ),
+        )
+        .returning();
+      if (updated) {
+        const blocked = ['insufficient_balance', 'budget_exceeded', 'request_too_large'].includes(
+          reason,
+        );
+        const scheduled = retryableWait(reason);
+        await this.store.receipt(
+          tx,
+          updated,
+          blocked ? 'blocked' : scheduled ? 'deferred' : 'failed',
+          reason,
+          null,
+          scheduled ? dueAt : undefined,
+        );
+      }
+    });
   }
   private logMetaReasoning(characterId: string): void {
     this.logger?.warn({
@@ -904,6 +935,13 @@ export class ReplyEngine {
           )) !== result.snapshot.memoryRevision
         )
           return;
+        if (
+          pending.failure === 'manual_retry' &&
+          !(await this.store.manualTriggerVisible(pending, tx))
+        ) {
+          await this.store.cancel(pending.id, 'source_unavailable', tx);
+          return;
+        }
         const posted = await this.writer.postMessage(
           {
             conversationId: row.conversationId,
@@ -933,7 +971,17 @@ export class ReplyEngine {
             .update(replyPlans)
             .set({ status: 'cancelled', inputCiphertext: null, resultCiphertext: null })
             .where(eq(replyPlans.id, row.id));
+          await this.store.receipt(tx, row, 'failed', 'delivery_unavailable');
           return;
+        }
+        if (row.nextBubble === (result.snapshot.quirk.kind === 'recall' && !result.care ? 1 : 0)) {
+          await this.store.receipt(
+            tx,
+            row,
+            'delivered',
+            null,
+            result.usageRecordId ?? result.charge?.usageRecordId,
+          );
         }
         if (
           posted.value.content?.type === 'image' &&

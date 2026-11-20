@@ -20,6 +20,60 @@ async function openChat(page: Page) {
   await expect(page.getByRole('heading', { name: '测试陪伴角色' })).toBeVisible();
   await expect(page.getByLabel('消息', { exact: true })).toBeVisible();
 }
+test('原消息上的回复状态展示、重试和积分入口', async ({ page }) => {
+  let target: string | null = null;
+  let state: 'failed' | 'retrying' | 'blocked' | 'done' = 'failed';
+  const attempts: number[] = [];
+  const receipt = () => ({
+    messageId: target,
+    epoch: state === 'failed' ? 2 : 3,
+    state,
+    reason: state === 'blocked' ? 'insufficient_balance' : 'provider_unavailable',
+    canRetry: state === 'failed',
+  });
+  await page.route('**/reply-statuses', async (route) => {
+    const ids: string[] = route.request().postDataJSON().messageIds;
+    await route.fulfill({
+      json: { items: target && ids.includes(target) && state !== 'done' ? [receipt()] : [] },
+    });
+  });
+  await page.route('**/messages/*/retry-reply', async (route) => {
+    expect(route.request().url()).toContain('/messages/' + target + '/retry-reply');
+    attempts.push(route.request().postDataJSON().epoch);
+    state = 'retrying';
+    await route.fulfill({ json: { issue: receipt() } });
+  });
+  const refresh = () =>
+    page.evaluate((itemId) => {
+      window.dispatchEvent(
+        new CustomEvent('weiban:update', {
+          detail: { type: 'data.changed', data: { section: 'reply_delivery', itemId } },
+        }),
+      );
+    }, target);
+  await openChat(page);
+  const text = '检查原消息上的角色回复';
+  await page.getByLabel('消息', { exact: true }).fill(text);
+  await page.getByRole('button', { name: '发送', exact: true }).click();
+  const original = page.locator('.wx-msg-row.mine').filter({ hasText: text });
+  await expect(original.getByText('已送达', { exact: true })).toBeVisible();
+  target = await original.evaluate(
+    (row) => row.closest('[data-row-key]')?.getAttribute('data-row-key') ?? null,
+  );
+  expect(target).toBeTruthy();
+  await refresh();
+  await original.getByRole('button', { name: '重试角色回复' }).click();
+  await expect(original.getByText('正在重新获取角色回复…')).toBeVisible();
+  expect(attempts).toEqual([2]);
+  state = 'blocked';
+  await refresh();
+  await expect(original.getByRole('link', { name: '查看积分' })).toHaveAttribute('href', '/wallet');
+  await expect(original.getByRole('button', { name: '重试角色回复' })).toHaveCount(0);
+  state = 'done';
+  await refresh();
+  await expect(original.getByRole('status')).toHaveCount(0);
+  await expect(original).toHaveCount(1);
+});
 test('较旧网页组件缺少取消组合和超时接口时，断开实时连接仍能登录发消息并刷新保留', async ({
   page,
 }) => {

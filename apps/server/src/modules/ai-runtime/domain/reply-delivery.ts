@@ -83,7 +83,15 @@ export function permanentFailure(error: unknown): string | null {
  * 积分不足（insufficient_balance）、没选模型（not_configured）这类要用户自己处理的，仍只由原触发点恢复；
  * 被拒绝、能力不够、请求过大这类重试也不会变的，不在其中。
  */
-export const RETRYABLE_WAIT_FAILURES = ['provider_unavailable', 'model_unavailable'] as const;
+export const RETRYABLE_WAIT_FAILURES = [
+  'provider_unavailable',
+  'model_unavailable',
+  'concurrency_limited',
+  'account_limited',
+  'route_unavailable_or_busy',
+  'insufficient_fallback_time',
+  'rate_limited',
+] as const;
 export function retryableWait(failure: string | null | undefined): boolean {
   return (RETRYABLE_WAIT_FAILURES as readonly string[]).includes(failure ?? '');
 }

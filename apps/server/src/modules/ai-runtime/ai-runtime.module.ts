@@ -27,6 +27,8 @@ import { ChatModule } from '../chat/index.js';
 import { CharactersModule } from '../characters/index.js';
 import { ModelAccessModule } from '../model-access/index.js';
 import { ReplyPlanStore } from './application/plan-store.js';
+import { ReplyDeliveryStatusService } from './application/reply-delivery-status.js';
+import { ReplyDeliveryController } from './http/reply-delivery.controller.js';
 import { ReplyContext } from './application/reply-context.js';
 import { ReplyEngine } from './application/reply-engine.js';
 import { AdultBoundaryService } from './application/adult-boundary.js';
@@ -165,6 +167,7 @@ import {
     ConversationMemoryService,
     MemoryTierService,
     ReplyPlanStore,
+    ReplyDeliveryStatusService,
     ReplyContext,
     ReplyEngine,
     AdultBoundaryService,
@@ -218,6 +221,7 @@ import {
     AI_ACTIVE_HOURS,
   ],
   controllers: [
+    ReplyDeliveryController,
     GroupCompanionController,
     CompanionSettingsController,
     MemoryController,

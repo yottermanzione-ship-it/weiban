@@ -255,6 +255,19 @@
   color: var(--wb-color-text-placeholder);
   font-size: var(--wb-font-size-caption2);
 }
+.wx-reply-delivery {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--wb-color-text-secondary);
+  font-size: var(--wb-font-size-caption2);
+}
+.wx-reply-delivery :is(button, a) {
+  color: var(--wb-color-text-link);
+}
 
 /*
  * 首屏加载态（10-25 反馈）：文案在整行内水平居中，不再靠左贴边；与搜索框、骨架屏之间留一点上下留白。

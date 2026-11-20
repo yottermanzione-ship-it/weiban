@@ -18,10 +18,13 @@
  *   朋友圈事件排期（moments-ai），所有人默认都有。
  */
 import { ROMANCE_TITLE_STAGE } from '../domain/relationship-stage.js';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import { modelFailureReason } from '../domain/model-failure.js';
 import { and, desc, eq, gte, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
 import {
   Id,
+  MODEL_TASK_OUTCOME_PORT,
+  type ModelTaskOutcomePort,
   type AdultModelReadPort,
   type CharacterReadPort,
   type ChatReadPort,
@@ -49,6 +52,7 @@ import {
   DATABASE,
   ENVELOPE_CRYPTO,
   JOB_QUEUE,
+  modelTaskKey,
   newId,
   parseContract,
   type Clock,
@@ -236,6 +240,12 @@ export interface EcologyRequestJob {
   text: string;
 }
 
+interface MurmurResult {
+  text: string | null;
+  chargedMicros: number;
+  usageRecordId?: string;
+  failure?: string;
+}
 @Injectable()
 export class EcologyService {
   constructor(
@@ -265,6 +275,9 @@ export class EcologyService {
     @Inject(MomentsAiService) private readonly momentsAi: MomentsAiService,
     @Inject(GroupChatService) private readonly groups: GroupChatService,
     @Inject(WeiboSyncService) private readonly weibo: WeiboSyncService,
+    @Optional()
+    @Inject(MODEL_TASK_OUTCOME_PORT)
+    private readonly taskOutcomes?: ModelTaskOutcomePort,
   ) {}
 
   // =========================================================================
@@ -381,10 +394,13 @@ export class EcologyService {
       modelKey?: string | null;
       chargedMicros?: number;
       murmur?: { userId: string; text: string } | null;
+      murmurReceipt?: { userId: string; result: MurmurResult } | null;
       latencyMs?: number;
     },
     tx?: DbTx,
   ): Promise<void> {
+    if (patch.murmurReceipt && this.taskOutcomes && !tx)
+      return this.db.transaction((transaction) => this.finish(runId, patch, transaction));
     const murmurCiphertext = patch.murmur
       ? await this.crypto.seal(
           patch.murmur.userId,
@@ -393,7 +409,7 @@ export class EcologyService {
           tx,
         )
       : undefined;
-    await (tx?.db ?? this.db.db)
+    const update = (tx?.db ?? this.db.db)
       .update(ecologyRuns)
       .set({
         status: patch.status,
@@ -407,6 +423,22 @@ export class EcologyService {
         finishedAt: this.clock.now(),
       })
       .where(eq(ecologyRuns.id, runId));
+    if (this.taskOutcomes && patch.murmurReceipt && tx) {
+      const written = await update.returning({ id: ecologyRuns.id });
+      if (!written.length) return;
+      const { userId, result } = patch.murmurReceipt;
+      await this.taskOutcomes.record(
+        {
+          userId,
+          purpose: 'behavior_planning',
+          taskKey: modelTaskKey(userId, 'eco:murmur:' + runId),
+          state: murmurCiphertext ? 'displayed' : result.failure ? 'failed' : 'filtered',
+          reason: murmurCiphertext ? null : (result.failure ?? 'display_filter'),
+          usageRecordId: result.usageRecordId,
+        },
+        tx,
+      );
+    } else await update;
   }
 
   // =========================================================================
@@ -458,6 +490,7 @@ export class EcologyService {
         // 碎碎念每天都要写（对照表 v3「TA 的生活」）：没做什么时也写一句中性的，
         // 只基于角色自己的生活素材，不编造。生成失败或被过滤就留空，不伪造。
         murmur: murmur?.text ? { userId, text: murmur.text } : null,
+        murmurReceipt: murmur ? { userId, result: murmur } : null,
         modelKey: extra.modelKey,
         chargedMicros: (extra.chargedMicros ?? 0) + (murmur?.chargedMicros ?? 0),
         latencyMs: this.clock.nowMs() - started,
@@ -541,6 +574,7 @@ export class EcologyService {
         modelKey: asked.modelKey,
         chargedMicros: charged + (murmur?.chargedMicros ?? 0),
         murmur: murmur?.text ? { userId, text: murmur.text } : null,
+        murmurReceipt: murmur ? { userId, result: murmur } : null,
         latencyMs: this.clock.nowMs() - started,
       });
     }
@@ -564,6 +598,7 @@ export class EcologyService {
       modelKey: asked.modelKey,
       chargedMicros: charged + (murmur?.chargedMicros ?? 0),
       murmur: murmur?.text ? { userId, text: murmur.text } : null,
+      murmurReceipt: murmur ? { userId, result: murmur } : null,
       latencyMs: this.clock.nowMs() - started,
     });
   }
@@ -635,7 +670,7 @@ export class EcologyService {
     run: RunRow,
     snapshot: Snapshot,
     doneSummaries: readonly string[],
-  ): Promise<{ text: string | null; chargedMicros: number } | null> {
+  ): Promise<MurmurResult | null> {
     // 碎碎念只是展示内容：任何失败（模型、资料、政策）都留空，绝不能打断唤醒本身。
     try {
       return await this.generateMurmurInner(run, snapshot, doneSummaries);
@@ -693,7 +728,7 @@ export class EcologyService {
     run: RunRow,
     snapshot: Snapshot,
     doneSummaries: readonly string[],
-  ): Promise<{ text: string | null; chargedMicros: number } | null> {
+  ): Promise<MurmurResult | null> {
     const role = await this.characters.getForRuntime(run.userId, run.characterId).catch(() => null);
     if (!role) return null;
     const policy = await this.policy
@@ -722,6 +757,7 @@ export class EcologyService {
           promptTemplateVersion: 'ecology-murmur-v1',
         },
         idempotencyKey: `eco:murmur:${run.id}`,
+        taskKey: modelTaskKey(run.userId, 'eco:murmur:' + run.id),
         messages: [
           {
             role: 'system',
@@ -735,11 +771,22 @@ export class EcologyService {
         ],
       })
       .catch(() => null);
-    if (!r?.ok) return null;
+    if (!r?.ok)
+      return {
+        text: null,
+        chargedMicros: 0,
+        failure: r ? modelFailureReason(r) : 'provider_unavailable',
+      };
     // 元话语 / 复述指令整条丢弃，不重试；超长按句末截断（见 domain/ecology-murmur.ts）。
     const text = finalizeMurmur(r.value.text);
     const safe = !!text && !healthPrivate(text) && outputAllowed(text, policy, false);
-    return { text: safe ? text : null, chargedMicros: r.value.chargedMicros };
+    return {
+      text: safe ? text : null,
+      chargedMicros: r.value.chargedMicros,
+      ...(Id.safeParse(r.value.usageRecordId).success
+        ? { usageRecordId: r.value.usageRecordId }
+        : {}),
+    };
   }
 
   /**
