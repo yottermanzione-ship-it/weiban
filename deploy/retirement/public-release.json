@@ -1,13 +1,13 @@
 {
   "version": "3.0.0",
-  "versionCode": 128,
+  "versionCode": 129,
   "minimumVersionCode": 127,
   "applicationId": "com.weiban.weiban",
-  "sizeBytes": 5440642,
-  "sha256": "0bfdf64df280e170772c3a35188fe18a9c4d9d01388696731a3bd0c94c365c7b",
+  "sizeBytes": 5539606,
+  "sha256": "b7a6d96ac4d4ab52c62ca34f389569bddf02a681883614048b2e69e79b64a916",
   "certificateSha256": "2eea5e32df600c2eacd709d712cb86d6a18e7cb68faca8f2962694a5f9b3a865",
-  "filename": "weiban-3.0.0-128-0bfdf64df280.apk",
-  "downloadUrl": "https://app.weiban.online/download-assets/weiban-3.0.0-128-0bfdf64df280.apk",
+  "filename": "weiban-3.0.0-129-b7a6d96ac4d4.apk",
+  "downloadUrl": "https://app.weiban.online/download-assets/weiban-3.0.0-129-b7a6d96ac4d4.apk",
   "webUrl": "https://app.weiban.online",
-  "notes": "微伴3.0.0正式版。直接覆盖安装，无需卸载；更新后使用原账号登录。网页版入口已统一，会员和积分随账号承接。"
+  "notes": "修复部分安卓手机停在绿色启动页的问题。请直接覆盖安装，保留本机数据。"
 }
