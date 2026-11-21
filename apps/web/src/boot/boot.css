@@ -12,13 +12,18 @@
 }
 #boot-splash {
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: 2147483000;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: env(safe-area-inset-top) 28px env(safe-area-inset-bottom);
+  padding: 16px 28px;
+  padding-top: calc(16px + env(safe-area-inset-top));
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  overflow-y: auto;
   background: #07c160;
   color: #fff;
   font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
@@ -26,12 +31,17 @@
   user-select: none;
   transition: opacity 0.35s ease;
 }
+#boot-splash::before {
+  content: '';
+  flex: 1 0 0;
+}
 #boot-splash.boot-out {
   opacity: 0;
   pointer-events: none;
 }
 #boot-splash .boot-logo {
   display: block;
+  flex: none;
   width: 88px;
   height: 88px;
   border-radius: 20px;
@@ -77,21 +87,35 @@
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
-/* 脚本一直没加载下来（断网 / 极慢）时 10 秒后给一句提示；JS 接管后不再显示（有 8 秒上限兜底）。 */
+/* 普通链接在主程序无法解析时也能重试。文案在进度条下方参与排版，可换行或随小屏滚动。 */
 #boot-splash .boot-slow {
-  position: absolute;
-  right: 28px;
-  bottom: calc(env(safe-area-inset-bottom) + 48px);
-  left: 28px;
-  color: rgba(255, 255, 255, 0.85);
+  flex: 1 0 0;
+  max-width: 28em;
+  margin: 12px 0 0;
+  color: #fff;
   font-size: 13px;
   line-height: 20px;
   text-align: center;
   opacity: 0;
+  visibility: hidden;
   animation: boot-slow 0.4s ease 10s forwards;
 }
+#boot-splash .boot-slow p {
+  margin: 0;
+}
+#boot-splash .boot-slow a {
+  display: inline-block;
+  padding: 12px;
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+}
 #boot-splash.boot-js .boot-slow {
-  display: none;
+  animation: none;
+}
+#boot-splash.boot-stalled .boot-slow {
+  visibility: visible;
+  opacity: 1;
 }
 @keyframes boot-creep {
   to {
@@ -100,6 +124,7 @@
 }
 @keyframes boot-slow {
   to {
+    visibility: visible;
     opacity: 1;
   }
 }

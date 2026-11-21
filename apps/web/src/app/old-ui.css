@@ -35,6 +35,7 @@ body {
   background: var(--wb-color-bg-page);
 }
 main {
+  min-height: 100vh;
   min-height: 100dvh;
 }
 

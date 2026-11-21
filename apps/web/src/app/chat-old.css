@@ -5,6 +5,7 @@
 .wx-chat {
   display: flex;
   flex-direction: column;
+  height: 100vh;
   height: 100dvh;
   max-width: none;
   padding: 0;

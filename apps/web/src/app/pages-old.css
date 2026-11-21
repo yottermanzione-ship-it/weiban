@@ -14,6 +14,7 @@
   display: flex;
   flex-direction: column;
   width: 100%;
+  height: 100vh;
   height: 100dvh;
   min-height: 0;
   margin: 0 auto;
@@ -2460,6 +2461,7 @@ button.primary.wx-auth-submit {
 .wx-welcome {
   display: flex;
   flex-direction: column;
+  min-height: 100vh;
   min-height: 100dvh;
   padding: env(safe-area-inset-top) var(--wb-space-6) calc(env(safe-area-inset-bottom) + 48px);
   background: var(--wb-color-bg-surface);

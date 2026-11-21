@@ -18,6 +18,8 @@ linkWorkspacePackages: false
 # 新增依赖如果要求运行脚本，安装会报 ERR_PNPM_IGNORED_BUILDS，需要在这里逐个表态：
 #   true = 允许运行；false = 明确不运行（安装不再报错）。改动须在交接说明里写理由。
 allowBuilds:
+  # core-js 的兼容实现随包提供，安装后的项目宣传提示无需运行。
+  core-js: false
   # esbuild（契约包的 tsx 带进来）的安装脚本只是校验 / 补装原生二进制；
   # 对应平台的预编译二进制已经通过 optionalDependencies 装好，不需要运行脚本。
   esbuild: false
