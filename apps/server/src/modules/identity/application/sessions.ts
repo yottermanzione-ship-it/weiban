@@ -43,6 +43,7 @@ import {
 import { sessions, users } from '../infra/db/schema.js';
 import { isValidTimeZone } from '../domain/rules.js';
 import { invalidTimeZone } from './settings.js';
+import { AdminApiKeyService } from './admin-api-keys.js';
 
 export type RevokeReason = 'logout' | 'revoked' | 'expired' | 'account_deleting';
 
@@ -62,6 +63,7 @@ export class SessionService implements SessionVerifier, IdentitySessionReadPort 
     @Inject(OUTBOX) private readonly outbox: Outbox,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(LOGGER) logger: Logger,
+    @Inject(AdminApiKeyService) private readonly apiKeys: AdminApiKeyService,
   ) {
     this.log = logger.child({ module: 'identity' });
   }
@@ -130,7 +132,8 @@ export class SessionService implements SessionVerifier, IdentitySessionReadPort 
       .from(sessions)
       .innerJoin(users, eq(users.id, sessions.userId))
       .where(eq(sessions.tokenHash, hashToken(token)));
-    if (!row) return null;
+    // 不是会话令牌时，再试管理员 API key（迁移 0172）。
+    if (!row) return this.apiKeys.verifyApiKey(token);
     if (row.expiresAt.getTime() <= now.getTime()) {
       await this.database.transaction((tx) =>
         this.revoke(tx, row.userId, row.sessionId, 'expired'),

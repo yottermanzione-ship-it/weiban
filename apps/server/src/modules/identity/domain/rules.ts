@@ -41,6 +41,39 @@ export function hashToken(token: string): Buffer {
   return createHash('sha256').update(token, 'utf8').digest();
 }
 
+// ---------- 管理员 API key ----------
+
+/** 管理员 API key 前缀。 */
+export const ADMIN_API_KEY_PREFIX = 'wbak_';
+
+/** base62（字母数字），生成 API key 随机部分用。 */
+const API_KEY_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+
+/**
+ * 生成管理员 API key 原文：wbak_ + 32 位 base62 随机字符（约 190 位随机）。
+ * 原文只在创建时返回一次；数据库只存它的 SHA-256 哈希。
+ */
+export function generateAdminApiKey(): string {
+  let raw = '';
+  for (let i = 0; i < 32; i += 1) raw += API_KEY_ALPHABET[randomInt(API_KEY_ALPHABET.length)];
+  return `${ADMIN_API_KEY_PREFIX}${raw}`;
+}
+
+/** API key 的可识别前缀（前 8 个字符），列表/日志里认 key 用，不含密钥材料。 */
+export function adminApiKeyPrefix(key: string): string {
+  return key.slice(0, 8);
+}
+
+/** API key 是否可用：未作废、未过期。 */
+export function isAdminApiKeyUsable(
+  key: { revokedAt: Date | null; expiresAt: Date | null },
+  now: Date,
+): boolean {
+  if (key.revokedAt) return false;
+  if (key.expiresAt && key.expiresAt.getTime() <= now.getTime()) return false;
+  return true;
+}
+
 // ---------- 登录锁定 ----------
 
 export interface FailureState {

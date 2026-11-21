@@ -23,6 +23,7 @@ await build({
     main: 'src/main.ts',
     migrate: 'src/cli/migrate.ts',
     identity: 'src/cli/identity.ts',
+    'admin-api-key': 'src/cli/admin-api-key.ts',
     'rotate-kek': 'src/cli/rotate-kek.ts',
     'seed-models': 'src/cli/seed-models.ts',
     'seed-presets': 'src/cli/seed-presets.ts',

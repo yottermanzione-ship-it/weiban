@@ -15,6 +15,7 @@
     "db:rollback": "tsx src/cli/migrate.ts down",
     "db:status": "tsx src/cli/migrate.ts status",
     "identity": "tsx src/cli/identity.ts",
+    "admin-api-key": "tsx src/cli/admin-api-key.ts",
     "models:seed": "tsx src/cli/seed-models.ts",
     "seed:presets": "tsx src/cli/seed-presets.ts",
     "seed:sticker-labels": "tsx src/cli/seed-sticker-labels.ts",

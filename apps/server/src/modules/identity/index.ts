@@ -19,6 +19,12 @@ export {
   IDENTITY_USER_STATUS_PORT,
 } from './tokens.js';
 export { IdentityCommands, CommandError } from './application/commands.js';
+export {
+  AdminApiKeyService,
+  AdminApiKeyError,
+  type CreatedAdminApiKey,
+  type AdminApiKeySummary,
+} from './application/admin-api-keys.js';
 export { isActiveMaintenanceAdmin } from './application/maintenance-admin.js';
 export { hashUserId } from './application/user-hash.js';
 
