@@ -1,4 +1,5 @@
 /// <reference lib="webworker" />
+import './app/compat-polyfills.js';
 import { z } from 'zod';
 import { clientsClaim } from 'workbox-core';
 import {

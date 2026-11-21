@@ -18,6 +18,9 @@ const webVersion = (
 const csp =
   "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'";
 const proxy = { '/api': { target: 'http://127.0.0.1:3000', changeOrigin: false, ws: true } };
+// 安卓壳使用手机上的 WebView。网页和离线 worker 必须都能被同一代内核解析。
+// Chromium 67 有原生 BigInt（金额和契约用到）；其余平台沿用原构建基线。
+const browserTargets = ['chrome67', 'edge111', 'firefox114', 'safari16.4', 'ios16.4'];
 /**
  * U8 启动页：index.html 里的绿色启动层要在第一帧就画出来。
  * - 启动层样式（src/boot/boot.css，约 2KB）单独成一个带哈希的文件，放在 <head> 最前面；
@@ -38,6 +41,7 @@ const bootCssFile = `assets/boot-${createHash('sha256').update(bootCssSource).di
  */
 const precacheOldUi = ['assets/old-ui/brand/icon.png'];
 export default defineConfig({
+  build: { target: browserTargets },
   define: {
     __WEB_BUILD__: JSON.stringify(buildNumber),
     __WEB_VERSION__: JSON.stringify(webVersion),
@@ -132,6 +136,7 @@ export default defineConfig({
         ],
       },
       injectManifest: {
+        target: browserTargets,
         // 旧版素材的字体子集（4.8MB）与提示音不进预缓存，按需加载（HTTP 长缓存）。
         // U8：启动页 logo、图标、标签栏图进预缓存：离线也能打开启动页，切页时图标不再现取。
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],

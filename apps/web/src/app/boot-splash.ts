@@ -17,7 +17,7 @@ const MIN_MS = 1300;
 const FULL_HOLD_MS = 180;
 /** 与 boot.css 的 transition 一致。 */
 const FADE_MS = 350;
-/** JS 接管后无论如何最晚这时撤掉启动层。 */
+/** JS 接管后最晚这时显示已渲染的页面，或提供重试。 */
 const SAFETY_MS = 12_000;
 
 let shown = 0;
@@ -53,8 +53,10 @@ export function takeOverSplash(): void {
   }
   root.classList.add('boot-js');
   render();
-  // 兜底：正常流程 8 秒内一定结束（app/preload.ts）；万一哪里卡住，也不能让人一直停在启动页。
-  window.setTimeout(() => finishBoot(true), SAFETY_MS);
+  window.setTimeout(() => {
+    if (document.getElementById('root')?.firstElementChild) finishBoot(true);
+    else root.classList.add('boot-stalled');
+  }, SAFETY_MS);
 }
 
 /** 真实进度（0~1）；只进不退，结束前最多到 99%。 */
