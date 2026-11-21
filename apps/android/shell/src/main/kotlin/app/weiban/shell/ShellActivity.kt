@@ -38,6 +38,8 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 
+private const val SAVED_SHELL_BUILD = "weiban:shell-build"
+
 class ShellActivity : ComponentActivity() {
     private lateinit var webView: WebView
     private lateinit var errorPanel: LinearLayout
@@ -80,9 +82,16 @@ class ShellActivity : ComponentActivity() {
                 }
             },
         )
-        val restored = savedInstanceState?.let { webView.restoreState(it) }
-        if (restored == null || !ShellPolicy.trusted(webView.url)) webView.loadUrl(ShellPolicy.START_URL)
+        val restoredUrl = savedInstanceState?.let { webView.restoreState(it) }?.currentItem?.url
+        if (restoredUrl == null || !ShellPolicy.trusted(restoredUrl)) {
+            loadEntry(ShellPolicy.START_URL)
+        } else if (savedInstanceState.getInt(SAVED_SHELL_BUILD) != BuildConfig.VERSION_CODE) {
+            loadEntry(restoredUrl)
+        }
     }
+
+    // Revalidate the document on open/retry. Hashed assets and the offline worker keep their own cache rules.
+    private fun loadEntry(url: String) = webView.loadUrl(url, mapOf("Cache-Control" to "no-cache"))
 
     private fun createLayout(): FrameLayout {
         val root = FrameLayout(this)
@@ -102,7 +111,7 @@ class ShellActivity : ComponentActivity() {
         errorPanel.addView(explanation)
         val retry = Button(this)
         retry.text = "重新连接"
-        retry.setOnClickListener { webView.loadUrl(lastPage) }
+        retry.setOnClickListener { loadEntry(lastPage) }
         errorPanel.addView(retry)
         errorPanel.visibility = View.GONE
         root.addView(errorPanel, FrameLayout.LayoutParams(-1, -1))
@@ -289,6 +298,7 @@ class ShellActivity : ComponentActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         webView.saveState(outState)
+        outState.putInt(SAVED_SHELL_BUILD, BuildConfig.VERSION_CODE)
         super.onSaveInstanceState(outState)
     }
 
