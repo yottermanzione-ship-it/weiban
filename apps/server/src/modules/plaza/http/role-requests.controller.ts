@@ -5,6 +5,8 @@ import {
   ContractPipe,
   CurrentPrincipal,
   RequireAuth,
+  RequireScope,
+  SCOPE_ROLE_REQUESTS_COMPLETE,
   type AuthPrincipal,
 } from '../../../platform/index.js';
 import { RoleRequestService } from '../application/role-requests.service.js';
@@ -106,6 +108,7 @@ export class RoleRequestAdminController {
 
   @Post(':requestId/complete')
   @HttpCode(200)
+  @RequireScope(SCOPE_ROLE_REQUESTS_COMPLETE)
   complete(
     @CurrentPrincipal() p: AuthPrincipal,
     @Param(requestParams) params: { requestId: string },

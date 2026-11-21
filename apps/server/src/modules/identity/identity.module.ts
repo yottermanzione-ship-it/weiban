@@ -22,6 +22,7 @@ import {
   type Database,
 } from '../../platform/index.js';
 import { AccountService, LOGIN_THROTTLE, PASSWORD_HASHER } from './application/accounts.js';
+import { AdminApiKeyService } from './application/admin-api-keys.js';
 import { IdentityCommands } from './application/commands.js';
 import { DeletionService } from './application/deletion.js';
 import { PurgeVerifier } from './application/purge-verifier.js';
@@ -66,6 +67,7 @@ import { UserStatusController } from './http/user-status.controller.js';
       inject: [DATABASE, CLOCK],
     },
     SessionService,
+    AdminApiKeyService,
     SettingsService,
     AccountService,
     AdminUsersService,
@@ -104,6 +106,7 @@ import { UserStatusController } from './http/user-status.controller.js';
     IDENTITY_MEMBERSHIP_WRITE_PORT,
     IDENTITY_REGISTRATION_READ_PORT,
     IdentityCommands,
+    AdminApiKeyService,
   ],
 })
 export class IdentityModule {}

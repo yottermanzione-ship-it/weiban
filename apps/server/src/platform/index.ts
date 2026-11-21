@@ -63,6 +63,8 @@ export { AUDIT_LOG, AuditLog, type AuditEntry, type AuditRecord } from './audit/
 
 export {
   RequireAuth,
+  RequireScope,
+  SCOPE_ROLE_REQUESTS_COMPLETE,
   CurrentPrincipal,
   SESSION_VERIFIER,
   type AuthPrincipal,

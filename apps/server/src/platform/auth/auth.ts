@@ -22,6 +22,10 @@ import { AppError } from '../http/app-error.js';
 
 export const SESSION_VERIFIER = Symbol('weiban.platform.session-verifier');
 const AUTH_LEVEL_KEY = 'weiban:auth-level';
+const SCOPE_KEY = 'weiban:required-scope';
+
+/** 管理员 API key 的作用域；v1 只有角色申请结案（identity.admin_api_keys.scope 的取值）。 */
+export const SCOPE_ROLE_REQUESTS_COMPLETE = 'role-requests:complete' as const;
 
 export interface AuthPrincipal {
   userId: string;
@@ -29,6 +33,11 @@ export interface AuthPrincipal {
   role: 'user' | 'admin';
   /** 是否为管理会话（管理后台登录产生，12 小时过期）。 */
   adminSession: boolean;
+  /**
+   * API key 的作用域；会话登录为 null（不受限）。
+   * 带 scope 的 key 只能调标注了同一 scope 的接口（fail-closed）。
+   */
+  scope?: string | null;
 }
 
 /** 由 identity 模块实现：校验令牌（只比对哈希）并返回身份；无效、过期、已作废返回 null。 */
@@ -38,6 +47,14 @@ export interface SessionVerifier {
 
 /** 标注接口的登录要求（类或方法上均可，方法上的优先）。 */
 export const RequireAuth = (level: AuthLevel) => SetMetadata(AUTH_LEVEL_KEY, level);
+
+/**
+ * 标注接口要求的作用域（类或方法上均可，方法上的优先）。
+ * 只有带 scope 的 API key 受它约束：key 的 scope 必须与标注一致，否则 403；
+ * 没有标注 scope 的接口一律不接受带 scope 的 key（防止一把只给结案的 key 被拿去调别的接口）。
+ * 会话登录（scope 为 null）不受它约束。
+ */
+export const RequireScope = (scope: string) => SetMetadata(SCOPE_KEY, scope);
 
 type RequestWithPrincipal = Request & { principal?: AuthPrincipal };
 
@@ -70,6 +87,16 @@ export class AuthGuard implements CanActivate {
     if (!principal) throw new AppError('unauthenticated', '登录已失效，请重新登录');
     if (level === 'admin' && (principal.role !== 'admin' || !principal.adminSession)) {
       throw new AppError('forbidden', '需要管理员身份');
+    }
+    // 带 scope 的 API key：接口必须标注同一 scope，否则拒绝（fail-closed）。
+    if (principal.scope != null) {
+      const requiredScope = this.reflector.getAllAndOverride<string | undefined>(SCOPE_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]);
+      if (requiredScope !== principal.scope) {
+        throw new AppError('forbidden', '该凭证无权调用此接口');
+      }
     }
     request.principal = principal;
     setLogContextField('userId', principal.userId);

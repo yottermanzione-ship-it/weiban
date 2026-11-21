@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   ADMIN_SESSION_TTL_MS,
+  adminApiKeyPrefix,
   APP_SESSION_TTL_MS,
   formatInviteCode,
+  generateAdminApiKey,
   generateInviteCode,
   generateSessionToken,
   hashToken,
+  isAdminApiKeyUsable,
   isLocked,
   isValidTimeZone,
   LOGIN_LOCK_MS,
@@ -107,5 +110,33 @@ describe('时区', () => {
     expect(isValidTimeZone('Asia/Shanghai')).toBe(true);
     expect(isValidTimeZone('UTC')).toBe(true);
     expect(isValidTimeZone('Mars/Olympus')).toBe(false);
+  });
+});
+
+describe('管理员 API key（迁移 0172）', () => {
+  it('格式 wbak_ + 32 位 base62，每次不同；哈希 32 字节且不含原文', () => {
+    const a = generateAdminApiKey();
+    const b = generateAdminApiKey();
+    expect(a).not.toBe(b);
+    expect(a).toMatch(/^wbak_[A-Za-z0-9]{32}$/);
+    expect(hashToken(a)).toHaveLength(32);
+    expect(hashToken(a).equals(hashToken(a))).toBe(true);
+    expect(hashToken(a).toString('latin1')).not.toContain(a);
+  });
+
+  it('前缀取前 8 个字符（wbak_ + 3 位随机），不含密钥材料', () => {
+    const key = generateAdminApiKey();
+    expect(adminApiKeyPrefix(key)).toBe(key.slice(0, 8));
+    expect(adminApiKeyPrefix(key)).toMatch(/^wbak_[A-Za-z0-9]{3}$/);
+  });
+
+  it('作废 / 过期不可用；未作废未过期可用', () => {
+    const usable = { revokedAt: null, expiresAt: null };
+    expect(isAdminApiKeyUsable(usable, T0)).toBe(true);
+    expect(isAdminApiKeyUsable({ revokedAt: T0, expiresAt: null }, T0)).toBe(false);
+    expect(isAdminApiKeyUsable({ revokedAt: null, expiresAt: at(-1000) }, T0)).toBe(false);
+    expect(isAdminApiKeyUsable({ revokedAt: null, expiresAt: at(1000) }, T0)).toBe(true);
+    // 到期那一刻即不可用。
+    expect(isAdminApiKeyUsable({ revokedAt: null, expiresAt: T0 }, T0)).toBe(false);
   });
 });

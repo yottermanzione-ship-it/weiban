@@ -90,6 +90,39 @@ export const sessions = identitySchema.table(
   ],
 );
 
+/**
+ * 管理员 API key（迁移 0172）：长期凭证，只给自动化调用（如角色申请结案）用。
+ * 跟 sessions 同一套规矩：明文只在创建时返回一次，库里只存 SHA-256 哈希；
+ * 作废 = revoked_at 非空（查库时即过滤，立即失效）；scope 限定能调的接口。
+ */
+export const adminApiKeys = identitySchema.table(
+  'admin_api_keys',
+  {
+    id: uuid('id').primaryKey(),
+    /** 用途名，如 muse-closing。 */
+    name: text('name').notNull(),
+    keyHash: bytea('key_hash').notNull(),
+    /** key 前 8 个字符（如 wbak_xxx），列表/日志里认 key 用，不含密钥材料。 */
+    keyPrefix: text('key_prefix').notNull(),
+    /** 作用域；v1 只有 role-requests:complete。 */
+    scope: text('scope').notNull(),
+    /** 哪个管理员建的；该管理员删除后置空（此时 key 不可用）。 */
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: tz('created_at').notNull(),
+    /** 成功验过一次就更新。 */
+    lastUsedAt: tz('last_used_at'),
+    /** v1 填 NULL（不过期）；留着以后收紧用。 */
+    expiresAt: tz('expires_at'),
+    /** 非空 = 已作废。 */
+    revokedAt: tz('revoked_at'),
+  },
+  (t) => [
+    uniqueIndex('admin_api_keys_key_hash_key').on(t.keyHash),
+    index('admin_api_keys_created_by_idx').on(t.createdBy),
+    check('admin_api_keys_scope_check', sql`${t.scope} in ('role-requests:complete')`),
+  ],
+);
+
 /** 我的资料（ACC-02），每个用户一行，注册时写入默认值。 */
 export const loginAliases = identitySchema.table(
   'login_aliases',
