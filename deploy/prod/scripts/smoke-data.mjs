@@ -62,6 +62,14 @@ async function login(username, kind = 'app') {
 const web = await call('/');
 assert((await web.text()).includes('微伴'));
 assert(web.headers.get('content-security-policy')?.includes("frame-ancestors 'none'"));
+assert.equal(web.headers.get('cache-control'), 'no-cache');
+assert.equal((await call('/chat')).headers.get('cache-control'), 'no-cache');
+assert.equal((await call('/build-info.json')).headers.get('cache-control'), 'no-store');
+assert.match(
+  (await call('/assets/old-ui/brand/icon.png')).headers.get('cache-control'),
+  /immutable/,
+);
+await call('/assets/missing-entry.js', { status: 404 });
 const adminHTML = await call('/', { host: 'admin.localhost' });
 assert((await adminHTML.text()).includes('微伴管理后台'));
 const redirect = await call('/admin/alerts', { status: 302 });
