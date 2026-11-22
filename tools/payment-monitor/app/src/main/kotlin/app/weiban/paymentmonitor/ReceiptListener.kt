@@ -43,7 +43,7 @@ class ReceiptListener : NotificationListenerService() {
         if (sbn.packageName != "com.tencent.mm" && sbn.packageName != "com.eg.android.AlipayGphone") return
         if (QueueStore.deviceId(this).isEmpty()) return
         val parsed = ReceiptNotification.read(sbn.packageName, sbn.notification) ?: return
-        try { QueueStore.enqueue(this, parsed, sbn.key, sbn.postTime); Delivery.start(this) }
+        try { QueueStore.enqueue(this, parsed.candidate, sbn.key, sbn.postTime, parsed.noticeText); Delivery.start(this) }
         catch (_: Exception) { QueueStore.status(this, "到账记录未能写入，请立即核对实际收款；原队列未清除") }
     }
 }

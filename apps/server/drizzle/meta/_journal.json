@@ -1129,6 +1129,13 @@
       "when": 1795397400000,
       "tag": "0173_model_route_cost_rates",
       "breakpoints": true
+    },
+    {
+      "idx": 174,
+      "version": "7",
+      "when": 1795397460000,
+      "tag": "0174_scan_receipt_notices",
+      "breakpoints": true
     }
   ]
 }

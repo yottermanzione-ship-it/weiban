@@ -110,6 +110,12 @@ export class BillingLifecycle implements OnModuleInit, UserDataOwner {
       await tx.query("SELECT pg_advisory_xact_lock(hashtextextended('billing:scan-payments',0))");
       // Preserve amount quarantine/dedup tombstones without any account linkage after deletion.
       await tx.query(
+        `UPDATE billing.scan_receipts r SET notice_ciphertext = NULL
+           FROM billing.scan_orders o
+          WHERE r.order_id = o.id AND o.user_id = $1 AND r.notice_ciphertext IS NOT NULL`,
+        [userId],
+      );
+      await tx.query(
         "UPDATE billing.scan_orders SET user_id=NULL, client_order_id=gen_random_uuid(), qr='', ledger_entry_id=NULL, membership_order_id=NULL, status=CASE WHEN status='paid' THEN 'paid' ELSE 'cancelled' END WHERE user_id=$1",
         [userId],
       );

@@ -85,6 +85,10 @@
   min-width: 0;
   margin-inline: auto;
 }
+
+.page.page-full-width {
+  max-width: none;
+}
 .page-head {
   display: flex;
   align-items: flex-end;
@@ -195,7 +199,7 @@
   flex-wrap: wrap;
 }
 .adjustable-table :is(.ant-table-content, .ant-table-body, .ant-table-header) > table {
-  min-width: 0 !important;
+  min-width: var(--adjustable-table-min-width, 0) !important;
 }
 .adjustable-table .ant-table-cell {
   overflow-wrap: anywhere;

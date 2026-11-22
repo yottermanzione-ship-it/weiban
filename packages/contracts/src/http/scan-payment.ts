@@ -55,6 +55,7 @@ export const ScanReceipt = z.object({
   purchaseTitle: z.string().nullable().optional(),
   status: z.enum(['review', 'matched', 'ignored']),
   reason: z.string(),
+  reviewReason: z.string().nullable().optional(),
   orderId: Id.nullable(),
 });
 export type ScanReceipt = z.infer<typeof ScanReceipt>;
@@ -81,6 +82,9 @@ const PageQuery = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(30),
 });
 const OrderParams = z.object({ orderId: Id });
+const ReceiptParams = z.object({ receiptId: Id });
+const ScanOrderSummary = ScanOrder.omit({ qr: true });
+const NoticeText = z.string().min(1).max(8192);
 const root = API_PREFIX + '/billing/scan';
 export const ScanPaymentEndpoints = {
   options: defineEndpoint({
@@ -174,15 +178,29 @@ export const ScanPaymentAdminEndpoints = {
     method: 'GET',
     path: admin + '/receipts',
     auth: 'admin',
-    query: PageQuery,
+    query: PageQuery.extend({ status: ScanReceipt.shape.status.optional() }),
     response: cursorPage(ScanReceipt),
     summary: '签名到账记录及待核对原因，不返回通知原文',
+  }),
+  receiptDetails: defineEndpoint({
+    method: 'GET',
+    path: admin + '/receipts/:receiptId',
+    auth: 'admin',
+    params: ReceiptParams,
+    query: PageQuery,
+    response: z.object({
+      receipt: ScanReceipt,
+      noticeText: NoticeText.nullable(),
+      linkedOrder: ScanOrderSummary.nullable(),
+      candidates: cursorPage(ScanOrderSummary),
+    }),
+    summary: '单笔到账、通知原文及同渠道同金额的候选订单',
   }),
   resolve: defineEndpoint({
     method: 'POST',
     path: admin + '/receipts/:receiptId/resolve',
     auth: 'admin',
-    params: z.object({ receiptId: Id }),
+    params: ReceiptParams,
     body: z.object({ orderId: Id.nullable(), reason: z.string().trim().min(5).max(200) }).strict(),
     response: ScanReceipt,
     summary: '人工核实后关联等额订单或标记忽略；不退款',
@@ -247,6 +265,13 @@ export const ScanMonitorReport = z
             .optional(),
         })
         .strict(),
+      z
+        .object({
+          type: z.literal('notice'),
+          eventId: z.string().regex(/^[a-f0-9]{64}$/),
+          noticeText: NoticeText,
+        })
+        .strict(),
     ]),
   })
   .strict();
@@ -269,6 +294,7 @@ export const ScanMonitorEndpoints = {
       ok: z.literal(true),
       status: z.string(),
       purchaseKind: z.enum(['recharge', 'membership']).nullable().optional(),
+      requestNotice: z.boolean().optional(),
     }),
     summary: '验证设备签名后持久保存到账；只确认已提交结果',
   }),

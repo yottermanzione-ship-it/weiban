@@ -81,5 +81,7 @@ class ReceiptParserTest {
         assertEquals("wb-pay-v1|device|time|receipt|eid|wechat|1234|observed|posted", MonitorApi.signingText("device","time",event))
         event.put("reviewReason", "notice_uncertain")
         assertEquals("wb-pay-v2|device|time|receipt|eid|wechat|1234|observed|posted|notice_uncertain", MonitorApi.signingText("device","time",event))
+        val notice = org.json.JSONObject().put("type", "notice").put("eventId", "eid").put("noticeText", "abc")
+        assertEquals("wb-pay-v3|device|time|notice|eid|ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", MonitorApi.signingText("device", "time", notice))
     }
 }

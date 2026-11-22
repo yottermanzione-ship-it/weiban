@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Param, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Get, Header, Inject, Param, Post, Put, Query } from '@nestjs/common';
 import {
   ScanPaymentEndpoints as E,
   ScanPaymentAdminEndpoints as A,
@@ -97,6 +97,15 @@ export class ScanPaymentAdminController {
   @RequireAuth(A.receipts.auth)
   receipts(@Query(new ContractPipe(A.receipts.query!)) query: Out<typeof A.receipts.query>) {
     return this.service.receipts(query);
+  }
+  @Get('receipts/:receiptId')
+  @Header('Cache-Control', 'no-store')
+  @RequireAuth(A.receiptDetails.auth)
+  receiptDetails(
+    @Param(new ContractPipe(A.receiptDetails.params!)) params: Out<typeof A.receiptDetails.params>,
+    @Query(new ContractPipe(A.receiptDetails.query!)) query: Out<typeof A.receiptDetails.query>,
+  ) {
+    return this.service.getReceiptDetails(params.receiptId, query);
   }
   @Post('receipts/:receiptId/resolve')
   @RequireAuth(A.resolve.auth)

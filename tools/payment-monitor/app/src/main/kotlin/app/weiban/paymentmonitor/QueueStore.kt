@@ -41,16 +41,26 @@ object QueueStore {
         }
         catch (e: Exception) { f.failWrite(out); throw e }
     }
-    @Synchronized fun enqueue(ctx: Context, candidate: ReceiptCandidate, sourceKey: String, postedAt: Long) {
+    @Synchronized fun enqueue(ctx: Context, candidate: ReceiptCandidate, sourceKey: String, postedAt: Long, noticeText: String? = null) {
         val id = ReceiptParser.eventId(candidate.channel, sourceKey, postedAt, candidate.amountFen)
-        // The journal retains accepted events as dedup tombstones. No notification body, sender, or source key is stored.
+        // Keep original event times. A still-visible review notification can supply text after an app upgrade.
         val queue = read(ctx)
-        for (i in 0 until queue.length()) if (queue.getJSONObject(i).getString("eventId") == id) return
+        for (i in 0 until queue.length()) {
+            val event = queue.getJSONObject(i)
+            if (event.getString("eventId") != id) continue
+            if (!noticeText.isNullOrEmpty() && !event.has("noticeText") && !event.optBoolean("noticeHandled") &&
+                (!event.getBoolean("accepted") || event.optString("status") == "review")) {
+                event.put("noticeText", noticeText).put("accepted", false)
+                write(ctx, queue)
+            }
+            return
+        }
         val event = JSONObject().put("type", "receipt").put("eventId", id).put("channel", candidate.channel)
             .put("amountFen", candidate.amountFen).put("postedAt", Instant.ofEpochMilli(postedAt).toString())
             .put("observedAt", Instant.now().toString()).put("accepted", false)
             .put("clockPending", true).put("capturedElapsed", SystemClock.elapsedRealtime())
         candidate.reviewReason?.let { event.put("reviewReason", it) }
+        if (!noticeText.isNullOrEmpty()) event.put("noticeText", noticeText)
         queue.put(event); write(ctx, queue)
     }
     @Synchronized fun prepare(ctx: Context, id: String, offset: Long, wall: Long = System.currentTimeMillis(), elapsed: Long = SystemClock.elapsedRealtime()): JSONObject {
@@ -78,10 +88,14 @@ object QueueStore {
         }
         throw IllegalStateException("到账记录不存在，原记录已保留")
     }
-    @Synchronized fun accept(ctx: Context, id: String, result: JSONObject? = null) {
+    @Synchronized fun accept(ctx: Context, id: String, result: JSONObject? = null, noticeChecked: Boolean = false) {
         val queue = read(ctx)
         for (i in 0 until queue.length()) { val r = queue.getJSONObject(i); if (r.getString("eventId") == id) {
-            r.put("accepted", true)
+            if (noticeChecked) {
+                r.remove("noticeText")
+                r.put("noticeHandled", true)
+            }
+            r.put("accepted", !r.has("noticeText"))
             if (result != null) {
                 r.put("status", result.optString("status").takeIf { it in setOf("matched", "review", "ignored") } ?: "review")
                 r.put("purchaseKind", result.optString("purchaseKind").takeIf { it in setOf("recharge", "membership") } ?: JSONObject.NULL)

@@ -7,15 +7,17 @@ export function Page({
   title,
   desc,
   extra,
+  fullWidth,
   children,
 }: {
   title: ReactNode;
   desc?: ReactNode;
   extra?: ReactNode;
+  fullWidth?: boolean;
   children: ReactNode;
 }) {
   return (
-    <div className="page">
+    <div className={fullWidth ? 'page page-full-width' : 'page'}>
       <div className="page-head">
         <div className="page-head-text">
           <h1>{title}</h1>

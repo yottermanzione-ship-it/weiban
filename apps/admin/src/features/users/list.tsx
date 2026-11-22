@@ -331,6 +331,7 @@ export function UserListPage() {
     {
       title: '状态',
       width: 84,
+      align: 'center',
       onHeaderCell: () => centeredHeader,
       render: (_, { user }) => <AccountStateTag user={user} />,
     },
@@ -341,7 +342,7 @@ export function UserListPage() {
   const openRow = detail.row;
 
   return (
-    <Page title="用户列表">
+    <Page title="用户列表" fullWidth>
       {overview.error && <Alert type="error" showIcon message={overview.error} />}
       <BatchFailureAlert failures={failures} onDismiss={() => setFailures([])} />
       <DataTable<UserRow>

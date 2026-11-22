@@ -301,8 +301,97 @@ describeDb('扫码支付：真实数据库、设备签名、并发与用户隔�
         reason: reviewReason,
         orderId: null,
       });
-      expect(JSON.stringify(listed)).not.toContain('notificationText');
+      expect(JSON.stringify(listed)).not.toContain('noticeText');
     }
+  });
+  it('待核对原文单独签名上报，管理员可查看和关联，入账前原因保留', async () => {
+    await heartbeat();
+    const payer = await user();
+    const expected = await order(payer.id, 853, 'alipay');
+    await order((await user()).id, 853, 'wechat');
+    const input = await receipt(expected, { reviewReason: 'notice_summary' });
+    if (input.event.type !== 'receipt') throw new Error('Expected receipt');
+    const eventId = input.event.eventId;
+    const base = '/api/v1/admin/scan-payments/receipts';
+    const auth = `Bearer ${adminToken}`;
+    await expect(service.report(input)).resolves.toMatchObject({
+      status: 'review',
+      requestNotice: true,
+    });
+    const original = '支付宝商家服务\n收款8.53元\n累计收款17.06元';
+    const notice = await signed({ type: 'notice', eventId, noticeText: original });
+    await http()
+      .post(ScanMonitorEndpoints.report.path)
+      .send({ ...notice, event: { ...notice.event, noticeText: '替换后的通知' } })
+      .expect(401);
+
+    const list = (
+      await http()
+        .get(base + '?status=review')
+        .set('Authorization', auth)
+        .expect(200)
+    ).body;
+    const row = list.items.find((item: { eventId: string }) => item.eventId === eventId);
+    const path = `${base}/${row.id}`;
+    await http().get(path).set('Authorization', `Bearer ${payer.token}`).expect(403);
+    const before = (await http().get(path).set('Authorization', auth).expect(200)).body;
+    expect(before.noticeText).toBeNull();
+    expect(before.candidates.items.map((candidate: ScanOrder) => candidate.id)).toContain(
+      expected.id,
+    );
+    expect(
+      before.candidates.items.every(
+        (candidate: ScanOrder) => candidate.channel === 'alipay' && candidate.amountFen === 853,
+      ),
+    ).toBe(true);
+    expect(before.candidates.items[0]).not.toHaveProperty('qr');
+
+    await http()
+      .post(`${path}/resolve`)
+      .set('Authorization', auth)
+      .send({ orderId: expected.id, reason: '管理员确认关联入账' })
+      .expect(201);
+    // The monitor may finish uploading after the admin has already processed the receipt.
+    await http().post(ScanMonitorEndpoints.report.path).send(notice).expect(201);
+    await http().post(ScanMonitorEndpoints.report.path).send(notice).expect(201);
+    const stored = await withClient(
+      async (client) =>
+        (
+          await client.query('SELECT notice_ciphertext FROM billing.scan_receipts WHERE id = $1', [
+            row.id,
+          ])
+        ).rows[0].notice_ciphertext as Buffer,
+    );
+    expect(stored).toBeInstanceOf(Buffer);
+    expect(stored.includes(Buffer.from(original))).toBe(false);
+    const after = await http().get(path).set('Authorization', auth).expect(200);
+    expect(after.headers['cache-control']).toBe('no-store');
+    expect(after.body).toMatchObject({
+      receipt: { status: 'matched', reason: 'manual', reviewReason: 'notice_summary' },
+      noticeText: original,
+      linkedOrder: { id: expected.id },
+      candidates: { items: [], nextCursor: null },
+    });
+    expect(
+      (await http().get(base).set('Authorization', auth).expect(200)).body.items,
+    ).not.toContainEqual(expect.objectContaining({ noticeText: original }));
+    await app.get(BillingLifecycle).purgeUser(payer.id);
+    await http().post(ScanMonitorEndpoints.report.path).send(notice).expect(201);
+    expect((await http().get(path).set('Authorization', auth).expect(200)).body).toMatchObject({
+      noticeText: null,
+      linkedOrder: { id: expected.id, userId: null },
+    });
+    const automatic = await receipt(await order((await user()).id, 947));
+    const autoResult = await service.report(automatic);
+    expect(autoResult).toMatchObject({ status: 'matched' });
+    expect(autoResult).not.toHaveProperty('requestNotice');
+    if (automatic.event.type !== 'receipt') throw new Error('Expected automatic receipt');
+    await http()
+      .post(ScanMonitorEndpoints.report.path)
+      .send(
+        await signed({ type: 'notice', eventId: automatic.event.eventId, noticeText: original }),
+      )
+      .expect(404);
   });
   it('仅正在付款的同渠道订单占用金额；并发减零头，取消后释放原金额', async () => {
     const users = await Promise.all([user(), user(), user()]);
