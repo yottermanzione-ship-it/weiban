@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useState } from 'react';
+import { useEffect, useEffectEvent, useState, type MouseEvent } from 'react';
 import {
   Alert,
   Button,
@@ -6,12 +6,14 @@ import {
   Input,
   Modal,
   Popover,
+  Radio,
+  Segmented,
   Space,
+  Spin,
   Switch,
   Table,
   Tabs,
   Tag,
-  Tooltip,
 } from 'antd';
 import { CopyOutlined } from '@ant-design/icons';
 import {
@@ -21,7 +23,7 @@ import {
   type ScanOrder,
 } from '@weiban/contracts';
 import { api } from '../data/client.js';
-import { useRemote } from '../data/hooks.js';
+import { errorText, useRemote } from '../data/hooks.js';
 import { formatDate, formatInt } from '../ui/format.js';
 import { Page, SectionCard, StatusTag, useToast } from '../ui/page.js';
 import { UserIdentity, userDisplayName, useUserDirectory } from './users/identity.js';
@@ -42,6 +44,7 @@ const reasons: Record<string, string> = {
   automatic: '自动核对',
   manual: '人工核对',
   manual_ignored: '人工忽略',
+  manual_registered: '人工登记',
   no_order: '没有对应订单',
   ambiguous: '对应多笔订单',
   delayed_or_clock: '迟到通知或手机时间异常',
@@ -59,6 +62,12 @@ const date = (s: string | null) =>
   s ? new Date(s).toLocaleString('zh-CN', { hour12: false }) : '尚未连接';
 const clock = new Intl.DateTimeFormat('zh-CN', { timeStyle: 'medium', hour12: false });
 const tableHeight = 'min(54vh, 480px)';
+const receiptSource = (row: ScanReceipt) => (row.deviceId ? '手机监控' : '人工登记');
+const reasonText = (reason: string) => reasons[reason] ?? '待核对';
+const clickedRowBody = (event: MouseEvent) =>
+  event.target instanceof Element &&
+  event.currentTarget.contains(event.target) &&
+  !event.target.closest('a, button, input, label');
 
 function PaymentStatusTag({ status }: { status: PaymentStatus }) {
   const tone =
@@ -79,13 +88,12 @@ function PaymentTime({ at }: { at: string }) {
   );
 }
 
-function PaymentAmount({ amountFen, channel: method }: Pick<ScanOrder, 'amountFen' | 'channel'>) {
-  return (
-    <div className="cell-main">
-      <strong className="scan-payment-amount mono">{money(amountFen)}</strong>
-      <span className="cell-sub">{channel(method)}</span>
-    </div>
-  );
+function PaymentAmount({ amountFen }: Pick<ScanOrder, 'amountFen'>) {
+  return <strong className="scan-payment-amount mono">{money(amountFen)}</strong>;
+}
+
+function PaymentChannel({ method }: { method: ScanOrder['channel'] }) {
+  return <Tag color={method === 'wechat' ? 'green' : 'blue'}>{channel(method)}</Tag>;
 }
 
 function OrderIdentifier({ id }: { id: string }) {
@@ -127,6 +135,243 @@ function OrderIdentifier({ id }: { id: string }) {
   );
 }
 
+function ReceiptDialog({
+  row,
+  onClose,
+  onResolved,
+  onIgnore,
+  onBrowseOrders,
+}: {
+  row: ScanReceipt;
+  onClose: () => void;
+  onResolved: () => void;
+  onIgnore: (receipt: ScanReceipt) => void;
+  onBrowseOrders: (receipt: ScanReceipt) => void;
+}) {
+  const [cursor, setCursor] = useState<string>();
+  const [orderId, setOrderId] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const detail = useRemote(A.receiptDetails, {
+    params: { receiptId: row.id },
+    query: { cursor, limit: 8 },
+  });
+  const receipt = detail.data?.receipt ?? row;
+  const linked = detail.data?.linkedOrder;
+  const candidates = detail.data?.candidates;
+  const directory = useUserDirectory([
+    linked?.userId,
+    ...(candidates?.items ?? []).map((order) => order.userId),
+  ]);
+  const review = receipt.status === 'review';
+  const initialReason = receipt.reviewReason ?? (review ? receipt.reason : null);
+  const selected = candidates?.items.find((order) => order.id === orderId);
+
+  async function confirm() {
+    if (busy || !selected || !review) return;
+    setError('');
+    setBusy(true);
+    try {
+      const result = await api.call(A.resolve, {
+        params: { receiptId: receipt.id },
+        body: { orderId: selected.id, reason: '管理员确认关联入账' },
+      });
+      if (result.status === 'matched' && result.orderId === selected.id) onResolved();
+      else {
+        setError(reasons[result.reason] ?? '未能入账，请核对订单状态');
+        detail.refresh();
+      }
+    } catch (e) {
+      setError(errorText(e));
+      detail.refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      open
+      width={760}
+      title={review ? '核对到账' : '到账详情'}
+      onCancel={busy ? undefined : onClose}
+      closable={!busy}
+      maskClosable={!busy}
+      keyboard={!busy}
+      footer={
+        <Space wrap>
+          {review && (
+            <Button disabled={busy} onClick={() => onIgnore(receipt)}>
+              忽略到账
+            </Button>
+          )}
+          <Button disabled={busy} onClick={onClose}>
+            关闭
+          </Button>
+          {review && (
+            <Button
+              type="primary"
+              disabled={!selected}
+              loading={busy}
+              onClick={() => void confirm()}
+            >
+              确认关联并入账
+            </Button>
+          )}
+        </Space>
+      }
+    >
+      <dl className="scan-detail-grid">
+        <div>
+          <dt>渠道</dt>
+          <dd>
+            <PaymentChannel method={receipt.channel} />
+          </dd>
+        </div>
+        <div>
+          <dt>通知金额</dt>
+          <dd>
+            <PaymentAmount amountFen={receipt.amountFen} />
+          </dd>
+        </div>
+        <div>
+          <dt>来源</dt>
+          <dd>{receiptSource(receipt)}</dd>
+        </div>
+        <div>
+          <dt>状态</dt>
+          <dd>
+            <PaymentStatusTag status={receipt.status} />
+          </dd>
+        </div>
+        <div>
+          <dt>通知时间</dt>
+          <dd>{date(receipt.postedAt ?? receipt.observedAt)}</dd>
+        </div>
+        <div>
+          <dt>服务器收报</dt>
+          <dd>{date(receipt.receivedAt)}</dd>
+        </div>
+        {initialReason && (
+          <div>
+            <dt>未自动入账原因</dt>
+            <dd>{reasonText(initialReason)}</dd>
+          </div>
+        )}
+        {!review && (
+          <div>
+            <dt>处理结果</dt>
+            <dd>{reasonText(receipt.reason)}</dd>
+          </div>
+        )}
+        {receipt.orderId && (
+          <div>
+            <dt>关联订单</dt>
+            <dd>
+              <OrderIdentifier id={receipt.orderId} />
+            </dd>
+          </div>
+        )}
+        {linked && (
+          <div>
+            <dt>购买内容</dt>
+            <dd>
+              {linked.title} · {formatInt(linked.points)} 积分
+            </dd>
+          </div>
+        )}
+        {linked?.userId && (
+          <div>
+            <dt>付款人</dt>
+            <dd>{userDisplayName(linked.userId, directory.byId.get(linked.userId))}</dd>
+          </div>
+        )}
+      </dl>
+      {(error || detail.error) && <Alert type="error" showIcon message={error || detail.error} />}
+      {receipt.deviceId && (
+        <section className="scan-detail-section" aria-label="收款通知原文">
+          <h3>收款通知原文</h3>
+          {detail.data?.noticeText ? (
+            <pre className="scan-notice-text">{detail.data.noticeText}</pre>
+          ) : detail.loading ? (
+            <Spin size="small" />
+          ) : (
+            !detail.error && <span className="cell-sub">这条记录没有可查看的通知原文</span>
+          )}
+        </section>
+      )}
+      {review && (
+        <section className="scan-detail-section" aria-label="候选订单">
+          <h3>同渠道、同金额的 APP 订单</h3>
+          {detail.loading && !candidates && <Spin size="small" />}
+          {candidates?.items.length ? (
+            <Radio.Group
+              className="scan-candidate-list"
+              aria-label="选择候选订单"
+              value={orderId}
+              disabled={busy}
+              onChange={(e) => setOrderId(e.target.value as string)}
+            >
+              {candidates.items.map((order) => (
+                <Radio value={order.id} key={order.id}>
+                  <span className="scan-candidate-content">
+                    <strong>
+                      {order.userId &&
+                        userDisplayName(order.userId, directory.byId.get(order.userId))}
+                    </strong>
+                    <span>
+                      {order.title} · {formatInt(order.points)} 积分
+                    </span>
+                    <code>…{order.id.slice(-8)}</code>
+                    <time dateTime={order.createdAt}>{date(order.createdAt)}</time>
+                    <PaymentStatusTag status={order.status} />
+                  </span>
+                </Radio>
+              ))}
+            </Radio.Group>
+          ) : (
+            candidates && <p className="cell-sub">未找到可关联的同金额订单</p>
+          )}
+          <Space wrap>
+            {(cursor || candidates?.nextCursor) && (
+              <>
+                <Button
+                  size="small"
+                  disabled={!cursor || busy}
+                  onClick={() => {
+                    setCursor(undefined);
+                    setOrderId(undefined);
+                  }}
+                >
+                  返回首批
+                </Button>
+                <Button
+                  size="small"
+                  disabled={!candidates?.nextCursor || busy}
+                  onClick={() => {
+                    setCursor(candidates?.nextCursor ?? undefined);
+                    setOrderId(undefined);
+                  }}
+                >
+                  更多订单
+                </Button>
+              </>
+            )}
+            <Button
+              type="link"
+              size="small"
+              disabled={busy}
+              onClick={() => onBrowseOrders(receipt)}
+            >
+              查看 APP 订单
+            </Button>
+          </Space>
+        </section>
+      )}
+    </Modal>
+  );
+}
+
 export function ScanPaymentsPage() {
   const toast = useToast();
   const [tab, setTab] = useState('receipts');
@@ -134,8 +379,11 @@ export function ScanPaymentsPage() {
   const devices = useRemote(A.devices);
   const [oc, setOc] = useState<string | undefined>();
   const [rc, setRc] = useState<string | undefined>();
+  const [receiptFilter, setReceiptFilter] = useState<'all' | 'review'>('all');
   const orders = useRemote(A.orders, { query: { cursor: oc, limit: 30 } });
-  const receipts = useRemote(A.receipts, { query: { cursor: rc, limit: 30 } });
+  const receipts = useRemote(A.receipts, {
+    query: { cursor: rc, limit: 30, ...(receiptFilter === 'review' ? { status: 'review' } : {}) },
+  });
   const poll = useEffectEvent(() => {
     if (document.visibilityState !== 'hidden') {
       if (!receipts.loading) receipts.refresh();
@@ -154,6 +402,8 @@ export function ScanPaymentsPage() {
   const [draft, setDraft] = useState<ScanPaymentSettings | null>(null);
   const [busy, setBusy] = useState(false);
   const [manual, setManual] = useState<ScanOrder | null>(null);
+  const [inspectedReceipt, setInspectedReceipt] = useState<ScanReceipt | null>(null);
+  const [inspectedOrder, setInspectedOrder] = useState<ScanOrder | null>(null);
   const [receiptId, setReceiptId] = useState<string>();
   const [orderId, setOrderId] = useState<string>();
   const selectedReceipt = receipts.data?.items.find(
@@ -170,6 +420,7 @@ export function ScanPaymentsPage() {
   const directory = useUserDirectory([
     ...(orders.data?.items ?? []).map((item) => item.userId),
     manual?.userId,
+    inspectedOrder?.userId,
   ]);
   const [bankRef, setBankRef] = useState('');
   const [actualMoney, setActualMoney] = useState('');
@@ -210,6 +461,12 @@ export function ScanPaymentsPage() {
     setReceiptId(undefined);
     setOrderId(undefined);
   }
+  function openManual(order: ScanOrder) {
+    setInspectedOrder(null);
+    setManual(order);
+    setBankRef('');
+    setActualMoney('');
+  }
   function linkReceipt() {
     if (!selectedReceipt || !selectedOrder || pairMismatch) return;
     void run(async () => {
@@ -244,6 +501,7 @@ export function ScanPaymentsPage() {
   return (
     <Page
       title="扫码收款"
+      fullWidth
       extra={
         <Space wrap>
           <Tag color={available ? 'green' : 'default'}>
@@ -264,73 +522,65 @@ export function ScanPaymentsPage() {
           message={settings.error || devices.error || orders.error || receipts.error}
         />
       )}
-      <div className="scan-match-bar">
-        <div className="scan-match-selection" aria-live="polite">
-          {selectedReceipt && (
-            <span>
-              到账 <strong>{money(selectedReceipt.amountFen)}</strong> ·{' '}
-              {channel(selectedReceipt.channel)}
-            </span>
-          )}
-          {selectedOrder?.userId && (
-            <span>
-              订单 <strong>{money(selectedOrder.amountFen)}</strong> ·{' '}
-              {channel(selectedOrder.channel)} ·{' '}
-              {userDisplayName(selectedOrder.userId, directory.byId.get(selectedOrder.userId))}
-            </span>
-          )}
-          {pairMismatch ? (
-            <span className="scan-match-error">金额或收款渠道不同</span>
-          ) : !selectedReceipt && !selectedOrder ? (
-            <span>各选一笔到账和订单即可关联</span>
-          ) : !selectedReceipt ? (
-            <span>选择对应的待核对到账</span>
-          ) : !selectedOrder ? (
-            <span>选择对应的 APP 订单</span>
-          ) : null}
-        </div>
-        <Space wrap>
-          {(selectedReceipt || selectedOrder) && (
+      {(selectedReceipt || selectedOrder) && (
+        <div className="scan-match-bar">
+          <div className="scan-match-selection" aria-live="polite">
+            {selectedReceipt && (
+              <span>
+                到账 <strong>{money(selectedReceipt.amountFen)}</strong> ·{' '}
+                {channel(selectedReceipt.channel)}
+              </span>
+            )}
+            {selectedOrder?.userId && (
+              <span>
+                订单 <strong>{money(selectedOrder.amountFen)}</strong> ·{' '}
+                {channel(selectedOrder.channel)} ·{' '}
+                {userDisplayName(selectedOrder.userId, directory.byId.get(selectedOrder.userId))}
+              </span>
+            )}
+            {pairMismatch ? (
+              <span className="scan-match-error">金额或收款渠道不同</span>
+            ) : !selectedReceipt ? (
+              <span>选择对应的待核对到账</span>
+            ) : !selectedOrder ? (
+              <span>选择对应的 APP 订单</span>
+            ) : null}
+          </div>
+          <Space wrap>
             <Button type="text" disabled={busy} onClick={clearSelection}>
               清空选择
             </Button>
-          )}
-          <Button
-            type="primary"
-            disabled={!selectedReceipt || !selectedOrder || !!pairMismatch || busy}
-            onClick={linkReceipt}
-          >
-            确认关联并入账
-          </Button>
-        </Space>
-      </div>
+            <Button
+              type="primary"
+              disabled={!selectedReceipt || !selectedOrder || !!pairMismatch || busy}
+              onClick={linkReceipt}
+            >
+              确认关联并入账
+            </Button>
+          </Space>
+        </div>
+      )}
       <SectionCard bodyStyle={{ padding: 0 }}>
         <Tabs
           className="scan-record-tabs"
           activeKey={tab}
           onChange={setTab}
           tabBarExtraContent={
-            tab === 'receipts' ? (
-              <Button
+            tab === 'receipts' && (
+              <Segmented<'all' | 'review'>
                 size="small"
-                disabled={!selectedReceipt || busy}
-                onClick={() => selectedReceipt && setIgnoredReceipt(selectedReceipt)}
-              >
-                忽略到账
-              </Button>
-            ) : (
-              <Button
-                size="small"
-                disabled={!selectedOrder || busy}
-                onClick={() => {
-                  if (!selectedOrder) return;
-                  setManual(selectedOrder);
-                  setBankRef('');
-                  setActualMoney('');
+                aria-label="筛选扫码到账"
+                value={receiptFilter}
+                options={[
+                  { label: '全部', value: 'all' },
+                  { label: '待核对', value: 'review' },
+                ]}
+                onChange={(value) => {
+                  setReceiptFilter(value);
+                  setRc(undefined);
+                  setReceiptId(undefined);
                 }}
-              >
-                登记漏报
-              </Button>
+              />
             )
           }
           items={[
@@ -348,7 +598,13 @@ export function ScanPaymentsPage() {
                     dataSource={receipts.data?.items ?? []}
                     locale={{ emptyText: '暂无扫码到账记录' }}
                     pagination={false}
-                    scroll={{ x: 684, y: tableHeight }}
+                    scroll={{ x: 858, y: tableHeight }}
+                    onRow={(row) => ({
+                      className: 'scan-view-row',
+                      onClick: (event) => {
+                        if (clickedRowBody(event)) setInspectedReceipt(row);
+                      },
+                    })}
                     rowSelection={{
                       type: 'radio',
                       columnWidth: 32,
@@ -362,66 +618,75 @@ export function ScanPaymentsPage() {
                     }}
                     columns={[
                       {
-                        title: '金额',
-                        width: 104,
+                        title: '渠道',
+                        width: 64,
+                        align: 'center',
+                        render: (_, r) => <PaymentChannel method={r.channel} />,
+                      },
+                      {
+                        title: '通知金额',
+                        width: 88,
                         align: 'right',
-                        render: (_, r) => (
-                          <PaymentAmount amountFen={r.amountFen} channel={r.channel} />
-                        ),
+                        render: (_, r) => <PaymentAmount amountFen={r.amountFen} />,
                       },
                       {
                         title: '通知时间',
-                        width: 118,
+                        width: 94,
                         render: (_, r) => <PaymentTime at={r.postedAt ?? r.observedAt} />,
                       },
                       {
                         title: '服务器收报',
-                        width: 118,
+                        width: 98,
                         render: (_, r) => <PaymentTime at={r.receivedAt} />,
                       },
                       {
                         title: '来源',
-                        width: 86,
-                        render: (_, r) => (r.deviceId ? '手机监控' : '人工登记'),
+                        width: 78,
+                        render: (_, r) => receiptSource(r),
                       },
                       {
                         title: '状态',
-                        render: (_, r) => (
-                          <Tooltip
-                            trigger={['hover', 'focus']}
-                            title={
-                              <div>
-                                <div>{reasons[r.reason] ?? '待核对'}</div>
-                                {r.purchaseTitle && <div>{r.purchaseTitle}</div>}
-                                <div>
-                                  {r.deviceId ? '手机监控' : '人工登记'} · 收到于{' '}
-                                  {date(r.receivedAt)}
-                                </div>
-                              </div>
-                            }
-                          >
-                            <div className="cell-main scan-payment-status" tabIndex={0}>
-                              <span>
-                                <PaymentStatusTag status={r.status} />
+                        align: 'center',
+                        width: 76,
+                        render: (_, r) => <PaymentStatusTag status={r.status} />,
+                      },
+                      {
+                        title: '核对结果',
+                        width: 144,
+                        render: (_, r) => {
+                          const reason = reasonText(r.reason);
+                          return (
+                            <div className="cell-main">
+                              <span className="scan-truncate" title={reason}>
+                                {reason}
                               </span>
-                              <span className="cell-sub scan-truncate">
-                                {r.status === 'matched' && r.purchaseTitle
-                                  ? r.purchaseTitle
-                                  : (reasons[r.reason] ?? '待核对')}
-                              </span>
+                              {r.purchaseTitle && (
+                                <span className="cell-sub scan-truncate" title={r.purchaseTitle}>
+                                  {r.purchaseTitle}
+                                </span>
+                              )}
                             </div>
-                          </Tooltip>
-                        ),
+                          );
+                        },
                       },
                       {
                         title: '关联订单',
-                        width: 102,
+                        width: 96,
                         render: (_, r) =>
                           r.orderId ? (
                             <OrderIdentifier id={r.orderId} />
                           ) : (
                             <span className="cell-sub">—</span>
                           ),
+                      },
+                      {
+                        title: '操作',
+                        width: 88,
+                        render: (_, r) => (
+                          <Button type="link" size="small" onClick={() => setInspectedReceipt(r)}>
+                            {r.status === 'review' ? '核对入账' : '详情'}
+                          </Button>
+                        ),
                       },
                     ]}
                   />
@@ -463,7 +728,13 @@ export function ScanPaymentsPage() {
                     loading={!orders.data && orders.loading}
                     dataSource={orders.data?.items ?? []}
                     pagination={false}
-                    scroll={{ x: 776, y: tableHeight }}
+                    scroll={{ x: 892, y: tableHeight }}
+                    onRow={(row) => ({
+                      className: 'scan-view-row',
+                      onClick: (event) => {
+                        if (clickedRowBody(event)) setInspectedOrder(row);
+                      },
+                    })}
                     rowSelection={{
                       type: 'radio',
                       columnWidth: 32,
@@ -477,12 +748,12 @@ export function ScanPaymentsPage() {
                     columns={[
                       {
                         title: '订单编号',
-                        width: 100,
+                        width: 92,
                         render: (_, r) => <OrderIdentifier id={r.id} />,
                       },
                       {
                         title: '付款人',
-                        width: 146,
+                        width: 128,
                         render: (_, r) =>
                           r.userId ? (
                             <UserIdentity
@@ -496,6 +767,7 @@ export function ScanPaymentsPage() {
                       },
                       {
                         title: '购买内容',
+                        width: 120,
                         render: (_, r) => (
                           <div className="cell-main">
                             <span className="scan-truncate" title={r.title}>
@@ -506,21 +778,25 @@ export function ScanPaymentsPage() {
                         ),
                       },
                       {
+                        title: '渠道',
+                        width: 64,
+                        align: 'center',
+                        render: (_, r) => <PaymentChannel method={r.channel} />,
+                      },
+                      {
                         title: '应付金额',
-                        width: 102,
+                        width: 86,
                         align: 'right',
-                        render: (_, r) => (
-                          <PaymentAmount amountFen={r.amountFen} channel={r.channel} />
-                        ),
+                        render: (_, r) => <PaymentAmount amountFen={r.amountFen} />,
                       },
                       {
                         title: '创建时间',
-                        width: 106,
+                        width: 92,
                         render: (_, r) => <PaymentTime at={r.createdAt} />,
                       },
                       {
                         title: '入账时间',
-                        width: 106,
+                        width: 92,
                         render: (_, r) =>
                           r.paidAt ? (
                             <PaymentTime at={r.paidAt} />
@@ -530,8 +806,30 @@ export function ScanPaymentsPage() {
                       },
                       {
                         title: '状态',
-                        width: 88,
+                        width: 74,
+                        align: 'center',
                         render: (_, r) => <PaymentStatusTag status={r.status} />,
+                      },
+                      {
+                        title: '操作',
+                        width: 112,
+                        render: (_, r) => (
+                          <Space size={2} className="scan-row-actions">
+                            <Button type="link" size="small" onClick={() => setInspectedOrder(r)}>
+                              详情
+                            </Button>
+                            {r.status !== 'paid' && r.userId && (
+                              <Button
+                                type="link"
+                                size="small"
+                                disabled={busy}
+                                onClick={() => openManual(r)}
+                              >
+                                登记漏报
+                              </Button>
+                            )}
+                          </Space>
+                        ),
                       },
                     ]}
                   />
@@ -563,6 +861,114 @@ export function ScanPaymentsPage() {
           ]}
         />
       </SectionCard>
+      {inspectedReceipt && (
+        <ReceiptDialog
+          key={inspectedReceipt.id}
+          row={inspectedReceipt}
+          onClose={() => setInspectedReceipt(null)}
+          onResolved={() => {
+            setInspectedReceipt(null);
+            clearSelection();
+            receipts.refresh();
+            orders.refresh();
+            toast.success('已关联并入账');
+          }}
+          onIgnore={(receipt) => {
+            setInspectedReceipt(null);
+            setIgnoredReceipt(receipt);
+          }}
+          onBrowseOrders={(receipt) => {
+            setInspectedReceipt(null);
+            setReceiptId(receipt.id);
+            setTab('orders');
+          }}
+        />
+      )}
+      {inspectedOrder && (
+        <Modal
+          open
+          title="APP 订单详情"
+          onCancel={() => setInspectedOrder(null)}
+          footer={
+            <Space>
+              <Button onClick={() => setInspectedOrder(null)}>关闭</Button>
+              {inspectedOrder.status !== 'paid' && inspectedOrder.userId && (
+                <Button type="primary" onClick={() => openManual(inspectedOrder)}>
+                  登记漏报
+                </Button>
+              )}
+            </Space>
+          }
+        >
+          <dl className="scan-detail-grid">
+            <div>
+              <dt>订单编号</dt>
+              <dd>
+                <OrderIdentifier id={inspectedOrder.id} />
+              </dd>
+            </div>
+            <div>
+              <dt>渠道</dt>
+              <dd>
+                <PaymentChannel method={inspectedOrder.channel} />
+              </dd>
+            </div>
+            <div>
+              <dt>付款人</dt>
+              <dd>
+                {inspectedOrder.userId
+                  ? userDisplayName(
+                      inspectedOrder.userId,
+                      directory.byId.get(inspectedOrder.userId),
+                    )
+                  : '已注销账号'}
+              </dd>
+            </div>
+            <div>
+              <dt>状态</dt>
+              <dd>
+                <PaymentStatusTag status={inspectedOrder.status} />
+              </dd>
+            </div>
+            <div>
+              <dt>付费类型</dt>
+              <dd>{inspectedOrder.kind === 'membership' ? '会员' : '积分充值'}</dd>
+            </div>
+            <div>
+              <dt>购买内容</dt>
+              <dd>{inspectedOrder.title}</dd>
+            </div>
+            <div>
+              <dt>应付金额</dt>
+              <dd>{money(inspectedOrder.amountFen)}</dd>
+            </div>
+            <div>
+              <dt>积分</dt>
+              <dd>{formatInt(inspectedOrder.points)}</dd>
+            </div>
+            {inspectedOrder.baseFen !== inspectedOrder.amountFen && (
+              <div>
+                <dt>报价金额</dt>
+                <dd>{money(inspectedOrder.baseFen)}</dd>
+              </div>
+            )}
+            <div>
+              <dt>创建时间</dt>
+              <dd>{date(inspectedOrder.createdAt)}</dd>
+            </div>
+            <div>
+              <dt>到期时间</dt>
+              <dd>{date(inspectedOrder.expiresAt)}</dd>
+            </div>
+            {inspectedOrder.paidAt && (
+              <div>
+                <dt>入账时间</dt>
+                <dd>{date(inspectedOrder.paidAt)}</dd>
+              </div>
+            )}
+          </dl>
+        </Modal>
+      )}
       <Modal
         open={monitorOpen && !pairing}
         title="到账监控手机"
@@ -763,21 +1169,23 @@ export function ScanPaymentsPage() {
         }}
         onOk={() =>
           manual &&
-          void run(
-            () =>
-              api.call(A.manualReceipt, {
-                body: {
-                  orderId: manual.id,
-                  amountFen: actualFen,
-                  receiptReference: bankRef.trim(),
-                  reason: '管理员核实支付机构账单',
-                },
-              }),
-            () => {
+          void run(async () => {
+            const result = await api.call(A.manualReceipt, {
+              body: {
+                orderId: manual.id,
+                amountFen: actualFen,
+                receiptReference: bankRef.trim(),
+                reason: '管理员核实支付机构账单',
+              },
+            });
+            if (result.status === 'matched') {
               setManual(null);
               setOrderId(undefined);
-            },
-          )
+              toast.success('已登记并入账');
+            } else {
+              setMessage(reasons[result.reason] ?? '未能入账，请核对订单状态');
+            }
+          })
         }
       >
         <p>

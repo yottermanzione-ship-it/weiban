@@ -31,7 +31,12 @@ object Delivery {
                     val payload = JSONObject().apply { for (key in listOf("type", "eventId", "channel", "amountFen", "observedAt", "postedAt")) put(key, event.get(key)) }
                     if (event.has("reviewReason")) payload.put("reviewReason", event.getString("reviewReason"))
                     val result = MonitorApi.report(app, payload)
-                    QueueStore.accept(app, event.getString("eventId"), result)
+                    val eventId = event.getString("eventId")
+                    val notice = event.optString("noticeText")
+                    if (notice.isNotEmpty() && result.optBoolean("requestNotice")) {
+                        MonitorApi.report(app, JSONObject().put("type", "notice").put("eventId", eventId).put("noticeText", notice))
+                    }
+                    QueueStore.accept(app, eventId, result, noticeChecked = notice.isNotEmpty())
                 }
                 QueueStore.prefs(app).edit().putLong("connectedAt", System.currentTimeMillis()).commit()
                 QueueStore.status(app, if (!ReceiptListener.connected) "服务器连接正常；通知监听未连接，尚不能监控到账"

@@ -1,6 +1,6 @@
 import { createHash, createPublicKey, randomBytes, verify } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, gt, lte, isNull, isNotNull } from 'drizzle-orm';
+import { and, desc, eq, gt, lte, isNull, isNotNull, ne, sql } from 'drizzle-orm';
 import sharp from 'sharp';
 import {
   ScanDevice,
@@ -20,11 +20,14 @@ import {
   AUDIT_LOG,
   CLOCK,
   DATABASE,
+  ENVELOPE_CRYPTO,
+  PLATFORM_KEY_OWNER,
   newId,
   type AuditLog,
   type Clock,
   type Database,
   type DbTx,
+  type EnvelopeCrypto,
 } from '../../../platform/index.js';
 import {
   IDENTITY_ACCOUNT_STATUS_PORT,
@@ -63,6 +66,10 @@ const orderView = (r: OrderRow) =>
     paidAt: r.paidAt?.toISOString() ?? null,
     qr: r.status === 'pending' ? r.qr : '',
   });
+const orderSummary = (row: OrderRow) => {
+  const { qr: _qr, ...summary } = orderView(row);
+  return summary;
+};
 const receiptView = (r: ReceiptRow, purchase?: { kind: string; title: string } | null) =>
   ScanReceipt.parse({
     ...r,
@@ -84,9 +91,12 @@ const deviceView = (r: DeviceRow, now: Date) =>
       now.getTime() - r.lastSeenAt.getTime() < 2 * MINUTE,
   });
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
+const noticeAad = (id: string) => `scan-receipt-notice:${id}`;
 /** Versioned, fixed fields, ASCII delimiters. Android signs these exact UTF-8 bytes with SHA256withECDSA (DER). */
 export function monitorSigningText(input: ScanMonitorReport): string {
   const e = input.event;
+  if (e.type === 'notice')
+    return `wb-pay-v3|${input.deviceId}|${input.requestTime}|notice|${e.eventId}|${digest(e.noticeText)}`;
   const version = e.type === 'receipt' && e.reviewReason ? 'wb-pay-v2' : 'wb-pay-v1';
   const prefix = `${version}|${input.deviceId}|${input.requestTime}|${e.type}`;
   return e.type === 'heartbeat'
@@ -116,6 +126,7 @@ export class ScanPaymentService {
     @Inject(DATABASE) private readonly database: Database,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
+    @Inject(ENVELOPE_CRYPTO) private readonly crypto: EnvelopeCrypto,
     @Inject(Ledger) private readonly ledger: Ledger,
     @Inject(MembershipOrderService) private readonly membership: MembershipOrderService,
     @Inject(IDENTITY_ACCOUNT_STATUS_PORT) private readonly accounts: IdentityAccountStatusPort,
@@ -502,6 +513,30 @@ export class ScanPaymentService {
         .select()
         .from(scanReceipts)
         .where(and(eq(scanReceipts.deviceId, current.id), eq(scanReceipts.eventId, e.eventId)));
+      if (e.type === 'notice') {
+        if (!existing?.reviewReason) throw new AppError('not_found', '没有需要补报原文的到账');
+        const acknowledged = { ok: true as const, status: existing.status };
+        if (existing.orderId) {
+          const [order] = await tx.db
+            .select({ userId: scanOrders.userId })
+            .from(scanOrders)
+            .where(eq(scanOrders.id, existing.orderId));
+          if (!order?.userId) return acknowledged;
+        }
+        if (!existing.noticeCiphertext) {
+          const noticeCiphertext = await this.crypto.seal(
+            PLATFORM_KEY_OWNER,
+            noticeAad(existing.id),
+            e.noticeText,
+            tx,
+          );
+          await tx.db
+            .update(scanReceipts)
+            .set({ noticeCiphertext })
+            .where(eq(scanReceipts.id, existing.id));
+        }
+        return acknowledged;
+      }
       if (existing) {
         if (
           existing.channel !== e.channel ||
@@ -579,7 +614,12 @@ export class ScanPaymentService {
         .select()
         .from(scanReceipts)
         .where(eq(scanReceipts.id, receipt!.id));
-      return this.reportResult(tx, saved!);
+      if (saved!.status !== 'review') return this.reportResult(tx, saved!);
+      await tx.db
+        .update(scanReceipts)
+        .set({ reviewReason: saved!.reason })
+        .where(eq(scanReceipts.id, receipt!.id));
+      return this.reportResult(tx, { ...saved!, reviewReason: saved!.reason });
     });
     if (outcome.status === 'event_conflict')
       throw new AppError('conflict', '到账标识与原记录冲突，请人工核对');
@@ -596,7 +636,12 @@ export class ScanPaymentService {
   }
   private async reportResult(tx: DbTx, receipt: ReceiptRow) {
     const result = await this.receiptDetails(tx, receipt);
-    return { ok: true as const, status: receipt.status, purchaseKind: result.purchaseKind ?? null };
+    return {
+      ok: true as const,
+      status: receipt.status,
+      purchaseKind: result.purchaseKind ?? null,
+      ...(receipt.reviewReason && !receipt.noticeCiphertext ? { requestNotice: true } : {}),
+    };
   }
   private async fulfill(tx: DbTx, order: OrderRow, receipt: ReceiptRow, actor: string | null) {
     if (!order.userId) return this.review(tx, order, receipt, 'account_unavailable');
@@ -686,12 +731,17 @@ export class ScanPaymentService {
     await tx.db.update(scanOrders).set({ status: 'review' }).where(eq(scanOrders.id, order.id));
     await tx.db.update(scanReceipts).set({ reason }).where(eq(scanReceipts.id, receipt.id));
   }
-  async receipts(query: { cursor?: string | undefined; limit: number }) {
+  async receipts(query: {
+    cursor?: string | undefined;
+    limit: number;
+    status?: ScanReceipt['status'] | undefined;
+  }) {
     const offset = Number(query.cursor ?? 0);
     const rows = await this.database.db
       .select({ receipt: scanReceipts, kind: scanOrders.kind, title: scanOrders.title })
       .from(scanReceipts)
       .leftJoin(scanOrders, eq(scanReceipts.orderId, scanOrders.id))
+      .where(query.status ? eq(scanReceipts.status, query.status) : undefined)
       .orderBy(desc(scanReceipts.receivedAt), desc(scanReceipts.id))
       .offset(offset)
       .limit(query.limit + 1);
@@ -703,6 +753,50 @@ export class ScanPaymentService {
         ),
       nextCursor: rows.length > query.limit ? String(offset + query.limit) : null,
     };
+  }
+  async getReceiptDetails(id: string, query: { cursor?: string | undefined; limit: number }) {
+    return this.database.transaction(async (tx) => {
+      const [row] = await tx.db.select().from(scanReceipts).where(eq(scanReceipts.id, id));
+      if (!row) throw new AppError('not_found', '到账记录不存在');
+      const [order] = row.orderId
+        ? await tx.db.select().from(scanOrders).where(eq(scanOrders.id, row.orderId))
+        : [];
+      const offset = Number(query.cursor ?? 0);
+      const candidates =
+        row.status === 'review'
+          ? await tx.db
+              .select()
+              .from(scanOrders)
+              .where(
+                and(
+                  eq(scanOrders.channel, row.channel),
+                  eq(scanOrders.amountFen, row.amountFen),
+                  ne(scanOrders.status, 'paid'),
+                  isNotNull(scanOrders.userId),
+                ),
+              )
+              .orderBy(
+                sql`abs(extract(epoch from (${scanOrders.createdAt} - ${row.postedAt.toISOString()}::timestamptz)))`,
+                desc(scanOrders.id),
+              )
+              .offset(offset)
+              .limit(query.limit + 1)
+          : [];
+      const noticeText = row.noticeCiphertext
+        ? (
+            await this.crypto.open(PLATFORM_KEY_OWNER, noticeAad(row.id), row.noticeCiphertext, tx)
+          ).toString('utf8')
+        : null;
+      return {
+        receipt: receiptView(row, order),
+        noticeText,
+        linkedOrder: order ? orderSummary(order) : null,
+        candidates: {
+          items: candidates.slice(0, query.limit).map(orderSummary),
+          nextCursor: candidates.length > query.limit ? String(offset + query.limit) : null,
+        },
+      };
+    });
   }
   async resolve(actor: string, id: string, orderId: string | null, reason: string) {
     return this.database.transaction(async (tx) => {

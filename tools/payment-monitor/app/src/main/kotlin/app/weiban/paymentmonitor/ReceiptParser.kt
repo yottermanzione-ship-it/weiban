@@ -7,8 +7,10 @@ data class ReceiptCandidate(val channel: String, val amountFen: Int, val reviewR
 
 /** Collect monetary notices like the legacy listener; uncertainty is reported, not silently lost. */
 object ReceiptParser {
+    private val wechatPaymentTitles = setOf("微信支付", "微信收款助手", "收款助手")
+    private val alipayPaymentTitles = setOf("支付宝", "支付宝商家服务", "收款通知", "到账通知", "收款汇总")
     fun acceptsTitle(pkg: String, title: String): Boolean = when (pkg) {
-        "com.tencent.mm" -> title.trim() in setOf("微信", "微信支付", "微信收款助手", "收款助手")
+        "com.tencent.mm" -> title.trim() == "微信" || title.trim() in wechatPaymentTitles
         // Alipay puts the complete receipt, including the amount, in its title on some devices.
         "com.eg.android.AlipayGphone" -> true
         else -> false
@@ -17,6 +19,7 @@ object ReceiptParser {
     private val incoming = Regex("""^(?:(?:微信支付|微信收款助手|支付宝)[：:\s]*)?(?:(?:你已|您已)?(?:成功收款|收款到账|收款成功|收款|成功收钱|收钱码到账|到账)[：:\s]*|(?:[\p{L}\p{N}*·]{1,30})?向[你您]付款[：:\s]*)[0-9]""")
     private val nonReceipt = Regex("退款|付款成功|已付款|扣款|转账|转出|支出|优惠|红包|活动|奖励|返现|领券")
     private val aggregate = Regex("""累计|汇总|合计|共计|条消息|\[\d+条\]""")
+    private val receiptWords = Regex("收款|收钱|到账|向[你您]付款")
     // WeChat prefixes the latest visible message with the unread count and sometimes its sender.
     // That count is not a payment total. Only unwrap an anchored, explicit incoming receipt.
     private val wechatUnreadPrefix = Regex("""^\[[1-9][0-9]*条\]\s*(?:(?:微信收款助手|收款助手|微信支付)\s*[：:]\s*)?""")
@@ -27,6 +30,19 @@ object ReceiptParser {
         return if (incoming.containsMatchIn(latest)) latest else text
     }
     fun acceptsMessagingTitle(pkg: String, title: String): Boolean = pkg != "com.eg.android.AlipayGphone" || incoming.containsMatchIn(title.trim())
+
+    fun canKeepNoticeText(channel: String, title: String, texts: List<String>, messaging: Boolean): Boolean {
+        if (messaging) return false
+        val heading = title.trim()
+        val views = (listOf(title) + texts).map { receiptView(channel, it) }
+        val incomingOrTotal = views.any {
+            incoming.containsMatchIn(it) || aggregate.containsMatchIn(it) && receiptWords.containsMatchIn(it)
+        }
+        if (channel == "wechat") return heading in wechatPaymentTitles && incomingOrTotal || views.any {
+            it.startsWith("微信支付") && incoming.containsMatchIn(it)
+        }
+        return incoming.containsMatchIn(heading) || heading in alipayPaymentTitles && incomingOrTotal
+    }
 
     fun parse(pkg: String, title: String, text: String, summary: Boolean, messaging: Boolean): ReceiptCandidate? =
         parseViews(pkg, title, listOf(text), summary, messaging)
@@ -46,7 +62,7 @@ object ReceiptParser {
         }.toList() }.distinct()
         val amount = amounts.firstOrNull() ?: return null
         val text = views.joinToString(" ")
-        val brandPresent = channel == "alipay" || title.trim() in setOf("微信支付", "微信收款助手", "收款助手") || views.any { it.startsWith("微信支付") }
+        val brandPresent = channel == "alipay" || title.trim() in wechatPaymentTitles || views.any { it.startsWith("微信支付") }
         val reason = when {
             aggregate.containsMatchIn(text) || multipleItems -> "notice_summary"
             amounts.size > 1 -> "notice_multiple_amounts"
@@ -60,5 +76,8 @@ object ReceiptParser {
     // Two monetary inbox lines can be distinct payments even when their amounts are equal.
     fun hasMultipleMoneyLines(lines: List<String>): Boolean = lines.count { money.containsMatchIn(it) } > 1
     fun eventId(channel: String, sourceKey: String, postedAt: Long, amountFen: Int): String =
-        MessageDigest.getInstance("SHA-256").digest("wb-notice-v1|$channel|$sourceKey|$postedAt|$amountFen".toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it.toInt() and 255) }
+        paymentDigest("wb-notice-v1|$channel|$sourceKey|$postedAt|$amountFen")
 }
+
+internal fun paymentDigest(text: String): String =
+    MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it.toInt() and 255) }

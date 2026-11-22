@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 7.17. Regenerate: pnpm android:generate
+// Contract 7.18. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "7.17"
+const val CONTRACT_VERSION: String = "7.18"
 
 @Serializable
 data class AccountAlias(
@@ -10642,6 +10642,7 @@ data class ScanMonitorEndpointsReportResponse(
     @SerialName("ok") val `ok`: Boolean = true,
     @SerialName("status") val `status`: String,
     @SerialName("purchaseKind") val `purchaseKind`: String? = null,
+    @SerialName("requestNotice") val `requestNotice`: Boolean? = null,
 )
 
 @Serializable
@@ -10722,6 +10723,26 @@ data class ScanPaymentAdminEndpointsPairCodeResponse(
 )
 
 @Serializable
+data class ScanPaymentAdminEndpointsReceiptDetailsParams(
+    @SerialName("receiptId") val `receiptId`: Id,
+)
+
+@Serializable
+data class ScanPaymentAdminEndpointsReceiptDetailsResponse(
+    @SerialName("receipt") val `receipt`: ScanReceipt,
+    @SerialName("noticeText") val `noticeText`: String?,
+    @SerialName("linkedOrder") val `linkedOrder`: ScanPaymentAdminEndpointsReceiptDetailsResponseLinkedOrder?,
+    @SerialName("candidates") val `candidates`: ScanPaymentAdminEndpointsReceiptDetailsResponseCandidates,
+)
+
+@Serializable
+data class ScanPaymentAdminEndpointsReceiptsQuery(
+    @SerialName("cursor") val `cursor`: String? = null,
+    @SerialName("limit") val `limit`: Long? = null,
+    @SerialName("status") val `status`: String? = null,
+)
+
+@Serializable
 data class ScanPaymentAdminEndpointsReceiptsResponse(
     @SerialName("items") val `items`: List<ScanReceipt>,
     @SerialName("nextCursor") val `nextCursor`: String?,
@@ -10731,11 +10752,6 @@ data class ScanPaymentAdminEndpointsReceiptsResponse(
 data class ScanPaymentAdminEndpointsResolveBody(
     @SerialName("orderId") val `orderId`: Id?,
     @SerialName("reason") val `reason`: String,
-)
-
-@Serializable
-data class ScanPaymentAdminEndpointsResolveParams(
-    @SerialName("receiptId") val `receiptId`: Id,
 )
 
 @Serializable
@@ -10780,6 +10796,7 @@ data class ScanReceipt(
     @SerialName("purchaseTitle") val `purchaseTitle`: String? = null,
     @SerialName("status") val `status`: String,
     @SerialName("reason") val `reason`: String,
+    @SerialName("reviewReason") val `reviewReason`: String? = null,
     @SerialName("orderId") val `orderId`: Id?,
 )
 
@@ -15791,6 +15808,14 @@ data class ScanMonitorReportEventReceipt(
     @SerialName("reviewReason") val `reviewReason`: String? = null,
 ) : ScanMonitorReportEvent
 
+@Serializable
+data class ScanMonitorReportEventNotice(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "notice",
+    @SerialName("eventId") val `eventId`: String,
+    @SerialName("noticeText") val `noticeText`: String,
+) : ScanMonitorReportEvent
+
 object ScanMonitorReportEventSerializer : KSerializer<ScanMonitorReportEvent> {
     override val descriptor: SerialDescriptor = buildClassSerialDescriptor("ScanMonitorReportEvent")
     override fun deserialize(decoder: Decoder): ScanMonitorReportEvent {
@@ -15800,6 +15825,7 @@ object ScanMonitorReportEventSerializer : KSerializer<ScanMonitorReportEvent> {
         return when (tag) {
             "heartbeat" -> input.json.decodeFromJsonElement(ScanMonitorReportEventHeartbeat.serializer(), value)
             "receipt" -> input.json.decodeFromJsonElement(ScanMonitorReportEventReceipt.serializer(), value)
+            "notice" -> input.json.decodeFromJsonElement(ScanMonitorReportEventNotice.serializer(), value)
             else -> throw SerializationException("Unknown discriminator")
         }
     }
@@ -15808,10 +15834,33 @@ object ScanMonitorReportEventSerializer : KSerializer<ScanMonitorReportEvent> {
         val element = when (value) {
             is ScanMonitorReportEventHeartbeat -> output.json.encodeToJsonElement(ScanMonitorReportEventHeartbeat.serializer(), value)
             is ScanMonitorReportEventReceipt -> output.json.encodeToJsonElement(ScanMonitorReportEventReceipt.serializer(), value)
+            is ScanMonitorReportEventNotice -> output.json.encodeToJsonElement(ScanMonitorReportEventNotice.serializer(), value)
         }
         output.encodeJsonElement(element)
     }
 }
+
+@Serializable
+data class ScanPaymentAdminEndpointsReceiptDetailsResponseLinkedOrder(
+    @SerialName("id") val `id`: Id,
+    @SerialName("userId") val `userId`: Id?,
+    @SerialName("channel") val `channel`: ScanChannel,
+    @SerialName("title") val `title`: String,
+    @SerialName("kind") val `kind`: String,
+    @SerialName("amountFen") val `amountFen`: Long,
+    @SerialName("baseFen") val `baseFen`: Long,
+    @SerialName("points") val `points`: Long,
+    @SerialName("status") val `status`: String,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("expiresAt") val `expiresAt`: Timestamp,
+    @SerialName("paidAt") val `paidAt`: Timestamp?,
+)
+
+@Serializable
+data class ScanPaymentAdminEndpointsReceiptDetailsResponseCandidates(
+    @SerialName("items") val `items`: List<ScanPaymentAdminEndpointsReceiptDetailsResponseCandidatesItemsItem>,
+    @SerialName("nextCursor") val `nextCursor`: String?,
+)
 
 @Serializable
 data class ServerAuthOkFrameData(
@@ -16427,6 +16476,22 @@ data class PetSpeciesWriteInputAppearancesItemImageMediaIds(
     @SerialName("baby") val `baby`: Id,
     @SerialName("junior") val `junior`: Id,
     @SerialName("adult") val `adult`: Id,
+)
+
+@Serializable
+data class ScanPaymentAdminEndpointsReceiptDetailsResponseCandidatesItemsItem(
+    @SerialName("id") val `id`: Id,
+    @SerialName("userId") val `userId`: Id?,
+    @SerialName("channel") val `channel`: ScanChannel,
+    @SerialName("title") val `title`: String,
+    @SerialName("kind") val `kind`: String,
+    @SerialName("amountFen") val `amountFen`: Long,
+    @SerialName("baseFen") val `baseFen`: Long,
+    @SerialName("points") val `points`: Long,
+    @SerialName("status") val `status`: String,
+    @SerialName("createdAt") val `createdAt`: Timestamp,
+    @SerialName("expiresAt") val `expiresAt`: Timestamp,
+    @SerialName("paidAt") val `paidAt`: Timestamp?,
 )
 
 @Serializable

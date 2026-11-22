@@ -1,6 +1,7 @@
 .user-list-table {
-  width: fit-content;
-  max-width: 100%;
+  --adjustable-table-min-width: 100%;
+  width: 100%;
+  min-width: 0;
 }
 
 .user-centered-value {

@@ -50,6 +50,27 @@ class QueueStoreTest {
         QueueStore.enqueue(ctx, ReceiptCandidate("wechat", 500), "synthetic", 3000)
         assertTrue(QueueStore.pending(ctx).isEmpty()); assertEquals(1, QueueStore.read(ctx).length())
     }
+    @Test fun previouslyReportedReviewCanAddVisibleEvidenceWithoutChangingEventTimes() {
+        val receipt = ReceiptCandidate("wechat", 1000, "notice_summary")
+        QueueStore.enqueue(ctx, receipt, "summary", 5000)
+        val original = QueueStore.pending(ctx).single()
+        val id = original.getString("eventId")
+        val response = org.json.JSONObject().put("status", "review")
+        QueueStore.accept(ctx, id, response)
+        val raw = "微信支付\n汇总收款10.00元"
+        QueueStore.enqueue(ctx, receipt, "summary", 5000, raw)
+        val replay = QueueStore.pending(ctx).single()
+        assertEquals(id, replay.getString("eventId"))
+        assertEquals(original.getString("observedAt"), replay.getString("observedAt"))
+        assertEquals(original.getString("postedAt"), replay.getString("postedAt"))
+        assertEquals(raw, replay.getString("noticeText"))
+        QueueStore.accept(ctx, id, response)
+        assertEquals(raw, QueueStore.pending(ctx).single().getString("noticeText"))
+        QueueStore.accept(ctx, id, response, noticeChecked = true)
+        QueueStore.enqueue(ctx, receipt, "summary", 5000, raw)
+        assertTrue(QueueStore.pending(ctx).isEmpty())
+        assertFalse(QueueStore.read(ctx).getJSONObject(0).has("noticeText"))
+    }
     @Test fun correctedUnreadReceiptKeepsOriginalIdentityAcrossExpansionAndRepeatScanning() {
         val collapsed = ReceiptParser.parse("com.tencent.mm", "微信收款助手", "[3条]微信收款助手: 微信支付收款5.00元(老顾客第6次消费)", true, false)!!
         val expanded = ReceiptParser.parseViews("com.tencent.mm", "微信收款助手", listOf("[3条]微信收款助手: 微信支付收款5.00元(老顾客第6次消费)", "微信支付收款5.00元(老顾客第6次消费)"), true)!!

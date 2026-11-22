@@ -398,6 +398,10 @@
   padding: 28px;
 }
 
+.workspace-canvas.ant-layout-content:has(.page-full-width) {
+  max-width: none;
+}
+
 .boot-screen {
   padding: 60px 16px;
   display: flex;

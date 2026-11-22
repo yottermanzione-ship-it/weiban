@@ -1,11 +1,15 @@
-import { generateKeyPairSync, sign, randomBytes, createHash } from 'node:crypto';
+import { generateKeyPairSync, sign, randomBytes, randomUUID, createHash } from 'node:crypto';
 import { expect, test } from './fixtures.js';
 import { ScanOrder } from '@weiban/contracts';
 
 test('扫码收款：后台配置、手机签名到账、积分和会员页面显示真实结果', async ({ page, request }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(105_000);
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  await page.addInitScript(() => {
+    localStorage.setItem('weiban.os.theme', 'light');
+    localStorage.setItem('weiban.os.density', 'small');
+  });
   const device = {
     platform: 'web',
     name: 'Synthetic checkout browser',
@@ -173,6 +177,20 @@ test('扫码收款：后台配置、手机签名到账、积分和会员页面�
   );
   await page.getByRole('button', { name: '微信扫码付款', exact: true }).click();
   const manualOrder = ScanOrder.parse(await (await manualCreated).json());
+  const accountLogin = await request.post('http://127.0.0.1:3000/api/v1/auth/login', {
+    data: { username: 'browser_other', password: 'correct horse battery', device, kind: 'app' },
+  });
+  expect(accountLogin.ok()).toBe(true);
+  const accountHeaders = { Authorization: `Bearer ${(await accountLogin.json()).session.token}` };
+  const reviewCreated = await request.post('http://127.0.0.1:3000/api/v1/billing/scan/orders', {
+    headers: accountHeaders,
+    data: {
+      clientOrderId: randomUUID(),
+      channel: 'alipay',
+      purchase: { kind: 'recharge', amountFen: 845 },
+    },
+  });
+  const reviewOrder = ScanOrder.parse(await reviewCreated.json());
   // Every receipt query is slower than the polling interval. Polling must not
   // invalidate every in-flight result and leave the table permanently empty.
   let delayedReceiptQueries = 0;
@@ -185,6 +203,7 @@ test('扫码收款：后台配置、手机签名到账、积分和会员页面�
   await page.setViewportSize({ width: 1440, height: 1000 });
   const receiptsTab = page.getByRole('tab', { name: '扫码到账记录', exact: true });
   const ordersTab = page.getByRole('tab', { name: 'APP 订单', exact: true });
+  const filters = page.locator('.scan-record-tabs .ant-segmented');
   const receiptsPanel = page.getByRole('region', { name: '扫码到账记录', exact: true });
   const ordersPanel = page.getByRole('region', { name: 'APP 订单', exact: true });
   await expect(receiptsTab).toHaveAttribute('aria-selected', 'true');
@@ -199,17 +218,36 @@ test('扫码收款：后台配置、手机签名到账、积分和会员页面�
   await expect(payerRow).not.toContainText(payerId);
   await expect(payerRow).not.toContainText(manualOrder.id);
   await expect(payerRow.locator('[title="' + payerId + '"]')).toHaveCount(0);
+  await page.setViewportSize({ width: 1920, height: 1000 });
+  await expect(ordersPanel.getByRole('columnheader', { name: '渠道', exact: true })).toBeVisible();
+  const canvasPadding = await page.locator('.workspace-canvas').evaluate((canvas) => {
+    const s = getComputedStyle(canvas);
+    return Number.parseFloat(s.paddingLeft) + Number.parseFloat(s.paddingRight);
+  });
+  const workspaceWidth = (await page.locator('.workspace-main').boundingBox())!.width;
+  const availableWidth = workspaceWidth - canvasPadding;
+  const orderWidths = await ordersPanel.locator('.ant-table-body').evaluate((body) => ({
+    available: body.clientWidth,
+    table: body.querySelector('table')!.getBoundingClientRect().width,
+    purchase: body.querySelector('tr[data-row-key]')!.children[3]!.getBoundingClientRect().width,
+  }));
+  expect(Math.abs(orderWidths.table - orderWidths.available)).toBeLessThan(2);
+  expect(Math.abs(orderWidths.table - availableWidth)).toBeLessThan(4);
+  expect(orderWidths.purchase / orderWidths.table).toBeLessThan(0.23);
+  await page.screenshot({ path: 'apps/web/test-results/scan-order-table.png' });
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   await payerRow.getByRole('button', { name: payerCode, exact: true }).click();
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(payerCode);
   const orderNumber = (id: string) => `预览订单编号 …${id.slice(-8)}`;
   await payerRow.getByRole('button', { name: orderNumber(manualOrder.id), exact: true }).hover();
   await expect(page.getByText(manualOrder.id, { exact: true })).toBeVisible();
+  await page.getByText(manualOrder.id, { exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'APP 订单详情' })).toHaveCount(0);
   await page.getByRole('button', { name: '复制订单编号', exact: true }).click();
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(manualOrder.id);
   await receiptsTab.click();
-  // A promotion can contain the exact pending amount. Preserve it for review and
-  // make it visible without refreshing the page, but never credit that order.
+  // A summary can show the pending amount. One notification must enter review first.
   const uncertainId = createHash('sha256').update(randomBytes(16)).digest('hex');
   const uncertain = {
     deviceId: pair.deviceId,
@@ -217,14 +255,14 @@ test('扫码收款：后台配置、手机签名到账、积分和会员页面�
     event: {
       type: 'receipt',
       eventId: uncertainId,
-      channel: manualOrder.channel,
-      amountFen: manualOrder.amountFen,
+      channel: reviewOrder.channel,
+      amountFen: reviewOrder.amountFen,
       observedAt: now,
       postedAt: now,
-      reviewReason: 'notice_uncertain',
+      reviewReason: 'notice_summary',
     },
     signature: proof(
-      `wb-pay-v2|${pair.deviceId}|${now}|receipt|${uncertainId}|${manualOrder.channel}|${manualOrder.amountFen}|${now}|${now}|notice_uncertain`,
+      `wb-pay-v2|${pair.deviceId}|${now}|receipt|${uncertainId}|${reviewOrder.channel}|${reviewOrder.amountFen}|${now}|${now}|notice_summary`,
     ),
   };
   expect(await (await request.post(monitor + '/report', { data: uncertain })).json()).toMatchObject(
@@ -232,29 +270,60 @@ test('扫码收款：后台配置、手机签名到账、积分和会员页面�
       ok: true,
       status: 'review',
       purchaseKind: null,
+      requestNotice: true,
     },
   );
-  const uncertainRow = receiptsPanel
-    .getByRole('row')
-    .filter({ hasText: '有金额的通知，收款性质待核对' });
+  const noticeText = '支付宝商家服务\n收款8.45元\n累计收款16.90元';
+  const noticeDigest = createHash('sha256').update(noticeText).digest('hex');
+  const detailReport = await request.post(monitor + '/report', {
+    data: {
+      deviceId: pair.deviceId,
+      requestTime: now,
+      event: { type: 'notice', eventId: uncertainId, noticeText },
+      signature: proof(`wb-pay-v3|${pair.deviceId}|${now}|notice|${uncertainId}|${noticeDigest}`),
+    },
+  });
+  expect(detailReport.ok()).toBe(true);
+  const uncertainRow = receiptsPanel.getByRole('row').filter({ hasText: '汇总通知，不自动入账' });
   await expect(uncertainRow).toBeVisible({ timeout: 12_000 });
   expect(delayedReceiptQueries).toBeGreaterThan(0);
-  await expect(uncertainRow).toContainText(`¥${(manualOrder.amountFen / 100).toFixed(2)}`);
+  await expect(uncertainRow.getByRole('cell', { name: '支付宝', exact: true })).toBeVisible();
+  await expect(uncertainRow).toContainText('¥8.45');
   await expect(uncertainRow.getByRole('cell', { name: '—', exact: true })).toBeVisible();
+  await page.unroute('**/admin/scan-payments/receipts?*');
+  await filters.getByText('待核对', { exact: true }).click();
+  await expect(uncertainRow).toBeVisible();
+  await expect(receiptsPanel.locator('tr[data-row-key]')).toHaveCount(1);
   const receiptChoice = uncertainRow.getByRole('radio');
   const confirmMatch = page.getByRole('button', { name: '确认关联并入账', exact: true });
   await receiptChoice.check();
   await expect(confirmMatch).toBeDisabled();
   await ordersTab.click();
-  await expect(payerRow).toContainText('待付款');
-  await payerRow.getByRole('radio').check();
+  const candidateRow = ordersPanel.locator(`tr[data-row-key="${reviewOrder.id}"]`);
+  await expect(candidateRow).toContainText('待付款');
+  await candidateRow.getByRole('radio').check();
   await expect(confirmMatch).toBeEnabled();
   await receiptsTab.click();
   await expect(receiptChoice).toBeChecked();
+  await page.getByRole('button', { name: '清空选择', exact: true }).click();
+  await uncertainRow.getByRole('button', { name: '核对入账', exact: true }).click();
+  const reviewDialog = page.getByRole('dialog', { name: '核对到账' });
+  await expect(reviewDialog.getByText('汇总通知，不自动入账', { exact: true })).toBeVisible();
+  await expect(reviewDialog.locator('pre')).toHaveText(noticeText);
+  const candidate = reviewDialog.getByRole('radio', { name: new RegExp(reviewOrder.id.slice(-8)) });
+  await candidate.check();
+  await expect(reviewDialog.getByRole('textbox')).toHaveCount(0);
+  const confirmReview = reviewDialog.getByRole('button', { name: '确认关联并入账', exact: true });
+  await expect(confirmReview).toBeEnabled();
+  await page.screenshot({
+    path: 'apps/web/test-results/scan-receipt-review.png',
+    animations: 'disabled',
+  });
+  await confirmReview.click();
+  await expect(reviewDialog).toHaveCount(0);
   await ordersTab.click();
-  await expect(payerRow.getByRole('radio')).toBeChecked();
-  await page.unroute('**/admin/scan-payments/receipts?*');
-  await page.getByRole('button', { name: '登记漏报', exact: true }).click();
+  await expect(candidateRow.getByText('已到账', { exact: true })).toBeVisible();
+  await payerRow.getByRole('button', { name: '登记漏报', exact: true }).click();
   const manualDialog = page.getByRole('dialog', { name: '核实漏报到账' });
   const settle = page.getByRole('button', { name: '已核实实际收款，登记入账' });
   await expect(manualDialog.getByRole('button', { name: payerCode, exact: true })).toBeVisible();
@@ -272,6 +341,7 @@ test('扫码收款：后台配置、手机签名到账、积分和会员页面�
     ordersPanel.getByRole('columnheader', { name: '入账时间', exact: true }),
   ).toBeVisible();
   await receiptsTab.click();
+  await filters.getByText('全部', { exact: true }).click();
   await expect(
     receiptsPanel.getByRole('columnheader', { name: '通知时间', exact: true }),
   ).toBeVisible();
@@ -286,6 +356,19 @@ test('扫码收款：后台配置、手机签名到账、积分和会员页面�
   const monitorDialog = page.getByRole('dialog', { name: '到账监控手机' });
   await expect(monitorDialog.getByRole('button', { name: '暂停监控', exact: true })).toBeVisible();
   await expect(monitorDialog.getByText('待配对', { exact: true })).toHaveCount(0);
+  await monitorDialog.getByRole('button', { name: '关闭', exact: true }).click();
+  await page.setViewportSize({ width: 1920, height: 1000 });
+  await page.goto('http://127.0.0.1:5174/accounts');
+  await expect(page.getByRole('columnheader', { name: '最近活跃', exact: false })).toBeVisible();
+  const userRow = page.locator('.user-list-table tbody tr[data-row-key]').first();
+  await expect(userRow).toBeVisible();
+  const userTableWidth = await userRow.evaluate(
+    (row) => row.closest('table')!.getBoundingClientRect().width,
+  );
+  const accountContentWidth =
+    (await page.locator('.workspace-main').evaluate((main) => main.clientWidth)) - canvasPadding;
+  expect(Math.abs(userTableWidth - accountContentWidth)).toBeLessThan(4);
+  await page.screenshot({ path: 'apps/web/test-results/scan-user-table.png' });
   const settings = await (await request.get(admin + '/settings', { headers })).json();
   await request.put(admin + '/settings', { headers, data: { ...settings, enabled: false } });
   await page.goto('/wallet');

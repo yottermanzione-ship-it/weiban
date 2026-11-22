@@ -1,7 +1,8 @@
-import { boolean, integer, jsonb, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { boolean, customType, integer, jsonb, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { billingSchema } from './schema.js';
 import type { MembershipPlan, ScanPurchase } from '@weiban/contracts';
 const tz = (name: string) => timestamp(name, { withTimezone: true });
+const bytea = customType<{ data: Buffer }>({ dataType: () => 'bytea' });
 export interface PurchaseSnapshot {
   plan: MembershipPlan | null;
   firstPurchase: boolean;
@@ -51,5 +52,7 @@ export const scanReceipts = billingSchema.table('scan_receipts', {
   receivedAt: tz('received_at').notNull(),
   status: text('status').notNull(),
   reason: text('reason').notNull(),
+  reviewReason: text('review_reason'),
+  noticeCiphertext: bytea('notice_ciphertext'),
   orderId: uuid('order_id'),
 });
