@@ -60,7 +60,7 @@ test('扫码收款：后台配置、手机签名到账、积分和会员页面�
   await page.getByRole('button', { name: '登录', exact: true }).click();
   await expect(page.locator('.admin-avatar')).toBeVisible();
   await page.goto('http://127.0.0.1:5174/scan-payments');
-  await page.getByRole('button', { name: '配置收款码与开关' }).click();
+  await page.getByRole('button', { name: '收款设置', exact: true }).click();
   const buffer = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lV8AAAAASUVORK5CYII=',
     'base64',
@@ -83,6 +83,7 @@ test('扫码收款：后台配置、手机签名到账、积分和会员页面�
   await page.getByLabel('密码', { exact: true }).fill('correct horse battery');
   await page.getByRole('button', { name: '同意并登录', exact: true }).click();
   await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
+  const paidOrders: ScanOrder[] = [];
   for (const purchase of ['recharge', 'membership'] as const) {
     await page.goto(purchase === 'recharge' ? '/wallet/recharge' : '/membership');
     if (purchase === 'recharge')
@@ -159,6 +160,7 @@ test('扫码收款：后台配置、手机签名到账、积分和会员页面�
     expect((await request.post(monitor + '/report', { data })).ok()).toBe(true);
     await page.getByRole('button', { name: '查询到账' }).click();
     await expect(page.getByText('已到账', { exact: true })).toBeVisible();
+    paidOrders.push(o);
     await page.getByRole('button', { name: '关闭', exact: true }).click();
   }
   await page.reload();
@@ -181,17 +183,31 @@ test('扫码收款：后台配置、手机签名到账、积分和会员页面�
   });
   await page.goto('http://127.0.0.1:5174/scan-payments');
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await expect(page.getByText('监控上报记录', { exact: true })).toBeVisible();
-  const payerRow = page.getByRole('row').filter({ hasText: manualOrder.id });
-  await expect(page.getByRole('columnheader', { name: '付款人', exact: true })).toBeVisible();
+  const receiptsTab = page.getByRole('tab', { name: '扫码到账记录', exact: true });
+  const ordersTab = page.getByRole('tab', { name: 'APP 订单', exact: true });
+  const receiptsPanel = page.getByRole('region', { name: '扫码到账记录', exact: true });
+  const ordersPanel = page.getByRole('region', { name: 'APP 订单', exact: true });
+  await expect(receiptsTab).toHaveAttribute('aria-selected', 'true');
+  await ordersTab.click();
+  const payerRow = ordersPanel.locator(`tr[data-row-key="${manualOrder.id}"]`);
+  await expect(
+    ordersPanel.getByRole('columnheader', { name: '付款人', exact: true }),
+  ).toBeVisible();
   const payerId = manualOrder.userId!;
   const payerCode = payerId.slice(0, 4) + '…' + payerId.slice(-4);
   await expect(payerRow.locator('.cell-title')).toHaveText('其他用户');
   await expect(payerRow).not.toContainText(payerId);
+  await expect(payerRow).not.toContainText(manualOrder.id);
   await expect(payerRow.locator('[title="' + payerId + '"]')).toHaveCount(0);
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   await payerRow.getByRole('button', { name: payerCode, exact: true }).click();
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(payerCode);
+  const orderNumber = (id: string) => `预览订单编号 …${id.slice(-8)}`;
+  await payerRow.getByRole('button', { name: orderNumber(manualOrder.id), exact: true }).hover();
+  await expect(page.getByText(manualOrder.id, { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '复制订单编号', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(manualOrder.id);
+  await receiptsTab.click();
   // A promotion can contain the exact pending amount. Preserve it for review and
   // make it visible without refreshing the page, but never credit that order.
   const uncertainId = createHash('sha256').update(randomBytes(16)).digest('hex');
@@ -218,45 +234,58 @@ test('扫码收款：后台配置、手机签名到账、积分和会员页面�
       purchaseKind: null,
     },
   );
-  const uncertainRow = page.getByRole('row').filter({ hasText: '有金额的通知，收款性质待核对' });
+  const uncertainRow = receiptsPanel
+    .getByRole('row')
+    .filter({ hasText: '有金额的通知，收款性质待核对' });
   await expect(uncertainRow).toBeVisible({ timeout: 12_000 });
   expect(delayedReceiptQueries).toBeGreaterThan(0);
   await expect(uncertainRow).toContainText(`¥${(manualOrder.amountFen / 100).toFixed(2)}`);
-  await expect(uncertainRow).toContainText('未关联');
-  await expect(page.getByRole('row').filter({ hasText: manualOrder.id })).toContainText('待付款');
+  await expect(uncertainRow.getByRole('cell', { name: '—', exact: true })).toBeVisible();
+  const receiptChoice = uncertainRow.getByRole('radio');
+  const confirmMatch = page.getByRole('button', { name: '确认关联并入账', exact: true });
+  await receiptChoice.check();
+  await expect(confirmMatch).toBeDisabled();
+  await ordersTab.click();
+  await expect(payerRow).toContainText('待付款');
+  await payerRow.getByRole('radio').check();
+  await expect(confirmMatch).toBeEnabled();
+  await receiptsTab.click();
+  await expect(receiptChoice).toBeChecked();
+  await ordersTab.click();
+  await expect(payerRow.getByRole('radio')).toBeChecked();
   await page.unroute('**/admin/scan-payments/receipts?*');
-  await page
-    .getByRole('row')
-    .filter({ hasText: manualOrder.id })
-    .getByRole('button', { name: '核实漏报到账' })
-    .click();
+  await page.getByRole('button', { name: '登记漏报', exact: true }).click();
+  const manualDialog = page.getByRole('dialog', { name: '核实漏报到账' });
   const settle = page.getByRole('button', { name: '已核实实际收款，登记入账' });
-  await expect(
-    page
-      .getByRole('dialog', { name: '核实漏报到账' })
-      .getByRole('button', { name: payerCode, exact: true }),
-  ).toBeVisible();
+  await expect(manualDialog.getByRole('button', { name: payerCode, exact: true })).toBeVisible();
   await expect(settle).toBeDisabled();
   await page
     .getByLabel('账单实收金额', { exact: true })
     .fill((manualOrder.amountFen / 100).toFixed(2));
   await page.getByLabel('支付机构交易编号', { exact: true }).fill('SYNTHETIC_BROWSER_RECEIPT');
-  await page.getByLabel('漏报核对依据', { exact: true }).fill('合成账单，仅测试漏报处理');
+  await expect(manualDialog.getByRole('textbox')).toHaveCount(2);
+  await expect(settle).toBeEnabled();
   await settle.click();
-  await expect(page.getByRole('dialog', { name: '核实漏报到账' })).toHaveCount(0);
+  await expect(manualDialog).toHaveCount(0);
+  await expect(payerRow.getByText('已到账', { exact: true })).toBeVisible();
   await expect(
-    page
-      .getByRole('row')
-      .filter({ hasText: manualOrder.id })
-      .first()
-      .getByText('已到账', { exact: true }),
+    ordersPanel.getByRole('columnheader', { name: '入账时间', exact: true }),
   ).toBeVisible();
-  await expect(page.getByRole('columnheader', { name: '到账通知时间', exact: true })).toBeVisible();
-  await expect(page.getByRole('columnheader', { name: '入账时间', exact: true })).toBeVisible();
-  await expect(page.getByRole('cell', { name: '会员购买', exact: true }).first()).toBeVisible();
-  await expect(page.getByRole('cell', { name: '积分充值', exact: true }).first()).toBeVisible();
-  await expect(page.getByRole('button', { name: '暂停监控', exact: true })).toBeVisible();
-  await expect(page.getByText('待配对', { exact: true })).toHaveCount(0);
+  await receiptsTab.click();
+  await expect(
+    receiptsPanel.getByRole('columnheader', { name: '通知时间', exact: true }),
+  ).toBeVisible();
+  for (const order of paidOrders) {
+    const linked = receiptsPanel.getByRole('row').filter({
+      has: page.getByRole('button', { name: orderNumber(order.id), exact: true }),
+    });
+    await expect(linked).toContainText(order.title);
+    await expect(linked).toContainText('已入账');
+  }
+  await page.getByRole('button', { name: '监控手机', exact: true }).click();
+  const monitorDialog = page.getByRole('dialog', { name: '到账监控手机' });
+  await expect(monitorDialog.getByRole('button', { name: '暂停监控', exact: true })).toBeVisible();
+  await expect(monitorDialog.getByText('待配对', { exact: true })).toHaveCount(0);
   const settings = await (await request.get(admin + '/settings', { headers })).json();
   await request.put(admin + '/settings', { headers, data: { ...settings, enabled: false } });
   await page.goto('/wallet');

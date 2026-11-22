@@ -1122,6 +1122,13 @@
       "when": 1795239931128,
       "tag": "0172_admin_api_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 173,
+      "version": "7",
+      "when": 1795397400000,
+      "tag": "0173_model_route_cost_rates",
+      "breakpoints": true
     }
   ]
 }

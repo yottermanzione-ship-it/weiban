@@ -1,0 +1,22 @@
+.user-identity-fit :is(.cell-title, .user-identity-login) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-identity-fit .cell-sub {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.user-identity-fit .user-identity-separator {
+  display: none;
+}
+
+.user-identity-fit .os-id-chip {
+  flex: none;
+  padding-inline: 3px;
+  white-space: nowrap;
+}

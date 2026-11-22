@@ -46,6 +46,7 @@ export function FilterBar({
 export interface DataTableProps<T extends Record<string, unknown>> {
   columns: ProColumns<T>[];
   data?: T[];
+  className?: string;
   rowKey: keyof T | ((row: T) => string);
   loading?: boolean;
   error?: string;
@@ -108,6 +109,7 @@ function initialColumns(key: string): ColumnPrefs {
 export function WeibanDataGrid<T extends Record<string, unknown>>({
   columns,
   data = [],
+  className,
   rowKey,
   loading,
   error,
@@ -241,7 +243,11 @@ export function WeibanDataGrid<T extends Record<string, unknown>>({
   );
 
   return (
-    <div className={showTools ? 'table-card adjustable-table' : 'table-card'}>
+    <div
+      className={['table-card', showTools && 'adjustable-table', className]
+        .filter(Boolean)
+        .join(' ')}
+    >
       {views && <div className="os-grid-views">{views}</div>}
       {(filters || onRefresh || toolbarExtra || tools || exportCsv) && (
         <FilterBar

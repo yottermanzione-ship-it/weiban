@@ -546,12 +546,17 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
     const started = vi.spyOn(app.get(UsageRecorder), 'startAttempt');
     try {
       await catalog.replaceRoutes(admin, modelKey, [
-        { ...prior[0]!, priority: 1 },
+        { ...prior[0]!, priority: 1, costRates: { input_tokens_per_million: 11_000_000 } },
         {
           ...prior[0]!,
           upstreamId: spare.upstreamId,
           upstreamModelId: 'standby-wire',
           priority: 2,
+          costRates: {
+            input_tokens_per_million: 3_000_000,
+            cached_input_tokens_per_million: 500_000,
+            output_tokens_per_million: 5_000_000,
+          },
         },
       ]);
       mode = 'no-model-progress';
@@ -614,11 +619,13 @@ describeDb('T-029 网关真实装配：假 HTTP 上游、真实目录与计费',
       expect(await gateway.generateText(request)).toEqual(result);
       expect(adapter).toHaveBeenCalledTimes(2);
       const charges = await db.query(
-        `SELECT l.upstream_id, l.amount_micros FROM billing.ledger_entries l JOIN model_access.generation_attempts a ON a.usage_record_id=l.usage_record_id
+        `SELECT l.upstream_id, l.amount_micros, l.cost_micros FROM billing.ledger_entries l JOIN model_access.generation_attempts a ON a.usage_record_id=l.usage_record_id
           WHERE l.type='charge' AND NOT l.absorbed AND a.generation_id=(SELECT generation_id FROM model_access.generation_attempts WHERE usage_record_id=$1)`,
         [result.value.usageRecordId],
       );
-      expect(charges.rows).toEqual([{ upstream_id: spare.upstreamId, amount_micros: '-330' }]);
+      expect(charges.rows).toEqual([
+        { upstream_id: spare.upstreamId, amount_micros: '-330', cost_micros: '325' },
+      ]);
       adapter.mockClear();
       // 唯一备用的限额已用完，不应再以它为由截短主线路。
       expect(

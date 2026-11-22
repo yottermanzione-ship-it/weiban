@@ -125,6 +125,7 @@ import {
   categoryOf,
   countsAsBackground,
   priceUsage,
+  priceUsageCeiling,
   safetyOverdraftEligible,
   selectPrice,
   validatePriceItems,
@@ -164,6 +165,25 @@ const MON_NIGHT = new Date('2026-10-05T14:00:00Z');
 const SAT_PEAK = new Date('2026-10-10T02:00:00Z');
 
 describe('计价 priceUsage（billing.md 4.2）', () => {
+  it('覆盖线路成本时保留分时售价，并计入只有采购价的缓存写入', () => {
+    const costs = {
+      input_tokens_per_million: 2_000_000,
+      cache_write_5m_tokens_per_million: 5_000_000,
+      output_tokens_per_million: 0,
+    };
+    const usage = { inputTokens: 50, cacheWrite5mTokens: 50, outputTokens: 100 };
+    expect(priceUsage(rows, usage, MON_PEAK, true, costs)).toMatchObject({
+      ok: true,
+      sellMicros: 1800,
+      costMicros: 350,
+    });
+    expect(priceUsageCeiling(rows, usage, costs)).toMatchObject({
+      ok: true,
+      sellMicros: 1800,
+      costMicros: 500,
+    });
+  });
+
   it('按百万 token 计价并向上取整到整数微元；成本价同理', () => {
     const r = priceUsage(rows, { inputTokens: 1000, outputTokens: 500 }, MON_NIGHT, true);
     // 1000 × 2 + 500 × 8 = 6000 微元；成本 1000 + 2000 = 3000

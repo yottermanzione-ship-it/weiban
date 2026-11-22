@@ -908,6 +908,7 @@ export class ModelGateway implements ModelGatewayPort {
           ecologyTask: input.ecologyTask,
           reservePlatformRisk: ordinal > 0 || internal?.retry === true,
           priceVersionId,
+          routeCostRates: route.costRates,
         });
         if (!reserve.ok) {
           await this.recorder.writeReleaseSnapshot(usage.record.id, {

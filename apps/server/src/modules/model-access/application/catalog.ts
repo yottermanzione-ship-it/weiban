@@ -1319,6 +1319,7 @@ export class CatalogService {
         upstreamId: r.upstreamId,
         upstreamModelId: r.upstreamModelId,
         billingBounds: r.billingBounds,
+        costRates: r.costRates,
         priority: r.priority,
         weight: r.weight,
         enabled: r.enabled,
@@ -1326,6 +1327,20 @@ export class CatalogService {
       out.set(r.modelKey, list);
     }
     return out;
+  }
+
+  async routeCostRates(modelKey: string, upstreamId: string, upstreamModelId: string) {
+    const [row] = await this.database.db
+      .select({ costs: modelRoutes.costRates })
+      .from(modelRoutes)
+      .where(
+        and(
+          eq(modelRoutes.modelKey, modelKey),
+          eq(modelRoutes.upstreamId, upstreamId),
+          eq(modelRoutes.upstreamModelId, upstreamModelId),
+        ),
+      );
+    return row?.costs ?? undefined;
   }
 
   /** 3.26（G3-2）：各模型最近连续没返回用量的线路（后台提示；计数 > 0 才列出）。 */
@@ -1419,6 +1434,7 @@ export class CatalogService {
           upstreamModelId: r.upstreamModelId,
           billingBounds:
             r.billingBounds === undefined && same ? old.billingBounds : (r.billingBounds ?? null),
+          costRates: r.costRates === undefined && same ? old.costRates : (r.costRates ?? null),
           priority: r.priority,
           weight: r.weight,
           enabled: r.enabled,
@@ -1532,7 +1548,12 @@ export class CatalogService {
             updatedAt: now,
             billingBounds: billingBounds ?? null,
             ...(mine.upstreamModelId !== upstreamModelId
-              ? { usageMissingStreak: 0, usageMissingSince: null, usageMissingAlertedAt: null }
+              ? {
+                  costRates: null,
+                  usageMissingStreak: 0,
+                  usageMissingSince: null,
+                  usageMissingAlertedAt: null,
+                }
               : {}),
           })
           .where(and(eq(modelRoutes.modelKey, modelKey), eq(modelRoutes.upstreamId, upstreamId)));

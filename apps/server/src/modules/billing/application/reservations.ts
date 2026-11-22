@@ -240,7 +240,7 @@ export class ReservationService implements BillingReservationPort {
       if (rows.length === 0) return fail('price_missing', '当前价目表没有该模型的价格');
       if (!input.ceiling || !input.ceiling.evidence.trim() || !validUsage(input.ceiling.usage))
         return fail('price_missing', '需配置并验证计费上限');
-      const priced = priceUsageCeiling(rows, input.ceiling.usage);
+      const priced = priceUsageCeiling(rows, input.ceiling.usage, input.routeCostRates);
       if (!priced.ok) return fail('price_missing', `当前价目表缺少 ${priced.missingUnit} 的价格`);
       // 3.22：限时折扣在冻结时锁定（holds.discount_bp），结算按同一折扣；只打售价，成本不变。
       const discountBp = await this.prices.discountBp(tx, input.modelKey, this.clock.now());
@@ -255,6 +255,7 @@ export class ReservationService implements BillingReservationPort {
       };
       let estimate = estimateOf(rows, discountBp, amount);
       for (const alternative of new Set(input.ceiling.pricingModels ?? [])) {
+        if (alternative === input.modelKey) continue;
         const alternativeRows = await this.prices.modelPrices(tx, version.id, alternative);
         const upper = priceUsageCeiling(alternativeRows, input.ceiling.usage);
         if (!alternativeRows.length || !upper.ok)
@@ -373,7 +374,12 @@ export class ReservationService implements BillingReservationPort {
         limitSnapshot: input.ceiling,
         settlementSnapshot: null,
         releaseSnapshot: null,
-        riskSnapshot: { phase: 'reserved', costUpperMicros: reservedCost, uncertainMicros: 0 },
+        riskSnapshot: {
+          phase: 'reserved',
+          costUpperMicros: reservedCost,
+          uncertainMicros: 0,
+          ...(input.routeCostRates ? { routeCostRates: input.routeCostRates } : {}),
+        },
         discountBp,
         postpaid,
         estimateMicros: postpaid ? estimate : 0,
@@ -474,7 +480,13 @@ export class ReservationService implements BillingReservationPort {
       const actualKnown = input.actualKnown !== false;
       // 3.26：上游没报用量时网关按本地分词估算（actualEstimated）。按估算计费，同样受冻结上限保护、不透支。
       const usageEstimated = actualKnown && input.actualEstimated === true;
-      const rawPriced = priceUsage(rows, actualKnown ? input.actual : {}, startedAt, false);
+      const rawPriced = priceUsage(
+        rows,
+        actualKnown ? input.actual : {},
+        startedAt,
+        false,
+        hold.riskSnapshot?.routeCostRates,
+      );
       if (!rawPriced.ok) throw new BillingUsageError('实际用量无法定价');
       // 3.22：按冻结时锁定的限时折扣计售价（与报价、冻结同一算式 applyDiscount）；成本不变。
       const priced = {
@@ -664,7 +676,13 @@ export class ReservationService implements BillingReservationPort {
       let unpricedUnits: string[] = [];
       if (input.upstreamUsage && hasQuantity(input.upstreamUsage)) {
         const rows = await this.prices.modelPrices(tx, hold.priceVersionId, hold.modelKey);
-        const priced = priceUsage(rows, input.upstreamUsage, startedAt, false);
+        const priced = priceUsage(
+          rows,
+          input.upstreamUsage,
+          startedAt,
+          false,
+          hold.riskSnapshot?.routeCostRates,
+        );
         costKnown =
           priced.ok && priced.unpricedUnits.length === 0 && Number.isSafeInteger(priced.costMicros);
         unpricedUnits = priced.unpricedUnits;

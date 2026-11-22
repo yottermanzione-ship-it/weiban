@@ -7,6 +7,7 @@ import {
   BUDGET_EXEMPT_PURPOSES,
   type ModelPurpose,
   type PriceUnit,
+  type RouteCostRates,
   type SpendCategory as SpendCategorySchema,
   type UsageQuantities,
 } from '@weiban/contracts';
@@ -196,6 +197,7 @@ export function priceUsage(
   usage: UsageQuantities,
   at: Date,
   strict: boolean,
+  routeCostRates?: RouteCostRates,
 ): PriceResult & { unpricedUnits: PriceUnit[] } {
   let sell = 0n;
   let cost = 0n;
@@ -214,7 +216,8 @@ export function priceUsage(
     }
     const q = BigInt(Math.ceil(quantity));
     sell += q * BigInt(row.priceMicros) * factor;
-    cost += q * BigInt(row.costMicros) * factor;
+    cost +=
+      q * BigInt(routeCostRates?.[unit] ?? routeCostRates?.[row.unit] ?? row.costMicros) * factor;
   }
   const ceilDiv = (n: bigint) => Number((n + COMMON_DENOMINATOR - 1n) / COMMON_DENOMINATOR);
   return {
@@ -264,6 +267,7 @@ export function validatePriceItems(items: readonly PriceRow[]): string[] {
 export function priceUsageCeiling(
   rows: readonly PriceRow[],
   usage: UsageQuantities,
+  routeCostRates?: RouteCostRates,
 ): PriceResult & { unpricedUnits: PriceUnit[] } {
   const maximum = (unit: PriceUnit, candidates: readonly PriceRow[]): PriceRow | null => {
     if (!candidates.length) return null;
@@ -272,7 +276,12 @@ export function priceUsageCeiling(
       unit,
       band: null,
       priceMicros: Math.max(...candidates.map((r) => r.priceMicros)),
-      costMicros: Math.max(...candidates.map((r) => r.costMicros)),
+      costMicros: Math.max(
+        ...candidates.map((r) => routeCostRates?.[r.unit] ?? r.costMicros),
+        ...(unit === 'input_tokens_per_million'
+          ? INPUT_FALLBACK_UNITS.map((u) => routeCostRates?.[u] ?? 0)
+          : []),
+      ),
     };
   };
   const upper: PriceRow[] = [];

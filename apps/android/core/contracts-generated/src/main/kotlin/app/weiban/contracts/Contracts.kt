@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 7.16. Regenerate: pnpm android:generate
+// Contract 7.17. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "7.16"
+const val CONTRACT_VERSION: String = "7.17"
 
 @Serializable
 data class AccountAlias(
@@ -606,6 +606,7 @@ data class AdminModel(
     @SerialName("costRates") val `costRates`: ModelRates?,
     @SerialName("hasTimeBands") val `hasTimeBands`: Boolean,
     @SerialName("pointsPerReply") val `pointsPerReply`: Double?,
+    @SerialName("priceToCost") val `priceToCost`: AdminModelPriceToCost? = null,
     @SerialName("routes") val `routes`: List<ModelRoute>? = null,
     @SerialName("displayMultiplierManual") val `displayMultiplierManual`: Double? = null,
     @SerialName("displayMultiplier") val `displayMultiplier`: Double? = null,
@@ -655,6 +656,7 @@ data class AdminModelPreview(
     @SerialName("rates") val `rates`: ModelRates?,
     @SerialName("hasTimeBands") val `hasTimeBands`: Boolean,
     @SerialName("pointsPerReply") val `pointsPerReply`: Double?,
+    @SerialName("priceToCost") val `priceToCost`: AdminModelPreviewPriceToCost? = null,
     @SerialName("displayMultiplier") val `displayMultiplier`: Double? = null,
     @SerialName("displayMultiplierManual") val `displayMultiplierManual`: Double? = null,
     @SerialName("discount") val `discount`: ModelDiscount? = null,
@@ -8096,6 +8098,7 @@ data class ModelRoute(
     @SerialName("weight") val `weight`: Long,
     @SerialName("enabled") val `enabled`: Boolean,
     @SerialName("billingBounds") val `billingBounds`: RouteBillingBounds? = null,
+    @SerialName("costRates") val `costRates`: RouteCostRates? = null,
 )
 
 @Serializable
@@ -8106,6 +8109,7 @@ data class ModelRouteInput(
     @SerialName("weight") val `weight`: Long,
     @SerialName("enabled") val `enabled`: Boolean,
     @SerialName("billingBounds") val `billingBounds`: RouteBillingBoundsInput? = null,
+    @SerialName("costRates") val `costRates`: RouteCostRates? = null,
 )
 
 typealias ModelScenario = String
@@ -10601,6 +10605,8 @@ data class RouteBillingBoundsInput(
     @SerialName("decision") val `decision`: RouteBillingBoundsInputDecision? = null,
     @SerialName("realtime") val `realtime`: RouteBillingBoundsInputRealtime? = null,
 )
+
+typealias RouteCostRates = Map<String, Long>
 
 typealias ScanChannel = String
 
@@ -13543,6 +13549,12 @@ data class AdminLegacySnapshotAvatar(
 )
 
 @Serializable
+data class AdminModelPriceToCost(
+    @SerialName("min") val `min`: Double,
+    @SerialName("max") val `max`: Double,
+)
+
+@Serializable
 data class AdminModelAvailability(
     @SerialName("available") val `available`: Boolean,
     @SerialName("detail") val `detail`: ModelUnavailableDetail?,
@@ -13554,6 +13566,12 @@ data class AdminModelUsageMissingItem(
     @SerialName("upstreamModelId") val `upstreamModelId`: String,
     @SerialName("streak") val `streak`: Long,
     @SerialName("since") val `since`: Timestamp?,
+)
+
+@Serializable
+data class AdminModelPreviewPriceToCost(
+    @SerialName("min") val `min`: Double,
+    @SerialName("max") val `max`: Double,
 )
 
 @Serializable

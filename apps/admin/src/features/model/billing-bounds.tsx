@@ -6,7 +6,6 @@
  */
 import { Checkbox, Form, InputNumber, Select } from 'antd';
 import type { RouteBillingBounds } from '@weiban/contracts';
-import { FieldHelp } from '../../ui/page.js';
 
 export type OutputParameter = 'max_tokens' | 'max_completion_tokens';
 
@@ -107,11 +106,6 @@ export function BoundsFields({ name, paused = false }: { name: number; paused?: 
           name={[name, 'bounds', 'contextTokens']}
           label="上下文长度（token）"
           rules={[intRule(1, 10_000_000, '上下文长度')]}
-          extra={
-            <FieldHelp>
-              模型一次最多能读多少 token（聊天记录 + 人设 + 问题），查厂商文档；不确定填 128000。
-            </FieldHelp>
-          }
         >
           <InputNumber
             min={1}
@@ -125,12 +119,6 @@ export function BoundsFields({ name, paused = false }: { name: number; paused?: 
           name={[name, 'bounds', 'maxOutputTokens']}
           label="最大输出（token）"
           rules={[intRule(1, 32_000, '最大输出')]}
-          extra={
-            <FieldHelp>
-              模型一次最多写多少 token（含思考过程），系统按它预扣积分；最多 32000，不确定填
-              8192。小于 600 时一条聊天回复都不够，模型会显示「暂时无法使用」。
-            </FieldHelp>
-          }
         >
           <InputNumber min={1} max={32_000} precision={0} step={512} style={{ width: '100%' }} />
         </Form.Item>
@@ -138,18 +126,11 @@ export function BoundsFields({ name, paused = false }: { name: number; paused?: 
           name={[name, 'bounds', 'outputParameter']}
           label="输出参数名"
           rules={[{ required: true, message: '选择输出参数名' }]}
-          extra={
-            <FieldHelp>
-              告诉模型「最多写多少」用的参数名。大多数接口用 max_tokens；OpenAI 的新模型（o
-              系列、GPT-5 以后）用 max_completion_tokens。Anthropic 协议的线路忽略这一项（固定用
-              max_tokens）。
-            </FieldHelp>
-          }
         >
           <Select
             options={[
-              { value: 'max_tokens', label: 'max_tokens（大多数接口）' },
-              { value: 'max_completion_tokens', label: 'max_completion_tokens（OpenAI 新模型）' },
+              { value: 'max_tokens', label: 'max_tokens' },
+              { value: 'max_completion_tokens', label: 'max_completion_tokens' },
             ]}
           />
         </Form.Item>
@@ -157,7 +138,6 @@ export function BoundsFields({ name, paused = false }: { name: number; paused?: 
           name={[name, 'bounds', 'maxImages']}
           label="最多图片数"
           rules={[intRule(0, 20, '最多图片数')]}
-          extra={<FieldHelp>一条消息最多带几张图。不支持识图填 0；支持识图一般填 4。</FieldHelp>}
         >
           <InputNumber min={0} max={20} precision={0} style={{ width: '100%' }} />
         </Form.Item>
