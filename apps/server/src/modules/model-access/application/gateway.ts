@@ -1,6 +1,10 @@
 /** 全系统调用上游的唯一出口：选型/闸门→占位→冻结→调用→保存结果→结算。 */
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import {
+  PromptCacheObserver,
+  type PromptCacheDiagnostic,
+} from '../domain/prompt-cache-observation.js';
 import { joinTextContinuation } from '../domain/text-continuation.js';
 import { providerDomain, type ProviderDiagnostic } from '../infra/provider-observation.js';
 import {
@@ -178,6 +182,7 @@ const FALLBACK_PURPOSES: readonly GenerateTextInput['purpose'][] = [
 @Injectable()
 export class ModelGateway implements ModelGatewayPort {
   private readonly logger = new Logger('ModelGateway');
+  private readonly promptCacheObserver = new PromptCacheObserver({ now: () => this.clock.nowMs() });
   constructor(
     @Inject(ModelResolver) private readonly resolver: ModelResolver,
     @Inject(ModelStatusService) private readonly status: ModelStatusService,
@@ -965,6 +970,7 @@ export class ModelGateway implements ModelGatewayPort {
           }));
         let dispatchTiming: DispatchTiming | undefined;
         let providerDiagnostic: ProviderDiagnostic | undefined;
+        let promptCacheDiagnostic: PromptCacheDiagnostic | undefined;
         if (sent) {
           await this.recorder.markAttemptSent(attemptId);
           try {
@@ -1031,6 +1037,29 @@ export class ModelGateway implements ModelGatewayPort {
                     ...(continuation ? { continuingText: true } : {}),
                     onDiagnostic: (d) => {
                       providerDiagnostic = d;
+                    },
+                    onRequestPrepared: (request) => {
+                      promptCacheDiagnostic = this.promptCacheObserver.observe(
+                        {
+                          userId: input.userId,
+                          characterId: input.characterId,
+                          conversationId: input.conversationId,
+                          purpose: input.purpose,
+                          modelRole: input.modelRole,
+                          conversationKind: input.meta?.conversationKind,
+                          promptTemplateVersion: input.meta?.promptTemplateVersion,
+                          ...(request.protocol === 'openai' &&
+                          model.systemMessageMode === 'no_system' &&
+                          currentWire[0]?.role === 'system'
+                            ? { convertedSystemHeadChars: currentWire[0].content.length }
+                            : {}),
+                          modelKey: model.modelKey,
+                          upstreamId: route.upstreamId,
+                          baseUrl: route.baseUrl,
+                          apiKey,
+                        },
+                        request,
+                      );
                     },
                     baseUrl: route.baseUrl,
                     apiKey,
@@ -1138,6 +1167,7 @@ export class ModelGateway implements ModelGatewayPort {
           known ? 'reported' : answer.usage || failureUsage?.estimated ? 'estimated' : 'unknown',
           dispatchTiming,
           providerDiagnostic,
+          promptCacheDiagnostic,
         );
         const latencyMs = Math.round(performance.now() - attemptStart);
         // 批 EJ：调用方要求抢救时，正文 JSON 没写完就交回已写出的部分（照常计费），不加大额度重试；

@@ -17,7 +17,7 @@ export interface WireMessage {
   images?: string[];
 }
 
-const NOTE_OPEN = '【系统提示，不是用户说的话】\n';
+export const SYSTEM_MESSAGE_NOTE_OPEN = '【系统提示，不是用户说的话】\n';
 
 export function asSystemMessageMode(value: string | null | undefined): SystemMessageMode {
   return value === 'single_system' || value === 'no_system' ? value : 'multi';
@@ -31,7 +31,7 @@ export function applySystemMessageMode<T extends WireMessage>(
   const converted = messages.map((m, i) => {
     if (m.role !== 'system') return m;
     if (mode === 'single_system' && i === 0) return m;
-    return { ...m, role: 'user' as const, content: `${NOTE_OPEN}${m.content}` };
+    return { ...m, role: 'user' as const, content: `${SYSTEM_MESSAGE_NOTE_OPEN}${m.content}` };
   });
   // 相邻同角色合并（带图片的消息不合并，避免图片挪位置）
   const out: T[] = [];

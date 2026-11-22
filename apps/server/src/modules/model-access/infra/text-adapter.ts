@@ -3,12 +3,15 @@
  * RoutingTextAdapter 按上游账号的协议选用。不记录响应原文、不跟随重定向、不持有密钥。
  */
 import { ProviderObservation, type ProviderDiagnostic } from './provider-observation.js';
+import { openAiCacheUsage, type CacheUsageDiagnostic } from './cache-usage.js';
 import { Logger } from '@nestjs/common';
 import type { GenerateTextInput, UsageQuantities } from '@weiban/contracts';
 
 const NETWORK_LOG = new Logger('TextAdapter');
 
 export interface TextUsage {
+  /** Independent of billing's estimated flag; persisted in the existing attempt JSON. */
+  cacheUsage?: CacheUsageDiagnostic;
   reported?: {
     promptTokens: number | null;
     cachedTokens: number | null;
@@ -144,6 +147,11 @@ export interface TextAdapter {
     protocol?: TextProtocol;
     continuingText?: boolean;
     onDiagnostic?: (value: ProviderDiagnostic) => void;
+    /** In-memory observation of the final JSON request; never includes authorization headers. */
+    onRequestPrepared?: (value: {
+      protocol: 'openai' | 'anthropic';
+      body: Readonly<Record<string, unknown>>;
+    }) => void;
     baseUrl: string;
     apiKey: string;
     model: string;
@@ -458,6 +466,7 @@ function usageOf(
       : { reasoningTokens: Math.min(reasoningTokens, outputTokens) }),
     estimated: reported.promptTokens === null || reported.completionTokens === null || !cacheValid,
     reported,
+    cacheUsage: openAiCacheUsage(raw),
   };
 }
 
@@ -498,6 +507,27 @@ export class OpenAiTextAdapter implements TextAdapter {
     const obs = new ProviderObservation(input, stream);
     try {
       const officialOpenAi = new URL(input.baseUrl).origin === 'https://api.openai.com';
+      const body = {
+        model: input.model,
+        messages: wireMessages(input.messages),
+        stream,
+        ...(officialOpenAi ? { stream_options: { include_usage: true } } : {}),
+        [input.outputParameter ?? 'max_tokens']: input.maxOutputTokens,
+        temperature: input.temperature,
+        // Abliteration 官方直连接受该提示，其他兼容地址不透传。
+        ...(input.promptCacheKey && officialAbliteration
+          ? { prompt_cache_key: input.promptCacheKey }
+          : {}),
+        ...extra,
+        ...(input.responseFormat === 'json' ? { response_format: { type: 'json_object' } } : {}),
+      };
+      const requestBody = JSON.stringify(body);
+      try {
+        if (input.onRequestPrepared)
+          input.onRequestPrepared({ protocol: 'openai', body: JSON.parse(requestBody) });
+      } catch {
+        // Observability cannot change or interrupt a provider request.
+      }
       const response = await fetch(`${input.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
         method: 'POST',
         redirect: 'manual',
@@ -507,20 +537,7 @@ export class OpenAiTextAdapter implements TextAdapter {
           'Content-Type': 'application/json',
           'Idempotency-Key': input.idempotencyKey,
         },
-        body: JSON.stringify({
-          model: input.model,
-          messages: wireMessages(input.messages),
-          stream,
-          ...(officialOpenAi ? { stream_options: { include_usage: true } } : {}),
-          [input.outputParameter ?? 'max_tokens']: input.maxOutputTokens,
-          temperature: input.temperature,
-          // Abliteration 官方直连接受该提示，其他兼容地址不透传。
-          ...(input.promptCacheKey && officialAbliteration
-            ? { prompt_cache_key: input.promptCacheKey }
-            : {}),
-          ...extra,
-          ...(input.responseFormat === 'json' ? { response_format: { type: 'json_object' } } : {}),
-        }),
+        body: requestBody,
       });
       // 限制响应大小，避免异常供应商占满服务器内存；只提取结构化字段，不向外传播正文。
       obs.headers(response);

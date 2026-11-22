@@ -41,6 +41,7 @@ import {
 import { IDENTITY_DIRECTORY_PORT } from '../../identity/index.js';
 import { USAGE_DAY_TIME_ZONE, decodeCursor, encodeCursor } from '../domain/rules.js';
 import { upstreams, usageRecords, generationAttempts } from '../infra/db/schema.js';
+import type { PromptCacheDiagnostic } from '../domain/prompt-cache-observation.js';
 
 type UsageRow = typeof usageRecords.$inferSelect;
 /** v3.6：稳定开头字符数 → 估算 token（中文为主，约 0.7～0.8 token / 字，取 0.75）。 */
@@ -149,15 +150,21 @@ export class UsageRecorder {
     usageState?: 'reported' | 'estimated' | 'unknown',
     dispatchTiming?: DispatchTiming,
     providerDiagnostic?: import('../infra/provider-observation.js').ProviderDiagnostic,
+    promptCacheDiagnostic?: PromptCacheDiagnostic,
   ) {
+    const diagnostics = {
+      ...(dispatchTiming ? { dispatchTiming } : {}),
+      ...(providerDiagnostic ? { providerDiagnostic } : {}),
+      ...(promptCacheDiagnostic ? { promptCacheDiagnostic } : {}),
+    };
     await this.database.db
       .update(generationAttempts)
       .set({
         phase: 'finished',
         reportedUsage: usage,
-        ...(dispatchTiming
+        ...(Object.keys(diagnostics).length
           ? {
-              boundSnapshot: sql`${generationAttempts.boundSnapshot} || ${JSON.stringify({ dispatchTiming, ...(providerDiagnostic ? { providerDiagnostic } : {}) })}::jsonb`,
+              boundSnapshot: sql`${generationAttempts.boundSnapshot} || ${JSON.stringify(diagnostics)}::jsonb`,
             }
           : {}),
         usageState: usageState ?? (known ? 'reported' : 'unknown'),
