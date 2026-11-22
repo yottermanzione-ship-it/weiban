@@ -194,7 +194,8 @@ export function VirtualList<T>({
           );
           continue;
         }
-        const height = Math.ceil(entry.borderBoxSize[0]?.blockSize ?? entry.contentRect.height);
+        // 旧安卓的观察回调只有 contentRect，行包装本身没有边框或内边距。
+        const height = Math.ceil(entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height);
         if (height <= 0) continue;
         // 排版用的是「量过的高度，没量过就按估算」：与它相同就不必重排（固定行高的会话行首次量到时常如此）。
         const laidOut = heights.current.get(key) ?? estimated.current;
