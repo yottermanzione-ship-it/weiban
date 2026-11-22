@@ -458,6 +458,7 @@ test('价目草稿精确微元、模型启用与缺价发布确认', async ({ pa
   const price = await (await saved).json();
   expect(price.items[0].priceMicros).toBe(1234567);
   expect(price.items[0].costMicros).toBe(123456);
+  await page.getByText('价格版本管理', { exact: true }).click();
   const row = page.getByRole('row').filter({ hasText: '浏览器价格' });
   await row.getByRole('button', { name: '立即启用', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: '立即启用', exact: true }).click();
