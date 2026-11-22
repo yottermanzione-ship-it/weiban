@@ -1965,7 +1965,8 @@ export class MemoryService {
           retryAfter: null,
           factAttempts: 0,
           factWaitReason: null,
-          windowBlockCiphertext: null,
+          // Advancing the fact cursor alone leaves the resident memory block valid.
+          ...(written > 0 ? { windowBlockCiphertext: null } : {}),
           cursorSeq: lastSeq,
           pendingCount: Math.max(
             0,

@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 7.18. Regenerate: pnpm android:generate
+// Contract 7.19. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "7.18"
+const val CONTRACT_VERSION: String = "7.19"
 
 @Serializable
 data class AccountAlias(
@@ -1249,6 +1249,18 @@ data class AdminTopupEntry(
 
 typealias AdminTopupKind = String
 
+@Serializable
+data class AdminUsageCacheReceipts(
+    @SerialName("hitRate") val `hitRate`: Double?,
+    @SerialName("inputCoverage") val `inputCoverage`: Double?,
+    @SerialName("hitCalls") val `hitCalls`: Long,
+    @SerialName("zeroCalls") val `zeroCalls`: Long,
+    @SerialName("missingCalls") val `missingCalls`: Long,
+    @SerialName("invalidCalls") val `invalidCalls`: Long,
+    @SerialName("unrecordedCalls") val `unrecordedCalls`: Long,
+    @SerialName("meanUncachedInputTokens") val `meanUncachedInputTokens`: Long?,
+)
+
 typealias AdminUsageCallStatus = String
 
 typealias AdminUsageDimension = String
@@ -1261,6 +1273,7 @@ data class AdminUsageFilter(
     @SerialName("characterIds") val `characterIds`: List<Id>? = null,
     @SerialName("modelKeys") val `modelKeys`: List<ModelKey>? = null,
     @SerialName("purposes") val `purposes`: List<ModelPurpose>? = null,
+    @SerialName("conversationKind") val `conversationKind`: String? = null,
     @SerialName("billingOwner") val `billingOwner`: BillingOwner? = null,
     @SerialName("status") val `status`: AdminUsageCallStatus? = null,
     @SerialName("upstreamIds") val `upstreamIds`: List<Id>? = null,
@@ -1276,6 +1289,7 @@ data class AdminUsageFilterInput(
     @SerialName("characterIds") val `characterIds`: List<Id>? = null,
     @SerialName("modelKeys") val `modelKeys`: List<ModelKey>? = null,
     @SerialName("purposes") val `purposes`: List<ModelPurpose>? = null,
+    @SerialName("conversationKind") val `conversationKind`: String? = null,
     @SerialName("billingOwner") val `billingOwner`: BillingOwner? = null,
     @SerialName("status") val `status`: AdminUsageCallStatus? = null,
     @SerialName("upstreamIds") val `upstreamIds`: List<Id>? = null,
@@ -1335,7 +1349,7 @@ data class AdminUsageRecord(
 @Serializable
 data class AdminUsageSummary(
     @SerialName("rows") val `rows`: List<AdminUsageSummaryRow>,
-    @SerialName("totals") val `totals`: AdminUsageTotals,
+    @SerialName("totals") val `totals`: AdminUsageSummaryTotals,
     @SerialName("truncated") val `truncated`: Boolean,
     @SerialName("userLabels") val `userLabels`: Map<String, AdminUserLabel>,
 )
@@ -1346,6 +1360,7 @@ data class AdminUsageSummaryRequest(
     @SerialName("groupBy") val `groupBy`: List<AdminUsageDimension>,
     @SerialName("sort") val `sort`: String,
     @SerialName("limit") val `limit`: Long,
+    @SerialName("includeCacheReceipts") val `includeCacheReceipts`: Boolean? = null,
 )
 
 @Serializable
@@ -1354,6 +1369,7 @@ data class AdminUsageSummaryRequestInput(
     @SerialName("groupBy") val `groupBy`: List<AdminUsageDimension>,
     @SerialName("sort") val `sort`: String? = null,
     @SerialName("limit") val `limit`: Long? = null,
+    @SerialName("includeCacheReceipts") val `includeCacheReceipts`: Boolean? = null,
 )
 
 @Serializable
@@ -1377,6 +1393,7 @@ data class AdminUsageSummaryRow(
     @SerialName("failureRate") val `failureRate`: Double? = null,
     @SerialName("cacheHitRate") val `cacheHitRate`: Double? = null,
     @SerialName("stablePrefixRate") val `stablePrefixRate`: Double? = null,
+    @SerialName("cacheReceipts") val `cacheReceipts`: AdminUsageCacheReceipts? = null,
     @SerialName("keys") val `keys`: List<String>,
 )
 
@@ -13720,6 +13737,30 @@ data class AdminUsageOverviewRecentErrorsItem(
     @SerialName("errorCode") val `errorCode`: String,
     @SerialName("count") val `count`: Long,
     @SerialName("lastAt") val `lastAt`: Timestamp,
+)
+
+@Serializable
+data class AdminUsageSummaryTotals(
+    @SerialName("unknownCostCalls") val `unknownCostCalls`: Long? = null,
+    @SerialName("uncertainCostMicros") val `uncertainCostMicros`: Long? = null,
+    @SerialName("calls") val `calls`: Long,
+    @SerialName("failedCalls") val `failedCalls`: Long,
+    @SerialName("inputTokens") val `inputTokens`: Long,
+    @SerialName("cachedInputTokens") val `cachedInputTokens`: Long,
+    @SerialName("outputTokens") val `outputTokens`: Long,
+    @SerialName("cacheWriteTokens") val `cacheWriteTokens`: Long? = null,
+    @SerialName("totalTokens") val `totalTokens`: Long,
+    @SerialName("estimatedTokens") val `estimatedTokens`: Long,
+    @SerialName("estimatedCalls") val `estimatedCalls`: Long? = null,
+    @SerialName("chargedMicros") val `chargedMicros`: Long,
+    @SerialName("costMicros") val `costMicros`: Long,
+    @SerialName("absorbedCostMicros") val `absorbedCostMicros`: Long,
+    @SerialName("chargedPoints") val `chargedPoints`: Double? = null,
+    @SerialName("avgLatencyMs") val `avgLatencyMs`: Double? = null,
+    @SerialName("failureRate") val `failureRate`: Double? = null,
+    @SerialName("cacheHitRate") val `cacheHitRate`: Double? = null,
+    @SerialName("stablePrefixRate") val `stablePrefixRate`: Double? = null,
+    @SerialName("cacheReceipts") val `cacheReceipts`: AdminUsageCacheReceipts? = null,
 )
 
 @Serializable

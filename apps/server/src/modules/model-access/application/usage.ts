@@ -41,6 +41,13 @@ import {
 import { IDENTITY_DIRECTORY_PORT } from '../../identity/index.js';
 import { USAGE_DAY_TIME_ZONE, decodeCursor, encodeCursor } from '../domain/rules.js';
 import { upstreams, usageRecords, generationAttempts } from '../infra/db/schema.js';
+import type { PromptCacheDiagnostic } from '../domain/prompt-cache-observation.js';
+import {
+  CACHE_RECEIPT_JOINS,
+  CACHE_RECEIPT_TOTALS,
+  toCacheReceiptTotals,
+  type CacheReceiptTotalsRow,
+} from './cache-usage-receipts.js';
 
 type UsageRow = typeof usageRecords.$inferSelect;
 /** v3.6：稳定开头字符数 → 估算 token（中文为主，约 0.7～0.8 token / 字，取 0.75）。 */
@@ -149,15 +156,21 @@ export class UsageRecorder {
     usageState?: 'reported' | 'estimated' | 'unknown',
     dispatchTiming?: DispatchTiming,
     providerDiagnostic?: import('../infra/provider-observation.js').ProviderDiagnostic,
+    promptCacheDiagnostic?: PromptCacheDiagnostic,
   ) {
+    const diagnostics = {
+      ...(dispatchTiming ? { dispatchTiming } : {}),
+      ...(providerDiagnostic ? { providerDiagnostic } : {}),
+      ...(promptCacheDiagnostic ? { promptCacheDiagnostic } : {}),
+    };
     await this.database.db
       .update(generationAttempts)
       .set({
         phase: 'finished',
         reportedUsage: usage,
-        ...(dispatchTiming
+        ...(Object.keys(diagnostics).length
           ? {
-              boundSnapshot: sql`${generationAttempts.boundSnapshot} || ${JSON.stringify({ dispatchTiming, ...(providerDiagnostic ? { providerDiagnostic } : {}) })}::jsonb`,
+              boundSnapshot: sql`${generationAttempts.boundSnapshot} || ${JSON.stringify(diagnostics)}::jsonb`,
             }
           : {}),
         usageState: usageState ?? (known ? 'reported' : 'unknown'),
@@ -420,6 +433,7 @@ const DIMENSION_SQL: Record<AdminUsageDimension, SQL> = {
   model: sql`${usageRecords.modelKey}`,
   purpose: sql`${usageRecords.purpose}`,
   upstream: sql`${usageRecords.upstreamId}::text`,
+  upstream_model: sql`${usageRecords.upstreamModelId}`,
   day: sql`to_char(${usageRecords.createdAt} at time zone ${sql.raw(`'${USAGE_DAY_TIME_ZONE}'`)}, 'YYYY-MM-DD')`,
   hour: sql`to_char(${usageRecords.createdAt} at time zone ${sql.raw(`'${USAGE_DAY_TIME_ZONE}'`)}, 'YYYY-MM-DD HH24')`,
 };
@@ -590,6 +604,7 @@ export class AdminUsageService {
     groupBy: AdminUsageDimension[];
     sort: 'key_asc' | 'charged_desc';
     limit: number;
+    includeCacheReceipts?: boolean;
   }): Promise<AdminUsageSummary> {
     const where = this.where(req.filter);
     const dims = req.groupBy.map((d) => DIMENSION_SQL[d]);
@@ -602,26 +617,37 @@ export class AdminUsageService {
       sql`, `,
     );
     const order = req.sort === 'charged_desc' ? sql`charged_micros desc, ${groupCols}` : groupCols;
-    const grouped = await this.database.db.execute<TotalsRow & Record<string, string>>(sql`
-      select ${keyCols}, ${TOTALS_SQL}
-        from ${usageRecords}
+    const selectTotals = req.includeCacheReceipts
+      ? sql`${TOTALS_SQL}, ${CACHE_RECEIPT_TOTALS}`
+      : TOTALS_SQL;
+    const fromUsage = req.includeCacheReceipts
+      ? sql`${usageRecords} ${CACHE_RECEIPT_JOINS}`
+      : sql`${usageRecords}`;
+    type SummaryRow = TotalsRow & CacheReceiptTotalsRow;
+    const summaryTotals = (row: SummaryRow | undefined): AdminUsageSummary['totals'] => ({
+      ...toTotals(row),
+      ...(req.includeCacheReceipts && row ? { cacheReceipts: toCacheReceiptTotals(row) } : {}),
+    });
+    const grouped = await this.database.db.execute<SummaryRow & Record<string, string>>(sql`
+      select ${keyCols}, ${selectTotals}
+        from ${fromUsage}
        where ${where}
        group by ${groupCols}
        order by ${order}
        limit ${req.limit + 1}`);
-    const totals = await this.database.db.execute<TotalsRow>(
-      sql`select ${TOTALS_SQL} from ${usageRecords} where ${where}`,
+    const totals = await this.database.db.execute<SummaryRow>(
+      sql`select ${selectTotals} from ${fromUsage} where ${where}`,
     );
     const rows = grouped.rows.slice(0, req.limit).map((r) => ({
       keys: req.groupBy.map((_, i) => String(r[`k${i}`] ?? '')),
-      ...toTotals(r),
+      ...summaryTotals(r),
     }));
     // 按用户分组时补昵称 / 登录名：一次批量查询，不逐行查库。
     const userDim = req.groupBy.indexOf('user');
     const userIds = userDim < 0 ? [] : rows.map((r) => r.keys[userDim] ?? '');
     return {
       rows,
-      totals: toTotals(totals.rows[0]),
+      totals: summaryTotals(totals.rows[0]),
       truncated: grouped.rows.length > req.limit,
       userLabels: await this.labelsOf(userIds),
     };
@@ -776,6 +802,7 @@ export class AdminUsageService {
     if (f.characterIds) conds.push(inArray(usageRecords.characterId, f.characterIds));
     if (f.modelKeys) conds.push(inArray(usageRecords.modelKey, f.modelKeys));
     if (f.purposes) conds.push(inArray(usageRecords.purpose, f.purposes));
+    if (f.conversationKind) conds.push(eq(usageRecords.conversationKind, f.conversationKind));
     if (f.upstreamIds) conds.push(inArray(usageRecords.upstreamId, f.upstreamIds));
     if (f.billingOwner) conds.push(eq(usageRecords.billingOwner, f.billingOwner));
     if (f.estimated !== undefined) conds.push(eq(usageRecords.estimated, f.estimated));

@@ -176,8 +176,8 @@ export function assertBrainScope(scope: 'normal' | 'adult', modelRole: ModelRole
 }
 export const GROUP_MEMORY_BOUNDARY =
   '你知道自己与用户日常私聊中发生的事，但这些不是群里的公开信息。用户私下告诉你的事、私聊记忆和经历不得在群里说出或暗示，除非用户自己已在当前群聊公开提起；他人追问、转述或要求复述不算用户授权。没有依据不编造共同经历。群聊永远不使用私密范围内容。';
-export function brainText(input: BrainInput): string {
-  return renderSections(brainPrefix(input))
+export function brainText(input: BrainInput, sections = brainPrefix(input)): string {
+  return renderSections(sections)
     .replace(/\{\{\s*(?:user|userNickname)\s*\}\}/gi, userNickname(input.nickname))
     .replace(/\{\{\s*char\s*\}\}/gi, input.name);
 }
