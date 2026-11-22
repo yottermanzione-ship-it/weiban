@@ -19,7 +19,7 @@
  * （平台内部模型 adult_check 不再使用）；模型「暂时无法使用」的具体原因只给后台看，用户端接口不再带。
  */
 import { z } from 'zod';
-import { ServicePriceUnit } from '../price-unit.js';
+import { PriceUnit, ServicePriceUnit } from '../price-unit.js';
 import {
   API_PREFIX,
   Id,
@@ -854,6 +854,13 @@ export const AdminCatalogEntryWrite = AdminCatalogEntry.omit({
  * v3.4：模型路由——这个模型可以走哪些上游账号（按优先级、权重调度，失败自动切换到下一个）。
  * 目录条目的 upstreamId / upstreamModelId 是「主路由」（优先级最小、权重最大的那条）的镜像，旧接口照常可用。
  */
+/** 线路采购单价，微元 / 对应计价单位。未填的单位沿用价目表成本。 */
+export const RouteCostRates = z.partialRecord(
+  PriceUnit,
+  z.number().int().nonnegative().max(100_000_000_000),
+);
+export type RouteCostRates = z.infer<typeof RouteCostRates>;
+
 export const ModelRoute = z.object({
   upstreamId: Id,
   /** 该账号那边的模型名（不同服务商同一模型可能叫法不同）。 */
@@ -862,6 +869,7 @@ export const ModelRoute = z.object({
   weight: z.number().int().min(1).max(1000),
   enabled: z.boolean(),
   billingBounds: RouteBillingBounds.nullable().optional(),
+  costRates: RouteCostRates.nullable().optional(),
 });
 export type ModelRoute = z.infer<typeof ModelRoute>;
 
@@ -930,6 +938,11 @@ export const AdminModel = AdminCatalogEntry.extend({
   hasTimeBands: z.boolean(),
   /** 约每条回复消耗多少积分（cost-estimate.md 7.2「标准回复」），rates 为 null 时为 null。 */
   pointsPerReply: z.number().nonnegative().nullable(),
+  /** 现行折后售价与采购成本的比值，按标准回复或各服务计价单位比较。 */
+  priceToCost: z
+    .object({ min: z.number().nonnegative(), max: z.number().nonnegative() })
+    .nullable()
+    .optional(),
   /** v3.4：模型路由（按优先级升序）。 */
   routes: z.array(ModelRoute).optional(),
   /** 3.17：后台手填的展示倍率；null = 自动计算。 */
@@ -977,6 +990,7 @@ export const AdminModelPreview = AdminModel.pick({
   rates: true,
   hasTimeBands: true,
   pointsPerReply: true,
+  priceToCost: true,
   displayMultiplier: true,
   displayMultiplierManual: true,
   discount: true,
@@ -984,7 +998,7 @@ export const AdminModelPreview = AdminModel.pick({
   availability: true,
   usageMissing: true,
 }).extend({
-  routes: z.array(ModelRoute.omit({ billingBounds: true })).optional(),
+  routes: z.array(ModelRoute.omit({ billingBounds: true, costRates: true })).optional(),
   serviceRates: z
     .array(ModelServiceRate.omit({ cost: true }).strip())
     .max(32)

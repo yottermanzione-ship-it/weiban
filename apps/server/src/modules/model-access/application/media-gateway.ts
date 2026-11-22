@@ -1321,6 +1321,11 @@ export class ModelGatewayMedia implements ModelGatewayMediaPort {
       idempotencyKey: key,
       countAsBackground: base.countAsBackground,
       ecologyTask: base.ecologyTask,
+      routeCostRates: await this.catalog.routeCostRates(
+        model.modelKey,
+        model.upstreamId,
+        model.upstreamModelId,
+      ),
     });
     if (!reserve.ok) {
       const error = reserveErrorToGenerate(reserve.error);

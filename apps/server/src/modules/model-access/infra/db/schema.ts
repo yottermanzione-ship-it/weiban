@@ -211,6 +211,7 @@ export const modelRoutes = modelAccessSchema.table(
       .references(() => upstreams.id, { onDelete: 'cascade' }),
     upstreamModelId: text('upstream_model_id').notNull(),
     billingBounds: jsonb('billing_bounds').$type<import('@weiban/contracts').RouteBillingBounds>(),
+    costRates: jsonb('cost_rates').$type<import('@weiban/contracts').RouteCostRates>(),
     priority: integer('priority').notNull().default(1),
     weight: integer('weight').notNull().default(100),
     enabled: boolean('enabled').notNull().default(true),

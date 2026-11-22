@@ -321,12 +321,18 @@ test('user amounts and the two dates toggle server-side sort directions independ
   await expect(centered).toBeVisible();
   await expect(centered).toHaveCSS('text-align', 'left');
   await expect(centered.locator('..')).toHaveCSS('text-align', 'center');
-  await expect(page.getByRole('columnheader', { name: '会员', exact: true })).toHaveCSS(
-    'text-align',
-    'center',
-  );
-  const dates = page.locator('tbody tr[data-row-key] .user-dates').first();
-  await expect(dates.locator('small')).toHaveText(['注册', '活跃']);
+  const headers = page.locator('thead th');
+  await expect(headers).toHaveCount(8);
+  for (const header of await headers.all()) {
+    await expect(header).toHaveCSS('text-align', 'center');
+  }
+  const registered = page.getByRole('columnheader').filter({ hasText: '注册时间' });
+  const active = page.getByRole('columnheader').filter({ hasText: '最近活跃' });
+  await expect(registered).toBeVisible();
+  await expect(active).toBeVisible();
+  await expect(registered.getByRole('button')).toHaveCount(1);
+  await expect(active.getByRole('button')).toHaveCount(1);
+  await expect(registered).toHaveAttribute('aria-sort', 'descending');
 
   for (const [label, sort] of [
     ['余额（积分）升序', 'balance_asc'],
@@ -366,10 +372,18 @@ test('user amounts and the two dates toggle server-side sort directions independ
       sort.startsWith('active_') ? user.lastActiveAt : user.createdAt,
     );
     if (sort === 'active_asc' || sort === 'active_desc') {
-      const active = times.filter((date): date is string => date !== null);
-      expect(times).toEqual([...active, ...Array(times.length - active.length).fill(null)]);
-      expect(active).toEqual(
-        active.toSorted((a, b) =>
+      await expect(active).toHaveAttribute(
+        'aria-sort',
+        sort === 'active_asc' ? 'ascending' : 'descending',
+      );
+      await expect(registered).not.toHaveAttribute('aria-sort');
+      const activeTimes = times.filter((date): date is string => date !== null);
+      expect(times).toEqual([
+        ...activeTimes,
+        ...Array(times.length - activeTimes.length).fill(null),
+      ]);
+      expect(activeTimes).toEqual(
+        activeTimes.toSorted((a, b) =>
           sort === 'active_asc' ? a.localeCompare(b) : b.localeCompare(a),
         ),
       );

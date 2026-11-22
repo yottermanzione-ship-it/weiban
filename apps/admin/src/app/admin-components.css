@@ -140,6 +140,15 @@
   font-size: 12px;
   line-height: 18px;
 }
+.ant-form-item-extra:has(> .field-help) {
+  min-height: 0;
+}
+.ant-form-item-extra > .field-help {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 16px;
+}
 .form-section {
   display: flex;
   align-items: baseline;
@@ -1227,6 +1236,26 @@
   gap: 6px 0;
 }
 /* 3.24：模型「暂时无法使用」的具体原因 */
+.model-row-actions {
+  display: grid;
+  grid-template-columns: repeat(4, max-content);
+  gap: 2px;
+}
+.model-row-actions .ant-btn {
+  padding-inline: 5px;
+  white-space: nowrap;
+}
+.route-cost-fields {
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-1);
+}
+.route-cost-fields summary {
+  cursor: pointer;
+  font-weight: 550;
+}
+.route-cost-fields .form-three {
+  margin-top: 8px;
+}
 .model-status .status-reason {
   font-size: 12px;
   line-height: 1.4;

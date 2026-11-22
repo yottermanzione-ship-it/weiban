@@ -24,7 +24,7 @@
  * 每用户、每账号的并发与每分钟计数放在进程内存（单实例部署；多实例需改为共享存储，ADR-0032「代价」）。
  */
 import { Inject, Injectable } from '@nestjs/common';
-import type { UpstreamStatus } from '@weiban/contracts';
+import type { RouteCostRates, UpstreamStatus } from '@weiban/contracts';
 import { createHash } from 'node:crypto';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { CLOCK, DATABASE, type Clock, type Database } from '../../../platform/index.js';
@@ -35,6 +35,7 @@ import { UpstreamService } from './upstreams.js';
 export interface RouteCandidate {
   upstreamId: string;
   upstreamModelId: string;
+  costRates?: RouteCostRates | undefined;
   /** 目录路由优先级；旧目录的默认主线路没有独立路由行。 */
   routePriority?: number;
   baseUrl: string;
@@ -167,6 +168,7 @@ export class UpstreamScheduler {
           candidate: {
             upstreamId: upstream.id,
             upstreamModelId: route.upstreamModelId,
+            costRates: route.costRates ?? undefined,
             routePriority: route.priority,
             baseUrl: upstream.baseUrl,
             kind: upstream.kind,

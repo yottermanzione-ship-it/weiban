@@ -14,6 +14,7 @@ import type { ModelPurpose } from './model-gateway.js';
 import type { PortResult, Tx } from './common.js';
 import type { MembershipSettings } from '../http/membership.js';
 import type { RechargeOptions } from '../http/billing.js';
+import type { RouteCostRates } from '../http/model-access.js';
 
 /** 计费账户：用户钱包，或平台账户（管理员侧任务）。 */
 export type BillingAccountRef = { kind: 'user'; userId: string } | { kind: 'platform' };
@@ -55,6 +56,8 @@ export interface ReserveInput {
   reservePlatformRisk?: boolean;
   /** 同一逻辑请求后续attempt沿用首次已生效且不可变的价目表。 */
   priceVersionId?: string;
+  /** 单次尝试使用的线路采购价，随冻结锁定至结算或解冻。 */
+  routeCostRates?: RouteCostRates | undefined;
   /** 与网关调用的幂等键相同：重复调用返回同一个冻结。 */
   idempotencyKey: string;
   /**
@@ -190,6 +193,7 @@ export interface CallRiskSnapshot {
   phase: 'reserved' | 'sent' | 'unknown' | 'resolved';
   costUpperMicros: number;
   uncertainMicros: number;
+  routeCostRates?: RouteCostRates | undefined;
   usageRecordId?: string;
   upstreamId?: string;
   upstreamModelId?: string;

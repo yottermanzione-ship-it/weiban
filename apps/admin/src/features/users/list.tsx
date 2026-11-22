@@ -50,6 +50,12 @@ const USER_SORTS = {
 type UserSortField = keyof typeof USER_SORTS;
 type UserSort = (typeof USER_SORTS)[UserSortField][number];
 
+const centeredHeader = { style: { textAlign: 'center' as const } };
+
+function widestLabel(labels: string[]) {
+  return labels.reduce((longest, label) => (label.length > longest.length ? label : longest), '');
+}
+
 function SortHeader({
   children,
   field,
@@ -100,6 +106,15 @@ export function UserListPage() {
     query: { q: query.trim(), group: quick, page, pageSize, sort },
   });
   const list = users.data?.items ?? [];
+  const wallets = list.flatMap(({ account }) => (account ? [account] : []));
+  const balanceSample = widestLabel(wallets.map((account) => formatPoints(account.balanceMicros)));
+  const bonusSample = widestLabel(
+    wallets.map((account) => `赠送 ${formatPoints(account.bonusBalanceMicros ?? 0)}`),
+  );
+  const spentSample = widestLabel(
+    wallets.map((account) => `${formatPoints(account.spentLast30DaysMicros)} 积分`),
+  );
+  const hasPro = list.some(({ user }) => user.membership.tier === 'pro_plus');
   const selection = useListSelection<UserRow>(
     JSON.stringify([query, quick]),
     list,
@@ -207,20 +222,43 @@ export function UserListPage() {
     return row ? userDisplayName(id, row.user) : shortUserId(id);
   };
 
+  function sortColumn(field: UserSortField, title: string): ProColumns<UserRow> {
+    const [asc, desc] = USER_SORTS[field];
+    return {
+      key: field,
+      title: (
+        <SortHeader field={field} sort={sort} onSort={changeSort}>
+          {title}
+        </SortHeader>
+      ),
+      onHeaderCell: () => ({
+        ...centeredHeader,
+        'aria-sort': sort === asc ? 'ascending' : sort === desc ? 'descending' : undefined,
+      }),
+    };
+  }
+
   const columns: ProColumns<UserRow>[] = [
     {
       title: '用户',
-      width: 240,
+      width: 168,
+      onHeaderCell: () => centeredHeader,
       render: (_, { user }) => (
-        <UserIdentity userId={user.userId} label={user} deleted={user.status === 'deleting'} />
+        <UserIdentity fit userId={user.userId} label={user} deleted={user.status === 'deleting'} />
       ),
     },
     {
       title: '会员',
-      width: 134,
+      width: 108,
       align: 'center',
+      onHeaderCell: () => centeredHeader,
       render: (_, { user }) => (
         <div className="user-centered-value user-membership-value">
+          {hasPro && (
+            <span aria-hidden="true" className="cell-sub user-value-measure">
+              到期 0000/00/00
+            </span>
+          )}
           <MembershipTag user={user} />
           {user.membership.tier === 'pro_plus' && (
             <span className="cell-sub">到期 {formatDate(user.membership.expiresAt)}</span>
@@ -229,17 +267,18 @@ export function UserListPage() {
       ),
     },
     {
-      title: (
-        <SortHeader field="balance" sort={sort} onSort={changeSort}>
-          余额（积分）
-        </SortHeader>
-      ),
-      width: 126,
-      key: 'balance',
+      ...sortColumn('balance', '余额（积分）'),
+      width: 122,
       align: 'center',
       render: (_, { account }) =>
         account ? (
-          <div className="user-centered-value user-balance-value">
+          <div className="user-centered-value">
+            <span aria-hidden="true" className="mono user-value-measure">
+              {balanceSample}
+            </span>
+            <span aria-hidden="true" className="cell-sub mono user-value-measure">
+              {bonusSample}
+            </span>
             <span className="cell-title mono">{formatPoints(account.balanceMicros)}</span>
             <span className="cell-sub mono">
               赠送 {formatPoints(account.bonusBalanceMicros ?? 0)}
@@ -250,17 +289,15 @@ export function UserListPage() {
         ),
     },
     {
-      title: (
-        <SortHeader field="spent" sort={sort} onSort={changeSort}>
-          近 30 天消耗
-        </SortHeader>
-      ),
-      width: 137,
-      key: 'spent',
-      align: 'right',
+      ...sortColumn('spent', '近 30 天消耗'),
+      width: 128,
+      align: 'center',
       render: (_, { account }) =>
         account ? (
-          <div className="cell-main">
+          <div className="user-centered-value">
+            <span aria-hidden="true" className="mono user-value-measure">
+              {spentSample}
+            </span>
             <span className="mono">{formatPoints(account.spentLast30DaysMicros)} 积分</span>
             <span className="cell-sub">{formatYuan(account.spentLast30DaysMicros)}</span>
           </div>
@@ -269,42 +306,32 @@ export function UserListPage() {
         ),
     },
     {
-      title: (
-        <div className="user-dates" aria-label="注册时间 / 最近活跃">
-          <SortHeader field="registered" sort={sort} onSort={changeSort}>
-            注册时间
-          </SortHeader>
-          <SortHeader field="active" sort={sort} onSort={changeSort}>
-            最近活跃
-          </SortHeader>
-        </div>
-      ),
-      width: 160,
-      key: 'created',
+      ...sortColumn('registered', '注册时间'),
+      width: 104,
+      align: 'center',
       render: (_, { user }) => (
-        <div className="user-dates">
-          <span>
-            <small>注册</small>{' '}
-            <time className="mono" dateTime={user.createdAt}>
-              {formatDate(user.createdAt)}
-            </time>
-          </span>
-          <span>
-            <small>活跃</small>{' '}
-            {user.lastActiveAt ? (
-              <time dateTime={user.lastActiveAt} title={formatDateTime(user.lastActiveAt)}>
-                {relativeTime(user.lastActiveAt)}
-              </time>
-            ) : (
-              '暂无记录'
-            )}
-          </span>
-        </div>
+        <time className="mono" dateTime={user.createdAt} title={formatDateTime(user.createdAt)}>
+          {formatDate(user.createdAt)}
+        </time>
       ),
     },
     {
+      ...sortColumn('active', '最近活跃'),
+      width: 104,
+      align: 'center',
+      render: (_, { user }) =>
+        user.lastActiveAt ? (
+          <time dateTime={user.lastActiveAt} title={formatDateTime(user.lastActiveAt)}>
+            {relativeTime(user.lastActiveAt)}
+          </time>
+        ) : (
+          <span className="cell-sub">暂无记录</span>
+        ),
+    },
+    {
       title: '状态',
-      width: 90,
+      width: 84,
+      onHeaderCell: () => centeredHeader,
       render: (_, { user }) => <AccountStateTag user={user} />,
     },
   ];
@@ -318,6 +345,7 @@ export function UserListPage() {
       {overview.error && <Alert type="error" showIcon message={overview.error} />}
       <BatchFailureAlert failures={failures} onDismiss={() => setFailures([])} />
       <DataTable<UserRow>
+        className="user-list-table"
         showTools
         rowKey="userId"
         columns={columns}

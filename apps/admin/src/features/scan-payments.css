@@ -1,0 +1,92 @@
+.scan-record-tabs > .ant-tabs-nav {
+  margin: 0;
+  padding-inline: 14px;
+}
+
+.scan-match-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-1);
+  border-radius: 10px;
+  background: var(--bg-surface);
+}
+
+.scan-match-selection {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 16px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.scan-match-error {
+  color: var(--error);
+}
+
+.scan-payment-table :is(.ant-table-thead, .ant-table-tbody) > tr > .ant-table-cell {
+  padding-inline: 8px;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+.scan-payment-table .ant-table-selection-column {
+  text-align: center;
+}
+
+.scan-payment-amount {
+  font-size: 12px;
+}
+
+.scan-payment-table .status-tag.ant-tag {
+  margin-inline-end: 0;
+  padding-inline: 6px;
+  gap: 4px;
+}
+
+.scan-payment-table .os-id-chip {
+  padding-inline: 4px;
+}
+
+.scan-payment-table .user-identity-fit .os-id-chip {
+  padding-inline: 3px;
+}
+
+.scan-payment-status {
+  width: fit-content;
+  max-width: 100%;
+}
+
+.scan-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scan-id-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  max-width: min(420px, calc(100vw - 48px));
+}
+
+.scan-id-preview code {
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.scan-table-pager {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.scan-monitor-controls {
+  margin-bottom: 10px;
+}

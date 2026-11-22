@@ -77,6 +77,41 @@ export function pointsPerReply(p: ModelTokenPrices | undefined): number | null {
   return Math.round(microsToPoints(standardReplyMicros(p)) * 100) / 100;
 }
 
+function priceToCost(
+  rates: ActiveModelTokenRates | undefined,
+  serviceRates: AdminModel['serviceRates'],
+  routes: ModelRoute[],
+  discount: number,
+): AdminModel['priceToCost'] {
+  const compare = (price: number, cost: number | null | undefined) =>
+    cost && cost > 0 ? [(price * discount) / cost] : [];
+  const activeRoutes = routes.filter((route) => route.enabled);
+  const routeCosts = activeRoutes.length ? activeRoutes.map((route) => route.costRates) : [null];
+  const ratios = routeCosts.flatMap((override) => {
+    const services = (serviceRates ?? []).flatMap((row) =>
+      compare(
+        row.price,
+        row.unit !== 'unsupported' && override?.[row.unit] !== undefined
+          ? override[row.unit]! / MICROS_PER_YUAN
+          : row.cost,
+      ),
+    );
+    if (!rates) return services;
+    const input = override?.input_tokens_per_million ?? rates.cost.inputPerMillionMicros;
+    const replyCost = standardReplyMicros({
+      inputPerMillionMicros: input,
+      outputPerMillionMicros:
+        override?.output_tokens_per_million ?? rates.cost.outputPerMillionMicros,
+      cachedInputPerMillionMicros:
+        override?.cached_input_tokens_per_million ??
+        rates.cost.cachedInputPerMillionMicros ??
+        input,
+    });
+    return [...compare(standardReplyMicros(rates.price), replyCost), ...services];
+  });
+  return ratios.length ? { min: Math.min(...ratios), max: Math.max(...ratios) } : null;
+}
+
 export function toAdminModel(
   entry: AdminCatalogEntry,
   rates: ActiveModelTokenRates | undefined,
@@ -86,12 +121,13 @@ export function toAdminModel(
   nowMs = 0,
   extra: Pick<AdminModel, 'arenaRank' | 'availability' | 'usageMissing' | 'serviceRates'> = {},
 ): AdminModel {
+  const discountActive =
+    !!discount && Date.parse(discount.startsAt) <= nowMs && nowMs < Date.parse(discount.endsAt);
   return {
     ...entry,
     ...extra,
     discount: discount ?? null,
-    discountActive:
-      !!discount && Date.parse(discount.startsAt) <= nowMs && nowMs < Date.parse(discount.endsAt),
+    discountActive,
     displayMultiplierManual: display?.displayMultiplierManual ?? null,
     displayMultiplier: display?.displayMultiplier ?? null,
     rates: rates ? pricesToRates(rates.price) : null,
@@ -99,6 +135,12 @@ export function toAdminModel(
     hasTimeBands:
       (rates?.hasTimeBands ?? false) || !!extra.serviceRates?.some((r) => r.hasTimeBands),
     pointsPerReply: display?.pointsPerReply ?? pointsPerReply(rates?.price),
+    priceToCost: priceToCost(
+      rates,
+      extra.serviceRates,
+      routes ?? [],
+      discountActive ? discount.rate : 1,
+    ),
     routes: routes ?? [],
   };
 }
@@ -123,6 +165,7 @@ function toAdminModelPreview(model: AdminModel): AdminModelPreview {
     })),
     hasTimeBands: model.hasTimeBands,
     pointsPerReply: model.pointsPerReply,
+    priceToCost: model.priceToCost,
     displayMultiplier: model.displayMultiplier,
     displayMultiplierManual: model.displayMultiplierManual,
     discount: model.discount,

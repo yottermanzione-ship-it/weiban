@@ -6,6 +6,7 @@ import { AdminUsersEndpoints, Id, type AdminUserLabel } from '@weiban/contracts'
 import { useRemote } from '../../data/hooks.js';
 import { useAsync } from '../../data/use-async.js';
 import { api } from '../../data/client.js';
+import './identity.css';
 
 export function shortUserId(userId: string): string {
   return userId.slice(0, 4) + '…' + userId.slice(-4);
@@ -28,13 +29,13 @@ export function userDisplayName(
 
 /**
  * 两行身份单元格：主行是昵称（或登录名、ID 短码），副行是登录名 + ID 短码。
- * 主行 title 带完整 UUID，复制 / 核对都不用再翻详情。
  */
 export function UserIdentity({
   userId,
   label,
   deleted = false,
   compact = false,
+  fit = false,
 }: {
   userId: string;
   label?: AdminUserLabel;
@@ -42,6 +43,8 @@ export function UserIdentity({
   deleted?: boolean;
   /** 单行（排行榜、链接列表等没有副行的位置）。 */
   compact?: boolean;
+  /** 在表格列内截短昵称及登录名，并保留账号短码。 */
+  fit?: boolean;
 }) {
   const nickname = label?.nickname?.trim() ?? '';
   const username = redactContact(label?.username?.trim() ?? '');
@@ -49,10 +52,19 @@ export function UserIdentity({
   const sub = nickname && username ? username : null;
   if (compact) return <span>{main}</span>;
   return (
-    <div className="cell-main">
-      <span className="cell-title">{main}</span>
+    <div className={fit ? 'cell-main user-identity-fit' : 'cell-main'}>
+      <span className="cell-title" title={fit ? main : undefined}>
+        {main}
+      </span>
       <span className="cell-sub">
-        {sub && <>{sub} · </>}
+        {sub && (
+          <>
+            <span className="user-identity-login" title={fit ? sub : undefined}>
+              {sub}
+            </span>
+            <span className="user-identity-separator"> · </span>
+          </>
+        )}
         <MaskedId id={userId} />
       </span>
     </div>

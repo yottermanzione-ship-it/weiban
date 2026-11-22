@@ -39,7 +39,11 @@ export function HelpTip({ text }: { text: ReactNode }) {
 
 /** 字段下面那行大白话说明。 */
 export function FieldHelp({ children }: { children: ReactNode }) {
-  return <span className="field-help">{children}</span>;
+  return (
+    <span className="field-help" title={typeof children === 'string' ? children : undefined}>
+      {children}
+    </span>
+  );
 }
 
 export function SectionCard({
