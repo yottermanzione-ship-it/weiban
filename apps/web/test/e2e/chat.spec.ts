@@ -74,12 +74,13 @@ test('原消息上的回复状态展示、重试和积分入口', async ({ page 
   await expect(original.getByRole('status')).toHaveCount(0);
   await expect(original).toHaveCount(1);
 });
-test('较旧网页组件缺少取消组合和超时接口时，断开实时连接仍能登录发消息并刷新保留', async ({
-  page,
-}) => {
+test('旧网页组件缺少新版取消和行高接口时，仍能登录、收发并重新打开聊天', async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
   await page.addInitScript(() => {
     Object.defineProperty(AbortSignal, 'any', { value: undefined, configurable: true });
     Object.defineProperty(AbortSignal, 'timeout', { value: undefined, configurable: true });
+    Reflect.deleteProperty(ResizeObserverEntry.prototype, 'borderBoxSize');
   });
   await page.routeWebSocket('**/*', (socket) => socket.close());
   await openChat(page);
@@ -92,6 +93,7 @@ test('较旧网页组件缺少取消组合和超时接口时，断开实时连�
   await expect(page.getByLabel('消息', { exact: true })).toBeVisible();
   await expect(sent).toHaveCount(1);
   await expect(page.getByText('网络异常', { exact: false })).toHaveCount(0);
+  expect(pageErrors).toEqual([]);
 });
 
 for (const sameText of [false, true]) {
