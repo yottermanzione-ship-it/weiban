@@ -733,16 +733,25 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
       });
       expect(posted.ok).toBe(true);
       await user('今天喜欢蓝色的天空');
+      await memory().context(userId, characterId, 'normal', '', undefined, { brain: true });
+      const cached = await db.query<{ window_block_ciphertext: Buffer | null }>(
+        'SELECT window_block_ciphertext FROM ai_runtime.memory_states WHERE user_id=$1',
+        [userId],
+      );
+      expect(cached.rows[0]?.window_block_ciphertext).toBeInstanceOf(Buffer);
       const before = calls.length;
       await memory().extract(await job());
       expect(calls.length).toBeGreaterThan(before);
       expect(JSON.stringify(calls.slice(before))).not.toContain('QUIRK_DRAFT_NOT_A_REAL_MEMORY');
       expect(JSON.stringify(calls.slice(before))).toContain('今天喜欢蓝色的天空');
-      const state = await db.query<{ cursor_seq: string }>(
-        'SELECT cursor_seq FROM ai_runtime.memory_states WHERE user_id=$1',
+      const state = await db.query<{ cursor_seq: string; window_block_ciphertext: Buffer | null }>(
+        'SELECT cursor_seq, window_block_ciphertext FROM ai_runtime.memory_states WHERE user_id=$1',
         [userId],
       );
       if (posted.ok) expect(Number(state.rows[0]!.cursor_seq)).toBeGreaterThan(posted.value.seq);
+      expect(state.rows[0]?.window_block_ciphertext).toEqual(
+        cached.rows[0]?.window_block_ciphertext,
+      );
     } finally {
       response = original;
     }

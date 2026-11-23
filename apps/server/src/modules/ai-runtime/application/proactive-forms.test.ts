@@ -132,6 +132,8 @@ function harness(
     privateMode?: boolean;
     text?: string;
     photos?: ReturnType<typeof photoStub>;
+    localHour?: number;
+    petInteractions?: number;
   } = {},
 ) {
   const media = mediaAi(opts.photos);
@@ -188,6 +190,21 @@ function harness(
       }),
     },
     growth: { getFamiliarity: async () => ({ level: 1 }) },
+    pets: {
+      listPetsForCharacter: async () =>
+        opts.petInteractions === undefined
+          ? []
+          : [
+              {
+                status: 'active',
+                name: '团团',
+                speciesName: '猫',
+                stage: 'adult',
+                daysAdopted: 5,
+                todayInteractionCount: opts.petInteractions,
+              },
+            ],
+    },
     brain: {
       build: async (_u: string, _c: string, scope: 'normal' | 'adult') => ({
         scope,
@@ -226,7 +243,7 @@ function harness(
     userId: USER,
     timeZone: 'Asia/Shanghai',
     localDate: '2026-11-03',
-    localHour: 20,
+    localHour: opts.localHour ?? 20,
     nickname: '小明',
     birthday: null,
   };
@@ -305,6 +322,22 @@ describe('主动消息绑定角色并拦截思考', () => {
 });
 
 describe('生态主动消息复用聊天回复的形式判断', () => {
+  it('时间和宠物状态在历史之后，变化时仍提交最新内容', async () => {
+    const first = harness({ localHour: 20, petInteractions: 1 });
+    const next = harness({ localHour: 21, petInteractions: 2 });
+    await first.send();
+    await next.send();
+    const before = first.generate.mock.calls[0]![0];
+    const after = next.generate.mock.calls[0]![0];
+    const live = after.messages.findIndex((m) => m.content.includes('用户当地时间'));
+    const history = after.messages.findLastIndex((m) => m.role === 'assistant');
+    expect(history).toBeGreaterThan(0);
+    expect(live).toBeGreaterThan(history);
+    expect(after.messages.slice(0, live)).toEqual(before.messages.slice(0, live));
+    expect(after.messages[live]?.content).toContain('21点');
+    expect(after.messages[live]?.content).toContain('和它玩过 2 次');
+    expect(after.meta?.promptTemplateVersion).toBe('brain-v4-platform:proactive');
+  });
   it('形式判断被调用：批准语音和表情包时发语音 + 表情包，按后台消耗计费、费用并进总额', async () => {
     const h = harness();
     const outcome = await h.send();

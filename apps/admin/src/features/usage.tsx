@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Button, Segmented, Select, Tabs } from 'antd';
+import { Button, Segmented, Select, Tabs, Tooltip } from 'antd';
 import { ArrowRightOutlined, ReloadOutlined } from '@ant-design/icons';
 import {
   ModelAccessAdminEndpoints,
   ModelAccessAdminUsageEndpoints,
   ModelKey,
   Id,
+  type AdminModelLabel,
+  type AdminUsageCacheReceipts,
+  type AdminUsageFilter,
   type AdminUsageSummary,
 } from '@weiban/contracts';
 import { api } from '../data/client.js';
@@ -22,7 +25,7 @@ import { UserIdentity } from './users/identity.js';
 type Group = 'model' | 'upstream' | 'user' | 'purpose' | 'character' | 'day';
 const GROUPS: { value: Group; label: string; column: string }[] = [
   { value: 'model', label: '按模型', column: '模型' },
-  { value: 'upstream', label: '按上游账号', column: '上游账号' },
+  { value: 'upstream', label: '按线路', column: '线路' },
   { value: 'purpose', label: '按用途', column: '用途' },
   { value: 'user', label: '按用户', column: '用户' },
   { value: 'character', label: '按角色', column: '角色' },
@@ -34,11 +37,31 @@ const RANGES: { value: RangeKey; label: string }[] = [
   { value: '30d', label: '近 30 天' },
   { value: 'month', label: '本月' },
 ];
+const SCENES = [
+  { value: 'all', label: '全部场景', filter: {} },
+  {
+    value: 'direct',
+    label: '私聊回复',
+    filter: { conversationKind: 'direct', purposes: ['chat_reply'] },
+  },
+  {
+    value: 'proactive',
+    label: '主动私聊',
+    filter: { conversationKind: 'direct', purposes: ['proactive'] },
+  },
+  {
+    value: 'group',
+    label: '群聊消息',
+    filter: { conversationKind: 'group', purposes: ['chat_reply', 'proactive'] },
+  },
+] satisfies { value: string; label: string; filter: Partial<AdminUsageFilter> }[];
 
 export function UsagePage() {
   const [params, setParams] = useSearchParams();
   const range = RANGES.find((item) => item.value === params.get('range'))?.value ?? '7d';
   const group = GROUPS.find((item) => item.value === params.get('group'))?.value ?? 'model';
+  const scene = SCENES.find((item) => item.value === params.get('scene')) ?? SCENES[0]!;
+  const summaryModel = ModelKey.safeParse(params.get('model')).data;
   const view = ['records', 'tasks'].includes(params.get('view') ?? '')
     ? params.get('view')!
     : 'summary';
@@ -49,10 +72,11 @@ export function UsagePage() {
   const quality = params.get('quality');
   const lookupIssue = modelsRemote.error || upstreamsRemote.error;
 
-  function changeParam(key: string, value: string) {
+  function changeParam(key: string, value?: string) {
     setParams((current) => {
       const next = new URLSearchParams(current);
-      next.set(key, value);
+      if (value === undefined) next.delete(key);
+      else next.set(key, value);
       if (key === 'view' && value === 'summary') {
         for (const filter of ['model', 'upstream', 'status', 'quality']) next.delete(filter);
       }
@@ -80,9 +104,13 @@ export function UsagePage() {
               <UsageSummary
                 range={range}
                 group={group}
+                scene={scene}
+                model={summaryModel}
+                models={models}
                 onRange={(next) => changeParam('range', next)}
                 onGroup={(next) => changeParam('group', next)}
-                modelName={(key) => modelLabel(models, key)}
+                onScene={(next) => changeParam('scene', next)}
+                onModel={(next) => changeParam('model', next)}
                 upstreamName={(id) => upstreams.find((item) => item.upstreamId === id)?.name ?? id}
               />
             ),
@@ -131,19 +159,57 @@ export function UsagePage() {
   );
 }
 
+function CacheReceiptsCell({ receipts }: { receipts?: AdminUsageCacheReceipts }) {
+  if (!receipts) return '—';
+  return (
+    <Tooltip
+      trigger={['hover', 'focus']}
+      title={
+        <>
+          <div>
+            有命中 {formatInt(receipts.hitCalls)} · 零命中 {formatInt(receipts.zeroCalls)}
+          </div>
+          <div>
+            未上报 {formatInt(receipts.missingCalls)} · 异常 {formatInt(receipts.invalidCalls)}
+          </div>
+          <div>无回执记录 {formatInt(receipts.unrecordedCalls)}</div>
+          {receipts.meanUncachedInputTokens !== null && (
+            <div>每次成功调用平均未命中 {formatInt(receipts.meanUncachedInputTokens)} token</div>
+          )}
+        </>
+      }
+    >
+      <span className="cell-main" tabIndex={0}>
+        {formatPercent(receipts.hitRate)}
+        {receipts.inputCoverage !== null && (
+          <small className="cell-sub">覆盖 {formatPercent(receipts.inputCoverage)}</small>
+        )}
+      </span>
+    </Tooltip>
+  );
+}
+
 function UsageSummary({
   range,
   group,
+  scene,
+  model,
+  models,
   onRange,
   onGroup,
-  modelName,
+  onScene,
+  onModel,
   upstreamName,
 }: {
   range: RangeKey;
   group: Group;
+  scene: (typeof SCENES)[number];
+  model?: string;
+  models: readonly AdminModelLabel[];
   onRange: (value: RangeKey) => void;
   onGroup: (value: Group) => void;
-  modelName: (key: string) => string;
+  onScene: (value: string) => void;
+  onModel: (key?: string) => void;
   upstreamName: (id: string) => string;
 }) {
   const [data, setData] = useState<AdminUsageSummary>();
@@ -159,10 +225,11 @@ function UsageSummary({
     void api
       .call(ModelAccessAdminUsageEndpoints.usageSummary, {
         body: {
-          filter: rangeOf(range),
-          groupBy: [group],
+          filter: { ...rangeOf(range), ...scene.filter, ...(model ? { modelKeys: [model] } : {}) },
+          groupBy: group === 'upstream' ? ['upstream', 'upstream_model'] : [group],
           sort: group === 'day' ? 'key_asc' : 'charged_desc',
           limit: 200,
+          includeCacheReceipts: true,
         },
       })
       .then((result) => {
@@ -177,10 +244,11 @@ function UsageSummary({
     return () => {
       active = false;
     };
-  }, [range, group, revision]);
+  }, [range, group, scene, model, revision]);
 
   const totals = data?.totals;
   const recordPath = `/usage?view=records&range=${range}`;
+  const selectedModel = model ? `&model=${encodeURIComponent(model)}` : '';
   const refresh = () => setRevision((value) => value + 1);
   const columns: ProColumns<AdminUsageSummary['rows'][number]>[] = [
     {
@@ -190,15 +258,21 @@ function UsageSummary({
         if (group === 'user') return <UserIdentity userId={key} label={data?.userLabels[key]} />;
         if (group === 'upstream')
           return (
-            <Link to={`${recordPath}&upstream=${encodeURIComponent(key)}`}>
+            <Link
+              className="cell-main"
+              to={`${recordPath}${selectedModel}&upstream=${encodeURIComponent(key)}`}
+            >
               {upstreamName(key)}
+              <small className="cell-sub">{row.keys[1]}</small>
             </Link>
           );
         if (group === 'model')
           return ModelKey.safeParse(key).success ? (
-            <Link to={`${recordPath}&model=${encodeURIComponent(key)}`}>{modelName(key)}</Link>
+            <Link to={`${recordPath}&model=${encodeURIComponent(key)}`}>
+              {modelLabel(models, key)}
+            </Link>
           ) : (
-            modelName(key)
+            modelLabel(models, key)
           );
         if (group === 'purpose') return PURPOSE_LABELS[key] ?? key;
         return key || '无关联角色';
@@ -206,17 +280,17 @@ function UsageSummary({
     },
     {
       title: '调用',
-      width: 88,
+      width: 176,
       align: 'right',
       sorter: (a, b) => a.calls - b.calls,
-      render: (_, r) => formatInt(r.calls),
-    },
-    {
-      title: '失败',
-      width: 95,
-      align: 'right',
-      sorter: (a, b) => a.failedCalls - b.failedCalls,
-      render: (_, r) => formatInt(r.failedCalls),
+      render: (_, r) => (
+        <span className="cell-main">
+          {formatInt(r.calls)}
+          <small className="cell-sub">
+            成功 {formatInt(r.calls - r.failedCalls)} · 失败 {formatInt(r.failedCalls)}
+          </small>
+        </span>
+      ),
     },
     {
       title: '本地计量或估算',
@@ -247,11 +321,11 @@ function UsageSummary({
       render: (_, r) => (r.unknownCostCalls === undefined ? '—' : formatInt(r.unknownCostCalls)),
     },
     {
-      title: '缓存命中',
-      width: 97,
+      title: '缓存命中率',
+      width: 126,
       align: 'right',
-      render: (_, r) =>
-        r.inputTokens || r.cachedInputTokens ? formatPercent(r.cacheHitRate) : '—',
+      sorter: (a, b) => (a.cacheReceipts?.hitRate ?? -1) - (b.cacheReceipts?.hitRate ?? -1),
+      render: (_, r) => <CacheReceiptsCell receipts={r.cacheReceipts} />,
     },
   ];
 
@@ -271,52 +345,70 @@ function UsageSummary({
           options={GROUPS}
           aria-label="汇总维度"
         />
+        <Select
+          className="usage-group"
+          value={scene.value}
+          onChange={onScene}
+          options={SCENES}
+          aria-label="调用场景"
+        />
+        <Select
+          className="usage-group usage-model-filter"
+          value={model}
+          onChange={onModel}
+          options={models.map((entry) => ({ value: entry.modelKey, label: entry.displayName }))}
+          placeholder="全部模型"
+          allowClear
+          showSearch
+          optionFilterProp="label"
+          aria-label="筛选模型"
+        />
         <Button icon={<ReloadOutlined />} loading={loading} onClick={refresh} aria-label="刷新汇总">
           刷新
         </Button>
       </div>
       {totals && (
-        <div className="workbench-metrics usage-metrics">
-          <div className="workbench-metric">
+        <div className="usage-metrics">
+          <div className="usage-metric">
             <span>模型调用</span>
             <strong>
               {formatInt(totals.calls)} <small>次</small>
             </strong>
             <small>
-              {formatInt(totals.failedCalls)} 次失败 · {formatPercent(totals.failureRate)}
+              成功 {formatInt(totals.calls - totals.failedCalls)} · 失败{' '}
+              {formatInt(totals.failedCalls)}
             </small>
           </div>
-          <div className="workbench-metric">
+          <div className="usage-metric">
             <span>用户原扣费</span>
             <strong>
               {pointsOf(totals.chargedMicros).toFixed(2)} <small>积分</small>
             </strong>
             <small>折合 {formatYuan(totals.chargedMicros)}</small>
           </div>
-          <div className="workbench-metric">
+          <div className="usage-metric">
             <span>已记上游成本</span>
             <strong>{formatYuan(totals.costMicros)}</strong>
             <small>含平台吸收 {formatYuan(totals.absorbedCostMicros)}</small>
           </div>
-          <div className="workbench-metric">
+          <div className="usage-metric">
             <span>模型差额</span>
             <strong>{formatYuan(totals.chargedMicros - totals.costMicros)}</strong>
-            <small>原扣费减去已记上游成本</small>
           </div>
         </div>
       )}
       {totals && (
         <div className="usage-quality" aria-label="用量质量">
-          <Link to={`${recordPath}&quality=estimated`}>
+          <Link to={`${recordPath}${selectedModel}&quality=estimated`}>
             本地计量或估算 <b>{totals.estimatedCalls ?? '—'}</b> <ArrowRightOutlined />
           </Link>
-          <Link to={`${recordPath}&quality=cost_pending`}>
+          <Link to={`${recordPath}${selectedModel}&quality=cost_pending`}>
             成本待核 <b>{totals.unknownCostCalls ?? '—'}</b> <ArrowRightOutlined />
           </Link>
         </div>
       )}
       <DataTable<AdminUsageSummary['rows'][number]>
-        rowKey={(row) => String(row.keys[0] ?? '')}
+        rowKey={(row) => JSON.stringify(row.keys)}
         columns={columns}
         data={data?.rows ?? []}
         showTools={false}

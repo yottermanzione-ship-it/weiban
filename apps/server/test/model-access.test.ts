@@ -32,7 +32,11 @@ import { z } from 'zod';
 import { AppModule } from '../src/app.module.js';
 import { configureHttpApp } from '../src/main.js';
 import { IdentityCommands } from '../src/modules/identity/index.js';
-import { MODEL_ACCESS_POLICY } from '../src/modules/model-access/index.js';
+import {
+  MODEL_ACCESS_POLICY,
+  readCacheUsageReportRows,
+  summarizeCacheUsage,
+} from '../src/modules/model-access/index.js';
 import {
   ChargeQueryUnavailableError,
   MODEL_ACCESS_CHARGE_QUERY,
@@ -46,7 +50,7 @@ import {
   type ChargeQuery,
   type ModelTextPrices,
 } from '../src/modules/model-access/testing.js';
-import { DATABASE, TestClock, type Database } from '../src/platform/index.js';
+import { DATABASE, newId, TestClock, type Database } from '../src/platform/index.js';
 import { NestPinoLogger } from '../src/platform/logging/nest-logger.js';
 import { describeDb, resetTestDatabase, withClient } from './support/db.js';
 import { canaryKey, captureLogger, testConfig, testKekRing } from './support/fixtures.js';
@@ -1357,6 +1361,102 @@ describeDb('model-access 模块（真实 PostgreSQL）', () => {
         .post('/api/v1/admin/model/usage/summary', adminToken)
         .send({ filter: { from: FILTER.to, to: FILTER.from }, groupBy: ['day'] })
         .expect(400);
+    });
+
+    it('缓存汇总按实际回执加权，旧流水和重复尝试只计一次', async () => {
+      const modelKey = 'deepseek/deepseek-v4-pro';
+      async function attempt(index: number, receipt: unknown) {
+        const id = await recorder.startAttempt({
+          generationId: newId(),
+          userId: userA,
+          ordinal: 0,
+          upstreamId,
+          upstreamModelId: 'deepseek-v4-pro',
+          modelKey,
+          usageRecordId: ids[index]!,
+          holdId: newId(),
+          boundSnapshot: { ceiling: {} },
+        });
+        clock.advance(1);
+        await recorder.finishAttempt(id, receipt, true, null);
+      }
+      await attempt(0, { reported: { promptTokens: 150, cachedTokens: 150 } });
+      await attempt(0, { reported: { promptTokens: 150, cachedTokens: 75 } });
+      await attempt(1, { reported: { promptTokens: 150, cachedTokens: null } });
+      await attempt(2, {
+        cacheUsage: {
+          version: 1,
+          state: 'reported',
+          totalInputTokens: 150,
+          cachedInputTokens: 200,
+        },
+      });
+      await attempt(3, { reported: { promptTokens: 150, cachedTokens: 0 } });
+      await attempt(4, {
+        cacheUsage: { version: 1, state: 'reported', totalInputTokens: 150, cachedInputTokens: 60 },
+      });
+      await attempt(5, { reported: { promptTokens: 150, cachedTokens: 0, cacheWriteTokens: 0 } });
+
+      async function summary(extra: object = {}) {
+        return AdminUsageSummary.parse(
+          (
+            await http()
+              .post('/api/v1/admin/model/usage/summary', adminToken)
+              .send({ groupBy: ['model'], filter: FILTER, includeCacheReceipts: true, ...extra })
+              .expect(200)
+          ).body,
+        );
+      }
+      const all = await summary();
+      expect(all.rows[0]?.keys).toEqual([modelKey]);
+      expect(all.totals).toMatchObject({
+        calls: 6,
+        failedCalls: 1,
+        chargedMicros: 11000,
+        cacheHitRate: 1 / 3,
+        cacheReceipts: {
+          hitRate: 0.3,
+          inputCoverage: 1 / 2,
+          hitCalls: 2,
+          zeroCalls: 1,
+          missingCalls: 1,
+          invalidCalls: 1,
+          unrecordedCalls: 1,
+          meanUncachedInputTokens: 105,
+        },
+      });
+      const direct = await summary({
+        groupBy: ['upstream', 'upstream_model'],
+        filter: {
+          ...FILTER,
+          modelKeys: [modelKey],
+          conversationKind: 'direct',
+          purposes: ['chat_reply'],
+        },
+      });
+      expect(direct.rows[0]?.keys).toEqual([upstreamId, 'deepseek-v4-pro']);
+      expect(direct.totals).toMatchObject({
+        calls: 4,
+        cacheReceipts: { hitRate: 0.25, inputCoverage: 0.5, zeroCalls: 1 },
+      });
+      const noReceipts = await summary({ filter: { ...FILTER, purposes: ['memory'] } });
+      expect(noReceipts.totals.cacheReceipts).toMatchObject({
+        hitRate: null,
+        inputCoverage: 0,
+        unrecordedCalls: 1,
+      });
+      const reportRows = await readCacheUsageReportRows(app.get<Database>(DATABASE).db, {
+        since: new Date(FILTER.from),
+        until: new Date(FILTER.to),
+        model: modelKey,
+        purpose: null,
+        limit: 100,
+      });
+      expect(summarizeCacheUsage(reportRows)).toMatchObject({
+        calls: 6,
+        reportedCacheHitRate: 0.3,
+        states: { reported: 3, missing: 1, invalid: 1, notRecorded: 1 },
+      });
     });
 
     it('明细：按时间倒序分页，不含内容；状态筛选', async () => {

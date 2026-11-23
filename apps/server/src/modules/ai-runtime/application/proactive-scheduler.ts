@@ -1271,7 +1271,7 @@ export class ProactiveSchedulerService {
       plan.characterId,
       'normal',
       recentNormalOnly.map((m) => m.content).join('\n'),
-      { conversationStyle: !care },
+      { conversationStyle: !care, deferDate: !care },
     );
     const privateBrain = adult
       ? await this.brain.build(
@@ -1279,7 +1279,7 @@ export class ProactiveSchedulerService {
           plan.characterId,
           'adult',
           recent.map((m) => m.content).join('\n'),
-          { conversationStyle: !care },
+          { conversationStyle: !care, deferDate: !care },
         )
       : null;
     if (!normalBrain || (adult && !privateBrain)) return this.fail(plan, 'brain_unavailable');
@@ -1333,6 +1333,10 @@ export class ProactiveSchedulerService {
           .catch(() => null)
       : null;
     const mediaHint = [stickerHint, photo?.text ?? ''].filter(Boolean).join('\n');
+    const liveContext = {
+      role: 'system' as const,
+      content: `${userNamingContext(address)}\n用户当地时间：${ctx.localDate} ${String(ctx.localHour).padStart(2, '0')}点（${ctx.timeZone}）${petBlock ? `\n${petBlock}` : ''}`,
+    };
     const requestFor = (privateModel: boolean, turns: typeof recent): GenerateTextInput => ({
       userId: ctx.userId,
       characterId: plan.characterId,
@@ -1354,11 +1358,9 @@ export class ProactiveSchedulerService {
           role: 'system',
           content: `你在微伴里主动给用户发私聊消息。你现在是「${role.profile.name}」，只以「${role.profile.name}」的身份写这条消息。只输出要发出去的消息正文，不写你在想什么、判断什么、计划什么。不写分析或身份推断。用聊天纯文本，短句、口语、可以换行分成 1–3 条气泡；不输出JSON或括号动作；不编造真人公开声明；儿童不得恋爱或性化。真人=${policy.isRealPerson}，儿童=${policy.isMinor}，允许恋爱=${policy.romanceAllowed}。${eco && level >= 3 ? '「在干嘛」「想你了」这类没有具体内容的话可以偶尔说，但别总这样。' : '不要用「在干嘛」「想你了」这类没有内容的开场。'}${eco?.greeting ? '这次是早安或晚安：结合今天的具体情况说，别用套话。' : '不说早安晚安套话。'}不做情感操纵：不制造愧疚、不说一直在等、不追问、不威胁。`,
         },
-        {
-          role: 'system',
-          content: `${userNamingContext(address)}\n用户当地时间：${ctx.localDate} ${String(ctx.localHour).padStart(2, '0')}点（${ctx.timeZone}）${petBlock ? `\n${petBlock}` : ''}`,
-        },
+        ...(care ? [liveContext] : []),
         ...turns,
+        ...(!care ? [liveContext] : []),
         ...brainTail((privateModel ? privateBrain : normalBrain)!),
         {
           role: 'user',
@@ -1372,7 +1374,7 @@ ${careNote}`
       ],
       meta: {
         stablePrefixChars: (privateModel ? privateBrain : normalBrain)!.prefix.length,
-        promptTemplateVersion: 'brain-v3-platform:proactive',
+        promptTemplateVersion: care ? 'brain-v3-platform:proactive' : 'brain-v4-platform:proactive',
         conversationKind: 'direct',
         scenarioMode: privateModel
           ? 'adult'

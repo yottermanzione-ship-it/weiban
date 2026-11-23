@@ -1694,6 +1694,7 @@ export const AdminUsageDimension = z.enum([
   'model',
   'purpose',
   'upstream',
+  'upstream_model',
   'day',
   'hour',
 ]);
@@ -1709,6 +1710,7 @@ export const AdminUsageFilter = z.object({
   characterIds: z.array(Id).min(1).max(50).optional(),
   modelKeys: z.array(ModelKey).min(1).max(50).optional(),
   purposes: z.array(ModelPurpose).min(1).optional(),
+  conversationKind: z.enum(['direct', 'group']).optional(),
   billingOwner: BillingOwner.optional(),
   status: AdminUsageCallStatus.optional(),
   upstreamIds: z.array(Id).min(1).max(50).optional(),
@@ -1717,6 +1719,19 @@ export const AdminUsageFilter = z.object({
   costKnown: z.boolean().optional(),
 });
 export type AdminUsageFilter = z.infer<typeof AdminUsageFilter>;
+
+/** Cache reads reported by the text provider. Ratios are fractions of 1. */
+export const AdminUsageCacheReceipts = z.object({
+  hitRate: z.number().min(0).max(1).nullable(),
+  inputCoverage: z.number().min(0).max(1).nullable(),
+  hitCalls: z.number().int().nonnegative(),
+  zeroCalls: z.number().int().nonnegative(),
+  missingCalls: z.number().int().nonnegative(),
+  invalidCalls: z.number().int().nonnegative(),
+  unrecordedCalls: z.number().int().nonnegative(),
+  meanUncachedInputTokens: z.number().int().nonnegative().nullable(),
+});
+export type AdminUsageCacheReceipts = z.infer<typeof AdminUsageCacheReceipts>;
 
 /** 一组调用的合计。金额为微元：charged = 用户被扣（售价），cost = 平台成本（成本价），absorbedCost = 失败调用由平台吸收的成本。 */
 export const AdminUsageTotals = z.object({
@@ -1765,17 +1780,22 @@ export const AdminUsageSummaryRequest = z.object({
   /** key_asc：按分组键排序（趋势图用 day）；charged_desc：按用户扣费从高到低（「前 10 名」用）。 */
   sort: z.enum(['key_asc', 'charged_desc']).default('key_asc'),
   limit: z.number().int().min(1).max(1000).default(200),
+  includeCacheReceipts: z.boolean().optional(),
 });
 
-export const AdminUsageSummaryRow = AdminUsageTotals.extend({
-  /** 与 groupBy 一一对应的键：userId / characterId（无角色为空字符串）/ modelKey / 用途 / upstreamId / 日期。 */
+const AdminUsageSummaryTotals = AdminUsageTotals.extend({
+  cacheReceipts: AdminUsageCacheReceipts.optional(),
+});
+
+export const AdminUsageSummaryRow = AdminUsageSummaryTotals.extend({
+  /** 与 groupBy 一一对应的键。upstream_model 返回供应商实际收到的模型名。 */
   keys: z.array(z.string()).min(1).max(2),
 });
 
 export const AdminUsageSummary = z.object({
   rows: z.array(AdminUsageSummaryRow),
   /** 整个筛选范围的合计（不受 limit 影响）。 */
-  totals: AdminUsageTotals,
+  totals: AdminUsageSummaryTotals,
   /** 分组行数超过 limit 被截断。 */
   truncated: z.boolean(),
   /**

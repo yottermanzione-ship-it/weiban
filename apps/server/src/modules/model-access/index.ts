@@ -59,3 +59,9 @@ export { MODEL_ACCESS_CHARACTER_VOICE, type ModelAccessCharacterVoice } from './
 export type { RealtimeCallVoiceCheck } from './application/media-gateway.js';
 
 export { ModelDeletionService } from './application/model-deletion.js';
+export {
+  groupCacheUsage,
+  readCacheUsageReportRows,
+  summarizeCacheUsage,
+  type CacheUsageReportRow,
+} from './application/cache-usage-report.js';

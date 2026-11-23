@@ -21,6 +21,7 @@
  * 安全：密钥只放在 x-api-key 头；不跟随重定向；任何错误只返回类别，不记录上游原文；响应最多读 2MB。
  */
 import { ProviderObservation } from './provider-observation.js';
+import { anthropicCacheUsage } from './cache-usage.js';
 import {
   completeJsonPrefix,
   estimateInputTokens,
@@ -167,6 +168,7 @@ export function anthropicUsage(
   inputEstimate: number,
   output: string,
 ): TextUsage {
+  const cacheUsage = anthropicCacheUsage(raw);
   const read = num(raw.cache_read_input_tokens) ?? 0;
   const creation = num(raw.cache_creation_input_tokens);
   const detail = (raw.cache_creation ?? {}) as Record<string, unknown>;
@@ -192,6 +194,7 @@ export function anthropicUsage(
       outputTokens,
       estimated: false,
       reported,
+      cacheUsage,
     };
   return {
     inputTokens: Math.max(1, inputEstimate),
@@ -199,6 +202,7 @@ export function anthropicUsage(
     outputTokens: estimateTokens(output),
     estimated: true,
     reported,
+    cacheUsage,
   };
 }
 
@@ -267,8 +271,9 @@ export class AnthropicTextAdapter implements TextAdapter {
     const inputEstimate = estimateInputTokens(input.messages);
     const obs = new ProviderObservation(input);
     try {
+      const requestBody = JSON.stringify(body);
       // 每次 generate 恰好一次 HTTP；重试由网关另建 attempt 并预留风险。
-      const response = await fetch(anthropicUrl(input.baseUrl, 'messages'), {
+      const pendingResponse = fetch(anthropicUrl(input.baseUrl, 'messages'), {
         method: 'POST',
         redirect: 'manual',
         signal: obs.controller.signal,
@@ -277,8 +282,15 @@ export class AnthropicTextAdapter implements TextAdapter {
           Accept: 'text/event-stream',
           'Idempotency-Key': input.idempotencyKey,
         },
-        body: JSON.stringify(body),
+        body: requestBody,
       });
+      try {
+        if (!obs.controller.signal.aborted)
+          input.onRequestDispatched?.({ protocol: 'anthropic', body: JSON.parse(requestBody) });
+      } catch {
+        // Observability cannot change or interrupt a provider request.
+      }
+      const response = await pendingResponse;
       obs.headers(response);
       const read = await readLimited(response, obs);
       if (read === null)

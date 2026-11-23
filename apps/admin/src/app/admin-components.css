@@ -1337,6 +1337,32 @@
 .usage-filters > .usage-group {
   min-width: 140px;
 }
+.usage-filters > .usage-model-filter {
+  width: clamp(180px, 22vw, 280px);
+  max-width: 100%;
+}
+.usage-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(168px, 100%), 1fr));
+  gap: 12px;
+}
+.usage-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 16px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-1);
+  border-radius: 8px;
+}
+.usage-metric > strong {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+.usage-metric small {
+  color: var(--text-3);
+  font-size: 12px;
+}
 .usage-record-actions,
 .usage-quality,
 .alert-actions {

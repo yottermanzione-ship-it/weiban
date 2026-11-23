@@ -28,6 +28,7 @@ await build({
     'seed-models': 'src/cli/seed-models.ts',
     'seed-presets': 'src/cli/seed-presets.ts',
     'setup-local-model': 'src/cli/setup-local-model.ts',
+    'cache-usage-report': 'src/cli/cache-usage-report.ts',
     'evaluate-decisions': 'src/cli/evaluate-decisions.ts',
     'import-legacy-upstreams': 'src/cli/import-legacy-upstreams.ts',
     'import-legacy-characters': 'src/cli/import-legacy-characters.ts',
