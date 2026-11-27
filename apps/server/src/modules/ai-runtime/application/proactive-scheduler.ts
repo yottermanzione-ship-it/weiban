@@ -26,6 +26,7 @@ import { AdultBoundaryService } from './adult-boundary.js';
 import type { PetForRuntime, PetReadPort } from '@weiban/contracts';
 import { petContextBlock } from '../domain/pets.js';
 import { AI_CHARACTER_READ } from './supplemented-character-read.js';
+import { RECENT_CHAT_KEEP } from '../domain/recent-chat-window.js';
 import { BrainContextService, brainMessages, brainTail } from './brain.js';
 import { SharedEpisodesService } from './shared-episodes.js';
 import { and, asc, desc, eq, gte, lt, sql } from 'drizzle-orm';
@@ -183,6 +184,7 @@ export interface EcologySendExtras {
   greeting?: boolean;
   /** Only the ordinary, single-action message may be resumed without replaying its wake. */
   retryableMessage?: boolean;
+  fromLongMemory?: boolean;
 }
 
 /** 已发生实扣后记录失败：仅用于内部把费用带回生态结果，不再次扣款。 */
@@ -788,7 +790,10 @@ export class ProactiveSchedulerService {
 
       // 约定跟进（SIM-07）：到期当天或次日，仍是「当前」状态（用户说过结果后记忆会转为过去）。
       try {
-        const list = await this.memory.list(ctx.userId, characterId, { limit: 100 });
+        const list =
+          settings.memoryMode === 'recent_summary'
+            ? { items: [] }
+            : await this.memory.list(ctx.userId, characterId, { limit: 100 });
         for (const m of list.items) {
           if (m.category !== 'commitment' || m.status !== 'current' || !m.dueAt) continue;
           const due = Date.parse(m.dueAt);
@@ -1217,6 +1222,9 @@ export class ProactiveSchedulerService {
     if (!epoch || !role || !policy || !conversation || !participant || !settings) {
       return this.fail(plan, 'context_unavailable');
     }
+    const short = settings.memoryMode === 'recent_summary';
+    if (short && (plan.reason === 'follow_up' || eco?.fromLongMemory))
+      return this.fail(plan, 'memory_mode_changed');
     // T-20261103j：被上游安全策略拦过的消息不交给模型。
     const history = await withoutBlocked(
       this.db,
@@ -1230,10 +1238,14 @@ export class ProactiveSchedulerService {
         limit: 20,
       }),
     );
-    const toTurns = (list: typeof history) =>
+    const toTurns = (list: typeof history, floors?: Record<'normal' | 'adult', number>) =>
       list
         .filter(
-          (m) => m.senderKind !== 'system' && m.status === 'normal' && m.content?.type === 'text',
+          (m) =>
+            (!floors || m.seq > floors[m.scope]) &&
+            m.senderKind !== 'system' &&
+            m.status === 'normal' &&
+            m.content?.type === 'text',
         )
         .map((m) => ({
           role: (m.senderKind === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
@@ -1248,7 +1260,7 @@ export class ProactiveSchedulerService {
     const address = userNickname(ctx.nickname);
     // T-082：宠物现取（改名立即生效）；提议领养只在还没有宠物、也没提过时发。
     const petList = await this.listPets(ctx.userId, plan.characterId);
-    const petBlock = petContextBlock(petList);
+    const petBlock = short ? null : petContextBlock(petList);
     const isPetProposal = plan.sourceRef.startsWith(PET_PROPOSAL_SOURCE);
     if (isPetProposal) {
       const [done] = await this.db.db
@@ -1283,6 +1295,13 @@ export class ProactiveSchedulerService {
         )
       : null;
     if (!normalBrain || (adult && !privateBrain)) return this.fail(plan, 'brain_unavailable');
+    const sentTurns = (privateModel: boolean) => {
+      const brain = privateModel ? privateBrain : normalBrain;
+      const allowed = privateModel ? history : history.filter((m) => m.scope === 'normal');
+      return brain?.recentFloors
+        ? toTurns(allowed, brain.recentFloors).slice(-RECENT_CHAT_KEEP)
+        : toTurns(allowed);
+    };
     const careNote = care
       ? '这次是安全关怀跟进：完全不涉及亲密或成人内容，温和地问候对方现在好不好、是否安全，建议联系身边信任的人或拨打 12356，紧急时 110/120；不提供任何方法，不说教。'
       : '';
@@ -1291,16 +1310,20 @@ export class ProactiveSchedulerService {
     // 「这次能不能配表情」，能配就在提示里告诉它情绪清单和标记写法。
     const formsEligible =
       !!eco && eco.extra === null && !care && !adult && conversation.contentScope === 'normal';
-    const formHistory = formsEligible
-      ? await this.chat
-          .readMessages({
-            conversationId: conversation.conversationId,
-            scopes: ['normal'],
-            limit: 100,
-          })
-          .then((rows) => withoutBlocked(this.db, conversation.conversationId, rows))
-          .catch(() => [])
-      : [];
+    const formHistory = short
+      ? history
+          .filter((m) => m.scope === 'normal' && m.seq > (normalBrain.recentFloors?.normal ?? 0))
+          .slice(-RECENT_CHAT_KEEP)
+      : formsEligible
+        ? await this.chat
+            .readMessages({
+              conversationId: conversation.conversationId,
+              scopes: ['normal'],
+              limit: 100,
+            })
+            .then((rows) => withoutBlocked(this.db, conversation.conversationId, rows))
+            .catch(() => [])
+        : [];
     const stickerHint = formsEligible
       ? await this.mediaAi
           .stickerPrompt({
@@ -1383,7 +1406,7 @@ ${careNote}`
             : (settings.scenarioMode ?? 'daily'),
       },
     });
-    let request = requestFor(adult, recent);
+    let request = requestFor(adult, sentTurns(adult));
     let result = await this.adultBoundary.generate(request, adult);
     let adultUsed = adult;
     if (
@@ -1394,7 +1417,7 @@ ${careNote}`
       result.message !== 'interrupted'
     ) {
       adultUsed = false;
-      request = requestFor(false, recentNormalOnly);
+      request = requestFor(false, sentTurns(false));
       result = await this.adultBoundary.generate(request, adultUsed);
     }
     if (!result.ok) {

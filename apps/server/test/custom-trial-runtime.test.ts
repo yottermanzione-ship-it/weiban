@@ -240,7 +240,7 @@ describeDb('CHR-07 保存前试聊：真实会话/回复/关闭/授权/过期', 
   it('模型生成期间关闭，晚到结果不创建消息或复活试聊', async () => {
     const trial = await createTrial();
     const id = await send(trial.conversationId);
-    clock.advance(3000);
+    clock.advance(5000);
     let release = () => {};
     gate = new Promise((resolve) => {
       release = resolve;
@@ -343,7 +343,7 @@ describeDb('CHR-07 保存前试聊：真实会话/回复/关闭/授权/过期', 
         .expect(200)
     ).body as { conversationId: string };
     const id = await send(trial.conversationId);
-    clock.advance(3000);
+    clock.advance(5000);
     await app.get(ReplyEngine).run(id);
     expect((await app.get(ReplyPlanStore).get(id))?.status).toBe('sending');
     await http()

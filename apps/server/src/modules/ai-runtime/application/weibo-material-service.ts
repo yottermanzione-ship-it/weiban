@@ -196,10 +196,16 @@ export class WeiboMaterialService implements WeiboMomentMaterialPort {
   ) {}
 
   /** 最近一条仍生效的微博素材（只读该角色自己的条目）；没有就返回 null，由消费方明示没有素材。 */
-  async latest(userId: string, characterId: string): Promise<WeiboMomentMaterial | null> {
+  async latest(
+    userId: string,
+    characterId: string,
+    options?: { cachedOnly?: boolean },
+  ): Promise<WeiboMomentMaterial | null> {
     const found = await this.weiboItem(userId, characterId);
     if (!found) return null;
-    const images = await this.imagesFor(userId, found.item);
+    const images = options?.cachedOnly
+      ? (await this.store.media(found.item.id)).map((row) => ({ mediaId: row.mediaId }))
+      : await this.imagesFor(userId, found.item);
     return {
       updateId: found.updateId,
       content: found.content || found.item.content,

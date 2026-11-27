@@ -110,12 +110,20 @@ internal class ConversationUi(
     /** 群聊 @：插入的「@名字」→ 参与者 ID（SOC-04 第 1 条）。发送时只保留仍在文字里的。 */
     var mentions by mutableStateOf<Map<String, String>>(emptyMap())
 
+    private val edits = ChatEditPulse(runtime, owner, conversation.conversationId, scope)
+
+    fun editText(next: String) {
+        if (text == next) return
+        text = next
+        edits.send()
+    }
+
     fun mention(
         name: String,
         participantId: String,
     ) {
         val base = if (text.endsWith("@")) text.dropLast(1) else text
-        text = (base + "@" + name + " ").take(4_000)
+        editText((base + "@" + name + " ").take(4_000))
         mentions = mentions + (name to participantId)
     }
 

@@ -278,8 +278,8 @@ export class EcologySettingsService {
   // =========================================================================
   // 用户设置
   // =========================================================================
-  async row(userId: string): Promise<SettingsRow | null> {
-    const [row] = await this.db.db
+  async row(userId: string, tx?: DbTx): Promise<SettingsRow | null> {
+    const [row] = await (tx?.db ?? this.db.db)
       .select()
       .from(ecologySettings)
       .where(eq(ecologySettings.userId, userId));
@@ -287,9 +287,13 @@ export class EcologySettingsService {
   }
 
   /** 没有单独设置的好友默认参与。一次取出本次好友集合中明确关闭的角色。 */
-  async disabledCharacterIds(userId: string, characterIds: string[]): Promise<Set<string>> {
+  async disabledCharacterIds(
+    userId: string,
+    characterIds: string[],
+    tx?: DbTx,
+  ): Promise<Set<string>> {
     if (!characterIds.length) return new Set();
-    const rows = await this.db.db
+    const rows = await (tx?.db ?? this.db.db)
       .select({ characterId: ecologyCharacterSettings.characterId })
       .from(ecologyCharacterSettings)
       .where(
@@ -302,8 +306,8 @@ export class EcologySettingsService {
     return new Set(rows.map((row) => row.characterId));
   }
 
-  async characterEnabled(userId: string, characterId: string): Promise<boolean> {
-    return !(await this.disabledCharacterIds(userId, [characterId])).has(characterId);
+  async characterEnabled(userId: string, characterId: string, tx?: DbTx): Promise<boolean> {
+    return !(await this.disabledCharacterIds(userId, [characterId], tx)).has(characterId);
   }
 
   /**
@@ -327,7 +331,7 @@ export class EcologySettingsService {
 
   /**
    * 开关能否使用（设置页置灰用）：开关下只要有一个动作平台能执行就可用；都不能时返回第一个原因。
-   * 例：没开通联网搜索时「私人朋友圈」仍可用（转发已同步的微博素材不需要搜索）。
+   * 私人朋友圈的日常发布可以独立于搜索服务运行。
    */
   async switchAvailable(sw: EcologySwitchDef, config?: EcologyConfig): Promise<string | null> {
     const cfg = config ?? (await this.config());
@@ -350,15 +354,16 @@ export class EcologySettingsService {
     userId: string,
     characterId?: string | null,
     action?: EcologyRunKind,
+    tx?: DbTx,
   ): Promise<boolean> {
     try {
-      const row = await this.row(userId);
+      const row = await this.row(userId, tx);
       if (!row?.enabled || row.pausedReason) return false;
-      if ((await this.accounts.getAccountStatus(userId)) !== 'active') return false;
+      if ((await this.accounts.getAccountStatus(userId, tx)) !== 'active') return false;
       // 3.22（批 E2 遗留）：封禁账号的生态全部跳过，不扣积分（网关处也会再拦一次）。
-      if (await this.accounts.isBanned?.(userId)) return false;
-      if (!(await this.membership.isProPlus(userId))) return false;
-      if (characterId && !(await this.characterEnabled(userId, characterId))) return false;
+      if (await this.accounts.isBanned?.(userId, tx)) return false;
+      if (!(await this.membership.isProPlus(userId, tx))) return false;
+      if (characterId && !(await this.characterEnabled(userId, characterId, tx))) return false;
       if (action) {
         const gate = gateKeyForRunKind(action);
         if (!gate || !switchEnabled(row.disabledActions, gate)) return false;
@@ -475,17 +480,6 @@ export class EcologySettingsService {
     if (body.enabled === true && !(await this.membership.isProPlus(userId)))
       throw new AppError('forbidden', '角色生态是 PRO+ 会员专属');
     const now = this.clock.now();
-    const current = await this.row(userId);
-    const disabled = mergeDisabledActions(current?.disabledActions ?? [], body.actions ?? []);
-    const values = {
-      enabled: body.enabled ?? current?.enabled ?? false,
-      activityLevel: body.activityLevel ?? current?.activityLevel ?? 'often',
-      disabledActions: disabled,
-      introSeen: body.introSeen ?? current?.introSeen ?? false,
-      // 用户重新打开总开关时清掉暂停（充值后也会自动清）。
-      ...(body.enabled === true ? { pausedReason: null, pausedAt: null } : {}),
-      updatedAt: now,
-    };
     await this.db.transaction(async (tx) => {
       await tx.query(
         "SELECT pg_advisory_xact_lock(hashtextextended('ecology-settings:' || $1,0))",
@@ -493,6 +487,16 @@ export class EcologySettingsService {
       );
       if ((await this.accounts.getAccountStatus(userId, tx)) !== 'active')
         throw new AppError('unauthenticated', '账号不可用');
+      const current = await this.row(userId, tx);
+      const values = {
+        enabled: body.enabled ?? current?.enabled ?? false,
+        activityLevel: body.activityLevel ?? current?.activityLevel ?? 'often',
+        disabledActions: mergeDisabledActions(current?.disabledActions ?? [], body.actions ?? []),
+        introSeen: body.introSeen ?? current?.introSeen ?? false,
+        // 用户重新打开总开关时清掉暂停（充值后也会自动清）。
+        ...(body.enabled === true ? { pausedReason: null, pausedAt: null } : {}),
+        updatedAt: now,
+      };
       await tx.db
         .insert(ecologySettings)
         .values({ userId, ...values })

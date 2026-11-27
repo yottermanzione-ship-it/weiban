@@ -95,6 +95,8 @@ import { PlannerService } from './application/planner.js';
 import { PlannerAdminController } from './http/planner-admin.controller.js';
 import { EcologySettingsService } from './application/ecology-settings.js';
 import { EcologyService } from './application/ecology.js';
+import { MuseWeiboService } from './application/muse-weibo.js';
+import { MuseWeiboController } from './http/muse-weibo.controller.js';
 import { WeiboSyncService } from './application/weibo.js';
 import { WeiboMaterialService, WeiboMediaStore } from './application/weibo-material-service.js';
 import { WEIBO_MOMENT_MATERIAL_PORT } from './application/weibo-material.js';
@@ -123,6 +125,7 @@ import {
   ],
   providers: [
     WeiboSyncService,
+    MuseWeiboService,
     // 微博公开素材的图片链路：采集（只认该帖自己的公开页面）→ 媒体服务转存为平台公共图 → 按用户稳定选图。
     WeiboMediaStore,
     WeiboMaterialService,
@@ -233,6 +236,7 @@ import {
     PlannerAdminController,
     EcologyController,
     EcologyAdminController,
+    MuseWeiboController,
     MemoryTierController,
     MemoryTierAdminController,
     MemoryTierPlansController,

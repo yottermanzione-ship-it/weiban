@@ -44,3 +44,5 @@ export {
   type ChatTurnMessage,
   type DepthInsert,
 } from './domain/prompt-assembly.js';
+export { MuseWeiboService } from './application/muse-weibo.js';
+export { MomentsAiService } from './application/moments-ai.js';

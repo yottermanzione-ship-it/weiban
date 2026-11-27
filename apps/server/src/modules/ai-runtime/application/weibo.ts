@@ -28,11 +28,7 @@ import { AI_CHARACTER_READ } from './supplemented-character-read.js';
 import { characterView, roleWeiboMarker } from './character-view.js';
 import { EcologySettingsService } from './ecology-settings.js';
 import { localDate } from '../../../platform/time/local-time.js';
-import {
-  WEIBO_MAX_DAILY_SEARCHES,
-  WEIBO_MIN_INTERVAL_MS,
-  weiboCandidates,
-} from '../domain/weibo.js';
+import { WEIBO_MIN_INTERVAL_MS, weiboCandidates, weiboPostIdentity } from '../domain/weibo.js';
 type State = {
   lease_token: string;
   lease_until: Date;
@@ -86,7 +82,8 @@ export class WeiboSyncService implements OnModuleInit {
       return null;
     return marker;
   }
-  async offer(userId: string, characterId: string) {
+  /** 历史任务恢复条件；新投稿由 Muse 入站处理。 */
+  private async offer(userId: string, characterId: string) {
     if (!(await this.role(userId, characterId))) return false;
     const row = (
       await this.db.query<State>(
@@ -94,14 +91,7 @@ export class WeiboSyncService implements OnModuleInit {
         [characterId],
       )
     ).rows[0];
-    const day = localDate(this.clock.now(), 'Asia/Shanghai');
-    return (
-      !row ||
-      (row.lease_until <= this.clock.now() &&
-        (!!row.pending_key ||
-          (row.next_allowed_at <= this.clock.now() &&
-            (row.day !== day || row.attempts < WEIBO_MAX_DAILY_SEARCHES))))
-    );
+    return !!row?.pending_key && row.lease_until <= this.clock.now();
   }
   private async participants(characterId: string) {
     const result: { userId: string; epoch: string }[] = [];
@@ -139,17 +129,10 @@ export class WeiboSyncService implements OnModuleInit {
       ).rows[0];
       const now = this.clock.now(),
         day = localDate(now, 'Asia/Shanghai');
-      if (
-        row &&
-        (row.lease_until > now ||
-          (!row.pending_key &&
-            (row.next_allowed_at > now ||
-              (row.day === day && row.attempts >= WEIBO_MAX_DAILY_SEARCHES))))
-      )
-        return null;
+      if (!row?.pending_key || row.lease_until > now) return null;
       const token = newId(),
-        key = row?.pending_key ?? `weibo-sync:${newId()}`,
-        attempts = (row?.day === day ? row.attempts : 0) + (row?.pending_key ? 0 : 1);
+        key = row.pending_key,
+        attempts = row.day === day ? row.attempts : 0;
       await tx.query(
         `INSERT INTO ai_runtime.weibo_sync_states(character_id,lease_token,lease_until,next_allowed_at,day,attempts,pending_key) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(character_id) DO UPDATE SET lease_token=EXCLUDED.lease_token,lease_until=EXCLUDED.lease_until,next_allowed_at=EXCLUDED.next_allowed_at,day=EXCLUDED.day,attempts=EXCLUDED.attempts,pending_key=EXCLUDED.pending_key`,
         [
@@ -166,6 +149,8 @@ export class WeiboSyncService implements OnModuleInit {
     });
   }
   async run(userId: string, characterId: string) {
+    if (!(await this.offer(userId, characterId)))
+      return { ok: false, chargedMicros: 0, reason: 'no_pending_search' };
     const marker = await this.role(userId, characterId);
     if (!marker || !(await this.settings.isActive(userId, characterId, 'weibo_sync')))
       return { ok: false, chargedMicros: 0, reason: 'not_eligible' };
@@ -180,6 +165,7 @@ export class WeiboSyncService implements OnModuleInit {
       userIds: recipients.map((r) => r.userId),
       query: `site:weibo.com "${marker.nickname.replace(/["\\]/gu, '')}" 微博 after:${new Date(this.clock.nowMs() - 7 * 86400000).toISOString().slice(0, 10)}`,
       key: claim.key,
+      receiptOnly: true,
       eligibleUserIds: async () =>
         (await this.recheckParticipants(characterId, recipients)).map((r) => r.userId),
     });
@@ -224,9 +210,13 @@ export class WeiboSyncService implements OnModuleInit {
                 publishedOn: prior.published_on,
               }
             : item;
+          const canonical = weiboPostIdentity(material.sourceUrl, marker.userId);
           const updateId = await this.publication.publish(tx, {
             characterId,
             ...material,
+            ...(canonical
+              ? { sourceUrl: canonical.sourceUrl, sourceAliases: canonical.sourceAliases }
+              : {}),
             nickname: marker.nickname,
             weiboUserId: marker.userId,
           });

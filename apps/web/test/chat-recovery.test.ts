@@ -100,7 +100,8 @@ async function start() {
   const api = { owns, call, forgetIf } as unknown as ApiClient;
   const store = {
     get: async () => state,
-    setOwned: async () => true,
+    savedOutbox: async () => [],
+    saveChatState: async () => true,
   } as unknown as IndexedLocalStore;
   driver = new ChatDriver(api, store, session, {
     state: () => {},

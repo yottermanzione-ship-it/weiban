@@ -1,4 +1,4 @@
-import { AuthResponse } from '@weiban/contracts';
+import { AuthResponse, type ClientPendingSend, type ClientSyncState } from '@weiban/contracts';
 /** 数据按应用和账号隔离；退出登录删除本机令牌、缓存及待发队列。 */
 export interface LocalStore {
   get(key: string): Promise<unknown>;
@@ -114,6 +114,77 @@ export class IndexedLocalStore implements LocalStore {
   /** 归属检查与写入同一事务：退出清库后，迟到的驱动不能重建旧账号数据。 */
   async setOwned(owner: StoreOwner, key: string, value: unknown): Promise<boolean> {
     return this.setOwnedValues(owner, { [key]: value });
+  }
+  /** Each bubble has its own owner-scoped IDB key, so a stale tab cannot replace a sibling tab's queue. */
+  async savedOutbox(owner: StoreOwner): Promise<ClientPendingSend[]> {
+    const prefix = [owner.userId, owner.sessionId];
+    return this.transaction(
+      'outbox',
+      'readonly',
+      (tx) =>
+        new Promise((resolve, reject) => {
+          const req = tx
+            .objectStore('outbox')
+            .getAll(IDBKeyRange.bound([...prefix, ''], [...prefix, '\uffff']));
+          req.onsuccess = () =>
+            resolve(
+              (req.result as { order: number; item: ClientPendingSend }[])
+                .sort((a, b) => a.order - b.order)
+                .map((row) => row.item),
+            );
+          req.onerror = () => reject(req.error);
+        }),
+    );
+  }
+  async saveChatState(
+    owner: StoreOwner,
+    key: string,
+    state: ClientSyncState,
+    previous: readonly ClientPendingSend[],
+  ): Promise<boolean> {
+    return this.transaction(
+      ['records', 'outbox'],
+      'readwrite',
+      (tx) =>
+        new Promise((resolve, reject) => {
+          const records = tx.objectStore('records'),
+            outbox = tx.objectStore('outbox');
+          let saved = false;
+          const request = records.get('session');
+          request.onsuccess = () => {
+            const session = AuthResponse.safeParse(request.result);
+            if (
+              !session.success ||
+              session.data.user.userId !== owner.userId ||
+              session.data.session.sessionId !== owner.sessionId
+            )
+              return;
+            const prior = new Map(previous.map((item) => [item.body.clientMsgId, item]));
+            const current = new Set(state.outbox.map((item) => item.body.clientMsgId));
+            for (const item of previous)
+              if (!current.has(item.body.clientMsgId))
+                outbox.delete([owner.userId, owner.sessionId, item.body.clientMsgId]);
+            state.outbox.forEach((item, index) => {
+              const before = prior.get(item.body.clientMsgId);
+              if (
+                before &&
+                before.retryAt === item.retryAt &&
+                before.state === item.state &&
+                before.failures === item.failures
+              )
+                return;
+              const id = [owner.userId, owner.sessionId, item.body.clientMsgId];
+              const read = outbox.get(id);
+              read.onsuccess = () =>
+                outbox.put({ order: read.result?.order ?? Date.now() * 1000 + index, item }, id);
+            });
+            records.put({ ...state, outbox: [] }, key);
+            saved = true;
+          };
+          tx.oncomplete = () => resolve(saved);
+          tx.onerror = tx.onabort = () => reject(storeError('聊天发件箱保存失败', tx));
+        }),
+    );
   }
   /** Multiple UI records commit together, with the same account check as a single write. */
   async setOwnedValues(

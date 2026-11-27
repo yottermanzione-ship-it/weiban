@@ -1,3 +1,4 @@
+import { REPLY_QUIET_MS } from '@weiban/contracts';
 /**
  * T-065 群聊 AI（D-L4-04，SOC-03 第 3/4 条、SOC-04、SOC-05、SOC-06，SAFE-06 第 5 条，MODE-05）。
  *
@@ -134,7 +135,7 @@ export const P22_INVITE_WINDOW_DAYS = 7;
 
 const INVITER_MIN_FAMILIARITY = 3;
 /** 用户连发时等多久再回应（与私聊 CHAT-04 第 5 条一致的「停下来」判断）。 */
-const USER_BATCH_DELAY_MS = 3000;
+
 const SELF_CHAT_LABEL = 'self_chat';
 /** v5：群里自己聊改由角色生态发起，旧的每小时规则排期停用（保留代码便于对照）。 */
 const LEGACY_SELF_CHAT_SCHEDULE = false;
@@ -349,7 +350,7 @@ export class GroupChatService {
       .where(eq(groupCompanionSettings.conversationId, conversationId));
     return {
       conversationId,
-      instantReply: row?.instantReply ?? false,
+      instantReply: false,
       selfChatEnabled: row?.selfChatEnabled ?? true,
       scenarioMode: (row?.scenarioMode ?? 'daily') as ScenarioMode,
       scenarioPresetId: row?.scenarioPresetId ?? null,
@@ -437,7 +438,7 @@ export class GroupChatService {
     const values = {
       conversationId,
       userId,
-      instantReply: patch.instantReply ?? old.instantReply,
+      instantReply: false,
       selfChatEnabled: patch.selfChatEnabled ?? old.selfChatEnabled,
       scenarioMode: patch.scenarioMode ?? old.scenarioMode,
       scenarioPresetId:
@@ -602,7 +603,7 @@ export class GroupChatService {
       triggerSeq: input.seq,
       scope: conversation.contentScope,
     });
-    await this.jobs.send(
+    await this.jobs.sendCoalesced(
       GROUP_TURN_JOB,
       {
         conversationId: input.conversationId,
@@ -610,15 +611,24 @@ export class GroupChatService {
         triggerMessageId: input.messageId,
         triggerSeq: input.seq,
       } satisfies GroupTurnJob,
-      { tx, delayMs: USER_BATCH_DELAY_MS, singletonKey: `group-turn:${input.messageId}` },
+      {
+        tx,
+        startAfter:
+          (await this.replies.window(input.userId, input.conversationId, tx))?.quietUntil ??
+          new Date(this.clock.nowMs() + REPLY_QUIET_MS),
+        singletonKey: input.conversationId,
+      },
     );
   }
 
   async runTurn(job: GroupTurnJob): Promise<void> {
-    const row = await this.replies.claim(job.triggerMessageId);
+    const row = await this.replies.claim(job.userId, job.conversationId);
     if (!row) return;
     try {
-      await this.runClaimedTurn(job, row);
+      await this.runClaimedTurn(
+        { ...job, triggerMessageId: row.triggerMessageId, triggerSeq: row.triggerSeq },
+        row,
+      );
     } catch (error) {
       await this.replies.checkpoint(row, { status: 'waiting' });
       throw error;
@@ -650,7 +660,10 @@ export class GroupChatService {
       await cancel();
       return;
     }
-    const history = await this.history(conversation);
+    const history = await this.history(
+      conversation,
+      Math.min(200, Math.max(40, job.triggerSeq - (row.batchFirstSeq ?? job.triggerSeq) + 1)),
+    );
     const trigger = history.find((m) => m.messageId === job.triggerMessageId);
     if (
       !trigger ||
@@ -675,14 +688,23 @@ export class GroupChatService {
       await cancel();
       return;
     }
-    const userText = trigger ? readableMessageText(trigger) : '';
-    // 3.27（H1）：群里拍了拍某个角色 = 点名让 TA 回应。
+    const batch = history.filter(
+      (m) =>
+        m.senderKind === 'user' &&
+        m.status === 'normal' &&
+        m.scope === row.scope &&
+        m.seq >= (row.batchFirstSeq ?? job.triggerSeq) &&
+        m.seq <= job.triggerSeq,
+    );
+    const userText = batch.map((m) => readableMessageText(m)).join('\n');
     const mentioned = new Set(
-      trigger?.content?.type === 'text'
-        ? (trigger.content.mentions ?? [])
-        : trigger?.content?.type === 'nudge'
-          ? [trigger.content.targetParticipantId]
-          : [],
+      batch.flatMap((m) =>
+        m.content?.type === 'text'
+          ? (m.content.mentions ?? [])
+          : m.content?.type === 'nudge'
+            ? [m.content.targetParticipantId]
+            : [],
+      ),
     );
     const settings = await this.loadSettings(conversation.conversationId);
     const saved = await this.replies.open<GroupCheckpoint>(row, 'plan');
@@ -839,7 +861,7 @@ export class GroupChatService {
         members: input.members,
         speaker: next.speaker,
         reason: next.reason,
-        instant: input.settings.instantReply,
+        instant: false,
         scenarioMode: input.settings.scenarioMode,
         scenarioPresetId: input.settings.scenarioPresetId,
         idempotencyKey: `${input.keyPrefix}:${sent}`,
@@ -2054,12 +2076,12 @@ export class GroupChatService {
     return members;
   }
 
-  private async history(conversation: Conversation): Promise<Message[]> {
+  private async history(conversation: Conversation, limit = 40): Promise<Message[]> {
     return this.chat.readMessages({
       conversationId: conversation.conversationId,
       // MODE-05：非成人群只读日常范围；成人群全员在场可读本群成人内容。
       scopes: conversation.contentScope === 'adult' ? ['normal', 'adult'] : ['normal'],
-      limit: 40,
+      limit,
     });
   }
 

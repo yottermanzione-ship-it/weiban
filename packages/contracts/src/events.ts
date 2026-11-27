@@ -534,6 +534,8 @@ export const MomentsPostCreated = event(
     hasImages: z.boolean(),
     /** 用户动态可见的角色；角色动态为空数组。 */
     visibleCharacterIds: z.array(Id),
+    /** Muse 新投稿的互动额外检查生态授权。 */
+    museWeibo: z.literal(true).optional(),
   }),
 );
 
@@ -551,6 +553,8 @@ export const MomentsCommentCreated = event(
     replyToKind: z.enum(['user', 'character']).nullable(),
     replyToCharacterId: Id.nullable(),
     mentionsUser: z.boolean(),
+    /** 由 Muse 新稿的自动角色互动产生，后续角色自动回复沿用其授权。 */
+    museWeibo: z.literal(true).optional(),
   }),
 );
 

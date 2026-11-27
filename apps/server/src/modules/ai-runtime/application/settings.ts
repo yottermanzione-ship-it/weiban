@@ -93,8 +93,9 @@ export class CompanionSettingsService {
     const [specific] = await query(characterId);
     const row = specific ?? (characterId !== null ? (await query(null))[0] : undefined);
     return {
-      instantReply: row?.instantReply ?? false,
+      instantReply: false,
       splitBubbles: row?.splitBubbles ?? true,
+      memoryMode: row?.memoryMode ?? 'model_window',
       personaFit: row?.personaFit ?? 3,
       // 没有设置行 = 新账号默认：情景预设「自动」（docs/refactor/02 第 5.3 节，2026-10-13 AI 实现后启用）。
       scenarioMode: (row?.scenarioMode ?? 'auto') as ScenarioMode,
@@ -241,6 +242,9 @@ export class CompanionSettingsService {
     input: unknown,
   ): Promise<CompanionSettings & { inheritsDefaults: boolean }> {
     const patch = parseContract(UpdateCompanionSettingsRequest, input);
+    if (patch.memoryMode && !characterId)
+      throw new AppError('bad_request', '请在单个角色的聊天信息中选择记忆方式');
+    delete patch.instantReply;
     await this.guard(userId, characterId);
     const allowed =
       characterId && (patch.scenarioMode || patch.scenarioPresetId)
@@ -289,8 +293,9 @@ export class CompanionSettingsService {
       const values = {
         userId,
         characterId,
-        instantReply: patch.instantReply ?? old.instantReply,
+        instantReply: false,
         splitBubbles: patch.splitBubbles ?? old.splitBubbles,
+        memoryMode: patch.memoryMode ?? old.memoryMode ?? 'model_window',
         personaFit: patch.personaFit ?? old.personaFit ?? 3,
         scenarioMode: patch.scenarioMode ?? old.scenarioMode ?? 'auto',
         scenarioPresetId:
@@ -348,6 +353,20 @@ export class CompanionSettingsService {
           target: [companionSettings.userId, companionSettings.characterId],
           set: values,
         });
+      if (
+        characterId &&
+        old.memoryMode === 'recent_summary' &&
+        values.memoryMode !== old.memoryMode
+      ) {
+        // Keep the last adopted summary for a later switch back, stop any outstanding paid catch-up.
+        await tx.query(
+          `UPDATE ai_runtime.chat_summary_states s SET target_seq=s.covered_seq, lease_id=NULL,
+             lease_until=NULL, prepared_ciphertext=NULL, attempts=0, retry_after=NULL, last_failure=NULL
+           FROM ai_runtime.memory_states p WHERE s.parent_id=p.id AND p.user_id=$1
+             AND p.character_id=$2 AND s.memory_mode='recent_summary'`,
+          [userId, characterId],
+        );
+      }
       if (characterId) await invalidateReplyPlans(tx, this.plans, userId, characterId);
       else {
         for (const contact of activeContacts)

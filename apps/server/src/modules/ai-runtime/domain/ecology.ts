@@ -56,7 +56,7 @@ export const ECOLOGY_ACTIONS: readonly EcologyActionDef[] = [
     key: 'weibo_sync',
     group: 'moments',
     label: '同步微博动态',
-    tool: '查看自己有微博标记的公开账号是否有新微博，并同步到开启生态的用户的私人朋友圈。有新作品或公开信息线索、想起一阵没看微博时才选；没有必要就不选。查询只用已标记的公开账号，不查私人生活。费用由当时开启该角色生态且有积分的用户平摊。',
+    tool: '发布已经由 Muse 投稿并核实来源的公开微博动态。',
     mode: 'decision',
     needs: 'web_search',
     summary: '查看并同步了公开微博动态',
@@ -418,14 +418,14 @@ export const TEXT_MODEL_ACTIONS: ReadonlySet<EcologyActionKey> = new Set([
 
 /** 给 Jev 的每题补充说明（固定程序文字，不含任何用户或角色原文）。 */
 const JEV_HINT: Partial<Record<EcologyRunKind, string>> = {
-  weibo_sync: '看 state.features.weiboLeadAvailable：有新公开线索时才适合；没有必要就不做。',
+  weibo_sync: '公开微博由服务端排程投递。',
   message: '主动发一条有具体内容的私聊消息。对方刚聊过或有未回复消息时克制。',
   greeting: '只在早上或睡前合适。',
   voice: '用一两句语音代替文字。对方可能不方便听时不做。',
   photo: '分享角色微博里的一张公开图片。',
   sticker: '发一个表情包。',
   nudge: '拍一拍对方并顺带说一句话。',
-  moment_post: '把已同步的公开微博转到私人朋友圈。',
+  moment_post: '在私人朋友圈分享一条只有好友本人能看到的日常。',
   moment_interact: '给对方最近的朋友圈点赞或评论（点赞和评论是分开的两件事，都做也可以）。',
   moment_reply: '回复自己朋友圈下还没回的评论。',
   moment_peer: '给认识的其他角色的朋友圈点赞或评论（点赞和评论是分开的两件事，都做也可以）。',

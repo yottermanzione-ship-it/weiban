@@ -210,7 +210,7 @@ internal class CustomCharacterDraft(
             val fields = draft
             when {
                 result != null -> CustomCharacterSaved(repository, runtime, open.owner, result, onClose)
-                fields != null -> CustomCharacterForm(repository, open, fields, onSaved = { saved = it })
+                fields != null -> CustomCharacterForm(repository, runtime, open, fields, onSaved = { saved = it })
                 error != null -> Text(error.orEmpty(), Modifier.padding(WbSpace.S5), color = MaterialTheme.colorScheme.error)
                 else -> LinearProgressIndicator(Modifier.fillMaxWidth())
             }
@@ -220,6 +220,7 @@ internal class CustomCharacterDraft(
 
 @Composable private fun CustomCharacterForm(
     repository: SessionRepository,
+    runtime: ChatRuntime,
     open: CustomEditorOpen,
     draft: CustomCharacterDraft,
     onSaved: (UserCustomCharacter) -> Unit,
@@ -228,7 +229,7 @@ internal class CustomCharacterDraft(
     var pending by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var trial by remember { mutableStateOf<String?>(null) }
-    trial?.let { conversationId -> CharacterTrialDialog(repository, open.owner, conversationId, draft.name) { trial = null } }
+    trial?.let { conversationId -> CharacterTrialDialog(repository, runtime, open.owner, conversationId, draft.name) { trial = null } }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WbSpace.S5),
         verticalArrangement = Arrangement.spacedBy(WbSpace.S3),
@@ -376,7 +377,7 @@ internal class CustomCharacterDraft(
     var error by remember { mutableStateOf<String?>(null) }
     var trialConversationId by remember { mutableStateOf<String?>(null) }
     trialConversationId?.let { conversationId ->
-        CharacterTrialDialog(repository, owner, conversationId, role.name) {
+        CharacterTrialDialog(repository, runtime, owner, conversationId, role.name) {
             trialConversationId =
                 null
         }

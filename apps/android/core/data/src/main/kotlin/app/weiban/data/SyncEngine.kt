@@ -82,6 +82,7 @@ class SyncEngine(
             is ClientSyncOperationOffline -> offline()
             is ClientSyncOperationReconnect -> reconnect(op)
             is ClientSyncOperationEnqueue -> enqueue(op)
+            is ClientSyncOperationEdit -> extendBatch(op.conversationId, op.now + 5000)
             is ClientSyncOperationAck -> acknowledge(op)
             is ClientSyncOperationSendFailed -> sendFailed(op)
             is ClientSyncOperationRetry -> retry(op)
@@ -155,19 +156,7 @@ class SyncEngine(
 
     private fun flush(now: Long) {
         if (!online || pulling || rebuilding)return
-        val blocked = mutableSetOf<String>()
-        state =
-            state.copy(
-                outbox =
-                    state.outbox.map { item ->
-                        if (!blocked.add(item.conversationId) || item.state != "pending" || item.retryAt > now) {
-                            item
-                        } else {
-                            effects += ClientSyncEffectSend(conversationId = item.conversationId, body = item.body)
-                            item.copy(state = "sending")
-                        }
-                    },
-            )
+        state = state.copy(outbox = QuietOutbox.flush(state.outbox, now, json, effects))
     }
 
     private fun pull() {
@@ -421,6 +410,7 @@ class SyncEngine(
                     state.copy(
                         conversations = state.conversations.filter { it.conversationId != update.data.conversationId },
                         messages = state.messages.filter { it.conversationId != update.data.conversationId },
+                        outbox = state.outbox.filter { it.conversationId != update.data.conversationId },
                     )
             is UserUpdateUnsupported -> Unit
         }
@@ -447,6 +437,8 @@ class SyncEngine(
         if (duplicate != null) {
             require(duplicate.body == op.body && duplicate.conversationId == op.conversationId)
         } else if (state.messages.none { it.clientMsgId == op.body.clientMsgId }) {
+            val due = if (op.body.quietBatch == true) op.now + 5000 else op.now
+            if (op.body.quietBatch == true) extendBatch(op.conversationId, due)
             state =
                 state.copy(
                     outbox =
@@ -456,11 +448,18 @@ class SyncEngine(
                                 body = op.body,
                                 state = "pending",
                                 failures = 0,
-                                retryAt = op.now,
+                                retryAt = due,
                             ),
                 )
             flush(op.now)
         }
+    }
+
+    private fun extendBatch(
+        id: String,
+        due: Long,
+    ) {
+        state = state.copy(outbox = QuietOutbox.extend(state.outbox, id, due))
     }
 
     private fun acknowledge(op: ClientSyncOperationAck) {

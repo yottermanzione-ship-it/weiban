@@ -64,6 +64,7 @@ export const ClientSyncOperation = z.discriminatedUnion('type', [
     body: SendMessageRequest,
     now: millis,
   }),
+  z.object({ type: z.literal('edit'), conversationId: Id, now: millis }),
   z.object({ type: z.literal('ack'), ack: MessageAck, now: millis }),
   z.object({
     type: z.literal('send.failed'),
@@ -91,6 +92,13 @@ export const ClientSyncOperation = z.discriminatedUnion('type', [
 export type ClientSyncOperation = z.infer<typeof ClientSyncOperation>;
 
 export const ClientSyncEffect = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('send-batch'),
+    conversationId: Id,
+    items: z.array(SendMessageRequest),
+    more: z.boolean(),
+    nextKey: Id.optional(),
+  }),
   z.object({ type: z.literal('send'), conversationId: Id, body: SendMessageRequest }),
   z.object({ type: z.literal('updates'), since: seq, limit: z.literal(500) }),
   z.object({ type: z.literal('state') }),

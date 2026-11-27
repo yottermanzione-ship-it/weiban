@@ -123,6 +123,7 @@ import { ecologyProfiles, ecologyRuns, followUps } from '../infra/db/ecology-sch
 import { simulationStates, userChatActivity } from '../infra/db/schema.js';
 import { EcologySettingsService } from './ecology-settings.js';
 import { GroupChatService } from './group-chat.js';
+import { CompanionSettingsService } from './settings.js';
 import { MemoryService } from './memory.js';
 import { SharedEpisodesService } from './shared-episodes.js';
 import { MomentsAiService } from './moments-ai.js';
@@ -275,6 +276,7 @@ export class EcologyService {
     @Inject(HOLIDAY_EVENT_PORT) private readonly holidays: HolidayEventPort,
     @Inject(MOMENTS_READ_PORT) private readonly moments: MomentsReadPort,
     @Inject(MemoryService) private readonly memory: MemoryService,
+    @Inject(CompanionSettingsService) private readonly companionSettings: CompanionSettingsService,
     @Inject(SharedEpisodesService) private readonly episodes: SharedEpisodesService,
     @Inject(SimulationService) private readonly simulation: SimulationService,
     @Inject(SocialService) private readonly social: SocialService,
@@ -1226,7 +1228,7 @@ export class EcologyService {
               characterId,
               runId: run.id,
               brief: `跟进对方之前提过的事「${due.eventSummary}」，自然地问问结果怎么样。`,
-              extras: { extra: null },
+              extras: { extra: null, fromLongMemory: true },
             })
           : await this.proactive.sendEcology({
               userId,
@@ -1450,24 +1452,27 @@ export class EcologyService {
 
     // 记忆：只读日常范围（不含健康隐私）。定时跟进只认 follow_ups 表里到点的行
     // （草案 §4）；commitment 记忆是建行来源，由 syncFollowUps 里再筛。
-    const memories = await this.memory
-      .list(userId, characterId, { limit: 60 })
-      .then((r) => r.items)
-      .catch(() => []);
-    await this.syncFollowUps(
-      userId,
-      characterId,
-      memories,
-      profile.timeZone,
-      contact.conversationId,
-    ).catch(() => undefined);
-    const followUpDue = await this.dueFollowUp(
-      userId,
-      characterId,
-      nowMs,
-      local.date,
-      profile.timeZone,
-    ).catch(() => null);
+    const short =
+      (await this.companionSettings.get(userId, characterId)).memoryMode === 'recent_summary';
+    const memories = short
+      ? []
+      : await this.memory
+          .list(userId, characterId, { limit: 60 })
+          .then((r) => r.items)
+          .catch(() => []);
+    if (!short)
+      await this.syncFollowUps(
+        userId,
+        characterId,
+        memories,
+        profile.timeZone,
+        contact.conversationId,
+      ).catch(() => undefined);
+    const followUpDue = short
+      ? null
+      : await this.dueFollowUp(userId, characterId, nowMs, local.date, profile.timeZone).catch(
+          () => null,
+        );
 
     // 日子：节日、生日、纪念日。
     let specialDay = false;
@@ -1536,11 +1541,7 @@ export class EcologyService {
     const tools: EcologyRunKind[] = [];
     const signatureRecent =
       !!ep?.signatureUpdatedAt && nowMs - ep.signatureUpdatedAt.getTime() < 3 * 86400_000;
-    const weiboReady = await this.weibo.offer(userId, characterId).catch(() => false);
-    // 3.29：moment_post 只同步已存在的微博原文/素材；没有素材就不提供该候选（不 AI 编）。
-    const momentMaterial = await this.momentsAi
-      .hasWeiboMaterial(userId, characterId)
-      .catch(() => false);
+    // 微博由 Muse 投稿，私人动态有独立排程；这两条发布链路无需等待模型选择。
     // 候选 = 决策模式的动作（基础层 mode = 'base' 不算）+ 并入 message 的内部 kind（greeting /
     // care_anniversary）。用户开关按所属开关查（weibo_sync / moment_post → 私人朋友圈；
     // care_absence / care_follow_up / 内部 kind → 主动消息），平台可用性按动作自己的定义查。
@@ -1563,9 +1564,8 @@ export class EcologyService {
       const ok = await (async () => {
         switch (key) {
           case 'weibo_sync':
-            return weiboReady;
           case 'moment_post':
-            return momentMaterial;
+            return false;
           case 'greeting': {
             const inWindow =
               (local.hour >= 6 && local.hour < 10) || local.hour >= 21 || local.hour < 1;
@@ -1610,7 +1610,7 @@ export class EcologyService {
       daysSinceLastChat: Math.min(365, Math.floor(absenceMs / 86400_000)),
       pendingFollowUp: followUpDue !== null,
       sharedGroups: Math.min(3, groups.length),
-      weiboLeadAvailable: weiboReady,
+      weiboLeadAvailable: false,
       signatureChangedRecently: signatureRecent,
       actionsDoneToday: today.length,
       chatActionsDoneToday: today.filter(
@@ -1622,7 +1622,7 @@ export class EcologyService {
     const summary = jevSummary({
       local,
       weekday,
-      recent: visible.slice(-6).flatMap((m) => {
+      recent: (short ? [] : visible.slice(-6)).flatMap((m) => {
         const raw =
           m.content?.type === 'text'
             ? m.content.text
@@ -1636,7 +1636,7 @@ export class EcologyService {
       }),
       unanswered: mainUnreplied,
       sinceUserMs,
-      doneToday: today.flatMap((t) => (t.summary ? [t.summary] : [])),
+      doneToday: short ? [] : today.flatMap((t) => (t.summary ? [t.summary] : [])),
       sinceProactiveMs: lastProactive?.at ? nowMs - new Date(lastProactive.at).getTime() : Infinity,
       userActiveRecently: lastAppMs < 30 * 60_000,
     });

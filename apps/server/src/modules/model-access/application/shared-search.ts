@@ -49,6 +49,7 @@ export class SharedWebSearch implements SharedWebSearchPort {
         requesterChargeMicros: fee.userCharges[input.requesterUserId] ?? 0,
       };
     }
+    if (input.receiptOnly) return { ok: false };
     const model = await this.catalog.internalModel('web_search');
     const [adminId] = await this.directory.listAdminUserIds();
     if (!model?.entry || !adminId || !(await this.media.isServiceEnabled('web_search')))

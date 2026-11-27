@@ -197,7 +197,7 @@ describe('官方会话判定', () => {
   });
 
   it('已有官方回复时不再重复答', async () => {
-    const h = buildHarness({ afterMessages: [textMessage(4, 'official', '已回复')] });
+    const h = buildHarness({ conv: { ...officialConversation(), peerReadSeq: JOB.seq } });
     const result = await h.engine.answerForMessage(JOB);
     expect(result.handled).toBe(true);
     expect(h.participants.postMessage).not.toHaveBeenCalled();

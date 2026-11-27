@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, inArray, lte, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, lte, or } from 'drizzle-orm';
 import {
   CLOCK,
   DATABASE,
@@ -15,7 +15,7 @@ import {
 import { groupReplyPlans } from '../infra/db/schema.js';
 import { ReplyPlanStore } from './plan-store.js';
 
-export type GroupReplyPlan = typeof groupReplyPlans.$inferSelect;
+export type GroupReplyPlan = typeof groupReplyPlans.$inferSelect & { batchFirstSeq?: number };
 const JOB = 'ai.group_turn';
 const LEASE_MS = 15 * 60_000;
 
@@ -35,6 +35,9 @@ export class GroupReplyStore {
     return this.owner.lock(tx, userId, conversationId);
   }
 
+  window(userId: string, conversationId: string, tx: DbTx) {
+    return this.owner.replyWindow(userId, conversationId, tx);
+  }
   async enqueue(
     tx: DbTx,
     input: Pick<
@@ -43,6 +46,16 @@ export class GroupReplyStore {
     >,
   ): Promise<void> {
     if (!(await this.owner.lock(tx, input.userId, input.conversationId))) return;
+    await tx.db
+      .update(groupReplyPlans)
+      .set({ status: 'cancelled', updatedAt: this.clock.now() })
+      .where(
+        and(
+          eq(groupReplyPlans.conversationId, input.conversationId),
+          eq(groupReplyPlans.status, 'queued'),
+          lt(groupReplyPlans.triggerSeq, input.triggerSeq),
+        ),
+      );
     await tx.db
       .insert(groupReplyPlans)
       .values({
@@ -55,11 +68,25 @@ export class GroupReplyStore {
       .onConflictDoNothing();
   }
 
-  async claim(triggerMessageId: string): Promise<GroupReplyPlan | null> {
+  async claim(userId: string, conversationId: string): Promise<GroupReplyPlan | null> {
     const [first] = await this.db.db
       .select()
       .from(groupReplyPlans)
-      .where(eq(groupReplyPlans.triggerMessageId, triggerMessageId));
+      .where(
+        and(
+          eq(groupReplyPlans.userId, userId),
+          eq(groupReplyPlans.conversationId, conversationId),
+          or(
+            eq(groupReplyPlans.status, 'queued'),
+            and(
+              eq(groupReplyPlans.status, 'generating'),
+              lte(groupReplyPlans.leaseUntil, this.clock.now()),
+            ),
+          ),
+        ),
+      )
+      .orderBy(desc(groupReplyPlans.triggerSeq))
+      .limit(1);
     if (!first) return null;
     return this.db.transaction(async (tx) => {
       if (!(await this.owner.lock(tx, first.userId, first.conversationId))) return null;
@@ -74,6 +101,12 @@ export class GroupReplyStore {
         (row.leaseUntil && row.leaseUntil.getTime() > this.clock.nowMs())
       )
         return null;
+      const window = await this.owner.replyWindow(row.userId, row.conversationId, tx);
+      if (window?.partial) return null;
+      if (window?.quietUntil && window.quietUntil > this.clock.now()) {
+        await this.schedule(row, tx, window.quietUntil);
+        return null;
+      }
       const [claimed] = await tx.db
         .update(groupReplyPlans)
         .set({
@@ -84,7 +117,15 @@ export class GroupReplyStore {
         })
         .where(eq(groupReplyPlans.id, row.id))
         .returning();
-      return claimed ?? null;
+      return claimed
+        ? {
+            ...claimed,
+            batchFirstSeq:
+              window?.latest?.seq === claimed.triggerSeq
+                ? window.latest.firstSeq
+                : claimed.triggerSeq,
+          }
+        : null;
     });
   }
 
@@ -201,7 +242,12 @@ export class GroupReplyStore {
 
   async reconcile(): Promise<void> {
     const rows = await this.db.db
-      .select()
+      .select({
+        userId: groupReplyPlans.userId,
+        conversationId: groupReplyPlans.conversationId,
+        triggerMessageId: groupReplyPlans.triggerMessageId,
+        triggerSeq: groupReplyPlans.triggerSeq,
+      })
       .from(groupReplyPlans)
       .where(
         or(
@@ -236,8 +282,12 @@ export class GroupReplyStore {
       );
   }
 
-  private schedule(row: GroupReplyPlan, tx?: DbTx) {
-    return this.jobs.send(
+  private schedule(
+    row: Pick<GroupReplyPlan, 'userId' | 'conversationId' | 'triggerMessageId' | 'triggerSeq'>,
+    tx?: DbTx,
+    startAfter?: Date,
+  ) {
+    return this.jobs.sendCoalesced(
       JOB,
       {
         userId: row.userId,
@@ -245,7 +295,7 @@ export class GroupReplyStore {
         triggerMessageId: row.triggerMessageId,
         triggerSeq: row.triggerSeq,
       },
-      { ...(tx ? { tx } : {}), retryLimit: 10, retryBackoff: true },
+      { tx, startAfter, singletonKey: row.conversationId, retryLimit: 10, retryBackoff: true },
     );
   }
 }

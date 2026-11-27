@@ -40,6 +40,9 @@ export const contacts = contactsSchema.table(
   (t) => [
     uniqueIndex('contact_user_character_idx').on(t.userId, t.characterId),
     index('contact_user_status_idx').on(t.userId, t.status),
+    index('contact_character_active_user_idx')
+      .on(t.characterId, t.userId)
+      .where(sql`${t.status} = 'active'`),
     index('contact_purge_idx').on(t.purgeAfter),
     check('contact_status', sql`${t.status} IN ('pending','active','deleted')`),
     check(

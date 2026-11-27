@@ -54,6 +54,7 @@ import { MOMENTS_CHARACTER_PORT, MOMENTS_READ_PORT } from '../../moments/index.j
 import { POLICY_PORT } from '../../policy/index.js';
 import { HOLIDAY_EVENT_PORT } from '../../proactive/index.js';
 import { healthPrivate } from '../domain/memory.js';
+import { weiboPostUrl } from '../domain/weibo.js';
 import { ecoRandom } from '../domain/ecology.js';
 import {
   momentsReactDelayMs,
@@ -76,6 +77,7 @@ import { CompanionSettingsService } from './settings.js';
 import { SimulationService } from './simulation.js';
 import { CharacterImageService } from './character-image.js';
 import { PlannerService } from './planner.js';
+import { EcologySettingsService } from './ecology-settings.js';
 import { ImageCaptionStore, NO_CAPTIONS } from './image-captions.js';
 import { ImagePublicSearch } from './image-public-search.js';
 import { MomentSceneryService } from './moment-scenery.js';
@@ -136,6 +138,8 @@ export interface MomentsReactJob {
   replyToCommentId?: string;
   /** 回复用户（P-29 必回）：不受当天后台预算限制，只看 P-33。 */
   mustReply?: boolean;
+  /** Muse 新稿的自动互动，在后台任务执行前再次检查生态授权。 */
+  museWeiboAuthorId?: string;
   /** v5 角色生态唤醒发起（仅记录用）。 */
   ecologyRunId?: string;
   /** H2：该角色正处于私密模式（生态发起）——这次生成改用私密模型，传私聊会话 ID（私密模型调用必须带会话）。 */
@@ -170,6 +174,7 @@ export class MomentsAiService {
     @Inject(SocialService) private readonly social: SocialService,
     @Inject(CharacterImageService) private readonly images: CharacterImageService,
     @Inject(PlannerService) private readonly planner: PlannerService,
+    @Inject(EcologySettingsService) private readonly ecology: EcologySettingsService,
     @Optional()
     @Inject(MODEL_PLATFORM_GATEWAY_PORT)
     private readonly platform?: ModelGatewayPlatformPort,
@@ -198,8 +203,10 @@ export class MomentsAiService {
     const users = await this.db.db
       .selectDistinct({ userId: simulationStates.userId })
       .from(simulationStates);
+    const candidates = new Set(users.map(({ userId }) => userId));
+    for (const userId of await this.ecology.enabledUserIds()) candidates.add(userId);
     const hour = Math.floor(this.clock.nowMs() / 3600_000);
-    for (const { userId } of users)
+    for (const userId of candidates)
       await this.jobs.send(
         MOMENTS_USER_JOB,
         { userId },
@@ -210,14 +217,17 @@ export class MomentsAiService {
   /**
    * v5（16 号 §4、17 号 §4.2）：
    * - 官方角色（预设）的公共朋友圈保留：每角色每天一份、所有用户共用、平台承担（postPublic）；
-   * - 自定义角色没有公共朋友圈；私人朋友圈只由角色生态发（postForEcology），这里不再按规则排期扣用户积分。
+   * - 私人朋友圈用角色生态的授权与现有独立排期，支持自定义角色。
    * - 共同事件（朋友圈和私聊都读它）只给开着生态的用户安排（扣用户积分）。
    */
   async runForUser(userId: string): Promise<void> {
     if ((await this.accounts.getAccountStatus(userId)) !== 'active') return;
     await this.social.coordinateDay(userId).catch(() => undefined);
     const contacts = await this.contacts.listActiveContacts(userId).catch(() => []);
-    for (const c of contacts) await this.postPublic(userId, c.characterId).catch(() => undefined);
+    for (const c of contacts) {
+      await this.postPublic(userId, c.characterId).catch(() => undefined);
+      await this.maybePost(userId, c.characterId).catch(() => undefined);
+    }
   }
 
   // =========================================================================
@@ -310,7 +320,7 @@ export class MomentsAiService {
       (await this.publicUpdates
         ?.listEffective(characterId, date, { limit: 3, pastDays: 2 })
         .catch(() => [])) ?? []
-    ).find((u) => u.phase === 'recent');
+    ).find((u) => u.phase === 'recent' && !weiboPostUrl(u.sourceUrl));
     const source = update
       ? {
           kind: 'public_update' as const,
@@ -409,15 +419,10 @@ export class MomentsAiService {
   ): Promise<WeiboMomentMaterial | null> {
     if (this.weiboMaterial) {
       // e0fac 的代理是权威来源：null 就是没有素材，不再回退文本，避免“无素材”被旧数据掩盖。
-      return this.weiboMaterial.latest(userId, characterId).catch(() => null);
+      return this.weiboMaterial.latest(userId, characterId, { cachedOnly: true }).catch(() => null);
     }
     const legacy = await this.latestWeiboUpdate(characterId);
     return legacy ? { updateId: legacy.updateId, content: legacy.content, images: [] } : null;
-  }
-
-  /** 生态工具筛选用：这个角色/用户此刻有没有可用的微博朋友圈素材。 */
-  async hasWeiboMaterial(userId: string, characterId: string): Promise<boolean> {
-    return (await this.latestWeiboMaterial(userId, characterId)) !== null;
   }
 
   /**
@@ -490,12 +495,16 @@ export class MomentsAiService {
     };
   }
 
-  /** v5 起不再由定时任务调用（私人朋友圈改由角色生态发）；保留便于对照。 */
+  /** 每位用户的自主私人动态，先查付费生态授权，再走已有的角色节奏和隐私保护。 */
   async maybePost(userId: string, characterId: string): Promise<void> {
+    if (!(await this.ecology.isActive(userId, characterId, 'moment_post'))) return;
+    if ((await this.billing.getSpendStatus(userId)).insufficient) return;
+    const epoch = await this.contacts.getActiveContactEpoch(userId, characterId);
+    if (!epoch) return;
     const dailyLife = await this.settings
       .get(userId, characterId)
       .then((s) => s.dailyLife)
-      .catch(() => true);
+      .catch(() => false);
     if (!dailyLife) return; // 「TA 的日常」关闭：不推演，也不发圈
     const role = await this.characters.getForRuntime(userId, characterId);
     const policy = await this.policy.getCharacterPolicy(userId, characterId);
@@ -552,8 +561,7 @@ export class MomentsAiService {
         ),
       );
     if (today) return;
-    const since24 = new Date(now.getTime() - 20 * 3600_000).toISOString();
-    if ((await this.moments.listCharacterPosts(userId, characterId, since24)).length) return;
+    // 平台公开动态与私人动态有不同节奏；只依靠私人排程账本限频。
     // 每周上限（滚动 7 天）。
     const weekRows = await this.db.db
       .select({ id: momentsPlans.id })
@@ -590,7 +598,6 @@ export class MomentsAiService {
       this.db.db.update(momentsPlans).set({ status: 'dropped' }).where(eq(momentsPlans.id, planId));
 
     // 私人朋友圈读记忆（04:53 决定）：脑前缀放最前；brain 为 null 时回退现有无脑生成。
-    // maybePost 是私人动态唯一的生成点（现未被调用，保留作对照）；公开路一字不动。
     // 收窄口径：maybePost 生成的动态一律是私人动态、读脑，哪怕素材来源是 public_update；
     // 只有原文转发（postForEcology / 微博同步投递，forwardedPublic=true）才走公开路。
     const privateBrain = await this.brain
@@ -599,6 +606,10 @@ export class MomentsAiService {
     const brainPrefix = privateBrain
       ? [...brainMessages(privateBrain, 'background'), ...brainTail(privateBrain)]
       : [];
+    if (!(await this.ecology.isActive(userId, characterId, 'moment_post'))) {
+      await drop();
+      return;
+    }
     const result = await this.gateway.generateText({
       userId,
       characterId,
@@ -685,37 +696,41 @@ export class MomentsAiService {
         .catch(() => null);
       if (image) imageMediaIds = [image.mediaId];
     }
-    const posted = await this.writer.createPost(null, {
-      ownerUserId: userId,
-      characterId,
-      text,
-      imageMediaIds,
-      link: null,
-      sourceRef: { kind: source.kind, id: source.id },
-      idempotencyKey: `ai-post-${local.date}`,
+    const postId = await this.db.transaction(async (tx) => {
+      await tx.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended('ecology-settings:' || $1,0))",
+        [userId],
+      );
+      const current = await this.contacts.getActiveContactEpoch(userId, characterId, tx);
+      if (
+        current?.version !== epoch.version ||
+        !(await this.ecology.isActive(userId, characterId, 'moment_post', tx))
+      )
+        return null;
+      const posted = await this.writer.createPost(tx, {
+        ownerUserId: userId,
+        characterId,
+        text,
+        imageMediaIds,
+        link: null,
+        sourceRef: { kind: source.kind, id: source.id },
+        idempotencyKey: `ai-post-${local.date}`,
+      });
+      if (!posted.ok) return null;
+      await tx.db
+        .update(momentsPlans)
+        .set({ status: 'posted', postId: posted.value.postId })
+        .where(eq(momentsPlans.id, planId));
+      return posted.value.postId;
     });
-    if (!posted.ok) {
+    if (!postId) {
       await drop();
       return;
     }
-    await this.db.db
-      .update(momentsPlans)
-      .set({ status: 'posted', postId: posted.value.postId })
-      .where(eq(momentsPlans.id, planId));
-    // 写回触发（04:42 决定）：私人动态发布成功后异步记一笔；公开草稿文本在任务执行时复核丢弃。
-    // 收窄口径：maybePost 生成的动态一律投递写回（哪怕素材是 public_update）；原文转发不走这里。
-    const epoch = await this.contacts.getActiveContactEpoch(userId, characterId).catch(() => null);
-    if (epoch) {
-      await sendMomentsMemoryJob(
-        this.jobs,
-        momentsMemoryJobData('post', {
-          userId,
-          characterId,
-          postId: posted.value.postId,
-          epoch: epoch.version,
-        }),
-      );
-    }
+    await sendMomentsMemoryJob(
+      this.jobs,
+      momentsMemoryJobData('post', { userId, characterId, postId, epoch: epoch.version }),
+    );
     // 后续互评由 moments.post_created 事件触发（onPostCreated）。
   }
 
@@ -754,7 +769,9 @@ export class MomentsAiService {
       (await this.publicUpdates
         ?.listEffective(characterId, date, { limit: 5, pastDays: 3 })
         .catch(() => [])) ?? [];
-    const fresh = updates.find((u) => u.phase === 'recent' && !used.has(u.updateId));
+    const fresh = updates.find(
+      (u) => u.phase === 'recent' && !weiboPostUrl(u.sourceUrl) && !used.has(u.updateId),
+    );
     if (fresh)
       return {
         kind: 'public_update',
@@ -823,6 +840,7 @@ export class MomentsAiService {
     authorKind: 'user' | 'character';
     authorCharacterId: string | null;
     visibleCharacterIds: string[];
+    museWeibo?: true;
   }): Promise<void> {
     const userId = payload.ownerUserId;
     if (payload.authorKind === 'user') {
@@ -862,7 +880,9 @@ export class MomentsAiService {
     // 点赞前 2 个几乎总是、其余 45%，评论 35%；延迟 1–15 分钟、各自去重键。
     if (!payload.authorCharacterId) return;
     if (!(await this.baseLayerAccountOk(userId))) return;
-    // relatedContacts.added 只含通讯录里的角色（基础层，不看生态开关）。
+    const museWeiboAuthorId = payload.museWeibo ? payload.authorCharacterId : undefined;
+    if (museWeiboAuthorId && !(await this.canReactToMuseWeibo(userId, museWeiboAuthorId))) return;
+    // relatedContacts.added 只含通讯录里的角色。
     const { added } = await this.social.relatedContacts(userId, payload.authorCharacterId);
     const ordered = [...added].sort(
       (a, b) =>
@@ -871,6 +891,8 @@ export class MomentsAiService {
     );
     const candidates: { characterId: string; likeDraw: number; commentDraw: number }[] = [];
     for (const a of ordered) {
+      if (museWeiboAuthorId && !(await this.ecology.characterEnabled(userId, a.characterId)))
+        continue;
       candidates.push({
         characterId: a.characterId,
         likeDraw: Math.random(),
@@ -878,7 +900,7 @@ export class MomentsAiService {
       });
     }
     for (const p of planPeerPostReactions(candidates))
-      await this.scheduleReaction(userId, payload.postId, p);
+      await this.scheduleReaction(userId, payload.postId, p, museWeiboAuthorId);
   }
 
   /**
@@ -890,16 +912,23 @@ export class MomentsAiService {
     userId: string,
     postId: string,
     planned: { characterId: string; like: boolean; comment: boolean },
+    museWeiboAuthorId?: string,
   ): Promise<void> {
+    const target = {
+      userId,
+      postId,
+      characterId: planned.characterId,
+      ...(museWeiboAuthorId ? { museWeiboAuthorId } : {}),
+    };
     if (planned.like)
       await this.react(
-        { userId, postId, characterId: planned.characterId, action: 'like', like: true },
+        { ...target, action: 'like', like: true },
         momentsReactDelayMs(Math.random()),
         `moments-like:${postId}:${planned.characterId}`,
       );
     if (planned.comment)
       await this.react(
-        { userId, postId, characterId: planned.characterId, action: 'comment', like: false },
+        { ...target, action: 'comment', like: false },
         momentsReactDelayMs(Math.random()),
         `moments-comment:${postId}:${planned.characterId}`,
       );
@@ -915,6 +944,7 @@ export class MomentsAiService {
     authorCharacterId: string | null;
     replyToKind: 'user' | 'character' | null;
     replyToCharacterId: string | null;
+    museWeibo?: true;
   }): Promise<void> {
     const userId = payload.ownerUserId;
     if (payload.authorKind === 'user') {
@@ -952,6 +982,13 @@ export class MomentsAiService {
           ? payload.postAuthorCharacterId
           : null;
     if (!target || target === author) return;
+    const museWeiboAuthorId = payload.museWeibo ? payload.postAuthorCharacterId : null;
+    if (
+      museWeiboAuthorId &&
+      (!(await this.canReactToMuseWeibo(userId, museWeiboAuthorId, target)) ||
+        !(await this.ecology.characterEnabled(userId, author)))
+    )
+      return;
     const relation = await this.relations.getRelation(userId, author, target).catch(() => null);
     if (!relation) return;
     // 基础层：不看生态开关；账号正常、被回复的角色在通讯录里就排。
@@ -964,6 +1001,7 @@ export class MomentsAiService {
         characterId: target,
         action: 'reply',
         replyToCommentId: payload.commentId,
+        ...(museWeiboAuthorId ? { museWeiboAuthorId } : {}),
       },
       this.delay(5 * 60_000, 60 * 60_000),
       `moments-reply:${payload.commentId}`,
@@ -1055,6 +1093,15 @@ export class MomentsAiService {
     return !!(await this.contacts.getActiveContact(userId, characterId).catch(() => null));
   }
 
+  private async canReactToMuseWeibo(userId: string, authorId: string, reactingId?: string) {
+    if (!(await this.ecology.isActive(userId, authorId, 'moment_post'))) return false;
+    const settings = await this.ecology.row(userId);
+    if (settings?.disabledActions.includes('moment_peer')) return false;
+    if (await this.ecology.actionAvailable('moment_peer')) return false;
+    if (!(await this.isFriend(userId, authorId))) return false;
+    return !reactingId || (await this.ecology.characterEnabled(userId, reactingId));
+  }
+
   async runReact(job: MomentsReactJob): Promise<void> {
     const r = await this.react0(job);
     // P-29 必回：生成失败抛错让任务重试（最多 5 次，仍在 2 小时内）。
@@ -1071,6 +1118,11 @@ export class MomentsAiService {
       return { ok: false, reason: 'account_inactive' };
     if (!(await this.contacts.getActiveContact(userId, characterId)))
       return { ok: false, reason: 'contact_inactive' };
+    if (
+      job.museWeiboAuthorId &&
+      !(await this.canReactToMuseWeibo(userId, job.museWeiboAuthorId, characterId))
+    )
+      return { ok: false, reason: 'interaction_disabled' };
     if (
       !(await backgroundAllowed(this.billing, userId, {
         requireBackgroundBudget: !job.mustReply,
@@ -1100,6 +1152,7 @@ export class MomentsAiService {
       text: text.text,
       replyToCommentId: job.replyToCommentId ?? null,
       mentionsUser: text.mentionsUser,
+      ...(job.museWeiboAuthorId ? { museWeibo: true as const } : {}),
       idempotencyKey: `ai-${job.action}-${job.replyToCommentId ?? 'post'}`,
     });
     if (!result.ok) return { ok: false, reason: 'comment_rejected' };
@@ -1304,12 +1357,20 @@ export class MomentsAiService {
         },
       ],
     };
-    let result = await this.gateway.generateText(request);
+    const generate = async (input: import('@weiban/contracts').GenerateTextInput) => {
+      if (
+        job.museWeiboAuthorId &&
+        !(await this.canReactToMuseWeibo(userId, job.museWeiboAuthorId, characterId))
+      )
+        return { ok: false as const, error: 'policy_denied' as const };
+      return this.gateway.generateText(input);
+    };
+    let result = await generate(request);
     if (this.imageSearch && !job.privateConversationId)
       result = await this.imageSearch.refine(
         request,
         result,
-        (next) => this.gateway.generateText(next),
+        generate,
         async () => {
           const fresh = await this.moments.getPostVisibleToCharacter(
             userId,

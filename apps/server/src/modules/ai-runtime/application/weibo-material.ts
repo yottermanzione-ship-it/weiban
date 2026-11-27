@@ -30,5 +30,9 @@ export const WEIBO_MOMENT_MATERIAL_PORT = Symbol('weiban.weibo.moment-material')
 
 export interface WeiboMomentMaterialPort {
   /** 最近一条已同步、对当前用户可见的微博素材；没有返回 null。 */
-  latest(userId: string, characterId: string): Promise<WeiboMomentMaterial | null>;
+  latest(
+    userId: string,
+    characterId: string,
+    options?: { cachedOnly?: boolean },
+  ): Promise<WeiboMomentMaterial | null>;
 }

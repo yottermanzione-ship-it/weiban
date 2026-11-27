@@ -1,4 +1,5 @@
 import { expect, test, type Page } from './fixtures.js';
+import { ChatEndpoints } from '@weiban/contracts';
 
 /** Real app/recorder, synthetic audio source instead of physical hardware; no paid provider. */
 async function microphone(
@@ -192,13 +193,28 @@ test('连续两条语音均上传并保存，第一条发出后释放设备，�
   const voices = page.getByRole('button', { name: /^语音 \d+ 秒，播放$/ });
   const before = await voices.count();
   await page.getByRole('button', { name: '切换到按住说话' }).click();
-  const first = await recordAndSend(page);
-  await expect(voices).toHaveCount(before + 1);
-  await expect.poll(() => counts(page)).toEqual({ calls: 2, stopped: 2 });
-  const second = await recordAndSend(page);
+  const recordAndConfirm = async (number: number) => {
+    const acknowledgement = page.waitForResponse(
+      (r) => r.request().method() === 'POST' && r.url().endsWith('/message-batches'),
+    );
+    const mediaId = await recordAndSend(page);
+    const pending = page
+      .locator('[data-row-key^="pending:"]')
+      .filter({ hasText: /\[语音\] \d+''/ });
+    await expect(pending).toBeVisible();
+    await expect.poll(() => counts(page)).toEqual({ calls: number + 1, stopped: number + 1 });
+    const response = await acknowledgement;
+    expect(response.ok()).toBe(true);
+    const ack = ChatEndpoints.sendBatch.response.parse(await response.json());
+    expect(ack.items.map((item) => item.message.content)).toContainEqual(
+      expect.objectContaining({ type: 'voice', mediaId }),
+    );
+    await expect(voices).toHaveCount(before + number);
+    return mediaId;
+  };
+  const first = await recordAndConfirm(1);
+  const second = await recordAndConfirm(2);
   expect(second).not.toBe(first);
-  await expect(voices).toHaveCount(before + 2);
-  await expect.poll(() => counts(page)).toEqual({ calls: 3, stopped: 3 });
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.reload();
   await expect(voices).toHaveCount(before + 2);

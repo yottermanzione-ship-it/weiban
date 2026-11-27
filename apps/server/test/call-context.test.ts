@@ -726,4 +726,108 @@ describeDb('电话与文字共用上下文：真实数据库及加密存档，�
     expect(await context()).toBeNull();
     await app.get(CHAT_ADMIN_PORT).setContentScope({ conversationId: cid, scope: 'normal' });
   });
+  it('角色记忆模式切换：真实文字、通话、会员窗口、摘要失败回退与前缀稳定', async () => {
+    const settings = app.get(CompanionSettingsService);
+    const memory = app.get(MemoryService);
+    const summary = memory.chatSummaries!;
+    const mode = (memoryMode: 'recent_summary' | 'model_window') =>
+      settings.update(userId, characterId, { memoryMode });
+    const normal = async (text: string, batchFirstSeq?: number) => {
+      const { message: m } = await message(text);
+      return (await app.get(ReplyContext).build({
+        userId,
+        characterId,
+        conversationId: cid,
+        triggerId: m.messageId,
+        triggerSeq: m.seq,
+        batchFirstSeq,
+        createdAt: clock.now(),
+        retryEpoch: 0,
+        kind: 'message',
+      }))!;
+    };
+    const readState = async () =>
+      (
+        await db.query<{ id: string; covered_seq: string; target_seq: string; version: number }>(
+          "SELECT s.id,s.covered_seq,s.target_seq,s.version FROM ai_runtime.chat_summary_states s JOIN ai_runtime.memory_states p ON p.id=s.parent_id WHERE p.conversation_id=$1 AND s.scope='normal' AND s.memory_mode='recent_summary'",
+          [cid],
+        )
+      ).rows[0]!;
+    expect((await settings.get(userId, characterId)).memoryMode).toBe('model_window');
+    await expect(settings.update(userId, characterId, { memoryMode: 'unknown' })).rejects.toThrow();
+    await expect(settings.update(userId, null, { memoryMode: 'recent_summary' })).rejects.toThrow();
+    await memory.create(userId, characterId, {
+      clientMemoryId: newId(),
+      category: 'preference',
+      content: 'FACT_OUTSIDE_WINDOW',
+    });
+    await message('OLDER_THAN_FREE_WINDOW');
+    clock.advance(9 * 86400000);
+    await message('新的一周');
+    expect((await memory.recentContext(userId, characterId, 'normal')).tier.tier).toBe('free');
+    expect(JSON.stringify((await normal('普通免费窗口')).messages)).not.toContain(
+      'OLDER_THAN_FREE_WINDOW',
+    );
+    await mode('recent_summary');
+    expect(JSON.stringify((await context())!.messages)).not.toContain('OLDER_THAN_FREE_WINDOW');
+    await db.query(
+      'INSERT INTO identity.memberships(user_id,pro_plus_until,updated_at) VALUES($1,$2,$3) ON CONFLICT(user_id) DO UPDATE SET pro_plus_until=excluded.pro_plus_until',
+      [userId, new Date(clock.nowMs() + 86400000), clock.now()],
+    );
+    await mode('model_window');
+    const full = JSON.stringify((await normal('还记得之前的事吗')).messages);
+    expect(full).toContain('OLDER_THAN_FREE_WINDOW');
+    expect(full).toContain('FACT_OUTSIDE_WINDOW');
+    await mode('recent_summary');
+    await settings.update(userId, characterId, { scenarioMode: 'treehole' });
+    const catalog = app.get(ScenarioModeService);
+    await catalog.update(userId, 'treehole', { presetPrompt: 'SHORT_USER_PRESET' });
+    // Start after the latest deletion barrier. Long-mode adoption must remain independent.
+    for (let i = 0; i < 35; i++) await message(`聊天样本 ${i} 今天一起挑选书签和书封`);
+    const fallback = await normal('还记得之前说过什么吗 SHORT_CURRENT');
+    expect(JSON.stringify(fallback.messages)).toContain('SHORT_CURRENT');
+    expect(JSON.stringify(fallback.messages)).toContain('SHORT_USER_PRESET');
+    expect(JSON.stringify(fallback.messages)).not.toMatch(
+      /FACT_OUTSIDE_WINDOW|OLDER_THAN_FREE_WINDOW/,
+    );
+    const pending = await readState();
+    expect(Number(pending.target_seq)).toBeGreaterThan(Number(pending.covered_seq));
+    modelResult = 'invalid';
+    await summary.run(pending.id);
+    expect((await readState()).covered_seq).toBe(pending.covered_seq);
+    expect(JSON.stringify((await context())!.messages)).toContain('SHORT_CURRENT');
+    const retryTarget = Number((await readState()).target_seq);
+    clock.advance(86400000);
+    // Keep the test member active while retrying the same prepared input.
+    await db.query('UPDATE identity.memberships SET pro_plus_until=$2 WHERE user_id=$1', [
+      userId,
+      new Date(clock.nowMs() + 86400000),
+    ]);
+    modelResult = JSON.stringify({ items: [{ text: 'BOOKMARK_SUMMARY', sourceIds: ['m1'] }] });
+    for (let i = 0; i < 8 && Number((await readState()).covered_seq) < retryTarget; i++)
+      await summary.run(pending.id);
+    expect(Number((await readState()).covered_seq)).toBe(retryTarget);
+    const one = await normal('今天继续聊书签');
+    const two = await normal('我带了黄色书签');
+    expect(one.messages[0]!.content).toBe(two.messages[0]!.content);
+    expect(JSON.stringify(two.messages)).toContain('BOOKMARK_SUMMARY');
+    expect(JSON.stringify(two.messages)).not.toMatch(/聊天样本 1 今天|FACT_OUTSIDE_WINDOW/);
+    const phone = await context([{ role: 'user', content: '当前电话输入' }]);
+    expect(JSON.stringify(phone?.messages)).toMatch(/BOOKMARK_SUMMARY/);
+    expect(JSON.stringify(phone?.messages)).toContain('当前电话输入');
+    const firstInBatch = (await message('整批开头：附加行程')).message.seq;
+    for (let i = 0; i < 34; i++) await message(`同一批后续 ${i}`);
+    const largeBatch = await normal('整批末尾：周日出发', firstInBatch);
+    expect(JSON.stringify(largeBatch.messages)).toContain('整批开头：附加行程');
+    expect(largeBatch.userText).toContain('整批开头：附加行程');
+    expect(JSON.stringify(largeBatch.messages)).toContain('整批末尾：周日出发');
+    expect(Number((await readState()).target_seq)).toBeLessThan(firstInBatch);
+    await mode('model_window');
+    const restored = JSON.stringify((await normal('再翻回早先的聊天')).messages);
+    expect(restored).toContain('聊天样本 1 今天');
+    expect(restored).toContain('FACT_OUTSIDE_WINDOW');
+    expect(restored).not.toContain('BOOKMARK_SUMMARY');
+    await catalog.update(userId, 'treehole', { presetPrompt: null });
+    modelResult = JSON.stringify({ operations: [], episode: '' });
+  }, 120000);
 });

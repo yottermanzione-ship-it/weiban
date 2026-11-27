@@ -553,19 +553,6 @@ export function GroupSettingsPage() {
               )
             }
           />
-          <SwitchRow
-            label="秒回"
-            checked={switchValues.instantReply ?? companion.data.instantReply}
-            disabled={!!switchBusy.instantReply}
-            onChange={(instantReply) =>
-              void toggle('instantReply', instantReply, () =>
-                api.call(GroupCompanionEndpoints.updateSettings, {
-                  params: { conversationId },
-                  body: { instantReply },
-                }),
-              )
-            }
-          />
         </MenuGroup>
       )}
       {companion.error && !companion.data && <p role="alert">{companion.error}</p>}

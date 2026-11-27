@@ -1,0 +1,207 @@
+{
+  "formatVersion": 1,
+  "id": "quiet-batch",
+  "description": "连续发送、编辑和重启只在最后期限交出，另一会话独立提交",
+  "initialState": {
+    "initialized": true,
+    "lastUpdateSeq": 0,
+    "messages": [],
+    "conversations": [],
+    "contacts": [],
+    "outbox": [],
+    "excluded": [],
+    "scannedThrough": {},
+    "pendingUpdates": [],
+    "settings": {},
+    "recalled": []
+  },
+  "steps": [
+    {
+      "operation": {
+        "type": "reconnect",
+        "latestUpdateSeq": 0,
+        "now": 0
+      }
+    },
+    {
+      "operation": {
+        "type": "enqueue",
+        "conversationId": "01920000-0000-7000-8000-00000000000a",
+        "body": {
+          "clientMsgId": "01920000-0000-7000-8000-0000000000c9",
+          "content": {
+            "type": "text",
+            "text": "消息1"
+          },
+          "quietBatch": true
+        },
+        "now": 0
+      }
+    },
+    {
+      "operation": {
+        "type": "enqueue",
+        "conversationId": "01920000-0000-7000-8000-00000000000b",
+        "body": {
+          "clientMsgId": "01920000-0000-7000-8000-0000000000cb",
+          "content": {
+            "type": "text",
+            "text": "消息3"
+          },
+          "quietBatch": true
+        },
+        "now": 0
+      }
+    },
+    {
+      "operation": {
+        "type": "tick",
+        "now": 4899
+      }
+    },
+    {
+      "operation": {
+        "type": "enqueue",
+        "conversationId": "01920000-0000-7000-8000-00000000000a",
+        "body": {
+          "clientMsgId": "01920000-0000-7000-8000-0000000000ca",
+          "content": {
+            "type": "text",
+            "text": "消息2"
+          },
+          "quietBatch": true
+        },
+        "now": 4900
+      }
+    },
+    {
+      "operation": {
+        "type": "restart"
+      }
+    },
+    {
+      "operation": {
+        "type": "reconnect",
+        "latestUpdateSeq": 0,
+        "now": 4900
+      }
+    },
+    {
+      "operation": {
+        "type": "edit",
+        "conversationId": "01920000-0000-7000-8000-00000000000a",
+        "now": 9800
+      }
+    },
+    {
+      "operation": {
+        "type": "tick",
+        "now": 14799
+      }
+    },
+    {
+      "operation": {
+        "type": "tick",
+        "now": 14800
+      }
+    }
+  ],
+  "expected": {
+    "state": {
+      "initialized": true,
+      "lastUpdateSeq": 0,
+      "messages": [],
+      "conversations": [],
+      "contacts": [],
+      "outbox": [
+        {
+          "conversationId": "01920000-0000-7000-8000-00000000000a",
+          "body": {
+            "clientMsgId": "01920000-0000-7000-8000-0000000000c9",
+            "content": {
+              "type": "text",
+              "text": "消息1"
+            },
+            "quietBatch": true
+          },
+          "state": "sending",
+          "failures": 0,
+          "retryAt": 14800
+        },
+        {
+          "conversationId": "01920000-0000-7000-8000-00000000000b",
+          "body": {
+            "clientMsgId": "01920000-0000-7000-8000-0000000000cb",
+            "content": {
+              "type": "text",
+              "text": "消息3"
+            },
+            "quietBatch": true
+          },
+          "state": "sending",
+          "failures": 0,
+          "retryAt": 5000
+        },
+        {
+          "conversationId": "01920000-0000-7000-8000-00000000000a",
+          "body": {
+            "clientMsgId": "01920000-0000-7000-8000-0000000000ca",
+            "content": {
+              "type": "text",
+              "text": "消息2"
+            },
+            "quietBatch": true
+          },
+          "state": "sending",
+          "failures": 0,
+          "retryAt": 14800
+        }
+      ],
+      "excluded": [],
+      "scannedThrough": {},
+      "pendingUpdates": [],
+      "settings": {},
+      "recalled": []
+    },
+    "effects": [
+      {
+        "type": "send-batch",
+        "conversationId": "01920000-0000-7000-8000-00000000000b",
+        "items": [
+          {
+            "clientMsgId": "01920000-0000-7000-8000-0000000000cb",
+            "content": {
+              "type": "text",
+              "text": "消息3"
+            },
+            "quietBatch": true
+          }
+        ],
+        "more": false
+      },
+      {
+        "type": "send-batch",
+        "conversationId": "01920000-0000-7000-8000-00000000000a",
+        "items": [
+          {
+            "clientMsgId": "01920000-0000-7000-8000-0000000000c9",
+            "content": {
+              "type": "text",
+              "text": "消息1"
+            },
+            "quietBatch": true
+          },
+          {
+            "clientMsgId": "01920000-0000-7000-8000-0000000000ca",
+            "content": {
+              "type": "text",
+              "text": "消息2"
+            },
+            "quietBatch": true
+          }
+        ],
+        "more": false
+      }
+    ]
+  }
+}

@@ -478,6 +478,7 @@ export const SendMessageRequest = z.object({
   clientMsgId: ClientMsgId,
   content: UserSendableContent,
   quoteMessageId: Id.nullable().optional(),
+  quietBatch: z.boolean().optional(),
 });
 export type SendMessageRequest = z.infer<typeof SendMessageRequest>;
 
@@ -578,7 +579,31 @@ export const MessagePage = z.object({
 });
 export type MessagePage = z.infer<typeof MessagePage>;
 
+export const REPLY_QUIET_MS = 5000;
+export const EDIT_PULSE_MS = 500;
 export const ChatEndpoints = {
+  recordEdit: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/conversations/:conversationId/edit-activity`,
+    auth: 'user',
+    params: ConversationParams,
+    body: z.object({ batchKey: ClientMsgId }).strict(),
+    response: NoContent,
+    summary: '输入内容实际变化时上报。只传会话编号，服务器记录静默截止时间',
+  }),
+  sendBatch: defineEndpoint({
+    method: 'POST',
+    path: `${API_PREFIX}/conversations/:conversationId/message-batches`,
+    auth: 'user',
+    params: ConversationParams,
+    body: z.object({
+      items: z.array(SendMessageRequest).min(1).max(100),
+      more: z.boolean().optional(),
+      nextKey: ClientMsgId.optional(),
+    }),
+    response: z.object({ items: z.array(MessageAck) }),
+    summary: '同一会话静默后按原始顺序提交本机气泡，整批事务按原消息编号去重',
+  }),
   forwardMessages: defineEndpoint({
     method: 'POST',
     path: `${API_PREFIX}/conversations/:conversationId/forward`,

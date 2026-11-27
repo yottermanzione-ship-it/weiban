@@ -61,6 +61,8 @@ export interface MomentsCharacterPort {
        * maybePost 生成的私人动态一律不传。读脑分流与写回 recheck 只认此标记。
        */
       forwardedPublic?: boolean;
+      /** 首次添加好友时补入历史，不触发逐帖事件或实时同步。 */
+      museWeibo?: 'live' | 'history';
       idempotencyKey: string;
     },
   ): Promise<PortResult<MomentsPost, 'character_not_in_contacts'>>;
@@ -77,6 +79,7 @@ export interface MomentsCharacterPort {
     text: string;
     replyToCommentId: string | null;
     mentionsUser: boolean;
+    museWeibo?: true;
     idempotencyKey: string;
   }): Promise<PortResult<{ commentId: string }, 'not_found' | 'not_visible' | 'comment_limit'>>;
 }

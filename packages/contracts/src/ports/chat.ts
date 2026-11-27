@@ -38,6 +38,17 @@ export type ChatHistoryMessage = Message & {
 
 /** 只返回本人当前仍能看到的普通私聊原消息 ID，不解密正文。 */
 export interface ChatReplyTriggerReadPort {
+  /** 在新发送、编辑使用的同一会话锁下读截止时间与最新可见用户消息。 */
+  replyWindow(
+    userId: string,
+    conversationId: string,
+    tx: Tx,
+    contentTypes?: readonly string[],
+  ): Promise<{
+    quietUntil: Date | null;
+    partial: boolean;
+    latest: { messageId: string; seq: number; contentType: string; firstSeq: number } | null;
+  } | null>;
   visibleReplyTriggers(
     userId: string,
     conversationId: string,

@@ -38,8 +38,9 @@ import { CHARACTER_TRIAL_READ_PORT } from '../../characters/index.js';
 import { IDENTITY_READ_PORT, IDENTITY_USER_STATUS_PORT } from '../../identity/index.js';
 import { userStatusLine } from '../domain/user-status.js';
 import { POLICY_PORT } from '../../policy/index.js';
+import { RECENT_CHAT_LIMIT, recentSummaryCutoff } from '../domain/recent-chat-window.js';
 import { MemoryService } from './memory.js';
-import { stableHistoryReadLimit, summaryFloorSeq } from '../domain/memory-window.js';
+import { stableHistoryReadLimit } from '../domain/memory-window.js';
 import { allowedAutomaticStyle, scenarioText } from '../domain/persona.js';
 import { contextTokens } from '../../model-access/index.js';
 import { PlayContinuityStore } from './play-continuity.js';
@@ -253,7 +254,12 @@ type ContextRequest = Omit<
     | 'kind'
   >,
   'kind'
-> & { kind: ReplyPlan['kind'] | 'call'; manualRequested?: boolean; failure?: string | null };
+> & {
+  kind: ReplyPlan['kind'] | 'call';
+  manualRequested?: boolean;
+  failure?: string | null;
+  batchFirstSeq?: number | null;
+};
 export interface CallContextInput {
   userId: string;
   characterId: string;
@@ -388,18 +394,66 @@ export class ReplyContext {
       ...(voiceCall ? { scenario: 'voice_call' as const, maxOutputTokens: 200 } : {}),
     });
     const textBudget = !voiceCall ? modelBudget : null;
-    const floor = await this.memory
-      .windowFloor(row.userId, row.characterId, privateScope ? 'adult' : 'normal')
-      .catch(() => 0);
+    const short =
+      settings.memoryMode === 'recent_summary'
+        ? await this.memory.recentContext(
+            row.userId,
+            row.characterId,
+            privateScope ? 'adult' : 'normal',
+          )
+        : null;
+    const bounds = short
+      ? { readFloor: short.rawFromSeq, minimumFloor: short.minimumFloor }
+      : await this.memory.windowBounds(
+          row.userId,
+          row.characterId,
+          privateScope ? 'adult' : 'normal',
+        );
+    const batchFirst = row.kind === 'message' ? (row.batchFirstSeq ?? row.triggerSeq) : undefined;
+    const floor =
+      batchFirst === undefined
+        ? bounds.readFloor
+        : Math.max(bounds.minimumFloor, Math.min(bounds.readFloor, batchFirst - 1));
+    const isCurrent = (m: Message) =>
+      batchFirst !== undefined &&
+      m.seq >= batchFirst &&
+      m.seq <= row.triggerSeq &&
+      m.senderKind === 'user' &&
+      m.status === 'normal' &&
+      m.seq > bounds.minimumFloor;
     const historyScopes: ContentScope[] = privateScope ? ['normal', 'adult'] : ['normal'];
-    const { messages: history, unreadThrough } = await this.readHistory(
+    const read = await this.readHistory(
       row.conversationId,
       historyScopes,
       row.kind === 'message' ? row.triggerSeq + 1 : undefined,
       floor,
       textBudget?.inputTokens,
       row.kind === 'message' && !privateScope && !voiceCall ? row.userId : undefined,
+      short?.rawFromSeqByScope,
+      row.batchFirstSeq ?? undefined,
     );
+    const uncovered = short
+      ? read.messages.filter(
+          (m) =>
+            (isCurrent(m) || m.seq > short.rawFromSeqByScope[m.scope]) &&
+            m.senderKind !== 'system' &&
+            m.status === 'normal' &&
+            !m.labels?.includes('quirk_draft'),
+        )
+      : read.messages.filter((m) => m.seq > bounds.minimumFloor);
+    const earlier = short
+      ? uncovered.filter((m) => batchFirst === undefined || m.seq < batchFirst)
+      : [];
+    const history = short
+      ? [
+          ...earlier.slice(-RECENT_CHAT_LIMIT),
+          ...uncovered.filter((m) => batchFirst !== undefined && m.seq >= batchFirst),
+        ]
+      : uncovered;
+    const unreadThrough =
+      short && earlier.length > RECENT_CHAT_LIMIT
+        ? earlier[earlier.length - RECENT_CHAT_LIMIT - 1]!.seq
+        : read.unreadThrough;
     const latest = history.filter((m) => m.senderKind !== 'system').at(-1);
     // 旧气泡可以在新用户消息之后送达，不能把‘最后一条是角色’当作新用户已被回复。
     const answered = await this.store.db.query<{ seq: string }>(
@@ -407,8 +461,36 @@ export class ReplyContext {
       [row.conversationId, row.manualRequested ? row.triggerSeq : null],
     );
     if (row.kind === 'message' && Number(answered.rows[0]?.seq ?? 0) >= row.triggerSeq) return null;
-    if (row.kind === 'message' && latest?.senderKind !== 'user' && !forceCareFallback) return null;
+    const forgottenTrigger =
+      !latest && source?.conversationId === row.conversationId && source.seq <= bounds.minimumFloor;
+    if (
+      row.kind === 'message' &&
+      latest?.senderKind !== 'user' &&
+      !forceCareFallback &&
+      !forgottenTrigger
+    )
+      return null;
     if (row.kind === 'greeting' && latest?.senderKind === 'character') return null;
+    if (short) {
+      const cutoff = recentSummaryCutoff(
+        earlier,
+        contextTokens(earlier.map((m) => ({ content: readableMessageText(m) }))),
+        unreadThrough !== null && unreadThrough > short.rawFromSeq,
+      );
+      if (cutoff !== null)
+        for (const scope of historyScopes) {
+          if (cutoff <= short.rawFromSeqByScope[scope]) continue;
+          await this.memory.chatSummaries
+            ?.request(short.parent, scope, cutoff, [], short.minimumFloor, 'recent_summary')
+            .catch(() => {
+              // Registered targets are retried by reconcile even when the queue is temporarily down.
+              new Logger(ReplyContext.name).warn({
+                code: 'recent_summary_request_failed',
+                conversationId: row.conversationId,
+              });
+            });
+        }
+    }
     // 开场白：用户填的打招呼优先；旧卡角色没有用户招呼时，直接用 opening_messages_json 的第一条。
     const greeting =
       row.kind === 'greeting'
@@ -425,9 +507,10 @@ export class ReplyContext {
       modelRole: conversation.contentScope === 'adult' ? ('adult' as const) : ('chat' as const),
     };
     const lastCharacterSeq = history.filter((r) => r.senderKind === 'character').at(-1)?.seq ?? 0;
-    const fresh = history
-      .filter((m) => m.senderKind === 'user' && m.seq > lastCharacterSeq && m.status === 'normal')
-      .slice(-6);
+    const latestUsers = history.filter(
+      (m) => m.senderKind === 'user' && m.seq > lastCharacterSeq && m.status === 'normal',
+    );
+    const fresh = row.batchFirstSeq ? history.filter(isCurrent) : latestUsers.slice(-6);
     // H3：图片描述存档（已看过的图直接用描述）；本轮新图附给回复调用本身（一步看图），回复顺带输出描述尾标。
     const captions: CaptionMap =
       (await this.captions?.forMessages(row.userId, history, historyScopes)) ?? NO_CAPTIONS;
@@ -466,19 +549,21 @@ export class ReplyContext {
       "SELECT count(*) n FROM ai_runtime.reply_plans WHERE conversation_id=$1 AND care_until IS NOT NULL AND status IN ('done','sending')",
       [row.conversationId],
     );
-    let remembered = await this.memory.context(
-      row.userId,
-      row.characterId,
-      privateScope ? 'adult' : 'normal',
-      userText,
-      {
-        turns: windowTurns(history, floor),
-      },
-    );
+    let remembered =
+      short ??
+      (await this.memory.context(
+        row.userId,
+        row.characterId,
+        privateScope ? 'adult' : 'normal',
+        userText,
+        {
+          turns: windowTurns(history, floor),
+        },
+      ));
     // v5 批 B：翻聊天记录（照旧版 recall.js）——本轮有回忆意图才翻「原文窗口之前」的旧聊天，取最相关几条原话。
     const recallTopK = remembered.tier?.config.recallTopK ?? 0;
     const recalled =
-      (row.kind === 'message' || voiceCall) && recallTopK > 0 && hasRecallIntent(userText)
+      !short && (row.kind === 'message' || voiceCall) && recallTopK > 0 && hasRecallIntent(userText)
         ? await this.recall({
             conversationId: row.conversationId,
             scopes: historyScopes,
@@ -587,11 +672,9 @@ export class ReplyContext {
       triggeredKnowledge = legacyLorebookText(lore.triggered);
     }
     // 示例对话保留策略（酒馆「示例常驻 / 逐步挤出」的取舍，docs/refactor/09 第 7.3 节）
-    const selfReports = await this.continuity.context(
-      row.userId,
-      row.characterId,
-      conversation.contentScope,
-    );
+    const selfReports = short
+      ? ''
+      : await this.continuity.context(row.userId, row.characterId, conversation.contentScope);
     // 3.25（G1-6）：好感度阶段。恋爱说法（违禁词第 3 类）按阶段放开：恋人阶段起（或私密模式）才允许；
     // 用户要求暂停亲密表达时一律不允许；未成年设定角色永远不允许。
     // 3.27（H1，总经理 10-21）：删除「用户选了恋人关系 / 情侣暧昧预设就直接用恋人口吻」的特例，只随阶段。
@@ -606,12 +689,14 @@ export class ReplyContext {
       explicitRomance: conversation.contentScope === 'adult',
     };
     const replyPolicy = { ...policy, romanceAllowed: romanceUnlocked(stageInput) };
-    const episodes = await this.episodes.context(
-      row.userId,
-      row.characterId,
-      conversation.contentScope,
-      userText,
-    );
+    const episodes = short
+      ? { stable: '', recent: '', relevant: '' }
+      : await this.episodes.context(
+          row.userId,
+          row.characterId,
+          conversation.contentScope,
+          userText,
+        );
     const scenarioPrompt = inCare
       ? undefined
       : ((await this.settings.scenarioPrompt(settings, conversation.contentScope)) ??
@@ -641,7 +726,8 @@ export class ReplyContext {
     const chat: (ChatTurnMessage & { sourceSeq?: number; sourceScope?: ContentScope })[] = [];
     const recent = history.filter(
       (m) =>
-        m.seq > (remembered.rawFromSeqByScope?.[m.scope] ?? remembered.rawFromSeq) &&
+        (isCurrent(m) ||
+          m.seq > (remembered.rawFromSeqByScope?.[m.scope] ?? remembered.rawFromSeq)) &&
         m.senderKind !== 'system',
     );
     for (const m of recent) {
@@ -700,12 +786,15 @@ export class ReplyContext {
       350,
     );
     // T-082 PLAY-02：共同领养的宠物（名字现取，改名立刻生效；知道今天玩过几次）。
-    const petBlock = petContextBlock(
-      (await this.pets?.listPetsForCharacter(row.userId, row.characterId).catch(() => [])) ?? [],
-    );
+    const petBlock = short
+      ? null
+      : petContextBlock(
+          (await this.pets?.listPetsForCharacter(row.userId, row.characterId).catch(() => [])) ??
+            [],
+        );
     // T-060 私聊中自然体现：现取经期摘要（不缓存），只在私聊回复中使用。
     const healthHint =
-      row.kind === 'message' || voiceCall
+      !short && (row.kind === 'message' || voiceCall)
         ? await this.healthCare.chatHint({
             userId: row.userId,
             characterId: row.characterId,
@@ -714,21 +803,24 @@ export class ReplyContext {
         : { prompt: null, healthUsed: false };
     // T-066：圈子资料——今天的日常、与朋友的共同事件（SOC-02）、公开动态、用户朋友圈（SOC-09 第 5 条）、
     // 朋友转述（MEM-07 闸门）、名片推荐提示与推荐人（CHR-04）。失败不影响回复。
-    const socialBlocks = await this.social
-      .replyContext({
-        userId: row.userId,
-        characterId: row.characterId,
-        userText,
-        timeZone: profile.timeZone,
-        greeting: row.kind === 'greeting',
-      })
-      .catch(() => [] as string[]);
+    const socialBlocks = short
+      ? []
+      : await this.social
+          .replyContext({
+            userId: row.userId,
+            characterId: row.characterId,
+            userText,
+            timeZone: profile.timeZone,
+            greeting: row.kind === 'greeting',
+          })
+          .catch(() => [] as string[]);
     // SOC-06 第 3 条：用户退出了该角色拉的群 → 私聊里最多提一次，按人设，不做情感操纵。
-    const exitReason = voiceCall
-      ? null
-      : await this.store.db.transaction((tx) =>
-          this.groupChat.consumeExitMention(tx, row.userId, row.characterId),
-        );
+    const exitReason =
+      voiceCall || short
+        ? null
+        : await this.store.db.transaction((tx) =>
+            this.groupChat.consumeExitMention(tx, row.userId, row.characterId),
+          );
     const firstFreshSeq = fresh[0]?.seq ?? Number.POSITIVE_INFINITY;
     const previous = history
       .filter((m) => m.senderKind !== 'system' && m.seq < firstFreshSeq)
@@ -1006,12 +1098,8 @@ export class ReplyContext {
         ? contextTokens([{ content: realtimeCallInstructions(messages) }])
         : contextTokens(messages);
     // 免费档只在 7 天窗口内摘要；窗口外不生成、不扣费。PRO+（summaryDays = null）保持全量。
-    const summaryFloor = summaryFloorSeq(
-      history,
-      remembered.tier?.limits.summaryDays ?? null,
-      this.clock.now(),
-    );
-    if (this.memory.chatSummaries) {
+    const summaryFloor = bounds.minimumFloor;
+    if (!short && this.memory.chatSummaries) {
       for (let pass = 0; pass < 2; pass++) {
         const historyGap =
           unreadThrough !== null && unreadThrough > remembered.rawFromSeq ? unreadThrough : null;
@@ -1046,7 +1134,7 @@ export class ReplyContext {
             break;
           }
         }
-        cutoff = Math.max(cutoff, historyGap ?? 0);
+        cutoff = Math.min(Math.max(cutoff, historyGap ?? 0), (batchFirst ?? Infinity) - 1);
         if (!cutoff) break;
         const before = JSON.stringify(remembered.rawFromSeqByScope);
         for (const s of historyScopes)
@@ -1066,6 +1154,7 @@ export class ReplyContext {
           (m) =>
             m.sourceSeq === undefined ||
             m.sourceScope === undefined ||
+            (batchFirst !== undefined && m.sourceSeq >= batchFirst) ||
             m.sourceSeq > (remembered.rawFromSeqByScope?.[m.sourceScope] ?? remembered.rawFromSeq),
         );
         promptHistory = historyForReplyModel(retained, habits, voiceCall);
@@ -1273,17 +1362,27 @@ export class ReplyContext {
     floor: number,
     inputTokens?: number,
     replyStartsForUserId?: string,
+    shortFloors?: Record<ContentScope, number>,
+    batchFirst?: number,
   ): Promise<{ messages: ChatHistoryMessage[]; unreadThrough: number | null }> {
     const pages: ChatHistoryMessage[][] = [];
     let foundReplyStarts = 0;
     const blocked = await blockedSeqs(this.store.db, conversationId);
-    const legacyLimit = inputTokens === undefined ? stableHistoryReadLimit(beforeSeq) : Infinity;
+    const legacyLimit = shortFloors
+      ? RECENT_CHAT_LIMIT + 1
+      : inputTokens === undefined
+        ? stableHistoryReadLimit(beforeSeq)
+        : Infinity;
     let before = beforeSeq;
     let count = 0,
+      scannedEarlier = 0,
       tokens = 0,
       unreadThrough: number | null = null;
     while (true) {
-      const take = Math.min(200, legacyLimit - count);
+      // Do not spend the recent-history allowance on the unanswered user batch.
+      const batchRemaining =
+        batchFirst !== undefined && before !== undefined ? Math.max(0, before - batchFirst) : 0;
+      const take = Math.min(200, batchRemaining || legacyLimit - count);
       const rows = await this.chat.readMessages({
         conversationId,
         scopes,
@@ -1302,7 +1401,18 @@ export class ReplyContext {
         else foundReplyStarts++;
       }
       pages.push(visible);
-      count += rows.length;
+      const older = batchFirst === undefined ? rows : rows.filter((m) => m.seq < batchFirst);
+      scannedEarlier += older.length;
+      count += shortFloors
+        ? older.filter(
+            (m) =>
+              m.seq > shortFloors[m.scope] &&
+              m.senderKind !== 'system' &&
+              m.status === 'normal' &&
+              !m.labels?.includes('quirk_draft') &&
+              !blocked.has(m.seq),
+          ).length
+        : older.length;
       const oldest = rows[0]!.seq;
       if (rows.length < take || oldest <= floor + 1) break;
       if (inputTokens !== undefined) {
@@ -1321,7 +1431,13 @@ export class ReplyContext {
           tokens += contextTokens([{ content: projected }]);
         }
       }
-      if (count >= legacyLimit || (inputTokens !== undefined && tokens >= inputTokens)) {
+      if (
+        count >= legacyLimit ||
+        (shortFloors && scannedEarlier >= 500) ||
+        (inputTokens !== undefined &&
+          tokens >= inputTokens &&
+          (batchFirst === undefined || oldest <= batchFirst))
+      ) {
         unreadThrough = oldest - 1;
         break;
       }
@@ -1443,7 +1559,7 @@ export class ReplyContext {
       ],
       personaVersion: role.personaVersion,
       promptTemplateVersion: REPLY_TEMPLATE_VERSION,
-      instantReply: true,
+      instantReply: false,
       splitBubbles: true,
       highRisk: risk === 'high',
       suspected: risk === 'suspected',

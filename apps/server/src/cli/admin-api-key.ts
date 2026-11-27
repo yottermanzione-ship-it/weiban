@@ -1,7 +1,7 @@
 /**
  * 管理员 API key 命令行（在 apps/server 目录运行，pnpm --filter 会自动切换过去）。用法：
  *
- *   pnpm --filter @weiban/server admin-api-key create --name muse-closing --created-by <管理员用户名> [--scope role-requests:complete]
+ *   pnpm --filter @weiban/server admin-api-key create --name muse-closing --created-by <管理员用户名> [--scope role-requests:complete|muse-weibo:publish]
  *   pnpm --filter @weiban/server admin-api-key list
  *   pnpm --filter @weiban/server admin-api-key revoke --id <key id>
  *
@@ -29,7 +29,7 @@ import {
 } from '../platform/index.js';
 
 const USAGE = `用法：
-  admin-api-key create --name <用途名> --created-by <管理员用户名> [--scope role-requests:complete]
+  admin-api-key create --name <用途名> --created-by <管理员用户名> [--scope role-requests:complete|muse-weibo:publish]
   admin-api-key list
   admin-api-key revoke --id <key id>`;
 

@@ -339,14 +339,18 @@ describeDb('ai-runtime 真实PG：设置/加密计划/合并/幂等/关怀/删�
     expect(
       (await http().get(path).set('Authorization', auth()).expect(200)).body.inheritsDefaults,
     ).toBe(true);
-    await http().patch(path).set('Authorization', auth()).send({ instantReply: true }).expect(200);
+    await http()
+      .patch(path)
+      .set('Authorization', auth())
+      .send({ instantReply: true, splitBubbles: true })
+      .expect(200);
     await http()
       .patch('/api/v1/me/companion-defaults')
       .set('Authorization', auth())
       .send({ splitBubbles: false })
       .expect(200);
     expect((await http().get(path).set('Authorization', auth()).expect(200)).body).toMatchObject({
-      instantReply: true,
+      instantReply: false,
       splitBubbles: true,
       inheritsDefaults: false,
     });
@@ -385,16 +389,24 @@ describeDb('ai-runtime 真实PG：设置/加密计划/合并/幂等/关怀/删�
     expect((await store.get(row.id))?.resultCiphertext).toBeNull();
     expect(logs.capture.text).not.toContain('AI_GREETING_PRIVATE_CANARY');
   });
-  it('连续用户消息延后三秒合并，只生成一次最新批次，重复任务幂等', async () => {
+  it('连发和跨设备编辑顺延五秒，持久计划只生成一次，草稿不会进模型', async () => {
     const before = calls.length;
     const first = await user('你好');
     clock.advance(1000);
     const second = await user('我还有一句');
-    await engine.run(first.id);
-    clock.advance(3000);
-    await engine.run(first.id);
+    expect(first.id).toBe(second.id);
+    clock.advance(4900);
+    const endpoint = `/api/v1/conversations/${cid}/edit-activity`;
+    await http()
+      .post(endpoint)
+      .set('Authorization', auth())
+      .send({ batchKey: newId() })
+      .expect(204);
+    clock.advance(4999);
+    await Promise.all([engine.run(first.id), engine.run(second.id)]);
+    expect(calls).toHaveLength(before);
     await finish(second.id);
-    expect((await store.get(first.id))?.status).toBe('cancelled');
+    expect((await store.get(first.id))?.status).toBe('done');
     expect(calls.length - before).toBe(1);
     expect(
       calls
@@ -404,9 +416,87 @@ describeDb('ai-runtime 真实PG：设置/加密计划/合并/幂等/关怀/删�
         .join(''),
     ).toContain('我还有一句');
   });
+  it('客户端合并提交时沿用已等过的窗口，重复提交不额外排队或顺延', async () => {
+    const firstId = newId();
+    const endpoint = `/api/v1/conversations/${cid}`;
+    await http()
+      .post(endpoint + '/edit-activity')
+      .set('Authorization', auth())
+      .send({ batchKey: firstId })
+      .expect(204);
+    clock.advance(5500);
+    const items = Array.from({ length: 35 }, (_, i) => ({
+      clientMsgId: i === 0 ? firstId : newId(),
+      content: { type: 'text', text: '成批消息' + i },
+    }));
+    const send = () =>
+      http()
+        .post(endpoint + '/message-batches')
+        .set('Authorization', auth())
+        .send({ items })
+        .expect(200);
+    const first = await send(),
+      replay = await send();
+    expect(
+      first.body.items.map((a: { message: { messageId: string } }) => a.message.messageId),
+    ).toEqual(
+      replay.body.items.map((a: { message: { messageId: string } }) => a.message.messageId),
+    );
+    await dispatch();
+    const row = (await plans()).find(
+      (p) => p.triggerId === first.body.items.at(-1).message.messageId,
+    )!;
+    expect(row.batchFirstSeq).toBe(first.body.items[0].message.seq);
+    expect(row.dueAt.getTime()).toBeLessThanOrEqual(clock.nowMs());
+    const before = calls.length;
+    await finish(row.id);
+    expect(calls).toHaveLength(before + 1);
+    for (const item of items)
+      expect(calls.at(-1)!.messages.some((m) => m.content === item.content.text)).toBe(true);
+  }, 60000);
+  it('较大批次的后片断线两分钟，首片已持久化但不启动模型，恢复后整批只答一次', async () => {
+    const one = newId(),
+      two = newId(),
+      path = `/api/v1/conversations/${cid}`;
+    const item = (clientMsgId: string, text: string) => ({
+      clientMsgId,
+      content: { type: 'text', text },
+    });
+    await http()
+      .post(path + '/edit-activity')
+      .set('Authorization', auth())
+      .send({ batchKey: one })
+      .expect(204);
+    clock.advance(5500);
+    const head = await http()
+      .post(path + '/message-batches')
+      .set('Authorization', auth())
+      .send({ items: [item(one, '跨片首句')], more: true, nextKey: two })
+      .expect(200);
+    await dispatch();
+    const plan = (await plans()).find((p) => p.triggerId === head.body.items[0].message.messageId)!;
+    const before = calls.length;
+    clock.advance(120000);
+    await engine.run(plan.id);
+    expect(calls.length).toBe(before);
+    const tail = await http()
+      .post(path + '/message-batches')
+      .set('Authorization', auth())
+      .send({ items: [item(two, '跨片末句')] })
+      .expect(200);
+    await dispatch();
+    const pending = (await store.get(plan.id))!;
+    expect(pending.batchFirstSeq).toBe(head.body.items[0].message.seq);
+    expect(pending.triggerSeq).toBe(tail.body.items[0].message.seq);
+    await finish(plan.id);
+    expect(calls.length - before).toBe(1);
+    expect(calls.at(-1)!.messages.map((m) => m.content)).toEqual(
+      expect.arrayContaining(['跨片首句', '跨片末句']),
+    );
+  });
   it('用户在模型生成中补发：旧回复稍后送达也不能吞掉新批次，两批各生成一次', async () => {
     const first = await user('第一批已经进入生成');
-    clock.advance(3000);
+    clock.advance(5000);
     let release = () => {};
     generationGate = new Promise<void>((resolve) => {
       release = resolve;
@@ -446,7 +536,7 @@ describeDb('ai-runtime 真实PG：设置/加密计划/合并/幂等/关怀/删�
       .spyOn(engine.quirks, 'choose')
       .mockResolvedValue({ kind: 'none', respondAt: null, typingCycles: 0 });
     const row = await user('重启前的问题');
-    clock.advance(3000);
+    clock.advance(5000);
     try {
       await engine.run(row.id);
     } finally {
@@ -565,17 +655,38 @@ RETURNING seq::text AS seq, message_id`;
     }
   });
   it('同一真实会话超过200个待回复批次恢复仍只有最新批次，一次合并、不残留旧waiting', async () => {
-    const sender = app.get<ChatUserPort>(CHAT_USER_PORT);
-    for (let i = 0; i < 201; i++)
-      await sender.sendMessage(userId, cid, {
-        clientMsgId: newId(),
-        content: { type: 'text', text: `未回复的第${i}句` },
-      });
-    await dispatch();
-    await db.db
-      .update(replyPlans)
-      .set({ status: 'waiting' })
-      .where(eq(replyPlans.status, 'queued'));
+    // 升级前一条发送对应一条 waiting；批量建立旧数据，保留真实触发及加密正文。
+    const [sender] = (await app.get<ChatReadPort>(CHAT_READ_PORT).getParticipants(cid)).filter(
+      (p) => p.kind === 'user',
+    );
+    const ids = Array.from({ length: 200 }, () => newId());
+    await db.transaction(async (tx) => {
+      const cipher = await store.crypto.sealMany(
+        userId,
+        ids.map((id, i) => ({
+          aad: 'chat:message:' + id,
+          plaintext: JSON.stringify({ type: 'text', text: '历史未回复' + i }),
+        })),
+        tx,
+      );
+      const end = await tx.query<{ last_seq: string }>(
+        'UPDATE chat.conversations SET last_seq=last_seq+200 WHERE id=$1 RETURNING last_seq',
+        [cid],
+      );
+      const start = Number(end.rows[0]!.last_seq) - 200;
+      await tx.query(
+        `INSERT INTO chat.messages (id,conversation_id,seq,sender_participant_id,sender_kind,client_msg_id,content_ciphertext,status,scope,content_type,created_at)
+        SELECT id,$1,$2::bigint+n,$3,'user',id::text,body,'normal','normal','text',$4 FROM unnest($5::uuid[],$6::bytea[]) WITH ORDINALITY AS s(id,body,n)`,
+        [cid, start, sender!.participantId, clock.now(), ids, cipher],
+      );
+      await tx.query(
+        `INSERT INTO ai_runtime.reply_plans(id,user_id,character_id,conversation_id,trigger_id,trigger_seq,kind,status,due_at,created_at)
+        SELECT gen_random_uuid(),$1,$2,$3,id,$4::bigint+n,'message','waiting',$5,$5 FROM unnest($6::uuid[]) WITH ORDINALITY AS s(id,n)`,
+        [userId, characterId, cid, start, clock.now(), ids],
+      );
+    });
+    const last = await user('最后一条真实发送');
+    await db.db.update(replyPlans).set({ status: 'waiting' }).where(eq(replyPlans.id, last.id));
     const before = calls.length;
     await store.recover(userId);
     const waiting = (await plans()).filter((p) => p.status === 'waiting');
@@ -654,7 +765,7 @@ RETURNING seq::text AS seq, message_id`;
       .update(userId, characterId, { addressAs: 'API系统模型余额性交' });
     response = '我是你的男朋友，爱上你了\n我在这里陪你';
     const row = await user('我不想活了');
-    clock.advance(3000);
+    clock.advance(5000);
     await engine.run(row.id);
     expect((await store.get(row.id))?.status).toBe('sending');
     await db.query("UPDATE characters.characters SET age_setting='minor' WHERE id=$1", [
@@ -685,7 +796,7 @@ RETURNING seq::text AS seq, message_id`;
     });
     try {
       const row = await user('今天窗外阳光很好');
-      clock.advance(3000);
+      clock.advance(5000);
       await engine.run(row.id);
       let pending = (await store.get(row.id))!;
       clock.advance(Math.max(0, pending.dueAt.getTime() - clock.nowMs()));
@@ -759,7 +870,7 @@ RETURNING seq::text AS seq, message_id`;
       .mockResolvedValue({ kind: 'read_delay', respondAt, typingCycles: 0 });
     try {
       const row = await user('午后的云朵真好看');
-      clock.advance(3000);
+      clock.advance(5000);
       await engine.run(row.id);
       const pending = (await store.get(row.id))!;
       expect(pending.status).toBe('sending');
@@ -938,7 +1049,7 @@ RETURNING seq::text AS seq, message_id`;
       .spyOn(engine.quirks, 'choose')
       .mockResolvedValue({ kind: 'none', respondAt: null, typingCycles: 0 });
     const row = await user('结果里有八条');
-    clock.advance(3000);
+    clock.advance(5000);
     try {
       await engine.run(row.id);
     } finally {
@@ -977,7 +1088,7 @@ RETURNING seq::text AS seq, message_id`;
 
     // 回滚 0155：发送中的超 4 计划压回 4 并收尾，已结束的只改计数；之后再执行 0155 恢复 8 条上限。
     const sending = await user('回滚时还在发第 6 条');
-    clock.advance(3000);
+    clock.advance(5000);
     const quiet = vi
       .spyOn(engine.quirks, 'choose')
       .mockResolvedValue({ kind: 'none', respondAt: null, typingCycles: 0 });
@@ -1022,7 +1133,7 @@ RETURNING seq::text AS seq, message_id`;
       .spyOn(engine.quirks, 'choose')
       .mockResolvedValue({ kind: 'none', respondAt: null, typingCycles: 0 });
     const row = await user('这句会碰到确定性错误');
-    clock.advance(3000);
+    clock.advance(5000);
     try {
       await engine.run(row.id);
     } finally {
@@ -1143,7 +1254,7 @@ RETURNING seq::text AS seq, message_id`;
       .spyOn(engine.quirks, 'choose')
       .mockResolvedValue({ kind: 'none', respondAt: null, typingCycles: 0 });
     try {
-      clock.advance(3000);
+      clock.advance(5000);
       await engine.run(row.id);
       const pending = (await store.get(row.id))!;
       expect(pending.status).toBe('sending');
@@ -1366,7 +1477,7 @@ RETURNING seq::text AS seq, message_id`;
     try {
       const row = await user('合成环境中的关怀投递检查。', careUserId, careConversation);
       const before = calls.length;
-      clock.advance(3000);
+      clock.advance(5000);
       await engine.run(row.id);
       expect((await store.get(row.id))?.status).toBe('sending');
       expect(platform).toHaveBeenCalledOnce();
@@ -1461,9 +1572,55 @@ RETURNING seq::text AS seq, message_id`;
       choice.mockRestore();
     }
   }, 60_000); // 多轮真实数据库生成与送达，另含四种明确要求保留原句的输入。
+  it('近期记忆保留整批待回复消息，静默结束后只请求模型一次', async () => {
+    const settingsPath = `/api/v1/characters/${characterId}/companion-settings`;
+    const original = (await http().get(settingsPath).set('Authorization', auth()).expect(200)).body;
+    await http()
+      .patch(settingsPath)
+      .set('Authorization', auth())
+      .send({ memoryMode: 'recent_summary' })
+      .expect(200);
+    try {
+      const tags = Array.from(
+        { length: 36 },
+        (_, i) => `本轮清单【${String(i + 1).padStart(2, '0')}】`,
+      );
+      const pendingBefore = new Set((await plans()).map((plan) => plan.id));
+      const callStart = calls.length;
+      const chat = app.get<ChatUserPort>(CHAT_USER_PORT);
+      for (const text of tags) {
+        await chat.sendMessage(userId, cid, {
+          clientMsgId: newId(),
+          content: { type: 'text', text },
+        });
+      }
+      await dispatch();
+      const batch = (await plans()).filter(
+        (plan) => !pendingBefore.has(plan.id) && plan.status === 'queued',
+      );
+      expect(batch).toHaveLength(1);
+      clock.advance(4_999);
+      await engine.run(batch[0]!.id);
+      expect(calls.slice(callStart).filter((call) => call.purpose === 'chat_reply')).toHaveLength(
+        0,
+      );
+      clock.advance(1);
+      await finish(batch[0]!.id);
+      const requests = calls.slice(callStart).filter((call) => call.purpose === 'chat_reply');
+      expect(requests).toHaveLength(1);
+      const prompt = JSON.stringify(requests[0]!.messages);
+      for (const tag of tags) expect(prompt).toContain(tag);
+    } finally {
+      await http()
+        .patch(settingsPath)
+        .set('Authorization', auth())
+        .send({ memoryMode: original.memoryMode })
+        .expect(200);
+    }
+  });
   it('生成中删除好友；旧计划不得在恢复的同一会话发言；物理清除与账号清单', async () => {
     const row = await user('再见');
-    clock.advance(3000);
+    clock.advance(5000);
     await engine.run(row.id);
     expect((await store.get(row.id))?.status).toBe('sending');
     const commands = app.get(ContactsCommands);

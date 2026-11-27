@@ -27,6 +27,7 @@ interface ChatContextValue {
   dismissError(): void;
   typing: Record<string, number>;
   focus(id: string | null): void;
+  edit(id: string): void;
   send(id: string, text: string, quoteMessageId?: string, mentions?: string[]): Promise<void>;
   /** 3.0：发图片、语音、表情、链接（离线时排队，联网后发送）。 */
   sendContent(id: string, content: UserSendableContent): Promise<void>;
@@ -222,8 +223,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         dismissError,
         typing,
         focus,
+        edit: (id) => current().edit(id),
         send: async (id, text, quoteMessageId, mentions) => {
           const body: SendMessageRequest = {
+            quietBatch: true,
             clientMsgId: crypto.randomUUID(),
             content: mentions?.length ? { type: 'text', text, mentions } : { type: 'text', text },
             quoteMessageId: quoteMessageId ?? null,
@@ -233,6 +236,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         },
         sendContent: async (id, content) => {
           const body: SendMessageRequest = {
+            quietBatch: true,
             clientMsgId: crypto.randomUUID(),
             content,
             quoteMessageId: null,

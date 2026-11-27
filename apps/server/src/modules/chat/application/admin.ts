@@ -293,10 +293,11 @@ export class ChatAdminService implements ChatAdminPort {
       .for('update');
     if (!row) return;
     await tx.db.delete(messages).where(eq(messages.conversationId, row.id));
+    await tx.query('DELETE FROM chat.reply_batch_parts WHERE conversation_id=$1', [row.id]);
     const now = this.clock.now();
     await tx.db
       .update(conversations)
-      .set({ archivedAt: null, updatedAt: now })
+      .set({ archivedAt: null, updatedAt: now, replyBatchKey: null, replyQuietUntil: null })
       .where(eq(conversations.id, row.id));
     const [state] = await tx.db
       .update(userConversationStates)

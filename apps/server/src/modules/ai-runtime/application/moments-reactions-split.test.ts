@@ -5,7 +5,7 @@
  * 只用桩，不发起真实模型调用、不碰数据库。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MomentsAiService } from './moments-ai.js';
+import { MomentsAiService, type MomentsReactJob } from './moments-ai.js';
 
 const USER = '00000000-0000-4000-8000-000000000001';
 
@@ -16,10 +16,14 @@ function moments(options: {
   accountStatus?: 'active' | 'deleted';
   banned?: boolean;
   related?: Array<{ characterId: string; closeness: string }>;
+  ecologyEnabled?: boolean;
+  legacyPeerDisabled?: boolean;
+  platformPeerDisabled?: boolean;
+  disabledCharacters?: string[];
 }) {
   const send = vi.fn(async () => undefined);
-  // 生态闸门一律回答「关着」：基础层不该问它，问了也不能影响排期。
-  const isActive = vi.fn(async () => false);
+  const isActive = vi.fn(async () => options.ecologyEnabled ?? false);
+  const spend = vi.fn();
   const service = Object.create(MomentsAiService.prototype) as MomentsAiService;
   Object.assign(service, {
     jobs: { send },
@@ -28,7 +32,17 @@ function moments(options: {
         level: options.levels?.[id] ?? 1,
       })),
     },
-    ecology: { isActive },
+    ecology: {
+      isActive,
+      row: vi.fn(async () => ({
+        disabledActions: options.legacyPeerDisabled ? ['moment_peer'] : [],
+      })),
+      actionAvailable: vi.fn(async () => (options.platformPeerDisabled ? '平台暂未开放' : null)),
+      characterEnabled: vi.fn(
+        async (_userId: string, id: string) => !options.disabledCharacters?.includes(id),
+      ),
+    },
+    billing: { getSpendStatus: spend },
     accounts: {
       getAccountStatus: vi.fn(async () => options.accountStatus ?? 'active'),
       isBanned: vi.fn(async () => options.banned ?? false),
@@ -50,7 +64,7 @@ function moments(options: {
       })),
     },
   });
-  return { service, send, isActive };
+  return { service, send, isActive, spend };
 }
 
 afterEach(() => {
@@ -59,7 +73,7 @@ afterEach(() => {
 
 function sentJobs(send: ReturnType<typeof vi.fn>) {
   return send.mock.calls.map((c) => ({
-    job: c[1] as { characterId: string; action: string },
+    job: c[1] as MomentsReactJob,
     delayMs: (c[2] as { delayMs: number }).delayMs,
     key: (c[2] as { singletonKey: string }).singletonKey,
   }));
@@ -210,6 +224,72 @@ describe('角色之间接梗回复：基础层', () => {
     const { service, send } = moments({ notFriends: ['author'] });
     await service.onCommentCreated(payload);
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+describe('Muse 新稿的自动互动需要当前生态授权', () => {
+  const post = {
+    postId: 'muse-post',
+    ownerUserId: USER,
+    authorKind: 'character' as const,
+    authorCharacterId: 'author',
+    visibleCharacterIds: [],
+    museWeibo: true as const,
+  };
+  const related = [{ characterId: 'friend', closeness: 'close' }];
+
+  it.each([
+    {},
+    { ecologyEnabled: true, legacyPeerDisabled: true },
+    { ecologyEnabled: true, platformPeerDisabled: true },
+    { ecologyEnabled: true, disabledCharacters: ['friend'] },
+  ])('关闭授权或关停相关互动时不排队 %#', async (options) => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const { service, send } = moments({ related, ...options });
+    await service.onPostCreated(post);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('已开启时沿原计划排队，等待期间关闭时不尝试扣费', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const { service, send, isActive, spend } = moments({ related, ecologyEnabled: true });
+    await service.onPostCreated(post);
+    expect(isActive).toHaveBeenCalledWith(USER, 'author', 'moment_post');
+    const automatic = sentJobs(send).find(({ job }) => job.action === 'comment')?.job;
+    expect(automatic).toMatchObject({ museWeiboAuthorId: 'author', characterId: 'friend' });
+    isActive.mockResolvedValue(false);
+    await service.runReact(automatic!);
+    expect(spend).not.toHaveBeenCalled();
+  });
+
+  it('仅自动角色评论的后继回复继承闸门，用户亲自评论仍按原路径', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const { service, send, isActive } = moments({ related });
+    const comment = {
+      postId: post.postId,
+      commentId: 'comment-muse',
+      ownerUserId: USER,
+      postAuthorKind: 'character' as const,
+      postAuthorCharacterId: 'author',
+      authorKind: 'character' as const,
+      authorCharacterId: 'friend',
+      replyToKind: null,
+      replyToCharacterId: null,
+      museWeibo: true as const,
+    };
+    await service.onCommentCreated(comment);
+    expect(send).not.toHaveBeenCalled();
+    isActive.mockResolvedValue(true);
+    await service.onCommentCreated(comment);
+    expect(sentJobs(send)[0]?.job).toMatchObject({ museWeiboAuthorId: 'author', action: 'reply' });
+    isActive.mockResolvedValue(false);
+    await service.onCommentCreated({ ...comment, authorKind: 'user', authorCharacterId: null });
+    expect(sentJobs(send)[1]?.job).toMatchObject({
+      characterId: 'author',
+      action: 'reply',
+      mustReply: true,
+    });
+    expect(sentJobs(send)[1]?.job).not.toHaveProperty('museWeiboAuthorId');
   });
 });
 

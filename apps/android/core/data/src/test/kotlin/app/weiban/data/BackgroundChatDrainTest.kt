@@ -7,6 +7,7 @@ import androidx.test.core.app.ApplicationProvider
 import app.weiban.contracts.*
 import app.weiban.network.*
 import kotlinx.coroutines.*
+import kotlinx.serialization.json.*
 import okhttp3.mockwebserver.*
 import org.junit.*
 import org.junit.Assert.*
@@ -80,11 +81,19 @@ class BackgroundChatDrainTest {
 
     private fun responses(delayBody: Boolean = false) =
         object : Dispatcher() {
-            override fun dispatch(request: RecordedRequest): MockResponse =
-                when (request.method) {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                if (request.path?.endsWith("/edit-activity") == true) return MockResponse().setResponseCode(204)
+                return when (request.method) {
                     "GET" -> MockResponse().setBody("{\"latestUpdateSeq\":0}")
                     "POST" -> {
-                        val body = api.json.decodeFromString(SendMessageRequest.serializer(), request.body.readUtf8())
+                        val first =
+                            api.json
+                                .parseToJsonElement(request.body.readUtf8())
+                                .jsonObject
+                                .getValue("items")
+                                .jsonArray
+                                .single()
+                        val body = api.json.decodeFromJsonElement(SendMessageRequest.serializer(), first)
                         ids.add(body.clientMsgId)
                         val message =
                             Message(
@@ -103,12 +112,16 @@ class BackgroundChatDrainTest {
                             )
                         val response =
                             MockResponse().setBody(
-                                api.json.encodeToString(MessageAck.serializer(), MessageAck(body.clientMsgId, message)),
+                                api.json.encodeToString(
+                                    ChatEndpointsSendBatchResponse.serializer(),
+                                    ChatEndpointsSendBatchResponse(listOf(MessageAck(body.clientMsgId, message))),
+                                ),
                             )
                         if (delayBody) response.setBodyDelay(3, TimeUnit.SECONDS) else response
                     }
                     else -> MockResponse().setResponseCode(404)
                 }
+            }
         }
 
     @Test fun backgroundSendsDurableQueueAndPausesWhenLeaseEnds() =
@@ -140,7 +153,8 @@ class BackgroundChatDrainTest {
                     .single()
                     .body.clientMsgId
             val drain = BackgroundChatDrain(repository, runtime)
-            assertEquals(ChatDrainResult.RETRY, drain.drain(owner, 1_000))
+            // Five seconds of quiet precede the first POST; its delayed ACK is still in flight at the deadline.
+            assertEquals(ChatDrainResult.RETRY, drain.drain(owner, 6_500))
             assertEquals(
                 original,
                 repository

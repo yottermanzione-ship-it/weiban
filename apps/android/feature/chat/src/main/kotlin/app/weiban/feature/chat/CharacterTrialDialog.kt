@@ -12,23 +12,23 @@ import app.weiban.contracts.*
 import app.weiban.data.*
 import app.weiban.designsystem.tokens.WbSpace
 import kotlinx.coroutines.*
-import kotlinx.serialization.json.*
-import java.util.UUID
 
 @Composable internal fun CharacterTrialDialog(
     repository: SessionRepository,
+    runtime: ChatRuntime,
     owner: OwnerRecord,
     conversationId: String,
     name: String,
     onClose: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    val edits = remember(owner, conversationId) { ChatEditPulse(runtime, owner, conversationId, scope) }
     var messages by remember(conversationId) { mutableStateOf<List<Message>>(emptyList()) }
     var text by remember(conversationId) { mutableStateOf("") }
     var pending by remember { mutableStateOf(false) }
     var closing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var retry by remember { mutableStateOf<Pair<String, String>?>(null) }
+    val snapshot by runtime.snapshot.collectAsState()
     val options = SessionCallOptions(owner = owner, networkOnly = true)
     DisposableEffect(owner, conversationId) {
         onDispose {
@@ -110,34 +110,28 @@ import java.util.UUID
                         )
                     }
                 }
-                OutlinedTextField(text, { text = it.take(4000) }, Modifier.fillMaxWidth(), label = { Text("试聊消息") }, enabled = !closing)
+                snapshot.state.outbox
+                    .filter {
+                        it.conversationId == conversationId &&
+                            messages.none { m -> m.clientMsgId == it.body.clientMsgId }
+                    }.forEach {
+                        Text("我：" + ((it.body.content as? UserSendableContentText)?.text ?: ""))
+                    }
+                OutlinedTextField(text, {
+                    val next = it.take(4000)
+                    if (text != next) edits.send()
+                    text = next
+                }, Modifier.fillMaxWidth(), label = { Text("试聊消息") }, enabled = !closing)
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 Button(enabled = !pending && !closing && text.isNotBlank(), onClick = {
-                    val request = retry?.takeIf { it.first == text } ?: (text to UUID.randomUUID().toString())
-                    retry = request
                     pending = true
                     error = null
                     scope.launch {
                         try {
                             userAction({ error = it }) {
-                                repository.call(
-                                    Endpoints.chatEndpointsSendMessage,
-                                    params = mapOf("conversationId" to conversationId),
-                                    body =
-                                        buildJsonObject {
-                                            put("clientMsgId", request.second)
-                                            put(
-                                                "content",
-                                                buildJsonObject {
-                                                    put("type", "text")
-                                                    put("text", request.first)
-                                                },
-                                            )
-                                        },
-                                    options = options,
-                                )
-                                text = ""
-                                retry = null
+                                val captured = text
+                                runtime.send(owner, conversationId, captured)
+                                if (text == captured) text = ""
                             }
                         } finally {
                             pending = false

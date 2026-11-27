@@ -62,6 +62,48 @@ export class ChatReadService implements ChatReadPort, ChatReplyTriggerReadPort {
     @Inject(DATABASE) private readonly db: Database,
     @Inject(ChatStore) private readonly store: ChatStore,
   ) {}
+  async replyWindow(
+    userId: string,
+    conversationId: string,
+    transaction: Tx,
+    contentTypes?: readonly string[],
+  ) {
+    const tx = asDbTx(transaction);
+    const { rows: owned } = await tx.query<{ reply_quiet_until: Date | null }>(
+      'SELECT reply_quiet_until FROM chat.conversations WHERE id=$1 AND owner_user_id=$2 FOR UPDATE',
+      [conversationId, userId],
+    );
+    if (!owned.length) return null;
+    const { rows } = await tx.query<{
+      messageId: string;
+      seq: string;
+      contentType: string;
+      first: string | null;
+      partial: boolean;
+    }>(
+      `SELECT m.id AS "messageId", m.seq, m.content_type AS "contentType", m.reply_batch_first_seq AS first, EXISTS(SELECT 1 FROM chat.reply_batch_parts part WHERE part.conversation_id=m.conversation_id AND m.seq BETWEEN part.first_seq AND part.last_seq) AS partial FROM chat.messages m
+       JOIN chat.user_conversation_states s ON s.conversation_id=m.conversation_id AND s.user_id=$2
+       WHERE m.conversation_id=$1 AND m.seq>s.cleared_through_seq AND m.sender_kind='user'
+       AND m.status='normal' AND m.content_type IS DISTINCT FROM 'call_record'
+       AND ($3::text[] IS NULL OR m.content_type=ANY($3))
+       AND NOT EXISTS(SELECT 1 FROM chat.hidden_messages h WHERE h.user_id=$2 AND h.message_id=m.id)
+       ORDER BY m.seq DESC LIMIT 1`,
+      [conversationId, userId, contentTypes ?? null],
+    );
+    const latest = rows[0];
+    return {
+      quietUntil: owned[0]!.reply_quiet_until,
+      partial: latest?.partial === true,
+      latest: latest
+        ? {
+            messageId: latest.messageId,
+            contentType: latest.contentType,
+            seq: Number(latest.seq),
+            firstSeq: Number(latest.first ?? latest.seq),
+          }
+        : null,
+    };
+  }
   async visibleReplyTriggers(
     userId: string,
     conversationId: string,

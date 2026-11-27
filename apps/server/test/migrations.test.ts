@@ -87,6 +87,7 @@ describeDb('数据库迁移（真实 PostgreSQL）', () => {
       'audit_log',
       'event_inbox',
       'outbox',
+      'reply_worker_slots',
       'user_data_keys',
     ]);
     expect(await migrator.up()).toEqual([]); // 重复执行无副作用
@@ -100,7 +101,7 @@ describeDb('数据库迁移（真实 PostgreSQL）', () => {
     expect((await migrator.status()).every((s) => !s.applied)).toBe(true);
 
     expect(await migrator.up()).toEqual(tags);
-    expect(await platformTables()).toHaveLength(4);
+    expect(await platformTables()).toHaveLength(5);
   });
 
   it('已执行的迁移被改动时拒绝继续（迁移只增不改）', async () => {

@@ -2,6 +2,7 @@ import { Inject, Injectable, type OnModuleInit, type OnApplicationBootstrap } fr
 import { and, eq, inArray } from 'drizzle-orm';
 import { type ChatReadPort, type ContactsReadPort } from '@weiban/contracts';
 import {
+  withReplySlot,
   CHARACTER_PURGE_REGISTRY,
   EVENT_BUS,
   JOB_QUEUE,
@@ -151,9 +152,28 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       module: 'ai_runtime',
       purge: (tx, characterId) => this.purgeCharacter(tx, characterId),
     });
-    await this.jobs.work<{ planId: string }>(
+    await this.jobs.workCoalesced<{ planId: string }>(
       GENERATE_REPLY_JOB,
-      (j) => this.engine.run(j.data.planId),
+      async (j) => {
+        const row = await this.store.get(j.data.planId);
+        if (!row || !['queued', 'generating', 'sending'].includes(row.status)) return;
+        if (row.status === 'sending') return this.engine.run(row.id);
+        await withReplySlot(
+          this.store.db,
+          this.store.clock,
+          row.userId,
+          row.id,
+          () => this.engine.run(row.id),
+          (when) =>
+            this.jobs.sendCoalesced(GENERATE_REPLY_JOB, j.data, {
+              singletonKey: row.id,
+              startAfter: when,
+              retryLimit: 10,
+              retryBackoff: true,
+            }),
+        );
+      },
+      (data) => data.planId,
       { pollingIntervalSeconds: 0.5, localConcurrency: 4 },
     );
     await this.jobs.work<{
@@ -486,10 +506,29 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
     });
 
     // 群聊（T-065）：用户在群里发言交给群聊调度，不走私聊回复；自发话题与拉群。
-    await this.jobs.work<GroupTurnJob>(GROUP_TURN_JOB, (j) => this.groupChat.runTurn(j.data), {
-      pollingIntervalSeconds: 1,
-      localConcurrency: 4,
-    });
+    await this.jobs.workCoalesced<GroupTurnJob>(
+      GROUP_TURN_JOB,
+      (j) =>
+        withReplySlot(
+          this.store.db,
+          this.store.clock,
+          j.data.userId,
+          j.data.conversationId,
+          () => this.groupChat.runTurn(j.data),
+          (when) =>
+            this.jobs.sendCoalesced(GROUP_TURN_JOB, j.data, {
+              singletonKey: j.data.conversationId,
+              startAfter: when,
+              retryLimit: 10,
+              retryBackoff: true,
+            }),
+        ),
+      (data) => data.conversationId,
+      {
+        pollingIntervalSeconds: 1,
+        localConcurrency: 4,
+      },
+    );
     await this.jobs.work<{ userId: string; conversationId: string }>(GROUP_SELF_CHAT_JOB, (j) =>
       this.groupChat.runSelfChat(j.data),
     );
@@ -987,6 +1026,7 @@ export class AiRuntimeLifecycle implements OnModuleInit, OnApplicationBootstrap 
       'shared_episodes',
       'simulation_states',
       'weibo_items',
+      'muse_weibo_inbox',
       'weibo_sync_states',
     ]) {
       const column = table === 'group_invites' ? 'inviter_character_id' : 'character_id';

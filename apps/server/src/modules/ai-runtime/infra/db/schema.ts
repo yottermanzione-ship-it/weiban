@@ -4,6 +4,7 @@ import {
   check,
   boolean,
   customType,
+  date,
   index,
   integer,
   jsonb,
@@ -91,10 +92,15 @@ export const companionSettings = aiRuntimeSchema.table(
     voiceId: uuid('voice_id'),
     /** 0108（v5 批 B）：长上下文模式，只对单个角色有效、PRO+ 专属。已下线，保留列（代码不再读写）。 */
     longContext: boolean('long_context').notNull().default(false),
+    memoryMode: text('memory_mode')
+      .$type<'model_window' | 'recent_summary'>()
+      .notNull()
+      .default('model_window'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
   (t) => [
     unique('companion_user_character_idx').on(t.userId, t.characterId).nullsNotDistinct(),
+    check('companion_memory_mode', sql`${t.memoryMode} IN ('model_window','recent_summary')`),
     check('companion_persona_fit', sql`${t.personaFit} BETWEEN 1 AND 5`),
     check(
       'companion_mode',
@@ -349,6 +355,10 @@ export const chatSummaryStates = aiRuntimeSchema.table(
       .notNull()
       .references(() => memoryStates.id, { onDelete: 'cascade' }),
     scope: text('scope').notNull(),
+    memoryMode: text('memory_mode')
+      .$type<'model_window' | 'recent_summary'>()
+      .notNull()
+      .default('model_window'),
     coveredSeq: bigint('covered_seq', { mode: 'number' }).notNull().default(0),
     targetSeq: bigint('target_seq', { mode: 'number' }).notNull().default(0),
     partialOffset: integer('partial_offset').notNull().default(0),
@@ -369,7 +379,8 @@ export const chatSummaryStates = aiRuntimeSchema.table(
     index('chat_summary_funding_due_idx')
       .on(t.retryAfter)
       .where(sql`${t.lastFailure}='insufficient_balance'`),
-    unique('chat_summary_parent_scope_idx').on(t.parentId, t.scope),
+    unique('chat_summary_parent_scope_idx').on(t.parentId, t.scope, t.memoryMode),
+    check('chat_summary_memory_mode', sql`${t.memoryMode} IN ('model_window','recent_summary')`),
     check('chat_summary_scope_check', sql`${t.scope} IN ('normal','adult')`),
   ],
 );
@@ -495,6 +506,7 @@ export const replyPlans = aiRuntimeSchema.table(
     characterId: uuid('character_id').notNull(),
     conversationId: uuid('conversation_id').notNull(),
     triggerId: uuid('trigger_id').notNull(),
+    batchFirstSeq: bigint('batch_first_seq', { mode: 'number' }),
     triggerSeq: bigint('trigger_seq', { mode: 'number' }).notNull(),
     kind: text('kind').notNull(),
     status: text('status').notNull(),
@@ -917,6 +929,41 @@ export const imageCaptions = aiRuntimeSchema.table(
     index('image_caption_message_idx').on(t.messageId),
     index('image_caption_conversation_idx').on(t.conversationId),
     check('image_caption_scope', sql`${t.scope} IN ('normal','adult')`),
+  ],
+);
+
+/** Muse 的公开稿件与投递进度（0177）。 */
+export const museWeiboInbox = aiRuntimeSchema.table(
+  'muse_weibo_inbox',
+  {
+    id: uuid('id').primaryKey(),
+    characterId: uuid('character_id').notNull(),
+    authorNickname: text('author_nickname').notNull(),
+    authorWeiboId: text('author_weibo_id').notNull(),
+    sourceUrl: text('source_url').notNull(),
+    text: text('text').notNull(),
+    publishedOn: date('published_on', { mode: 'string' }).notNull(),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }).notNull(),
+    publicUpdateId: uuid('public_update_id'),
+    recipientCursor: uuid('recipient_cursor'),
+    state: text('state').notNull().default('queued'),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    unique('muse_weibo_inbox_character_id_source_url_key').on(t.characterId, t.sourceUrl),
+    check(
+      'muse_weibo_inbox_state_check',
+      sql`${t.state} IN ('queued','publishing','published','blocked','withdrawn')`,
+    ),
+    index('muse_weibo_due_idx')
+      .on(t.nextAttemptAt, t.acceptedAt, t.id)
+      .where(sql`${t.state} IN ('queued','publishing','blocked')`),
+    index('muse_weibo_recipient_cursor_idx')
+      .on(t.recipientCursor)
+      .where(sql`${t.recipientCursor} IS NOT NULL`),
+    index('muse_weibo_character_history_idx')
+      .on(t.characterId, t.id)
+      .where(sql`${t.publicUpdateId} IS NOT NULL`),
   ],
 );
 

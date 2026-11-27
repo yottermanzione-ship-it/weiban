@@ -25,6 +25,8 @@ export interface SharedWebSearchPort {
      * WeiboSyncService.recheckParticipants，返回现在仍合格的 userId；不传则不过滤。
      */
     eligibleUserIds?: () => Promise<readonly string[]>;
+    /** H4 退场后只承接已经持久化的回执，不再发起上游查询。 */
+    receiptOnly?: boolean;
   }): Promise<
     | {
         ok: true;
@@ -36,12 +38,23 @@ export interface SharedWebSearchPort {
   >;
 }
 export interface WeiboPublicationPort {
+  sourceMatches(
+    tx: import('./common.js').Tx,
+    input: { characterId: string; nickname: string; weiboUserId?: string },
+  ): Promise<boolean>;
+  isEffective(
+    tx: import('./common.js').Tx,
+    characterId: string,
+    updateId: string,
+  ): Promise<boolean>;
   publish(
     tx: import('./common.js').Tx,
     input: {
       characterId: string;
       content: string;
       sourceUrl: string;
+      sourceAliases?: readonly string[];
+      origin?: 'muse';
       publishedOn: string;
       nickname: string;
       weiboUserId?: string;

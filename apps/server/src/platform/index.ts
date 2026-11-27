@@ -65,6 +65,7 @@ export {
   RequireAuth,
   RequireScope,
   SCOPE_ROLE_REQUESTS_COMPLETE,
+  SCOPE_MUSE_WEIBO_PUBLISH,
   CurrentPrincipal,
   SESSION_VERIFIER,
   type AuthPrincipal,
@@ -78,3 +79,5 @@ export * from './time/local-time.js';
 
 export * from './search/search-text.js';
 export * from './search/public-identity.js';
+
+export { withReplySlot } from './jobs/reply-slots.js';

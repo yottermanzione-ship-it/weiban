@@ -48,6 +48,8 @@ export const conversations = chatSchema.table(
     groupAvatarMediaId: uuid('group_avatar_media_id'),
     systemParticipantId: uuid('system_participant_id').notNull(),
     contentScope: text('content_scope').notNull().default('normal'),
+    replyBatchKey: text('reply_batch_key'),
+    replyQuietUntil: time('reply_quiet_until'),
     lastSeq: seq('last_seq').notNull().default(0),
     archivedAt: time('archived_at'),
     trialExpiresAt: time('trial_expires_at'),
@@ -80,6 +82,18 @@ export const conversations = chatSchema.table(
     ),
   ],
 );
+export const replyBatchParts = chatSchema.table(
+  'reply_batch_parts',
+  {
+    conversationId: uuid('conversation_id')
+      .notNull()
+      .references(() => conversations.id, { onDelete: 'cascade' }),
+    nextKey: text('next_key').notNull(),
+    firstSeq: seq('first_seq').notNull(),
+    lastSeq: seq('last_seq').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.conversationId, t.nextKey] })],
+);
 export const participants = chatSchema.table(
   'participants',
   {
@@ -108,6 +122,7 @@ export const messages = chatSchema.table(
       .notNull()
       .references(() => conversations.id, { onDelete: 'cascade' }),
     seq: seq('seq').notNull(),
+    replyBatchFirstSeq: seq('reply_batch_first_seq'),
     senderParticipantId: uuid('sender_participant_id').notNull(),
     senderKind: text('sender_kind').notNull(),
     clientMsgId: text('client_msg_id').notNull(),
@@ -130,6 +145,9 @@ export const messages = chatSchema.table(
     usageRecordId: uuid('usage_record_id'),
   },
   (t) => [
+    index('chat_user_reply_seq_idx')
+      .on(t.conversationId, t.seq.desc())
+      .where(sql`${t.senderKind}='user' AND ${t.status}='normal'`),
     uniqueIndex('message_seq_idx').on(t.conversationId, t.seq),
     uniqueIndex('message_idempotency_idx').on(
       t.conversationId,

@@ -190,6 +190,9 @@ internal data class InformationNavigation(
         InformationPreferences(actions, conversation, companion, characterId)
         Text("聊天模型", style = MaterialTheme.typography.titleSmall)
         CharacterModelRow(repository, owner, characterId, !actions.pending) { modelPage = true }
+        companion.data?.let { settings ->
+            InformationMemoryMode(actions, companion, characterId, settings.memoryMode ?: "model_window")
+        }
         Text("和 TA 一起用", style = MaterialTheme.typography.titleSmall)
         TogetherRow(characterId)
         Text("和 TA 的相处", style = MaterialTheme.typography.titleSmall)
@@ -227,6 +230,44 @@ internal data class InformationNavigation(
     }
 }
 
+@Composable private fun InformationMemoryMode(
+    actions: InformationActions,
+    companion: NativeRemote<CompanionEndpointsGetForCharacterResponse>,
+    characterId: String,
+    mode: String,
+) {
+    var show by remember(characterId) { mutableStateOf(false) }
+    val choices = listOf("model_window" to "长期记忆（按模型容量）", "recent_summary" to "近期聊天和摘要")
+    val label = choices.firstOrNull { it.first == mode }?.second ?: choices.first().second
+    TextButton(enabled = !actions.pending, onClick = { show = true }) { Text("聊天记忆：$label ›") }
+    if (show) {
+        AlertDialog(
+            onDismissRequest = { show = false },
+            title = { Text("聊天记忆") },
+            text = {
+                Column {
+                    Text("只对这位角色生效。按模型容量会尽量保留原文，并使用当前账号可用的长期记忆。近期模式定期整理摘要，整理后保留最近 8 条原文，摘要按现有规则计费。")
+                    choices.forEach { (value, name) ->
+                        TextButton(onClick = {
+                            show = false
+                            if (mode != value) {
+                                actions.change(after = companion::refresh) {
+                                    actions.call(
+                                        Endpoints.companionEndpointsUpdateForCharacter,
+                                        characterId,
+                                        buildJsonObject { put("memoryMode", value) },
+                                    )
+                                }
+                            }
+                        }) { Text(if (mode == value) "✓ $name" else name) }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { show = false }) { Text("关闭") } },
+        )
+    }
+}
+
 @Composable private fun InformationPreferences(
     actions: InformationActions,
     conversation: Conversation,
@@ -241,11 +282,6 @@ internal data class InformationNavigation(
     }
     companion.data?.let { settings ->
         InformationPersona(actions, companion, characterId, settings)
-        InformationToggle("秒回", settings.instantReply, !actions.pending) { value ->
-            actions.change(after = companion::refresh) {
-                actions.call(Endpoints.companionEndpointsUpdateForCharacter, characterId, buildJsonObject { put("instantReply", value) })
-            }
-        }
         InformationToggle("拆条", settings.splitBubbles, !actions.pending) { value ->
             actions.change(after = companion::refresh) {
                 actions.call(Endpoints.companionEndpointsUpdateForCharacter, characterId, buildJsonObject { put("splitBubbles", value) })

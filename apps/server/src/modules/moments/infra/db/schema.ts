@@ -1,7 +1,9 @@
 /** moments 模块的表（迁移 0034）。所有行按 owner_user_id 隔离：每个用户有自己的朋友圈世界。 */
+import { sql } from 'drizzle-orm';
 import {
   boolean,
   customType,
+  index,
   integer,
   jsonb,
   pgSchema,
@@ -23,26 +25,34 @@ export interface StoredLink {
   appHint: 'music' | 'video' | 'web';
 }
 
-export const posts = momentsSchema.table('posts', {
-  id: uuid('id').primaryKey(),
-  ownerUserId: uuid('owner_user_id').notNull(),
-  authorKind: text('author_kind').notNull(),
-  authorCharacterId: uuid('author_character_id'),
-  textCiphertext: bytes('text_ciphertext').notNull(),
-  link: jsonb('link').$type<StoredLink>(),
-  /** 用户动态：all_characters / selected；角色动态为 null。 */
-  visibilityKind: text('visibility_kind'),
-  sourceKind: text('source_kind'),
-  sourceId: text('source_id'),
-  /**
-   * 原文转发的公开内容标记（迁移 0151）：仅 postForEcology 与微博同步投递
-   * 两条原文转发路径写入 true；maybePost 生成的私人动态一律 false。
-   * 读脑分流与写回 recheck 只认此标记，不认 sourceKind。
-   */
-  forwardedPublic: boolean('forwarded_public').notNull().default(false),
-  createKey: text('create_key').notNull(),
-  createdAt: time('created_at').notNull(),
-});
+export const posts = momentsSchema.table(
+  'posts',
+  {
+    id: uuid('id').primaryKey(),
+    ownerUserId: uuid('owner_user_id').notNull(),
+    authorKind: text('author_kind').notNull(),
+    authorCharacterId: uuid('author_character_id'),
+    textCiphertext: bytes('text_ciphertext').notNull(),
+    link: jsonb('link').$type<StoredLink>(),
+    /** 用户动态：all_characters / selected；角色动态为 null。 */
+    visibilityKind: text('visibility_kind'),
+    sourceKind: text('source_kind'),
+    sourceId: text('source_id'),
+    /**
+     * 原文转发的公开内容标记（迁移 0151）：仅 postForEcology 与微博同步投递
+     * 两条原文转发路径写入 true；maybePost 生成的私人动态一律 false。
+     * 读脑分流与写回 recheck 只认此标记，不认 sourceKind。
+     */
+    forwardedPublic: boolean('forwarded_public').notNull().default(false),
+    createKey: text('create_key').notNull(),
+    createdAt: time('created_at').notNull(),
+  },
+  (post) => [
+    index('moments_forwarded_source_idx')
+      .on(post.ownerUserId, post.authorCharacterId, post.sourceId)
+      .where(sql`${post.forwardedPublic} AND ${post.sourceKind} = 'public_update'`),
+  ],
+);
 
 export const postMedia = momentsSchema.table(
   'post_media',

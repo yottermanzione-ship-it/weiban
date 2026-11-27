@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { and, eq, gt, lte, or, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type {
+  ChatMemoryMode,
   ChatReadPort,
   ContactsReadPort,
   ModelGatewayPort,
@@ -57,6 +58,9 @@ import {
   memoryFundingCheckAt,
 } from '../domain/memory-funding.js';
 
+import { MemoryTierService } from './memory-tier.js';
+import { sinceDay } from '../domain/memory-tier.js';
+
 export const CHAT_SUMMARY_JOB = 'ai.compact_chat';
 type Parent = typeof memoryStates.$inferSelect;
 type Scope = 'normal' | 'adult';
@@ -104,6 +108,7 @@ export class ChatSummaryService {
     @Inject(BILLING_USAGE_REFUND_PORT)
     readonly refunds?: BillingUsageRefundPort,
     @Optional() @Inject(MODEL_TASK_OUTCOME_PORT) readonly outcomes?: ModelTaskOutcomePort,
+    @Optional() @Inject(MemoryTierService) readonly tiers?: MemoryTierService,
   ) {}
 
   private async open<T>(
@@ -120,11 +125,18 @@ export class ChatSummaryService {
       plain.fill(0);
     }
   }
-  async views(tx: DbTx, parent: Parent, since: string | null) {
+  async views(
+    tx: DbTx,
+    parent: Parent,
+    since: string | null,
+    mode: ChatMemoryMode = 'model_window',
+  ) {
     const states = await tx.db
       .select()
       .from(chatSummaryStates)
-      .where(eq(chatSummaryStates.parentId, parent.id));
+      .where(
+        and(eq(chatSummaryStates.parentId, parent.id), eq(chatSummaryStates.memoryMode, mode)),
+      );
     const out: Partial<Record<Scope, { coveredSeq: number; text: string; version: number }>> = {};
     for (const state of states) {
       if (!state.version || !state.ciphertext) continue;
@@ -154,13 +166,25 @@ export class ChatSummaryService {
     toSeq: number,
     previous: ChatSummaryItem[],
     minimumFloorSeq = 0,
+    mode: ChatMemoryMode = 'model_window',
   ): Promise<void> {
     const id = newId();
-    const floor = Math.max(parent.barrierSeq, parent.windowStartSeq, minimumFloorSeq);
+    const floor = Math.max(
+      parent.barrierSeq,
+      mode === 'model_window' ? parent.windowStartSeq : 0,
+      minimumFloorSeq,
+    );
     // 档位窗口前移时从窗口起点重新开始，旧摘要不再带入；否则旧条目会和窗口内消息一起重算。
     const seed = floor > parent.windowStartSeq ? [] : previous;
     await this.db.transaction(async (tx) => {
       if (!(await this.plans.lock(tx, parent.userId, parent.conversationId))) return;
+      if (mode === 'recent_summary') {
+        const enabled = await tx.query(
+          "SELECT 1 FROM ai_runtime.companion_settings WHERE user_id=$1 AND character_id=$2 AND memory_mode='recent_summary'",
+          [parent.userId, parent.characterId],
+        );
+        if (!enabled.rowCount) return;
+      }
       const [current] = await tx.db
         .select()
         .from(memoryStates)
@@ -177,6 +201,7 @@ export class ChatSummaryService {
         .values({
           id,
           parentId: parent.id,
+          memoryMode: mode,
           scope,
           coveredSeq: floor,
           targetSeq: toSeq,
@@ -205,16 +230,36 @@ export class ChatSummaryService {
                 prepared_ciphertext = CASE WHEN covered_seq < $4 THEN NULL ELSE prepared_ciphertext END,
                 attempts = CASE WHEN covered_seq < $4 THEN 0 ELSE attempts END,
                 retry_after = CASE WHEN covered_seq < $4 THEN NULL ELSE retry_after END
-          WHERE parent_id=$1 AND scope=$2`,
-        [parent.id, scope, toSeq, floor],
+          WHERE parent_id=$1 AND scope=$2 AND memory_mode=$5`,
+        [parent.id, scope, toSeq, floor, mode],
       );
     });
     if (toSeq <= floor) return;
     const [state] = await this.db.db
       .select()
       .from(chatSummaryStates)
-      .where(and(eq(chatSummaryStates.parentId, parent.id), eq(chatSummaryStates.scope, scope)));
-    if (state) await this.run(state.id);
+      .where(
+        and(
+          eq(chatSummaryStates.parentId, parent.id),
+          eq(chatSummaryStates.scope, scope),
+          eq(chatSummaryStates.memoryMode, mode),
+        ),
+      );
+    if (!state) return;
+    if (mode === 'model_window') await this.run(state.id);
+    else if (
+      state.targetSeq > state.coveredSeq &&
+      !memoryOnHold(state.lastFailure) &&
+      (!state.retryAfter || state.retryAfter <= this.clock.now())
+    )
+      await this.jobs.sendCoalesced(
+        CHAT_SUMMARY_JOB,
+        { id: state.id },
+        {
+          singletonKey: `chat-summary:${state.id}`,
+          retryLimit: 0,
+        },
+      );
   }
 
   async reconcile(): Promise<void> {
@@ -272,6 +317,19 @@ export class ChatSummaryService {
     const epoch = await this.contacts.getActiveContactEpoch(row.p.userId, row.p.characterId);
     if (contact?.conversationId !== row.p.conversationId || !epoch) return;
     if (scope === 'adult' && !(await this.policy.checkAdultGeneration(row.p)).allowed) return;
+    if (row.s.memoryMode === 'recent_summary') {
+      if (!this.tiers) return;
+      const tier = await this.tiers.resolve(row.p.userId);
+      const since = sinceDay(this.clock.now(), tier.limits.summaryDays);
+      if (since) {
+        const first = await this.chat.firstSeqAtOrAfter(row.p.conversationId, since, [scope]);
+        const floor = first === null ? row.s.targetSeq : first - 1;
+        if (floor > row.s.coveredSeq) {
+          await this.request(row.p, scope, row.s.targetSeq, [], floor, 'recent_summary');
+          return;
+        }
+      }
+    }
     const lease = newId();
     const claimed = await this.db.transaction(async (tx) => {
       if (!(await this.plans.lock(tx, row.p.userId, row.p.conversationId))) return null;
@@ -585,10 +643,11 @@ export class ChatSummaryService {
           'DELETE FROM ai_runtime.chat_summary_versions WHERE state_id=$1 AND version < $2',
           [id, version - 9],
         );
-        await tx.db
-          .update(memoryStates)
-          .set({ windowBlockCiphertext: null })
-          .where(eq(memoryStates.id, row.p.id));
+        if (claimed.memoryMode === 'model_window')
+          await tx.db
+            .update(memoryStates)
+            .set({ windowBlockCiphertext: null })
+            .where(eq(memoryStates.id, row.p.id));
         if (acceptedUsageId)
           await this.outcomes?.record(
             {
