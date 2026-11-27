@@ -1,3 +1,4 @@
+import { ChatEndpoints } from '@weiban/contracts';
 import { expect, test, type Page } from './fixtures.js';
 async function openChat(page: Page) {
   await page.goto('/');
@@ -19,6 +20,30 @@ async function openChat(page: Page) {
   await page.getByRole('link', { name: /测试陪伴角色/ }).click();
   await expect(page.getByRole('heading', { name: '测试陪伴角色' })).toBeVisible();
   await expect(page.getByLabel('消息', { exact: true })).toBeVisible();
+}
+/** 等到这次发送真正获得批次回执，再检查具有同一服务端 ID 的气泡。 */
+async function deliveredBubble(page: Page, text: string, action: () => Promise<void>) {
+  const [response] = await Promise.all([
+    page.waitForResponse(
+      (r) =>
+        r.request().method() === 'POST' &&
+        r.url().endsWith('/message-batches') &&
+        r
+          .request()
+          .postDataJSON()
+          .items.some((item: { content: { text?: string } }) => item.content.text === text),
+    ),
+    action(),
+  ]);
+  expect(response.status()).toBe(200);
+  const batch = ChatEndpoints.sendBatch.response.parse(await response.json());
+  const ack = batch.items.find(
+    ({ message }) => message.content?.type === 'text' && message.content.text === text,
+  );
+  if (!ack) throw new Error('批次回执缺少本次发送的文字消息');
+  const bubble = page.locator(`[data-row-key="${ack.message.messageId}"] .wx-msg-row.mine`);
+  await expect(bubble.getByText('已送达', { exact: true })).toBeVisible();
+  return bubble;
 }
 test('角色的聊天记忆可以在手机宽度切换并在刷新后保留', async ({ page }) => {
   await openChat(page);
@@ -192,15 +217,13 @@ for (const sameText of [false, true]) {
       // 同文也先清空再重新输入，不能只用字符串相等来判断是不是原草稿。
       await page.getByLabel('消息', { exact: true }).fill('');
       await page.getByLabel('消息', { exact: true }).fill(draft);
-      await release();
-      await expect(
-        page
-          .locator('.wx-msg-row.mine')
-          .filter({ hasText: sent })
-          .getByText('已送达', { exact: true }),
-      ).toBeVisible();
+      await deliveredBubble(page, sent, async () => {
+        await release();
+        await expect(page.locator('.wx-msg-row.mine').filter({ hasText: sent })).toBeVisible();
+        await expect(page.getByLabel('消息', { exact: true })).toHaveValue(draft);
+        await expect(page.getByRole('button', { name: '发送', exact: true })).toBeEnabled();
+      });
       await expect(page.getByLabel('消息', { exact: true })).toHaveValue(draft);
-      await expect(page.getByRole('button', { name: '发送', exact: true })).toBeEnabled();
     } finally {
       await release();
     }
@@ -269,10 +292,10 @@ test('真实HTTP/WS聊天：同步历史虚拟列表、原子落库、发送和�
     50,
   );
   await page.getByLabel('消息', { exact: true }).fill('浏览器实际发送');
-  await page.getByRole('button', { name: '发送', exact: true }).click();
-  await expect(page.locator('.wx-bubble').filter({ hasText: '浏览器实际发送' })).toHaveCount(1);
-  await expect(page.getByText('已送达', { exact: true })).toBeVisible();
-  const bubble = page.locator('.wx-msg-row').filter({ hasText: '浏览器实际发送' });
+  const bubble = await deliveredBubble(page, '浏览器实际发送', async () => {
+    await page.getByRole('button', { name: '发送', exact: true }).click();
+    await expect(page.locator('.wx-bubble').filter({ hasText: '浏览器实际发送' })).toHaveCount(1);
+  });
   await bubble.locator('.wx-msg-bubble').click({ delay: 650 });
   await page.getByRole('menuitem', { name: '引用', exact: true }).click();
   await expect(page.locator('.wx-quote-bar').filter({ hasText: '浏览器实际发送' })).toHaveCount(1);
@@ -404,11 +427,10 @@ test('HTTP确认清空先持久保存范围，更新日志暂不可达也不会�
   await openChat(page);
   const secret = '清空后不可恢复的浏览器正文';
   await page.getByLabel('消息', { exact: true }).fill(secret);
-  await page.getByRole('button', { name: '发送', exact: true }).click();
-  await expect(page.locator('.wx-bubble').filter({ hasText: secret })).toHaveCount(1);
-  await expect(
-    page.locator('.wx-msg-row').filter({ hasText: secret }).getByText('已送达', { exact: true }),
-  ).toBeVisible();
+  await deliveredBubble(page, secret, async () => {
+    await page.getByRole('button', { name: '发送', exact: true }).click();
+    await expect(page.locator('.wx-bubble').filter({ hasText: secret })).toHaveCount(1);
+  });
   let blockedUpdates = 0;
   await page.route('**/sync/updates?**', (route) => {
     blockedUpdates++;
