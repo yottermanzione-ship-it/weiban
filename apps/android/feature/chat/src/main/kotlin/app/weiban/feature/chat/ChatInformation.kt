@@ -252,7 +252,11 @@ internal data class InformationNavigation(
                             show = false
                             if (mode != value) {
                                 actions.change(after = companion::refresh) {
-                                    actions.call(Endpoints.companionEndpointsUpdateForCharacter, characterId, buildJsonObject { put("memoryMode", value) })
+                                    actions.call(
+                                        Endpoints.companionEndpointsUpdateForCharacter,
+                                        characterId,
+                                        buildJsonObject { put("memoryMode", value) },
+                                    )
                                 }
                             }
                         }) { Text(if (mode == value) "✓ $name" else name) }
