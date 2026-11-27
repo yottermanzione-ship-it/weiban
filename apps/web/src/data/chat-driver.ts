@@ -56,6 +56,7 @@ export class ChatDriver {
   private openedAt = 0;
   private lastPoll = 0;
   private lifetime = new AbortController();
+  private channel: BroadcastChannel | null = null;
   private readonly owner;
   private readonly key: string;
   private readonly historyPositions = new Map<string, { before: number; cursor: number }>();
@@ -74,11 +75,36 @@ export class ChatDriver {
   async start(): Promise<void> {
     const parsed = LocalSyncState.safeParse(await this.store.get(this.key));
     if (this.stopped) return;
-    this.runner = new SyncRunner(parsed.success ? parsed.data : freshSyncState(), {
-      save: (state) => this.store.setOwned(this.owner, this.key, state),
+    const initial = parsed.success ? parsed.data : freshSyncState();
+    const journal = await this.store.savedOutbox(this.owner);
+    if (this.stopped) return;
+    initial.outbox = Array.from(
+      new Map(
+        [...initial.outbox, ...journal].map((item) => [item.body.clientMsgId, item]),
+      ).values(),
+    );
+    // Migrate older single-record outboxes before a second tab can replace the legacy snapshot.
+    if (
+      initial.outbox.length &&
+      !(await this.store.saveChatState(this.owner, this.key, initial, []))
+    )
+      return;
+    if (typeof BroadcastChannel !== 'undefined') {
+      this.channel = new BroadcastChannel('weiban-reply:' + this.ownerKey);
+      this.channel.onmessage = (event) => {
+        if (typeof event.data === 'string') this.edit(event.data, Date.now(), false);
+      };
+    }
+    this.runner = new SyncRunner(initial, {
+      save: (state) =>
+        this.store.saveChatState(this.owner, this.key, state, this.view?.outbox ?? []),
       execute: (effect, signal) => syncHttp(this.api, effect, signal),
       changed: (state) => {
         this.view = state;
+        for (const id of this.announced.keys())
+          if (!state.outbox.some((p) => p.conversationId === id)) this.announced.delete(id);
+        for (const [id, pulse] of this.editPulses)
+          if (Date.now() - pulse.at > 60_000) this.editPulses.delete(id);
         if (state.initialized) this.bootstrapping = false;
         this.observer.state(state);
       },
@@ -116,6 +142,8 @@ export class ChatDriver {
     document.addEventListener('visibilitychange', this.visibility);
   }
   stop(): void {
+    this.channel?.close();
+    this.channel = null;
     this.stopped = true;
     this.upToDate = false;
     this.lifetime.abort();
@@ -162,11 +190,82 @@ export class ChatDriver {
     this.connect();
     void this.poll();
   }
+  private readonly saving = new Map<string, { key: string; lastEdit: number }>();
+  private readonly announced = new Map<string, string>();
+  private readonly editPulses = new Map<string, { key: string; at: number }>();
+  edit(conversationId: string, now = Date.now(), broadcast = true) {
+    if (broadcast) this.channel?.postMessage(conversationId);
+    const head = this.view?.outbox.find(
+      (item) =>
+        item.conversationId === conversationId && item.body.quietBatch && item.state === 'pending',
+    );
+    const transmitting = this.view?.outbox.find(
+      (item) => item.conversationId === conversationId && item.state === 'sending',
+    );
+    const saving = this.saving.get(conversationId);
+    if (saving) saving.lastEdit = now;
+    const room = this.view?.conversations.find((c) => c.conversationId === conversationId);
+    const lastUser = room?.lastMessage;
+    const awaiting =
+      lastUser &&
+      room.participants.some(
+        (p) => p.kind === 'user' && p.participantId === lastUser.senderParticipantId,
+      ) &&
+      (room.peerReadSeq ?? 0) < lastUser.seq;
+    const key =
+      head?.body.clientMsgId ??
+      transmitting?.body.clientMsgId ??
+      (awaiting ? lastUser.messageId : undefined);
+    if (!key) return;
+    const last = this.editPulses.get(conversationId);
+    if (last?.key === key && now - last.at < 500) return;
+    this.editPulses.set(conversationId, { key, at: now });
+    // Cover keystrokes within the pulse interval even if the tab closes before the next tick.
+    if (head) void this.dispatch({ type: 'edit', conversationId, now: now + 500 }).catch(() => {});
+    if (awaiting || transmitting || this.announced.get(conversationId) !== key)
+      this.signalBatch(conversationId, key);
+  }
+  private signalBatch(conversationId: string, batchKey: string) {
+    this.announced.set(conversationId, batchKey);
+    if (!this.stopped && this.api.owns(this.owner))
+      void this.api
+        .call(ChatEndpoints.recordEdit, {
+          params: { conversationId },
+          body: { batchKey },
+          signal: this.lifetime.signal,
+          networkOnly: true,
+        })
+        .catch(() => {});
+  }
   async dispatch(operation: ClientSyncOperation): Promise<void> {
     const runner = this.runner;
     if (!runner || this.stopped || !runner.active) throw new Error('聊天尚未准备好');
-    await runner.dispatch(operation);
+    const saving =
+      operation.type === 'enqueue' && operation.body.quietBatch
+        ? { key: operation.body.clientMsgId, lastEdit: operation.now }
+        : null;
+    if (saving && operation.type === 'enqueue') this.saving.set(operation.conversationId, saving);
+    try {
+      await runner.dispatch(operation);
+      if (saving && operation.type === 'enqueue' && saving.lastEdit > operation.now) {
+        await runner.dispatch({
+          type: 'edit',
+          conversationId: operation.conversationId,
+          now: saving.lastEdit,
+        });
+      }
+    } finally {
+      if (operation.type === 'enqueue' && this.saving.get(operation.conversationId) === saving)
+        this.saving.delete(operation.conversationId);
+    }
     if (!runner.active) throw new Error('聊天未保存，请重新打开微伴');
+    if (operation.type === 'enqueue' && operation.body.quietBatch) {
+      const head = this.view?.outbox.find(
+        (item) => item.conversationId === operation.conversationId && item.state === 'pending',
+      );
+      if (head && this.announced.get(operation.conversationId) !== head.body.clientMsgId)
+        this.signalBatch(operation.conversationId, head.body.clientMsgId);
+    }
   }
   focus(conversationId: string | null): void {
     this.focusId = conversationId;

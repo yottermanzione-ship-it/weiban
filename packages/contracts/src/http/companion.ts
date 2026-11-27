@@ -51,8 +51,10 @@ export const ScenarioPresetId = z
 export const ScenarioPresetOption = ScenarioModeOption.extend({ presetId: ScenarioPresetId });
 export type ScenarioPresetOption = z.infer<typeof ScenarioPresetOption>;
 export const ProactiveFrequency = z.enum(['low', 'medium', 'high']);
+export const ChatMemoryMode = z.enum(['model_window', 'recent_summary']);
+export type ChatMemoryMode = z.infer<typeof ChatMemoryMode>;
 export const CompanionSettings = z.object({
-  /** 默认关闭秒回（CHAT-04 第 1 条）。 */
+  /** 旧客户端兼容字段，服务端固定返回 false，修改时忽略。 */
   instantReply: z.boolean(),
   /** 默认开启拆条（CHAT-05 第 1 条）。 */
   splitBubbles: z.boolean(),
@@ -68,6 +70,8 @@ export const CompanionSettings = z.object({
   voiceId: Id.nullable().optional(),
   scenarioPresetId: ScenarioPresetId.nullable().optional(),
   scenarioPresetName: z.string().optional(),
+  /** 单个角色的私聊记忆方式。旧账号和旧客户端默认使用模型窗口。 */
+  memoryMode: ChatMemoryMode.optional(),
 });
 export type CompanionSettings = z.infer<typeof CompanionSettings>;
 

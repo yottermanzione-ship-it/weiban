@@ -31,6 +31,7 @@ class SyncHttp(
 
     suspend fun execute(effect: ClientSyncEffect): List<ClientSyncOperation> =
         when (effect) {
+            is ClientSyncEffectSendBatch -> batch(effect)
             is ClientSyncEffectSend -> send(effect)
             is ClientSyncEffectUpdates -> updates(effect)
             is ClientSyncEffectState ->
@@ -58,6 +59,40 @@ class SyncHttp(
                 emptyList()
             }
             is ClientSyncEffectModelStatus -> emptyList()
+        }
+
+    private suspend fun batch(effect: ClientSyncEffectSendBatch): List<ClientSyncOperation> =
+        try {
+            val result =
+                ownedCall(
+                    Endpoints.chatEndpointsSendBatch,
+                    kotlinx.serialization.json.buildJsonObject {
+                        put(
+                            "items",
+                            kotlinx.serialization.json.JsonArray(
+                                effect.items.map { json.encodeToJsonElement(SendMessageRequest.serializer(), it) },
+                            ),
+                        )
+                        put("more", kotlinx.serialization.json.JsonPrimitive(effect.more))
+                        effect.nextKey?.let { put("nextKey", kotlinx.serialization.json.JsonPrimitive(it)) }
+                    },
+                    params = mapOf("conversationId" to effect.conversationId),
+                )
+            result.items.map { ClientSyncOperationAck(ack = it, now = System.currentTimeMillis()) }
+        } catch (error: IOException) {
+            val status = (error as? ApiFailure)?.status
+            if (status in setOf(400, 422) && effect.items.size > 1) {
+                effect.items.flatMap { send(ClientSyncEffectSend(conversationId = effect.conversationId, body = it)) }
+            } else {
+                effect.items.map {
+                    ClientSyncOperationSendFailed(
+                        conversationId = effect.conversationId,
+                        clientMsgId = it.clientMsgId,
+                        httpStatus = status?.takeIf { code -> code >= 400 }?.toLong(),
+                        now = System.currentTimeMillis(),
+                    )
+                }
+            }
         }
 
     private suspend fun send(effect: ClientSyncEffectSend): List<ClientSyncOperation> =

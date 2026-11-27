@@ -573,6 +573,7 @@ function ConversationView({ conversation }: { conversation: Conversation }) {
   const [text, setText] = useState(prefill ?? '');
   const textRevision = useRef(0);
   function editText(value: SetStateAction<string>) {
+    if (value !== text) chat.edit(id);
     textRevision.current++;
     setText(value);
   }

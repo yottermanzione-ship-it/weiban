@@ -450,7 +450,6 @@ private fun GroupMembers(
     val current = settings.data ?: return
     Text("微伴", style = MaterialTheme.typography.titleSmall)
     GroupToggle("角色自己聊天", current.selfChatEnabled, !pending) { value -> update(buildJsonObject { put("selfChatEnabled", value) }) }
-    GroupToggle("秒回", current.instantReply, !pending) { value -> update(buildJsonObject { put("instantReply", value) }) }
 }
 
 @Composable private fun GroupDanger(

@@ -60,6 +60,7 @@ describeDb('T-052 proactive 真实PG：事务配额、日报、节日和删除',
     getActiveContactEpoch: async () =>
       contactActive ? { version: 'epoch-1', acceptAfter: '2026-10-01T00:00:00Z' } : null,
     getActiveContact: async () => null,
+    listActiveRecipients: async () => [],
     listActiveContacts: async () => [],
     getPendingGreeting: async () => null,
   };

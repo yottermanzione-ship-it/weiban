@@ -40,6 +40,7 @@ describeDb('T-051 推演真实PG：迁移、预算、幂等、活跃与迟到注
   const contacts: ContactsReadPort = {
     getActiveContactEpoch: async () => ({ version: epoch, acceptAfter: '2026-10-01T00:00:00Z' }),
     getActiveContact: async () => null,
+    listActiveRecipients: async () => [],
     listActiveContacts: async () => [],
     getPendingGreeting: async () => null,
   };

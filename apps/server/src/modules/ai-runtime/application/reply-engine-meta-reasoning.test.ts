@@ -89,6 +89,7 @@ function harness(outputs: string[], queuedText?: string) {
   const engine = Object.create(ReplyEngine.prototype) as ReplyEngine;
   Object.assign(engine, {
     store: {
+      readyForModel: async () => true,
       claim: async () => ({ ...row }),
       get: async () => ({ ...row }),
       lock: async () => true,
@@ -110,6 +111,7 @@ function harness(outputs: string[], queuedText?: string) {
       memory: { revision: async () => snapshot.memoryRevision },
     },
     gateway: { generateText },
+    planner: { decide: async () => null },
     writer: { markRead: vi.fn(), setTyping: vi.fn(), postMessage },
     mediaAi: { planExtras: async () => null },
     clock: { now: () => now, nowMs: () => now.getTime() },

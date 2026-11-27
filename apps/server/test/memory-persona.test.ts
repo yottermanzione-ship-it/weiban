@@ -606,7 +606,7 @@ describeDb('L2记忆与人设：真实PG/HTTP/聊天/加密；模型网关假返
       content: 'DELETE_MEMORY_CANARY：准备考研',
     });
     const pending = await user('我在准备考研，DELETE_MEMORY_CANARY');
-    clock.advance(3000);
+    clock.advance(5000);
     await engine.run(pending.id);
     expect((await store.get(pending.id))?.status).toBe('sending');
     await memory().remove(userId, characterId, created.memoryId);

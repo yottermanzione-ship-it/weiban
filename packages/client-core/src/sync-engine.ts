@@ -1,3 +1,4 @@
+import { REPLY_QUIET_MS } from '@weiban/contracts';
 /** 无网络/界面副作用的同步状态机；驱动在单个本地事务持久化state后才执行effects。 */
 import {
   Message,
@@ -60,6 +61,9 @@ export class SyncEngine {
           break;
         case 'enqueue':
           this.enqueue(operation.conversationId, operation.body, operation.now);
+          break;
+        case 'edit':
+          this.extendBatch(operation.conversationId, operation.now + REPLY_QUIET_MS);
           break;
         case 'ack':
           this.ack(operation.ack, operation.now);
@@ -253,14 +257,25 @@ export class SyncEngine {
       return;
     }
     if (this.value.messages.some((message) => message.clientMsgId === request.clientMsgId)) return;
+    const due = request.quietBatch ? now + REPLY_QUIET_MS : now;
+    if (request.quietBatch) this.extendBatch(conversationId, due);
     this.value.outbox.push({
       conversationId,
       body: request,
       state: 'pending',
       failures: 0,
-      retryAt: now,
+      retryAt: due,
     });
     this.flush(now);
+  }
+  private extendBatch(conversationId: string, due: number) {
+    for (const item of this.value.outbox)
+      if (
+        item.conversationId === conversationId &&
+        item.body.quietBatch &&
+        item.state === 'pending'
+      )
+        item.retryAt = Math.max(item.retryAt, due);
   }
   private ack(value: unknown, now: number): void {
     const ack = MessageAck.parse(value);
@@ -464,6 +479,36 @@ export class SyncEngine {
       if (blocked.has(item.conversationId)) continue;
       blocked.add(item.conversationId);
       if (item.state === 'pending' && item.retryAt <= now) {
+        if (item.body.quietBatch) {
+          const pending = this.value.outbox.filter((p) => p.conversationId === item.conversationId);
+          const items = [];
+          let size = 0;
+          for (const p of pending) {
+            // Use a conservative UTF-8 bound below the default 100 kB JSON parser limit.
+            const bytes = JSON.stringify(p.body).length * 3;
+            if (
+              !p.body.quietBatch ||
+              p.state !== 'pending' ||
+              p.retryAt > now ||
+              items.length === 100 ||
+              (items.length && size + bytes > 80_000)
+            )
+              break;
+            p.state = 'sending';
+            items.push(p.body);
+            size += bytes;
+          }
+          this.effects.push({
+            type: 'send-batch',
+            conversationId: item.conversationId,
+            items,
+            more: items.length < pending.length,
+            ...(pending[items.length]?.body.quietBatch && pending[items.length]?.state === 'pending'
+              ? { nextKey: pending[items.length]!.body.clientMsgId }
+              : {}),
+          });
+          continue;
+        }
         item.state = 'sending';
         this.effects.push({ type: 'send', conversationId: item.conversationId, body: item.body });
       }
@@ -614,6 +659,7 @@ export class SyncEngine {
           (item) => item.conversationId !== id,
         );
         this.value.messages = this.value.messages.filter((item) => item.conversationId !== id);
+        this.value.outbox = this.value.outbox.filter((item) => item.conversationId !== id);
         this.value.excluded = this.value.excluded.filter((item) => item.conversationId !== id);
         break;
       }

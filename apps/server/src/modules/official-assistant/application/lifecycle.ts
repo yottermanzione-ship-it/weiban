@@ -1,6 +1,6 @@
 /**
  * 官方身份的事件接线（方向 B）：
- * - 用户在官方会话发消息 → 投递回复任务（pg-boss，单条消息单例），秒回由任务内引擎完成；
+ * - 用户在官方会话发消息 → 投递回复任务（pg-boss 按会话合并），静默窗口结束后取最新一批；
  * - 新用户注册 → 补齐官方会话 + 欢迎语（老用户自动补走 HTTP ensure 端口，客户端启动时调）；
  * - 开关关掉（OFFICIAL_ASSISTANT_ENABLED=false）时不订阅、不跑任务，入口消失，已有数据不删。
  *
@@ -9,16 +9,26 @@
  * 本订阅者自己再认一次官方会话（isOfficialConversation），双重确认才投递。
  */
 import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
-import type { ChatReadPort, IdentityAccountStatusPort } from '@weiban/contracts';
 import {
+  REPLY_QUIET_MS,
+  type ChatReadPort,
+  type ChatReplyTriggerReadPort,
+  type IdentityAccountStatusPort,
+} from '@weiban/contracts';
+import {
+  withReplySlot,
   APP_CONFIG,
+  DATABASE,
+  CLOCK,
+  type Database,
+  type Clock,
   EVENT_BUS,
   JOB_QUEUE,
   type AppConfig,
   type EventBus,
   type JobQueue,
 } from '../../../platform/index.js';
-import { CHAT_READ_PORT } from '../../chat/index.js';
+import { CHAT_READ_PORT, CHAT_REPLY_TRIGGER_READ_PORT } from '../../chat/index.js';
 import { IDENTITY_ACCOUNT_STATUS_PORT } from '../../identity/index.js';
 import { isOfficialConversation, OFFICIAL_TRIGGER_CONTENT_TYPES } from '../domain/identity.js';
 import { OfficialAssistantEngine, type OfficialReplyJob } from './engine.js';
@@ -35,6 +45,9 @@ export class OfficialAssistantLifecycle implements OnModuleInit {
     @Inject(IDENTITY_ACCOUNT_STATUS_PORT)
     private readonly accounts: IdentityAccountStatusPort,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Inject(DATABASE) private readonly db: Database,
+    @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(CHAT_REPLY_TRIGGER_READ_PORT) private readonly triggers: ChatReplyTriggerReadPort,
     @Inject(OfficialAssistantEngine) private readonly engine: OfficialAssistantEngine,
   ) {}
 
@@ -47,11 +60,14 @@ export class OfficialAssistantLifecycle implements OnModuleInit {
         const p = event.payload;
         if (p.conversationType !== 'direct' || p.senderKind !== 'user' || !p.senderRefId) return;
         if (p.scope !== 'normal') return;
-        if (!OFFICIAL_TRIGGER_CONTENT_TYPES.has(p.contentType)) return;
         // T-20261104f：在本事务里读（kernel.md「事务与端口」）；之后只投递任务，不再拿别的锁。
         const conversation = await this.chatRead.getConversation(p.conversationId, tx);
         if (!conversation || !isOfficialConversation(conversation)) return;
-        await this.jobs.send<OfficialReplyJob>(
+        const window = await this.triggers.replyWindow(p.senderRefId, p.conversationId, tx, [
+          ...OFFICIAL_TRIGGER_CONTENT_TYPES,
+        ]);
+        if (!window?.latest || window.latest.seq <= (conversation.peerReadSeq ?? 0)) return;
+        await this.jobs.sendCoalesced<OfficialReplyJob>(
           OFFICIAL_REPLY_JOB,
           {
             userId: p.senderRefId,
@@ -60,7 +76,16 @@ export class OfficialAssistantLifecycle implements OnModuleInit {
             seq: p.seq,
             contentType: p.contentType,
           },
-          { tx, singletonKey: `official-reply:${p.messageId}`, retryLimit: 2, retryBackoff: true },
+          {
+            tx,
+            startAfter:
+              !window.partial && window.latest.firstSeq < window.latest.seq
+                ? this.clock.now()
+                : (window.quietUntil ?? new Date(this.clock.nowMs() + REPLY_QUIET_MS)),
+            singletonKey: p.conversationId,
+            retryLimit: 2,
+            retryBackoff: true,
+          },
         );
       },
     });
@@ -82,11 +107,56 @@ export class OfficialAssistantLifecycle implements OnModuleInit {
         });
       },
     });
-    await this.jobs.work<OfficialReplyJob>(
+    await this.jobs.workCoalesced<OfficialReplyJob>(
       OFFICIAL_REPLY_JOB,
       async (job) => {
-        await this.engine.answerForMessage(job.data);
+        const { userId, conversationId } = job.data;
+        const latest = await this.db.transaction(async (tx) => {
+          const window = await this.triggers.replyWindow(userId, conversationId, tx, [
+            ...OFFICIAL_TRIGGER_CONTENT_TYPES,
+          ]);
+          if (!window?.latest) return null;
+          if (window.partial) {
+            await this.jobs.sendCoalesced(OFFICIAL_REPLY_JOB, job.data, {
+              tx,
+              singletonKey: conversationId,
+              delayMs: 60_000,
+              retryLimit: 2,
+              retryBackoff: true,
+            });
+            return null;
+          }
+          if (window.quietUntil && window.quietUntil > this.clock.now()) {
+            await this.jobs.sendCoalesced(OFFICIAL_REPLY_JOB, job.data, {
+              tx,
+              singletonKey: conversationId,
+              startAfter: window.quietUntil,
+              retryLimit: 2,
+              retryBackoff: true,
+            });
+            return null;
+          }
+          return window.latest;
+        });
+        if (latest)
+          await withReplySlot(
+            this.db,
+            this.clock,
+            userId,
+            conversationId,
+            async () => {
+              await this.engine.answerForMessage({ userId, conversationId, ...latest });
+            },
+            (when) =>
+              this.jobs.sendCoalesced(OFFICIAL_REPLY_JOB, job.data, {
+                singletonKey: conversationId,
+                startAfter: when,
+                retryLimit: 2,
+                retryBackoff: true,
+              }),
+          );
       },
+      (data) => data.conversationId,
       { pollingIntervalSeconds: 1, localConcurrency: 2 },
     );
   }

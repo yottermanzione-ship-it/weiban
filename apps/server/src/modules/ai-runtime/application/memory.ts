@@ -753,11 +753,7 @@ export class MemoryService {
     return total?.n ?? 0;
   }
   /** 0091：原文起点（窗口边界与删除屏障取大），回复上下文据此决定读多少历史。 */
-  async windowFloor(
-    userId: string,
-    characterId: string,
-    scope: 'normal' | 'adult' = 'normal',
-  ): Promise<number> {
+  async windowBounds(userId: string, characterId: string, scope: 'normal' | 'adult' = 'normal') {
     const job = await this.guard(userId, characterId);
     const [row] = await this.db.db
       .select({ id: memoryStates.id, w: memoryStates.windowStartSeq, b: memoryStates.barrierSeq })
@@ -770,33 +766,78 @@ export class MemoryService {
         ),
       );
     const floor = Math.max(row?.w ?? 0, row?.b ?? 0);
-    const tierFloor = await this.summaryWindowFloor(userId, job.conversationId, scope);
-    if (!row || !this.chatSummaries) return Math.max(floor, tierFloor);
+    const tier = await this.tiers.resolve(userId);
+    const tierFloor = await this.summaryWindowFloor(
+      job.conversationId,
+      scope,
+      sinceDay(this.clock.now(), tier.limits.summaryDays),
+    );
+    const minimumFloor = Math.max(row?.b ?? 0, tierFloor);
+    if (!row || !this.chatSummaries)
+      return { readFloor: Math.max(floor, minimumFloor), minimumFloor };
     const summaries = await this.db.db
       .select()
       .from(chatSummaryStates)
-      .where(eq(chatSummaryStates.parentId, row.id));
+      .where(
+        and(
+          eq(chatSummaryStates.parentId, row.id),
+          eq(chatSummaryStates.memoryMode, 'model_window'),
+        ),
+      );
     const covered = (s: string) =>
       Math.max(row.b, summaries.find((r) => r.scope === s && r.version > 0)?.coveredSeq ?? floor);
     const coveredFloor =
       scope === 'adult' ? Math.min(covered('normal'), covered('adult')) : covered('normal');
     // 免费档的原文也必须从 7 天窗口开始；不能只过滤摘要、却把更早原文继续发给模型。
-    return Math.max(coveredFloor, tierFloor);
+    return { readFloor: Math.max(coveredFloor, minimumFloor), minimumFloor };
   }
 
-  /** 免费档：该会话中第一条落在 summaryDays 窗口内的消息 seq；PRO+ 或没有窗口返回 0。 */
+  /** Exclusive lower boundary; the first eligible message is included. */
   private async summaryWindowFloor(
-    userId: string,
     conversationId: string,
     scope: 'normal' | 'adult',
+    since: string | null,
   ): Promise<number> {
-    const tier = await this.tiers.resolve(userId).catch(() => null);
-    const days = tier?.limits.summaryDays ?? null;
-    if (days === null) return 0;
-    const since = sinceDay(this.clock.now(), days);
     if (since === null) return 0;
     const scopes: ContentScope[] = scope === 'adult' ? ['normal', 'adult'] : ['normal'];
-    return (await this.chat.firstSeqAtOrAfter(conversationId, since, scopes)) ?? 0;
+    const first = await this.chat.firstSeqAtOrAfter(conversationId, since, scopes);
+    return first === null ? Number.MAX_SAFE_INTEGER : first - 1;
+  }
+
+  /** Short-mode replies read only this conversation's independent rolling summaries. */
+  async recentContext(userId: string, characterId: string, scope: 'normal' | 'adult') {
+    const job = await this.guard(userId, characterId);
+    const tier = await this.tiers.resolve(userId);
+    const since = sinceDay(this.clock.now(), tier.limits.summaryDays);
+    const scopes: ContentScope[] = scope === 'adult' ? ['normal', 'adult'] : ['normal'];
+    const tierFloor = await this.summaryWindowFloor(job.conversationId, scope, since);
+    return this.db.transaction(async (tx) => {
+      await this.lock(tx, job);
+      const parent = await this.state(tx, job);
+      const rolling = await this.chatSummaries?.views(tx, parent, since, 'recent_summary');
+      const minimumFloor = Math.max(parent.barrierSeq, tierFloor);
+      const floorFor = (s: 'normal' | 'adult') =>
+        Math.max(minimumFloor, rolling?.[s]?.coveredSeq ?? 0);
+      const rawFromSeqByScope = { normal: floorFor('normal'), adult: floorFor('adult') };
+      const summary = scopes
+        .map((s) => rolling?.[s]?.text)
+        .filter(Boolean)
+        .join('\n');
+      return {
+        parent,
+        minimumFloor,
+        revision: parent.revision,
+        barrierSeq: parent.barrierSeq,
+        tier,
+        rawFromSeqByScope,
+        rawFromSeq: Math.min(...scopes.map((s) => rawFromSeqByScope[s])),
+        stableBlock: summary ? `较早聊天回顾（摘要，以最新对话为准）：\n${summary}` : '',
+        residentIds: [] as string[],
+        items: [] as MemoryEntry[],
+        retrieveLimit: 0,
+        summary,
+      };
+    });
   }
 
   /** 只由实际输入压力触发；一次最多一个有界批次，对账继续剩余目标。 */

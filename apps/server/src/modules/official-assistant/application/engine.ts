@@ -3,7 +3,7 @@
  *
  * - 只取本会话近期文字历史（RECENT_HISTORY_LIMIT 条），不摘要、不长期记忆、不读角色记忆与脑；
  * - 确定性知识库条目直接按模板答（数字只来自简报占位符），未知条目直接按未知口径答，均不调模型；
- * - 其余走 small_v 线（平台付费、不扣用户积分、思考关、限频由网关执行），秒回、整条一个气泡、不拆分；
+ * - 其余走 small_v 线（平台付费、不扣用户积分、思考关、限频由网关执行），静默窗口结束后整条一个气泡、不拆分；
  * - 答不出/模型失败/限频时按固定文案答（未知口径 / 失败文案 / 超限占位文案），绝不编答案；
  * - 官方回复永不带扣费信息（charge），永不写角色记忆、永不触发角色回复规划（ai-runtime
  *   的订阅者只认 kind='character' 的参与者，官方会话天然不在其中，见 lifecycle 注释）。
@@ -139,17 +139,25 @@ export class OfficialAssistantEngine {
       return { handled: false };
 
     // 已有官方回复（重试/重放）时不再重复答。
-    const after = await this.chatRead.readMessages({
+    if ((conversation.peerReadSeq ?? 0) >= job.seq) return { handled: true };
+    // 生成前后的批次以触发序号分开。旧批次迟到的回复不能盖住新发的问题。
+    const batchTexts = await this.chatRead.readMessages({
       conversationId: job.conversationId,
       scopes: ['normal'],
-      afterSeq: job.seq,
-      limit: 5,
+      beforeSeq: job.seq + 1,
+      contentTypes: ['text'],
+      limit: 200,
     });
-    if (after.some((m) => m.senderKind === 'official')) return { handled: true };
-
+    const texts = batchTexts.filter(
+      (m) =>
+        m.seq > (conversation.peerReadSeq ?? 0) &&
+        m.senderKind === 'user' &&
+        m.status === 'normal' &&
+        m.content?.type === 'text',
+    );
     let posted: boolean;
-    if (job.contentType === 'text') {
-      posted = await this.answerText(job, conversation, official);
+    if (job.contentType === 'text' || texts.length) {
+      posted = await this.answerText(job, conversation, official, texts);
     } else {
       posted = await this.postReply(
         conversation,
@@ -170,6 +178,7 @@ export class OfficialAssistantEngine {
     job: OfficialReplyJob,
     conversation: Conversation,
     official: { participantId: string },
+    batchTexts: Awaited<ReturnType<ChatReadPort['readMessages']>>,
   ): Promise<boolean> {
     const history = await this.chatRead.readMessages({
       conversationId: job.conversationId,
@@ -178,7 +187,9 @@ export class OfficialAssistantEngine {
       limit: RECENT_HISTORY_LIMIT,
       contentTypes: ['text'],
     });
-    const turns = history
+    const batchIds = new Set(batchTexts.map((m) => m.messageId));
+    const turns = [...history.filter((m) => !batchIds.has(m.messageId)), ...batchTexts]
+      .sort((a, b) => a.seq - b.seq)
       .filter(
         (m): m is typeof m & { content: { type: 'text'; text: string } } =>
           m.content?.type === 'text' && (m.senderKind === 'user' || m.senderKind === 'official'),
@@ -195,7 +206,7 @@ export class OfficialAssistantEngine {
       return true;
     }
     const brief = await this.brief.assemble(job.userId);
-    const matched = matchEntry(this.kb, trigger.text);
+    const matched = batchTexts.length <= 1 ? matchEntry(this.kb, trigger.text) : undefined;
     if (matched?.entry.unknown) {
       return this.postReply(
         conversation,

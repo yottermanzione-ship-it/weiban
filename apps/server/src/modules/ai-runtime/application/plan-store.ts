@@ -2,6 +2,7 @@ import { Inject, Injectable, Optional } from '@nestjs/common';
 import { and, count, desc, eq, inArray, isNull, lt, lte, ne, or } from 'drizzle-orm';
 import {
   Id,
+  REPLY_QUIET_MS,
   Timestamp,
   MODEL_TASK_OUTCOME_PORT,
   type ModelTaskOutcomePort,
@@ -47,7 +48,6 @@ import {
   groupInvites,
   groupReplyPlans,
 } from '../infra/db/schema.js';
-import { USER_BATCH_DELAY_MS } from '../domain/reply-rules.js';
 import {
   REPLY_WAIT_MAX_MS,
   RETRYABLE_WAIT_FAILURES,
@@ -180,6 +180,9 @@ export class ReplyPlanStore {
       );
     return (await this.accounts.getAccountStatus(userId, tx)) === 'active';
   }
+  replyWindow(userId: string, conversationId: string, tx: DbTx) {
+    return this.triggers?.replyWindow(userId, conversationId, tx);
+  }
   async enqueue(tx: DbTx, input: EnqueueReply): Promise<void> {
     for (const id of [input.userId, input.characterId, input.conversationId, input.triggerId])
       if (!Id.safeParse(id).success) throw new AppError('bad_request', '无效回复任务');
@@ -198,27 +201,91 @@ export class ReplyPlanStore {
            )`,
         [input.userId, input.conversationId],
       );
-    const dueAt = new Date(
-      this.clock.nowMs() + (input.kind === 'message' ? USER_BATCH_DELAY_MS : 0),
-    );
+    const window =
+      input.kind === 'message'
+        ? await this.replyWindow(input.userId, input.conversationId, tx)
+        : null;
+    const dueAt =
+      window?.quietUntil ??
+      new Date(
+        (input.triggeredAt ? Date.parse(input.triggeredAt) : this.clock.nowMs()) +
+          (input.kind === 'message' ? REPLY_QUIET_MS : 0),
+      );
+    const firstSeq =
+      window?.latest &&
+      window.latest.seq >= input.triggerSeq &&
+      window.latest.firstSeq <= input.triggerSeq
+        ? window.latest.firstSeq
+        : input.triggerSeq;
+    if (input.kind === 'message') {
+      // The event inbox deduplicates replay. Preserve the first wake/plan ID across a burst.
+      const [pending] = await tx.db
+        .select({
+          id: replyPlans.id,
+          triggerSeq: replyPlans.triggerSeq,
+          batchFirstSeq: replyPlans.batchFirstSeq,
+        })
+        .from(replyPlans)
+        .where(
+          and(
+            eq(replyPlans.conversationId, input.conversationId),
+            eq(replyPlans.kind, 'message'),
+            eq(replyPlans.status, 'queued'),
+            eq(replyPlans.manualRequested, false),
+            eq(replyPlans.retryEpoch, 0),
+            isNull(replyPlans.inputCiphertext),
+            isNull(replyPlans.failure),
+          ),
+        )
+        .orderBy(desc(replyPlans.triggerSeq))
+        .limit(1);
+      if (pending) {
+        const batchFirstSeq = Math.min(pending.batchFirstSeq ?? pending.triggerSeq, firstSeq);
+        await tx.db
+          .update(replyPlans)
+          .set({
+            batchFirstSeq,
+            ...(input.triggerSeq > pending.triggerSeq
+              ? {
+                  triggerId: input.triggerId,
+                  triggerSeq: input.triggerSeq,
+                  dueAt,
+                  createdAt: input.triggeredAt ? new Date(input.triggeredAt) : this.clock.now(),
+                }
+              : {}),
+          })
+          .where(eq(replyPlans.id, pending.id));
+        if (
+          !window?.partial &&
+          window?.latest?.seq === input.triggerSeq &&
+          window.latest.firstSeq < input.triggerSeq
+        )
+          await this.schedule(tx, pending.id, dueAt);
+        return;
+      }
+    }
     const [row] = await tx.db
       .insert(replyPlans)
       .values({
         id: newId(),
         ...input,
+        batchFirstSeq: input.kind === 'message' ? firstSeq : null,
         status: 'queued',
         dueAt,
         createdAt: input.triggeredAt ? new Date(input.triggeredAt) : this.clock.now(),
       })
       .onConflictDoNothing()
       .returning();
-    if (row) await this.schedule(tx, row.id, dueAt);
+    if (row) {
+      const spread = row.kind === 'message' ? parseInt(row.id.slice(-4), 16) % 401 : 0;
+      await this.schedule(tx, row.id, new Date(dueAt.getTime() + spread));
+    }
   }
   schedule(tx: DbTx, planId: string, dueAt: Date) {
-    return this.jobs.send(
+    return this.jobs.sendCoalesced(
       GENERATE_REPLY_JOB,
       { planId },
-      { tx, startAfter: dueAt, retryLimit: 10, retryBackoff: true },
+      { tx, singletonKey: planId, startAfter: dueAt, retryLimit: 10, retryBackoff: true },
     );
   }
   async claim(id: string): Promise<ReplyPlan | null> {
@@ -231,33 +298,66 @@ export class ReplyPlanStore {
         .from(replyPlans)
         .where(eq(replyPlans.id, id))
         .for('update');
-      if (
-        !row ||
-        !['queued', 'generating', 'sending'].includes(row.status) ||
-        row.dueAt > this.clock.now()
-      )
+      if (!row || !['queued', 'generating', 'sending'].includes(row.status)) return null;
+      if (row.dueAt > this.clock.now()) {
+        await this.schedule(tx, row.id, row.dueAt);
         return null;
+      }
       if (row.status === 'sending') return row;
       if (row.status === 'generating' && row.leaseUntil && row.leaseUntil > this.clock.now())
         return null;
-      const all = await tx.db
-        .select()
+      {
+        const window = await this.replyWindow(row.userId, row.conversationId, tx);
+        if (window?.partial) return null;
+        if (window?.quietUntil && window.quietUntil > this.clock.now()) {
+          await tx.db
+            .update(replyPlans)
+            .set({ dueAt: window.quietUntil })
+            .where(eq(replyPlans.id, id));
+          await this.schedule(tx, id, window.quietUntil);
+          return null;
+        }
+        // The chat write is authoritative even if its event is still waiting in the outbox.
+        if (!row.manualRequested && window?.latest && window.latest.seq > row.triggerSeq) {
+          if (
+            row.kind === 'message' &&
+            row.status === 'queued' &&
+            !row.failure &&
+            row.retryEpoch === 0 &&
+            this.clock.nowMs() - row.createdAt.getTime() < 60_000
+          ) {
+            await this.schedule(tx, id, new Date(this.clock.nowMs() + 500));
+          } else await this.cancel(id, undefined, tx);
+          return null;
+        }
+      }
+      const active = await tx.db
+        .select({ id: replyPlans.id })
         .from(replyPlans)
         .where(
           and(
             eq(replyPlans.conversationId, row.conversationId),
-            inArray(replyPlans.status, ['queued', 'generating', 'sending']),
+            ne(replyPlans.id, id),
+            inArray(replyPlans.status, ['generating', 'sending']),
           ),
-        );
-      if (all.some((p) => p.id !== id && ['generating', 'sending'].includes(p.status))) {
+        )
+        .limit(1);
+      if (active.length) {
         await this.schedule(tx, id, new Date(this.clock.nowMs() + 2000));
         return null;
       }
-      const newest = all
-        .filter((p) => p.status === 'queued' && !p.manualRequested)
-        .sort(
-          (a, b) => b.triggerSeq - a.triggerSeq || b.createdAt.getTime() - a.createdAt.getTime(),
-        )[0];
+      const [newest] = await tx.db
+        .select({ id: replyPlans.id })
+        .from(replyPlans)
+        .where(
+          and(
+            eq(replyPlans.conversationId, row.conversationId),
+            eq(replyPlans.status, 'queued'),
+            eq(replyPlans.manualRequested, false),
+          ),
+        )
+        .orderBy(desc(replyPlans.triggerSeq), desc(replyPlans.createdAt))
+        .limit(1);
       if (row.status === 'queued' && !row.manualRequested && newest?.id !== id) {
         await this.cancel(id, undefined, tx);
         return null;
@@ -287,6 +387,52 @@ export class ReplyPlanStore {
         .where(eq(replyPlans.id, id))
         .returning();
       return claimed ?? null;
+    });
+  }
+  /** Snapshot preparation can cross a second edit or send. Release the lease without calling the model. */
+  async readyForModel(row: ReplyPlan): Promise<boolean> {
+    if (row.kind !== 'message') return true;
+    return this.db.transaction(async (tx) => {
+      if (!(await this.lock(tx, row.userId, row.conversationId))) return false;
+      const [current] = await tx.db
+        .select({ status: replyPlans.status, lease: replyPlans.leaseId })
+        .from(replyPlans)
+        .where(eq(replyPlans.id, row.id));
+      if (current?.status !== 'generating' || current.lease !== row.leaseId) return false;
+      const window = await this.replyWindow(row.userId, row.conversationId, tx);
+      const superseded =
+        !row.manualRequested && window?.latest && window.latest.seq > row.triggerSeq;
+      if (superseded) {
+        const next = await tx.query(
+          `UPDATE ai_runtime.reply_plans SET batch_first_seq=least(coalesce(batch_first_seq,trigger_seq),$3) WHERE conversation_id=$1 AND id<>$2 AND status='queued' AND kind='message' AND NOT manual_requested RETURNING id`,
+          [row.conversationId, row.id, row.batchFirstSeq ?? row.triggerSeq],
+        );
+        if (next.rows.length) {
+          await this.cancel(row.id, undefined, tx);
+          return false;
+        }
+      }
+      if (
+        !window?.partial &&
+        !superseded &&
+        (!window?.quietUntil || window.quietUntil <= this.clock.now())
+      )
+        return true;
+      const dueAt = new Date(
+        Math.max(window?.quietUntil?.getTime() ?? 0, this.clock.nowMs() + 250),
+      );
+      await tx.db
+        .update(replyPlans)
+        .set({
+          status: 'queued',
+          dueAt,
+          leaseId: null,
+          leaseUntil: null,
+          inputCiphertext: null,
+        })
+        .where(eq(replyPlans.id, row.id));
+      await this.schedule(tx, row.id, dueAt);
+      return false;
     });
   }
   async get(id: string): Promise<ReplyPlan | null> {
@@ -382,7 +528,7 @@ export class ReplyPlanStore {
   }
   async reconcile(): Promise<void> {
     const rows = await this.db.db
-      .select()
+      .select({ id: replyPlans.id })
       .from(replyPlans)
       .where(
         or(
@@ -395,10 +541,10 @@ export class ReplyPlanStore {
       )
       .limit(200);
     for (const row of rows)
-      await this.jobs.send(
+      await this.jobs.sendCoalesced(
         GENERATE_REPLY_JOB,
         { planId: row.id },
-        { retryLimit: 10, retryBackoff: true },
+        { singletonKey: row.id, retryLimit: 10, retryBackoff: true },
       );
   }
   async recover(userId?: string, wake?: 'balance' | 'model'): Promise<void> {
@@ -675,6 +821,13 @@ export class ReplyPlanStore {
       n +=
         (await tx.query(`DELETE FROM ai_runtime.${table} WHERE user_id=$1`, [userId])).rowCount ??
         0;
+    n +=
+      (
+        await tx.query(
+          'UPDATE ai_runtime.muse_weibo_inbox SET recipient_cursor=NULL WHERE recipient_cursor=$1',
+          [userId],
+        )
+      ).rowCount ?? 0;
     return n;
   }
   async countUserData(userId: string): Promise<number> {
@@ -686,7 +839,14 @@ export class ReplyPlanStore {
       .select({ n: count() })
       .from(adultBoundaryStates)
       .where(eq(adultBoundaryStates.userId, userId));
-    let t066 = 0;
+    let t066 = Number(
+      (
+        await this.db.query<{ n: string }>(
+          'SELECT count(*) n FROM ai_runtime.muse_weibo_inbox WHERE recipient_cursor=$1',
+          [userId],
+        )
+      ).rows[0]?.n ?? 0,
+    );
     for (const table of T066_TABLES)
       t066 += Number(
         (

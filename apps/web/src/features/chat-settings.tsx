@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ChatEndpoints,
+  type ChatMemoryMode,
   CompanionEndpoints,
   ContactsEndpoints,
   IdentityEndpoints,
@@ -34,6 +35,10 @@ import {
 } from './shell-kit.js';
 import { AlertDialog, showToast } from './toast.js';
 
+const memoryModes: Record<ChatMemoryMode, string> = {
+  model_window: '长期记忆（按模型容量）',
+  recent_summary: '近期聊天和摘要',
+};
 const fitNames = ['极顺从', '顺从', '均衡', '贴合', '极贴合'];
 const frequencyNames: Record<string, string> = {
   low: '少（每天最多 1 次）',
@@ -104,7 +109,7 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
     }
   }
   const [error, setError] = useState('');
-  const [sheet, setSheet] = useState<'fit' | 'proactive' | null>(null);
+  const [sheet, setSheet] = useState<'fit' | 'proactive' | 'memory' | null>(null);
   const [confirmation, setConfirmation] = useState<
     'clear' | 'remove' | 'reset' | 'resetConfirmed' | null
   >(null);
@@ -211,6 +216,12 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
               label="TA 用的模型"
               value={modelName}
             />
+            <MenuRow
+              label="聊天记忆"
+              value={memoryModes[data.memoryMode ?? 'model_window']}
+              disabled={pending}
+              onClick={() => setSheet('memory')}
+            />
           </MenuGroup>
           <GroupHeader>和 TA 的相处</GroupHeader>
           <MenuGroup>
@@ -218,19 +229,6 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
               label="人设贴合度"
               value={fitNames[(data.personaFit ?? 3) - 1]}
               onClick={() => setSheet('fit')}
-            />
-            <SwitchRow
-              label="秒回"
-              checked={switchValues.instantReply ?? data.instantReply}
-              disabled={!!switchBusy.instantReply}
-              onChange={(instantReply) =>
-                void toggle('instantReply', instantReply, () =>
-                  api.call(CompanionEndpoints.updateForCharacter, {
-                    params: { characterId },
-                    body: { instantReply },
-                  }),
-                )
-              }
             />
             <SwitchRow
               label="消息拆分"
@@ -292,6 +290,17 @@ function Settings({ id, characterId }: { id: string; characterId: string }) {
         <p role="alert" className="notice-bar">
           {error}
         </p>
+      )}
+      {sheet === 'memory' && data && (
+        <ActionSheet
+          title="只对这位角色生效。按模型容量会尽量保留原文，并使用当前账号可用的长期记忆。近期模式定期整理摘要，整理后保留最近 8 条原文，摘要按现有规则计费。可以随时切换。"
+          onClose={() => setSheet(null)}
+          items={(Object.keys(memoryModes) as ChatMemoryMode[]).map((memoryMode) => ({
+            label: memoryModes[memoryMode],
+            checked: (data.memoryMode ?? 'model_window') === memoryMode,
+            onClick: () => updateCompanion({ memoryMode }, '聊天记忆已更新'),
+          }))}
+        />
       )}
       {sheet === 'fit' && data && (
         <ActionSheet

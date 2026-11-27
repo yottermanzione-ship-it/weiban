@@ -65,7 +65,8 @@ test('保存前试聊走真实接口，关闭清理后继续保存同一份编�
   await dialog.getByLabel('试聊消息').fill('试聊消息只在这次会话里');
   const sent = page.waitForResponse(
     (r) =>
-      new URL(r.url()).pathname === `/api/v1/conversations/${trial.conversationId}/messages` &&
+      new URL(r.url()).pathname ===
+        `/api/v1/conversations/${trial.conversationId}/message-batches` &&
       r.request().method() === 'POST',
   );
   await dialog.getByRole('button', { name: '发送', exact: true }).click();

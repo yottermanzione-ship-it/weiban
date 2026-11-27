@@ -3,7 +3,7 @@
  *
  * 跟 sessions 同一套规矩：明文只在创建时返回一次，库里只存 SHA-256 哈希；
  * 作废 = revoked_at 非空（查库时即过滤，立即失效）；scope 限定能调的接口。
- * v1 只有 role-requests:complete 一个 scope，专给角色申请结案的自动化调用用。
+ * 每个 scope 只开放对应的自动化入口。
  */
 import { Inject, Injectable } from '@nestjs/common';
 import { and, desc, eq, isNull } from 'drizzle-orm';
@@ -12,6 +12,7 @@ import {
   DATABASE,
   newId,
   SCOPE_ROLE_REQUESTS_COMPLETE,
+  SCOPE_MUSE_WEIBO_PUBLISH,
   type AuthPrincipal,
   type Clock,
   type Database,
@@ -48,7 +49,7 @@ export interface AdminApiKeySummary {
   revokedAt: Date | null;
 }
 
-const ALLOWED_SCOPES: readonly string[] = [SCOPE_ROLE_REQUESTS_COMPLETE];
+const ALLOWED_SCOPES: readonly string[] = [SCOPE_ROLE_REQUESTS_COMPLETE, SCOPE_MUSE_WEIBO_PUBLISH];
 
 @Injectable()
 export class AdminApiKeyService {

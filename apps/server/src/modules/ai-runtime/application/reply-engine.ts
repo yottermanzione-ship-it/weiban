@@ -140,6 +140,7 @@ export class ReplyEngine {
     const snapshot = row.inputCiphertext
       ? ReplySnapshot.parse(await this.store.open(row, 'input'))
       : await this.context.build(row);
+    if (snapshot) snapshot.instantReply = false; // 已落盘的旧快照也遵守当前设置。
     if (!snapshot) {
       await this.store.cancel(id);
       return;
@@ -149,7 +150,7 @@ export class ReplyEngine {
       return;
     }
     const saved = await this.saveInput(row, snapshot);
-    if (!saved) return;
+    if (!saved || !(await this.store.readyForModel(row))) return;
     // Preparing the snapshot can take time; the original trigger may have been
     // recalled or hidden since the initial ownership check.
     if (
@@ -446,7 +447,7 @@ export class ReplyEngine {
           userText: snapshot.userText,
           history,
           voiceId: snapshot.voiceId,
-          instant: snapshot.instantReply,
+          instant: false,
           quiet: snapshot.effectiveStyle === 'treehole',
           sensitive: snapshot.healthUsed,
           stickerMood,
@@ -486,9 +487,9 @@ export class ReplyEngine {
       if (!fitted && ['recall', 'typo'].includes(snapshot.quirk.kind)) snapshot.quirk.kind = 'none';
       contents = fitted;
     }
-    // T-090 reply_timing：秒回关闭时由决策层在 fast / normal / slow 间挑（仍在 P-01 上下限内）；秒回开启不加人为延迟。
+    // T-090：生成后由决策层选择气泡的呈现节奏，仍受 P-01 上下限约束。
     let timing: 'fast' | 'normal' | 'slow' = 'normal';
-    if (!inCare && !snapshot.instantReply && row.kind === 'message') {
+    if (!inCare && row.kind === 'message') {
       const d = await this.planner
         .decide({
           userId: row.userId,
@@ -542,9 +543,9 @@ export class ReplyEngine {
         modelPurpose: privateCare ? 'safety_followup' : 'chat_reply',
       });
       const elapsed = this.clock.nowMs() - Date.parse(snapshot.triggerAt);
-      const base = inCare ? 0 : replyDelay(bubbles.join(''), snapshot.instantReply, elapsed);
+      const base = inCare ? 0 : replyDelay(bubbles.join(''), false, elapsed);
       const delay =
-        inCare || snapshot.instantReply || timing === 'normal'
+        inCare || timing === 'normal'
           ? base
           : Math.max(
               0,

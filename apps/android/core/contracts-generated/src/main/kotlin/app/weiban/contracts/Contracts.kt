@@ -1,5 +1,5 @@
 // GENERATED from packages/contracts JSON Schema. DO NOT EDIT.
-// Contract 7.19. Regenerate: pnpm android:generate
+// Contract 7.20. Regenerate: pnpm android:generate
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package app.weiban.contracts
 
@@ -8,7 +8,7 @@ import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
 import kotlinx.serialization.json.*
 
-const val CONTRACT_VERSION: String = "7.19"
+const val CONTRACT_VERSION: String = "7.20"
 
 @Serializable
 data class AccountAlias(
@@ -2837,6 +2837,23 @@ data class ChatEndpointsMarkReadBody(
 )
 
 @Serializable
+data class ChatEndpointsRecordEditBody(
+    @SerialName("batchKey") val `batchKey`: ClientMsgId,
+)
+
+@Serializable
+data class ChatEndpointsSendBatchBody(
+    @SerialName("items") val `items`: List<SendMessageRequestInput>,
+    @SerialName("more") val `more`: Boolean? = null,
+    @SerialName("nextKey") val `nextKey`: ClientMsgId? = null,
+)
+
+@Serializable
+data class ChatEndpointsSendBatchResponse(
+    @SerialName("items") val `items`: List<MessageAck>,
+)
+
+@Serializable
 data class ChatGroupEndpointsAddMembersBody(
     @SerialName("characterIds") val `characterIds`: List<Id>,
 )
@@ -2856,6 +2873,8 @@ data class ChatGroupEndpointsRenameGroupBody(
 data class ChatGroupEndpointsUpdateAvatarBody(
     @SerialName("mediaId") val `mediaId`: Id?,
 )
+
+typealias ChatMemoryMode = String
 
 @Serializable
 data class ChatSearchEndpointsListByTypeParams(
@@ -3219,6 +3238,16 @@ sealed interface ClientSyncEffect {
 }
 
 @Serializable
+data class ClientSyncEffectSendBatch(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "send-batch",
+    @SerialName("conversationId") val `conversationId`: Id,
+    @SerialName("items") val `items`: List<SendMessageRequest>,
+    @SerialName("more") val `more`: Boolean,
+    @SerialName("nextKey") val `nextKey`: Id? = null,
+) : ClientSyncEffect
+
+@Serializable
 data class ClientSyncEffectSend(
     @EncodeDefault
     @SerialName("type") override val `type`: String = "send",
@@ -3280,6 +3309,7 @@ object ClientSyncEffectSerializer : KSerializer<ClientSyncEffect> {
         var value = input.decodeJsonElement().jsonObject
         val tag = value["type"]?.jsonPrimitive?.content
         return when (tag) {
+            "send-batch" -> input.json.decodeFromJsonElement(ClientSyncEffectSendBatch.serializer(), value)
             "send" -> input.json.decodeFromJsonElement(ClientSyncEffectSend.serializer(), value)
             "updates" -> input.json.decodeFromJsonElement(ClientSyncEffectUpdates.serializer(), value)
             "state" -> input.json.decodeFromJsonElement(ClientSyncEffectState.serializer(), value)
@@ -3293,6 +3323,7 @@ object ClientSyncEffectSerializer : KSerializer<ClientSyncEffect> {
     override fun serialize(encoder: Encoder, value: ClientSyncEffect) {
         val output = encoder as JsonEncoder
         val element = when (value) {
+            is ClientSyncEffectSendBatch -> output.json.encodeToJsonElement(ClientSyncEffectSendBatch.serializer(), value)
             is ClientSyncEffectSend -> output.json.encodeToJsonElement(ClientSyncEffectSend.serializer(), value)
             is ClientSyncEffectUpdates -> output.json.encodeToJsonElement(ClientSyncEffectUpdates.serializer(), value)
             is ClientSyncEffectState -> output.json.encodeToJsonElement(ClientSyncEffectState.serializer(), value)
@@ -3330,6 +3361,14 @@ data class ClientSyncOperationEnqueue(
     @SerialName("type") override val `type`: String = "enqueue",
     @SerialName("conversationId") val `conversationId`: Id,
     @SerialName("body") val `body`: SendMessageRequest,
+    @SerialName("now") val `now`: Long,
+) : ClientSyncOperation
+
+@Serializable
+data class ClientSyncOperationEdit(
+    @EncodeDefault
+    @SerialName("type") override val `type`: String = "edit",
+    @SerialName("conversationId") val `conversationId`: Id,
     @SerialName("now") val `now`: Long,
 ) : ClientSyncOperation
 
@@ -3440,6 +3479,7 @@ object ClientSyncOperationSerializer : KSerializer<ClientSyncOperation> {
             "offline" -> input.json.decodeFromJsonElement(ClientSyncOperationOffline.serializer(), value)
             "reconnect" -> input.json.decodeFromJsonElement(ClientSyncOperationReconnect.serializer(), value)
             "enqueue" -> input.json.decodeFromJsonElement(ClientSyncOperationEnqueue.serializer(), value)
+            "edit" -> input.json.decodeFromJsonElement(ClientSyncOperationEdit.serializer(), value)
             "ack" -> input.json.decodeFromJsonElement(ClientSyncOperationAck.serializer(), value)
             "send.failed" -> input.json.decodeFromJsonElement(ClientSyncOperationSendFailed.serializer(), value)
             "retry" -> input.json.decodeFromJsonElement(ClientSyncOperationRetry.serializer(), value)
@@ -3462,6 +3502,7 @@ object ClientSyncOperationSerializer : KSerializer<ClientSyncOperation> {
             is ClientSyncOperationOffline -> output.json.encodeToJsonElement(ClientSyncOperationOffline.serializer(), value)
             is ClientSyncOperationReconnect -> output.json.encodeToJsonElement(ClientSyncOperationReconnect.serializer(), value)
             is ClientSyncOperationEnqueue -> output.json.encodeToJsonElement(ClientSyncOperationEnqueue.serializer(), value)
+            is ClientSyncOperationEdit -> output.json.encodeToJsonElement(ClientSyncOperationEdit.serializer(), value)
             is ClientSyncOperationAck -> output.json.encodeToJsonElement(ClientSyncOperationAck.serializer(), value)
             is ClientSyncOperationSendFailed -> output.json.encodeToJsonElement(ClientSyncOperationSendFailed.serializer(), value)
             is ClientSyncOperationRetry -> output.json.encodeToJsonElement(ClientSyncOperationRetry.serializer(), value)
@@ -3527,6 +3568,7 @@ data class CompanionEndpointsGetForCharacterResponse(
     @SerialName("voiceId") val `voiceId`: Id? = null,
     @SerialName("scenarioPresetId") val `scenarioPresetId`: ScenarioPresetId? = null,
     @SerialName("scenarioPresetName") val `scenarioPresetName`: String? = null,
+    @SerialName("memoryMode") val `memoryMode`: ChatMemoryMode? = null,
 )
 
 @Serializable
@@ -3559,6 +3601,7 @@ data class CompanionSettings(
     @SerialName("voiceId") val `voiceId`: Id? = null,
     @SerialName("scenarioPresetId") val `scenarioPresetId`: ScenarioPresetId? = null,
     @SerialName("scenarioPresetName") val `scenarioPresetName`: String? = null,
+    @SerialName("memoryMode") val `memoryMode`: ChatMemoryMode? = null,
 )
 
 typealias ComplaintReason = String
@@ -8386,6 +8429,39 @@ typealias MomentsVisibilityInput = JsonElement
 typealias MoneyMicros = Long
 
 @Serializable
+data class MuseWeiboAdminEndpointsGetParams(
+    @SerialName("receiptId") val `receiptId`: Id,
+)
+
+@Serializable
+data class MuseWeiboReceipt(
+    @SerialName("receiptId") val `receiptId`: Id,
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("state") val `state`: String,
+    @SerialName("acceptedAt") val `acceptedAt`: Timestamp,
+)
+
+@Serializable
+data class MuseWeiboSubmission(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("authorNickname") val `authorNickname`: String,
+    @SerialName("authorWeiboId") val `authorWeiboId`: String? = null,
+    @SerialName("sourceUrl") val `sourceUrl`: String,
+    @SerialName("publishedOn") val `publishedOn`: LocalDate,
+    @SerialName("text") val `text`: String,
+)
+
+@Serializable
+data class MuseWeiboSubmissionInput(
+    @SerialName("characterId") val `characterId`: Id,
+    @SerialName("authorNickname") val `authorNickname`: String,
+    @SerialName("authorWeiboId") val `authorWeiboId`: String? = null,
+    @SerialName("sourceUrl") val `sourceUrl`: String,
+    @SerialName("publishedOn") val `publishedOn`: LocalDate,
+    @SerialName("text") val `text`: String? = null,
+)
+
+@Serializable
 data class NewFriendItem(
     @SerialName("itemId") val `itemId`: Id,
     @SerialName("kind") val `kind`: String,
@@ -10965,6 +11041,7 @@ data class SendMessageRequest(
     @SerialName("clientMsgId") val `clientMsgId`: ClientMsgId,
     @SerialName("content") val `content`: UserSendableContent,
     @SerialName("quoteMessageId") val `quoteMessageId`: Id? = null,
+    @SerialName("quietBatch") val `quietBatch`: Boolean? = null,
 )
 
 @Serializable
@@ -10972,6 +11049,7 @@ data class SendMessageRequestInput(
     @SerialName("clientMsgId") val `clientMsgId`: ClientMsgId,
     @SerialName("content") val `content`: UserSendableContentInput,
     @SerialName("quoteMessageId") val `quoteMessageId`: Id? = null,
+    @SerialName("quietBatch") val `quietBatch`: Boolean? = null,
 )
 
 typealias Seq = Long
@@ -11920,6 +11998,7 @@ data class UpdateCompanionSettingsRequest(
     @SerialName("dailyLife") val `dailyLife`: Boolean? = null,
     @SerialName("voiceId") val `voiceId`: Id? = null,
     @SerialName("scenarioPresetId") val `scenarioPresetId`: ScenarioPresetId? = null,
+    @SerialName("memoryMode") val `memoryMode`: ChatMemoryMode? = null,
 )
 
 @Serializable
@@ -11934,6 +12013,7 @@ data class UpdateCompanionSettingsRequestInput(
     @SerialName("dailyLife") val `dailyLife`: Boolean? = null,
     @SerialName("voiceId") val `voiceId`: Id? = null,
     @SerialName("scenarioPresetId") val `scenarioPresetId`: ScenarioPresetId? = null,
+    @SerialName("memoryMode") val `memoryMode`: ChatMemoryMode? = null,
 )
 
 @Serializable
@@ -13996,6 +14076,7 @@ data class ClientFrameMessageSendData(
     @SerialName("clientMsgId") val `clientMsgId`: ClientMsgId,
     @SerialName("content") val `content`: UserSendableContent,
     @SerialName("quoteMessageId") val `quoteMessageId`: Id? = null,
+    @SerialName("quietBatch") val `quietBatch`: Boolean? = null,
     @SerialName("conversationId") val `conversationId`: Id,
 )
 
@@ -14061,6 +14142,7 @@ data class ClientSendMessageFrameData(
     @SerialName("clientMsgId") val `clientMsgId`: ClientMsgId,
     @SerialName("content") val `content`: UserSendableContent,
     @SerialName("quoteMessageId") val `quoteMessageId`: Id? = null,
+    @SerialName("quietBatch") val `quietBatch`: Boolean? = null,
     @SerialName("conversationId") val `conversationId`: Id,
 )
 
@@ -14663,6 +14745,8 @@ data class EventsDomainEventMomentsPostCreatedPayload(
     @SerialName("authorCharacterId") val `authorCharacterId`: Id?,
     @SerialName("hasImages") val `hasImages`: Boolean,
     @SerialName("visibleCharacterIds") val `visibleCharacterIds`: List<Id>,
+    @EncodeDefault
+    @SerialName("museWeibo") val `museWeibo`: Boolean? = true,
 )
 
 @Serializable
@@ -14677,6 +14761,8 @@ data class EventsDomainEventMomentsCommentCreatedPayload(
     @SerialName("replyToKind") val `replyToKind`: String?,
     @SerialName("replyToCharacterId") val `replyToCharacterId`: Id?,
     @SerialName("mentionsUser") val `mentionsUser`: Boolean,
+    @EncodeDefault
+    @SerialName("museWeibo") val `museWeibo`: Boolean? = true,
 )
 
 @Serializable
@@ -15047,6 +15133,8 @@ data class EventsMomentsCommentCreatedPayload(
     @SerialName("replyToKind") val `replyToKind`: String?,
     @SerialName("replyToCharacterId") val `replyToCharacterId`: Id?,
     @SerialName("mentionsUser") val `mentionsUser`: Boolean,
+    @EncodeDefault
+    @SerialName("museWeibo") val `museWeibo`: Boolean? = true,
 )
 
 @Serializable
@@ -15057,6 +15145,8 @@ data class EventsMomentsPostCreatedPayload(
     @SerialName("authorCharacterId") val `authorCharacterId`: Id?,
     @SerialName("hasImages") val `hasImages`: Boolean,
     @SerialName("visibleCharacterIds") val `visibleCharacterIds`: List<Id>,
+    @EncodeDefault
+    @SerialName("museWeibo") val `museWeibo`: Boolean? = true,
 )
 
 @Serializable

@@ -1136,6 +1136,27 @@
       "when": 1795397460000,
       "tag": "0174_scan_receipt_notices",
       "breakpoints": true
+    },
+    {
+      "idx": 175,
+      "version": "7",
+      "when": 1795397520000,
+      "tag": "0175_reply_quiet_window",
+      "breakpoints": true
+    },
+    {
+      "idx": 176,
+      "version": "7",
+      "when": 1795730400000,
+      "tag": "0176_chat_memory_mode",
+      "breakpoints": true
+    },
+    {
+      "idx": 177,
+      "version": "7",
+      "when": 1795740000000,
+      "tag": "0177_muse_weibo_inbox",
+      "breakpoints": true
     }
   ]
 }

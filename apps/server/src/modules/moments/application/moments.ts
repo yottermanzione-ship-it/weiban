@@ -491,16 +491,17 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
     return transaction ? read(asDbTx(transaction)) : this.db.transaction(read);
   }
 
-  async getPost(ownerUserId: string, postId: string): Promise<MomentsPost | null> {
+  async getPost(ownerUserId: string, postId: string, tx?: DbTx): Promise<MomentsPost | null> {
     parseContract(Id, ownerUserId);
     if (!Id.safeParse(postId).success) return null;
-    const active = await this.activeIds(ownerUserId);
-    const [row] = await this.db.db
+    const active = await this.activeIds(ownerUserId, tx);
+    const db = tx?.db ?? this.db.db;
+    const [row] = await db
       .select()
       .from(posts)
       .where(and(eq(posts.id, postId), eq(posts.ownerUserId, ownerUserId)));
     if (!row) return null;
-    return (await this.build(this.db.db, ownerUserId, [row], active))[0]!;
+    return (await this.build(db, ownerUserId, [row], active, tx))[0]!;
   }
   /** 端口：角色最近的动态（P-16「今天是否已发」用 since = 当天零点）。 */
   async listCharacterPosts(
@@ -586,6 +587,26 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
           error: 'character_not_in_contacts' as const,
           message: '角色不在通讯录中',
         };
+      if (input.forwardedPublic && input.sourceRef.kind === 'public_update') {
+        await tx.query(
+          "SELECT pg_advisory_xact_lock(hashtextextended('moments-public:' || $1 || ':' || $2 || ':' || $3,0))",
+          [input.ownerUserId, input.characterId, input.sourceRef.id],
+        );
+        const [existing] = await tx.db
+          .select({ id: posts.id })
+          .from(posts)
+          .where(
+            and(
+              eq(posts.ownerUserId, input.ownerUserId),
+              eq(posts.authorCharacterId, input.characterId),
+              eq(posts.forwardedPublic, true),
+              eq(posts.sourceKind, 'public_update'),
+              eq(posts.sourceId, input.sourceRef.id),
+            ),
+          )
+          .limit(1);
+        if (existing) return { ok: true as const, id: existing.id };
+      }
       const existing = await this.findByKey(tx.db, input.ownerUserId, createKey);
       if (existing) return { ok: true as const, id: existing.id };
       const id = newId();
@@ -614,21 +635,25 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
             height: null,
           })),
         );
-      await this.outbox.publish(tx, 'moments.post_created', 'moments', {
-        postId: id,
-        ownerUserId: input.ownerUserId,
-        authorKind: 'character',
-        authorCharacterId: input.characterId,
-        hasImages: imageIds.length > 0,
-        visibleCharacterIds: [],
-      });
-      await this.postChanged(tx, input.ownerUserId, id, false);
-      await this.pushBadge(tx, input.ownerUserId);
+      if (input.museWeibo !== 'history') {
+        await this.outbox.publish(tx, 'moments.post_created', 'moments', {
+          postId: id,
+          ownerUserId: input.ownerUserId,
+          authorKind: 'character',
+          authorCharacterId: input.characterId,
+          hasImages: imageIds.length > 0,
+          visibleCharacterIds: [],
+          ...(input.museWeibo === 'live' ? { museWeibo: true as const } : {}),
+        });
+        await this.postChanged(tx, input.ownerUserId, id, false);
+        await this.pushBadge(tx, input.ownerUserId);
+      }
       return { ok: true as const, id };
     };
-    const result = transaction ? await run(asDbTx(transaction)) : await this.db.transaction(run);
+    const tx = transaction ? asDbTx(transaction) : undefined;
+    const result = tx ? await run(tx) : await this.db.transaction(run);
     if (!result.ok) return result;
-    const post = await this.getPost(input.ownerUserId, result.id);
+    const post = await this.getPost(input.ownerUserId, result.id, tx);
     if (!post) throw new AppError('internal_error', '动态未能保存');
     return { ok: true, value: post };
   }
@@ -726,6 +751,7 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
         reply,
         text,
         mentionsUser: !!input.mentionsUser,
+        ...(input.museWeibo ? { museWeibo: input.museWeibo } : {}),
         createKey: input.idempotencyKey,
       });
       return { ok: true, value: { commentId } };
@@ -861,9 +887,9 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
 
   // ---------- 内部 ----------
 
-  private async activeIds(userId: string): Promise<Set<string>> {
+  private async activeIds(userId: string, tx?: DbTx): Promise<Set<string>> {
     parseContract(Id, userId);
-    return new Set((await this.contacts.listActiveContacts(userId)).map((c) => c.characterId));
+    return new Set((await this.contacts.listActiveContacts(userId, tx)).map((c) => c.characterId));
   }
   private feedFilter(userId: string, active: Set<string>): SQL {
     return and(
@@ -1022,6 +1048,7 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
       reply: CommentRow | null;
       text: string;
       mentionsUser: boolean;
+      museWeibo?: true;
       createKey: string;
     },
   ): Promise<string> {
@@ -1062,6 +1089,7 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
       replyToKind: (input.reply?.authorKind as 'user' | 'character' | undefined) ?? null,
       replyToCharacterId: input.reply?.authorKind === 'character' ? input.reply.authorRefId : null,
       mentionsUser: input.mentionsUser,
+      ...(input.museWeibo ? { museWeibo: input.museWeibo } : {}),
     });
     await this.postChanged(tx, post.ownerUserId, post.id, false);
     if (input.authorKind === 'character') await this.pushBadge(tx, post.ownerUserId);
@@ -1074,7 +1102,7 @@ export class MomentsService implements MomentsReadPort, MomentsCharacterPort, On
     });
   }
   private async pushBadge(tx: DbTx, userId: string) {
-    const badge = await this.badge(tx.db, userId, await this.activeIds(userId));
+    const badge = await this.badge(tx.db, userId, await this.activeIds(userId, tx));
     await this.sync.appendUpdate(tx, userId, { type: 'moments.badge_updated', data: { badge } });
   }
   private async badge(runner: Runner, userId: string, active: Set<string>): Promise<MomentsBadge> {

@@ -23,6 +23,8 @@ export interface PersonalBrain {
   prefix: string;
   recall: string;
   daily?: string;
+  /** For direct proactive messages, exclude covered or out-of-tier raw turns from every branch. */
+  recentFloors?: Record<'normal' | 'adult', number>;
 }
 @Injectable()
 export class BrainContextService {
@@ -59,11 +61,19 @@ export class BrainContextService {
       return null;
     const settings = await this.settings.get(userId, characterId);
     const stage = await this.growth.relationshipStage(userId, characterId);
-    const memory = await this.memory.context(userId, characterId, scope, query, undefined, {
-      brain: true,
-    });
-    const selfReports = await this.continuity.context(userId, characterId, scope);
-    const episodes = await this.episodes.context(userId, characterId, scope, query);
+    const short =
+      settings.memoryMode === 'recent_summary'
+        ? await this.memory.recentContext(userId, characterId, scope)
+        : null;
+    const memory =
+      short ??
+      (await this.memory.context(userId, characterId, scope, query, undefined, {
+        brain: true,
+      }));
+    const selfReports = short ? '' : await this.continuity.context(userId, characterId, scope);
+    const episodes = short
+      ? { stable: '', recent: '', relevant: '' }
+      : await this.episodes.context(userId, characterId, scope, query);
     const card = role.card?.data ?? null;
     const legacy = role.legacyCard ? parseLegacyCard(role.legacyCard) : null;
     const legacyContext = legacy
@@ -93,13 +103,14 @@ export class BrainContextService {
     const visible = (text: string) => !opts.excludeHealth || !healthPrivate(text);
     const stableMemory = visible(memory.stableBlock) ? memory.stableBlock : '';
     // Simulation's current day key is UTC (same reader as SocialService's direct-chat context).
-    const events = opts.compact
-      ? []
-      : await this.simulation.getDailyEvents(
-          userId,
-          characterId,
-          this.clock.now().toISOString().slice(0, 10),
-        );
+    const events =
+      short || opts.compact
+        ? []
+        : await this.simulation.getDailyEvents(
+            userId,
+            characterId,
+            this.clock.now().toISOString().slice(0, 10),
+          );
     const daily = takeWithin(
       events
         .filter((event) => visible(event.summary) && visible(event.detail ?? ''))
@@ -159,6 +170,7 @@ export class BrainContextService {
     return {
       scope,
       prefix,
+      ...(short ? { recentFloors: short.rawFromSeqByScope } : {}),
       daily: [
         deferred ? brainText(input, deferred.context) : '',
         daily

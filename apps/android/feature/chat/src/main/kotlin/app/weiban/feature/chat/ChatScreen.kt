@@ -627,7 +627,7 @@ internal suspend fun userAction(onError: (String) -> Unit, action: suspend () ->
                 .takeIf { !group },
             messages.lastOrNull()?.messageId,
         )
-    WhileAwayCard(whileAway, onOpenTimeline = onOpenTimeline) { ui.text = it }
+    WhileAwayCard(whileAway, onOpenTimeline = onOpenTimeline) { ui.editText(it) }
     ui.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = WbSpace.S5)) }
     if (group && visible && typingActive) Text(typingText, Modifier.padding(horizontal = WbSpace.S5))
     MessageTimeline(ui, messages, pending, list, Modifier.weight(1f), avatars)
@@ -804,7 +804,7 @@ private const val LOCATE_FLASH_MS = 1_500L
                 OutlinedTextField(ui.text, { next ->
                     if (next.length <= 4_000) {
                         val typedAt = next.length == ui.text.length + 1 && next.endsWith("@")
-                        ui.text = next
+                        ui.editText(next)
                         if (typedAt && members.isNotEmpty()) {
                             if (members.size == 1) {
                                 val only = members.first()

@@ -104,7 +104,7 @@ export const adminApiKeys = identitySchema.table(
     keyHash: bytea('key_hash').notNull(),
     /** key 前 8 个字符（如 wbak_xxx），列表/日志里认 key 用，不含密钥材料。 */
     keyPrefix: text('key_prefix').notNull(),
-    /** 作用域；v1 只有 role-requests:complete。 */
+    /** 作用域；区分角色申请结案与微博投稿。 */
     scope: text('scope').notNull(),
     /** 哪个管理员建的；该管理员删除后置空（此时 key 不可用）。 */
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
@@ -119,7 +119,10 @@ export const adminApiKeys = identitySchema.table(
   (t) => [
     uniqueIndex('admin_api_keys_key_hash_key').on(t.keyHash),
     index('admin_api_keys_created_by_idx').on(t.createdBy),
-    check('admin_api_keys_scope_check', sql`${t.scope} in ('role-requests:complete')`),
+    check(
+      'admin_api_keys_scope_check',
+      sql`${t.scope} in ('role-requests:complete', 'muse-weibo:publish')`,
+    ),
   ],
 );
 

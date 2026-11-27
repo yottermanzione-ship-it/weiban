@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, countDistinct, eq, inArray, ne } from 'drizzle-orm';
+import { and, countDistinct, eq, gt, inArray, ne } from 'drizzle-orm';
 import {
   type Tx,
   Contact,
@@ -102,15 +102,29 @@ export class ContactsReadService implements ContactsReadPort {
     const [row] = await (input ? query.for('share') : query);
     return row ? { version: row.epoch, acceptAfter: row.acceptAfter.toISOString() } : null;
   }
-  async listActiveContacts(userId: string): Promise<Contact[]> {
+  async listActiveContacts(userId: string, input?: Tx): Promise<Contact[]> {
     parseContract(Id, userId);
-    if ((await this.accounts.getAccountStatus(userId)) !== 'active') return [];
-    const rows = await this.db.db
+    if ((await this.accounts.getAccountStatus(userId, input)) !== 'active') return [];
+    const rows = await (input ? asDbTx(input).db : this.db.db)
       .select()
       .from(contacts)
       .where(and(eq(contacts.userId, userId), eq(contacts.status, 'active')))
       .orderBy(contacts.characterId);
     return rows.map(contactDto);
+  }
+  async listActiveRecipients(characterId: string, afterUserId: string | null, limit: number) {
+    return this.db.db
+      .select({ userId: contacts.userId, epoch: contacts.requestId })
+      .from(contacts)
+      .where(
+        and(
+          eq(contacts.characterId, characterId),
+          eq(contacts.status, 'active'),
+          afterUserId ? gt(contacts.userId, afterUserId) : undefined,
+        ),
+      )
+      .orderBy(contacts.userId)
+      .limit(limit);
   }
   async getPendingGreeting(userId: string, characterId: string): Promise<string | null> {
     parseContract(Id, userId);

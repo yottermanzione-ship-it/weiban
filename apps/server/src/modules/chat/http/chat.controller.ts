@@ -49,6 +49,32 @@ export class ChatController {
   ) {
     return this.reader.pageForUser(p.userId, params.conversationId, query);
   }
+  @Post(':conversationId/edit-activity')
+  @HttpCode(204)
+  edit(
+    @CurrentPrincipal() p: AuthPrincipal,
+    @Param(new ContractPipe(E.recordEdit.params!)) params: { conversationId: string },
+    @Body(new ContractPipe(E.recordEdit.body!)) body: { batchKey: string },
+  ) {
+    return this.users.recordEdit(p.userId, params.conversationId, body.batchKey);
+  }
+  @Post(':conversationId/message-batches')
+  @HttpCode(200)
+  batch(
+    @CurrentPrincipal() p: AuthPrincipal,
+    @Param(new ContractPipe(E.sendBatch.params!)) params: { conversationId: string },
+    @Body(new ContractPipe(E.sendBatch.body!))
+    body: { items: SendMessageRequest[]; more?: boolean; nextKey?: string },
+  ) {
+    return this.users.persistMessages(
+      p.userId,
+      params.conversationId,
+      body.items,
+      true,
+      body.more,
+      body.nextKey,
+    );
+  }
   @Post(':conversationId/messages')
   @HttpCode(200)
   send(

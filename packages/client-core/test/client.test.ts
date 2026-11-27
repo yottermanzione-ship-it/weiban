@@ -1,6 +1,8 @@
 import { expect, it, vi } from 'vitest';
-import { IDBFactory } from 'fake-indexeddb';
+import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import {
+  emptyClientSyncState,
+  type ClientPendingSend,
   AnnouncementEndpoints,
   AuthResponse,
   IdentityEndpoints,
@@ -428,5 +430,41 @@ it('U8：prime 把本机结果读进内存，只有 allowStale 才拿到；超�
     expect(await next.prime(IdentityEndpoints.me)).toBe(false);
   } finally {
     vi.useRealTimers();
+  }
+});
+
+it('两个标签保存各自的气泡后仍能重启恢复；一个标签的 ACK 不清除另一个标签的气泡', async () => {
+  vi.stubGlobal('IDBKeyRange', IDBKeyRange);
+  try {
+    const factory = new IDBFactory(),
+      a = new IndexedLocalStore('shared', factory),
+      b = new IndexedLocalStore('shared', factory);
+    const auth = session(),
+      owner = { userId: auth.user.userId, sessionId: auth.session.sessionId };
+    await a.set('session', auth);
+    const envelope = (text: string): ClientPendingSend => ({
+      conversationId: id,
+      body: { clientMsgId: crypto.randomUUID(), content: { type: 'text', text }, quietBatch: true },
+      failures: 0,
+      retryAt: 5000,
+      state: 'pending',
+    });
+    const x = envelope('甲'),
+      y = envelope('乙'),
+      state = emptyClientSyncState();
+    await Promise.all([
+      a.saveChatState(owner, 'sync', { ...state, outbox: [x] }, []),
+      b.saveChatState(owner, 'sync', { ...state, outbox: [y] }, []),
+    ]);
+    expect((await a.savedOutbox(owner)).map((row) => row.body.clientMsgId).sort()).toEqual(
+      [x.body.clientMsgId, y.body.clientMsgId].sort(),
+    );
+    await b.saveChatState(owner, 'sync', state, [y]);
+    expect(await new IndexedLocalStore('shared', factory).savedOutbox(owner)).toEqual([x]);
+    await a.clear();
+    expect(await b.saveChatState(owner, 'sync', { ...state, outbox: [y] }, [])).toBe(false);
+    expect(await b.savedOutbox(owner)).toEqual([]);
+  } finally {
+    vi.unstubAllGlobals();
   }
 });

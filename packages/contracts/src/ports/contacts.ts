@@ -11,7 +11,13 @@ export interface ContactsReadPort {
     characterId: string,
     tx?: Tx,
   ): Promise<{ version: string; acceptAfter: string } | null>;
-  listActiveContacts(userId: string): Promise<Contact[]>;
+  listActiveContacts(userId: string, tx?: Tx): Promise<Contact[]>;
+  /** Paginated candidate recipients. The writer must recheck account and contact epoch at commit. */
+  listActiveRecipients(
+    characterId: string,
+    afterUserId: string | null,
+    limit: number,
+  ): Promise<{ userId: string; epoch: string }[]>;
   /** 添加时填写的「打招呼的话」（CHR-03 第 3 条），角色第一条消息生成后可被清除。 */
   getPendingGreeting(userId: string, characterId: string): Promise<string | null>;
 }

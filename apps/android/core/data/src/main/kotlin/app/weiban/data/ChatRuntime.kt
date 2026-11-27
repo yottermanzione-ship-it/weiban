@@ -20,6 +20,7 @@ class ChatRuntime(
     private val onQueued: (OwnerRecord) -> Unit = {},
 ) {
     private val lock = Mutex()
+    val batches = ChatBatchActivity(repository, scope, ::runnerFor) { online.value || foreground }
     val history = ChatHistory(repository, scope, ::runnerFor, ::refresh)
 
     @Volatile private var owner: OwnerRecord? = null
@@ -305,11 +306,13 @@ class ChatRuntime(
                                         }?.take(10),
                             ),
                             quoteMessageId,
+                            quietBatch = true,
                         ),
                     now = System.currentTimeMillis(),
                 ),
             )
             if (!current.active) throw ApiFailure("sync_not_ready", 0)
+            batches.signal(current, expected, conversationId)
             onQueued(expected)
         }
     }
@@ -326,11 +329,12 @@ class ChatRuntime(
             current.dispatch(
                 ClientSyncOperationEnqueue(
                     conversationId = conversationId,
-                    body = SendMessageRequest(UUID.randomUUID().toString(), content, quoteMessageId),
+                    body = SendMessageRequest(UUID.randomUUID().toString(), content, quoteMessageId, quietBatch = true),
                     now = System.currentTimeMillis(),
                 ),
             )
             if (!current.active) throw ApiFailure("sync_not_ready", 0)
+            batches.signal(current, expected, conversationId)
             onQueued(expected)
         }
     }

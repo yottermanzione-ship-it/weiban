@@ -22,6 +22,41 @@ export async function syncHttp(
 ): Promise<ClientSyncOperation[]> {
   const options = { networkOnly: true, signal };
   switch (effect.type) {
+    case 'send-batch':
+      try {
+        const result = await api.call(ChatEndpoints.sendBatch, {
+          ...options,
+          params: { conversationId: effect.conversationId },
+          body: { items: effect.items, more: effect.more, nextKey: effect.nextKey },
+        });
+        return result.items.map((ack) => ({ type: 'ack', ack, now: Date.now() }));
+      } catch (error) {
+        if (signal.aborted) return [];
+        // One invalid attachment cannot permanently block the other, valid bubbles.
+        if (
+          error instanceof ApiFailure &&
+          [400, 422].includes(error.status) &&
+          effect.items.length > 1
+        ) {
+          const results: ClientSyncOperation[] = [];
+          for (const body of effect.items)
+            results.push(
+              ...(await syncHttp(
+                api,
+                { type: 'send', conversationId: effect.conversationId, body },
+                signal,
+              )),
+            );
+          return results;
+        }
+        return effect.items.map((body) => ({
+          type: 'send.failed',
+          conversationId: effect.conversationId,
+          clientMsgId: body.clientMsgId,
+          httpStatus: error instanceof ApiFailure && error.status >= 400 ? error.status : null,
+          now: Date.now(),
+        }));
+      }
     case 'send':
       try {
         const ack = await api.call(ChatEndpoints.sendMessage, {

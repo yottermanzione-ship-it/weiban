@@ -24,8 +24,9 @@ export const SESSION_VERIFIER = Symbol('weiban.platform.session-verifier');
 const AUTH_LEVEL_KEY = 'weiban:auth-level';
 const SCOPE_KEY = 'weiban:required-scope';
 
-/** 管理员 API key 的作用域；v1 只有角色申请结案（identity.admin_api_keys.scope 的取值）。 */
+/** 管理员 API key 的作用域（identity.admin_api_keys.scope 的取值）。 */
 export const SCOPE_ROLE_REQUESTS_COMPLETE = 'role-requests:complete' as const;
+export const SCOPE_MUSE_WEIBO_PUBLISH = 'muse-weibo:publish' as const;
 
 export interface AuthPrincipal {
   userId: string;

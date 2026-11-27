@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useChat } from '../app/chat.js';
+import { useEffect, useState, type FormEvent } from 'react';
 import { ChatEndpoints, UserCustomEndpoints, type Message } from '@weiban/contracts';
 import { api } from '../data/client.js';
 import { friendlyError } from '../data/use-remote.js';
@@ -16,11 +17,11 @@ export function CharacterTrial({
   onClose(): void;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
+  const chat = useChat();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [closing, setClosing] = useState(false);
   const [error, setError] = useState('');
-  const retry = useRef<{ text: string; id: string } | null>(null);
   const owned = () => api.owns(owner);
   useEffect(() => {
     const abort = new AbortController();
@@ -69,21 +70,12 @@ export function CharacterTrial({
   async function send(event: FormEvent) {
     event.preventDefault();
     if (!text.trim() || sending || closing || !owned()) return;
-    const pending =
-      retry.current?.text === text ? retry.current : { text, id: crypto.randomUUID() };
-    retry.current = pending;
     setSending(true);
     setError('');
     try {
-      await api.call(ChatEndpoints.sendMessage, {
-        params: { conversationId },
-        body: { clientMsgId: pending.id, content: { type: 'text', text: pending.text } },
-        networkOnly: true,
-      });
-      if (owned()) {
-        setText('');
-        retry.current = null;
-      }
+      const sentText = text;
+      await chat.send(conversationId, sentText);
+      if (owned()) setText((value) => (value === sentText ? '' : value));
     } catch (e) {
       if (owned()) setError(friendlyError(e));
     } finally {
@@ -117,6 +109,18 @@ export function CharacterTrial({
                   : ''}
             </p>
           ))}
+          {chat.state.outbox
+            .filter(
+              (item) =>
+                item.conversationId === conversationId &&
+                !messages.some((m) => m.clientMsgId === item.body.clientMsgId),
+            )
+            .map((item) => (
+              <p className="trial-mine" key={item.body.clientMsgId}>
+                <strong>我：</strong>
+                {item.body.content.type === 'text' ? item.body.content.text : ''}
+              </p>
+            ))}
         </div>
         <form className="stack" onSubmit={(e) => void send(e)}>
           <label>
@@ -125,7 +129,10 @@ export function CharacterTrial({
               maxLength={4000}
               value={text}
               disabled={closing}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => {
+                if (text !== e.target.value) chat.edit(conversationId);
+                setText(e.target.value);
+              }}
             />
           </label>
           <button className="primary" disabled={sending || closing || !text.trim()}>

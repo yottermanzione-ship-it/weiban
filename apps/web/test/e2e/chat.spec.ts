@@ -20,6 +20,58 @@ async function openChat(page: Page) {
   await expect(page.getByRole('heading', { name: '测试陪伴角色' })).toBeVisible();
   await expect(page.getByLabel('消息', { exact: true })).toBeVisible();
 }
+test('角色的聊天记忆可以在手机宽度切换并在刷新后保留', async ({ page }) => {
+  await openChat(page);
+  await page.getByRole('link', { name: '聊天信息', exact: true }).click();
+  const setting = page.getByRole('button', { name: /聊天记忆/ });
+  for (const choice of ['近期聊天和摘要', '长期记忆（按模型容量）']) {
+    await setting.click();
+    await page.getByRole('radio', { name: choice, exact: true }).click();
+    await expect(setting).toContainText(choice);
+    await page.reload();
+    await expect(setting).toContainText(choice);
+  }
+});
+test('连发先显示两个气泡，编辑草稿重置五秒且只提交一次', async ({ page }) => {
+  test.slow();
+  await openChat(page);
+  const composer = page.getByLabel('消息', { exact: true });
+  const batches: { at: number; texts: string[] }[] = [];
+  const signals: string[] = [];
+  page.on('request', (r) => {
+    if (r.method() !== 'POST') return;
+    if (r.url().endsWith('/edit-activity')) signals.push(JSON.stringify(r.postDataJSON()));
+    if (r.url().endsWith('/message-batches'))
+      batches.push({
+        at: Date.now(),
+        texts: r
+          .postDataJSON()
+          .items.map((item: { content: { text: string } }) => item.content.text),
+      });
+  });
+  const first = '本地合批甲',
+    second = '本地合批乙',
+    draft = '尚未发送的第三句';
+  await composer.fill(first);
+  expect(signals).toHaveLength(0);
+  await page.getByRole('button', { name: '发送', exact: true }).click();
+  await expect(page.locator('.wx-msg-row.mine').filter({ hasText: first })).toBeVisible();
+  await composer.fill(second);
+  await page.getByRole('button', { name: '发送', exact: true }).click();
+  await expect(page.locator('.wx-msg-row.mine').filter({ hasText: second })).toBeVisible();
+  await page.waitForTimeout(4100);
+  const edited = Date.now();
+  await composer.fill(draft);
+  await composer.press('ArrowLeft');
+  await page.waitForTimeout(1000);
+  expect(batches).toHaveLength(0);
+  await expect.poll(() => batches.length, { timeout: 10_000 }).toBe(1);
+  expect(batches[0]!.at - edited).toBeGreaterThanOrEqual(5000);
+  expect(batches[0]!.texts).toEqual([first, second]);
+  expect(signals.join('')).not.toContain(draft);
+  await expect(composer).toBeFocused();
+  await expect(composer).toHaveValue(draft);
+});
 test('原消息上的回复状态展示、重试和积分入口', async ({ page }) => {
   let target: string | null = null;
   let state: 'failed' | 'retrying' | 'blocked' | 'done' = 'failed';
@@ -56,7 +108,7 @@ test('原消息上的回复状态展示、重试和积分入口', async ({ page 
   await page.getByLabel('消息', { exact: true }).fill(text);
   await page.getByRole('button', { name: '发送', exact: true }).click();
   const original = page.locator('.wx-msg-row.mine').filter({ hasText: text });
-  await expect(original.getByText('已送达', { exact: true })).toBeVisible();
+  await expect(original.getByText('已送达', { exact: true })).toBeVisible({ timeout: 15000 });
   target = await original.evaluate(
     (row) => row.closest('[data-row-key]')?.getAttribute('data-row-key') ?? null,
   );
@@ -88,7 +140,7 @@ test('旧网页组件缺少新版取消和行高接口时，仍能登录、收�
   await page.getByLabel('消息', { exact: true }).fill(text);
   await page.getByRole('button', { name: '发送', exact: true }).click();
   const sent = page.locator('.wx-msg-row.mine').filter({ hasText: text });
-  await expect(sent.getByText('已送达', { exact: true })).toBeVisible();
+  await expect(sent.getByText('已送达', { exact: true })).toBeVisible({ timeout: 15000 });
   await page.reload();
   await expect(page.getByLabel('消息', { exact: true })).toBeVisible();
   await expect(sent).toHaveCount(1);
@@ -270,12 +322,17 @@ test('关闭WS后HTTP等价路径；响应丢失用同一clientMsgId恢复，不
   await openChat(page);
   let first = true;
   const ids: string[] = [];
-  await page.route('**/conversations/*/messages', async (route) => {
+  await page.route('**/conversations/*/message-batches', async (route) => {
     if (route.request().method() !== 'POST') {
       await route.continue();
       return;
     }
-    ids.push(route.request().postDataJSON().clientMsgId);
+    ids.push(
+      ...route
+        .request()
+        .postDataJSON()
+        .items.map((item: { clientMsgId: string }) => item.clientMsgId),
+    );
     if (first) {
       first = false;
       expect((await route.fetch()).ok()).toBe(true);
@@ -288,7 +345,7 @@ test('关闭WS后HTTP等价路径；响应丢失用同一clientMsgId恢复，不
     1,
     { timeout: 15_000 },
   );
-  expect(ids.length).toBeGreaterThanOrEqual(1);
+  await expect.poll(() => ids.length, { timeout: 15000 }).toBeGreaterThanOrEqual(1);
   expect(new Set(ids).size).toBe(1);
   await page.reload();
   await expect(page.locator('.wx-bubble').filter({ hasText: '确认丢失仍只显示一次' })).toHaveCount(

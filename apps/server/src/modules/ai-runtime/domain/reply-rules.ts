@@ -9,7 +9,7 @@ import { petPressure } from './pets.js';
 import type { ChatTurnMessage } from './prompt-assembly.js';
 export const REPLY_TEMPLATE_VERSION = 'chat-v8-stable-history';
 export const TEXT_REPLY_TEMPLATE_VERSION = 'chat-v9-original-history';
-export const USER_BATCH_DELAY_MS = 3000;
+
 /**
  * F1-8（10-21）：模型偶尔把换行写成字面的「\n」（反斜杠 + n，常见于群聊），连同 \r、\t、\"、\uXXXX
  * 等转义残留一起还原成真正的字符；私聊、群聊、主动消息的输出都先过这里再拆条。

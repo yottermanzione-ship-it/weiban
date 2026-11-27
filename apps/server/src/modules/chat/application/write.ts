@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
   ClientMsgId,
+  REPLY_QUIET_MS,
   ForwardSnapshotContent,
   ForwardedRecordContent,
   Id,
@@ -259,7 +260,15 @@ export class ChatWriteService {
     const at = this.clock.now();
     const [current] = await tx.db
       .update(conversations)
-      .set({ lastSeq: sql`${conversations.lastSeq} + 1`, updatedAt: at })
+      .set({
+        lastSeq: sql`${conversations.lastSeq} + 1`,
+        updatedAt: at,
+        ...(!system && sender?.kind === 'user' && content.type !== 'call_record'
+          ? {
+              replyQuietUntil: sql`greatest(${conversations.replyQuietUntil}, ${new Date(at.getTime() + REPLY_QUIET_MS).toISOString()}::timestamptz)`,
+            }
+          : {}),
+      })
       .where(eq(conversations.id, row.id))
       .returning();
     if (!current) throw new AppError('not_found', '会话不存在');
