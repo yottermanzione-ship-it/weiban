@@ -1,7 +1,7 @@
 import { createServer, request } from 'node:http';
 import { connect } from 'node:net';
 import type { Duplex } from 'node:stream';
-import { SendMessageRequest } from '@weiban/contracts';
+import { ChatEndpoints, SendMessageRequest } from '@weiban/contracts';
 
 /** 本机测试入口直接中断实际连接；不依赖浏览器对 Service Worker 请求的拦截支持。 */
 export async function releaseProxy(messageText: string) {
@@ -11,21 +11,22 @@ export async function releaseProxy(messageText: string) {
   const sockets = new Set<Duplex>();
   const server = createServer((incoming, outgoing) => {
     if (incoming.url === '/api/v1/sync/state') stateReads++;
-    if (
-      incoming.method === 'POST' &&
-      /^\/api\/v1\/conversations\/[^/]+\/messages$/.test(incoming.url ?? '')
-    ) {
+    const sendPath = /^\/api\/v1\/conversations\/[^/]+\/(messages|message-batches)$/.exec(
+      incoming.url ?? '',
+    );
+    if (incoming.method === 'POST' && sendPath) {
       const chunks: Buffer[] = [];
       incoming.on('data', (chunk: Buffer) => chunks.push(chunk));
       incoming.on('end', () => {
         try {
-          const parsed = SendMessageRequest.safeParse(JSON.parse(Buffer.concat(chunks).toString()));
-          if (
-            parsed.success &&
-            parsed.data.content.type === 'text' &&
-            parsed.data.content.text === messageText
-          )
-            sentIds.push(parsed.data.clientMsgId);
+          const body: unknown = JSON.parse(Buffer.concat(chunks).toString());
+          const items =
+            sendPath[1] === 'message-batches'
+              ? ChatEndpoints.sendBatch.body!.parse(body).items
+              : [SendMessageRequest.parse(body)];
+          for (const item of items)
+            if (item.content.type === 'text' && item.content.text === messageText)
+              sentIds.push(item.clientMsgId);
         } catch {
           /* Only fixture message IDs are observed. */
         }

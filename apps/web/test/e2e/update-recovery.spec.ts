@@ -64,7 +64,7 @@ test('新版本等待生效期间，发布断连后旧页不刷新即可补发�
     const draft = '更新期间没有发送的草稿';
     await page.getByLabel('消息', { exact: true }).fill(draft);
     await expect(offline).toBeVisible({ timeout: 28_000 });
-    expect(sentIds.length).toBeGreaterThan(0);
+    await expect.poll(() => sentIds.length).toBeGreaterThan(0);
     // 真实发布曾持续约25秒；覆盖一个请求已超时、其他请求仍在等待的恢复。
     await expect
       .poll(() => Date.now() - interruptedAt, { timeout: 28_000 })
@@ -77,7 +77,11 @@ test('新版本等待生效期间，发布断连后旧页不刷新即可补发�
     expect(sentIds.length).toBeGreaterThan(1);
     expect(new Set(sentIds).size).toBe(1);
     await expect(page.getByLabel('消息', { exact: true })).toHaveValue(draft);
+    const draftAck = page.waitForResponse(
+      (r) => r.request().method() === 'POST' && r.url().endsWith('/message-batches'),
+    );
     await page.getByRole('button', { name: '发送', exact: true }).click();
+    expect((await draftAck).ok()).toBe(true);
     await expect(
       page
         .locator('.wx-msg-row.mine')
